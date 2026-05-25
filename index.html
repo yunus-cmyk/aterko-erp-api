@@ -716,14 +716,23 @@
     </div>
     <div id="urunListesiArea" class="d-none">
         <div class="card shadow-sm border-0 mb-4 bg-white">
-            <div class="card-body d-flex align-items-end gap-3">
-                <div class="flex-grow-1">
-                    <label class="form-label small fw-bold text-muted">Çalışılacak Proje ve Teslimat (Bina) <span class="text-danger">*</span></label>
-                    <select id="aktifTeslimatSecimi" class="form-select form-select-lg fw-bold text-primary" onchange="teslimatDegisti()">
-                        <option value="">-- Lütfen Ürün Listesi Hazırlanacak Teslimatı Seçin --</option>
+            <div class="card-body d-flex align-items-end gap-3 flex-wrap">
+                <div style="flex: 1 1 320px; min-width: 280px;">
+                    <label class="form-label small fw-bold text-muted">1. Proje Seç <span class="text-danger">*</span></label>
+                    <select id="ulProjeSecimi" class="form-select form-select-lg fw-bold" onchange="ulProjeDegisti()">
+                        <option value="">-- Önce Proje Seçin --</option>
                     </select>
                 </div>
-                <button class="btn btn-dark btn-lg px-4" onclick="fetchTeslimatUrunleri()"><i class="bi bi-arrow-clockwise"></i> Yenile</button>
+                <div style="flex: 1 1 320px; min-width: 280px;">
+                    <label class="form-label small fw-bold text-muted">2. Teslimat (Bina) Seç <span class="text-danger">*</span></label>
+                    <select id="aktifTeslimatSecimi" class="form-select form-select-lg fw-bold text-primary" onchange="teslimatDegisti()" disabled>
+                        <option value="">-- Önce proje seçin --</option>
+                    </select>
+                </div>
+                <button class="btn btn-dark btn-lg px-4" onclick="fetchTeslimatUrunleri()" title="Listeyi yenile"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="card-footer bg-light small text-muted py-2 px-3">
+                <i class="bi bi-info-circle me-1"></i>Sadece <strong>PROJE</strong> durumundaki teslimatlar listelenir. Üretime/Montaja geçen veya teslim edilen binalar bu modülde düzenlenmez.
             </div>
         </div>
 
@@ -1578,17 +1587,67 @@ function toggleUrunTipi() {
     }
 }
 
+// Ürün Listesi modülü teslimat verisini cache'le (proje seçimi değiştiğinde tekrar fetch'lemeyelim)
+window.ulTeslimatlarCache = [];
+
 function fetchTeslimatSecenekleri() {
     secureFetch('/teslimat-secenekleri').then(res => {
-        if(res.ok) {
-            const select = document.getElementById("aktifTeslimatSecimi");
-            select.innerHTML = '<option value="">-- Lütfen Ürün Listesi Hazırlanacak Teslimatı Seçin --</option>';
-            res.data.forEach(t => {
-                const projeTam = `${t.proje_kodu} / ${t.musteri_adi || ''} - ${t.proje_adi}`;
-                select.innerHTML += `<option value="${t.teslimat_id}">${esc(projeTam)} [ ${esc(t.bina_adi)} / ${esc(t.bina_turu)} ]</option>`;
+        if(!res.ok) return;
+        window.ulTeslimatlarCache = res.data || [];
+
+        // Projeleri benzersizleştir (aynı proje birden çok teslimat içerebilir)
+        const projeMap = new Map();
+        window.ulTeslimatlarCache.forEach(t => {
+            if(!projeMap.has(t.proje_id)) {
+                projeMap.set(t.proje_id, {
+                    id: t.proje_id,
+                    proje_kodu: t.proje_kodu,
+                    musteri_adi: t.musteri_adi,
+                    proje_adi: t.proje_adi,
+                    teslimat_sayisi: 0
+                });
+            }
+            projeMap.get(t.proje_id).teslimat_sayisi++;
+        });
+
+        const projeler = [...projeMap.values()];
+        const projeSelect = document.getElementById("ulProjeSecimi");
+        if(projeler.length === 0) {
+            projeSelect.innerHTML = '<option value="">-- PROJE durumunda teslimat yok --</option>';
+        } else {
+            projeSelect.innerHTML = `<option value="">-- Proje seçin (${projeler.length} proje, ${window.ulTeslimatlarCache.length} teslimat) --</option>`;
+            projeler.forEach(p => {
+                const etiket = `${p.proje_kodu} — ${p.musteri_adi || ''} (${p.proje_adi}) [${p.teslimat_sayisi} bina]`;
+                projeSelect.innerHTML += `<option value="${p.id}">${esc(etiket)}</option>`;
             });
         }
+
+        // Teslimat dropdown'ı sıfırla
+        const teslimatSelect = document.getElementById("aktifTeslimatSecimi");
+        teslimatSelect.innerHTML = '<option value="">-- Önce proje seçin --</option>';
+        teslimatSelect.disabled = true;
     });
+}
+
+function ulProjeDegisti() {
+    const projeId = document.getElementById("ulProjeSecimi").value;
+    const teslimatSelect = document.getElementById("aktifTeslimatSecimi");
+    if(!projeId) {
+        teslimatSelect.innerHTML = '<option value="">-- Önce proje seçin --</option>';
+        teslimatSelect.disabled = true;
+        teslimatSelect.value = "";
+        teslimatDegisti();
+        return;
+    }
+
+    const teslimatlar = window.ulTeslimatlarCache.filter(t => String(t.proje_id) === String(projeId));
+    teslimatSelect.innerHTML = `<option value="">-- Teslimat (bina) seçin (${teslimatlar.length} adet) --</option>`;
+    teslimatlar.forEach(t => {
+        teslimatSelect.innerHTML += `<option value="${t.teslimat_id}">${esc(t.bina_adi)} — ${esc(t.bina_turu || '')}</option>`;
+    });
+    teslimatSelect.disabled = false;
+    teslimatSelect.value = "";
+    teslimatDegisti();
 }
 
 function teslimatDegisti() {

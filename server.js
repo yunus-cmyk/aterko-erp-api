@@ -745,12 +745,18 @@ app.post('/api/teslimat-urun-guncelle', yetkiKontrol, async (req, res, next) => 
 // Dropdown için gerçek Proje ve Teslimat (Bina) listesini getir
 app.get('/api/teslimat-secenekleri', yetkiKontrol, async (req, res, next) => {
     try {
+        // Sadece "PROJE" durumundaki teslimatlar Ürün Listesi modülünde işlenebilir.
+        // (TESLİM EDİLDİ / MONTAJ / İPTAL durumundakiler düzenlemeye kapalı.)
+        // Query param ile esneklik: ?durum=hepsi → tümünü getirir (admin amaçlı).
+        const durumFilter = req.query.durum === 'hepsi'
+            ? `COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL'`
+            : `pt.durum = 'PROJE'`;
         const query = `
-            SELECT pt.id as teslimat_id, pt.bina_adi, pt.bina_turu,
+            SELECT pt.id as teslimat_id, pt.bina_adi, pt.bina_turu, pt.proje_id, pt.durum,
                    p.proje_kodu, p.musteri_adi, p.proje_adi
             FROM proje_teslimatlari pt
             JOIN projeler p ON pt.proje_id = p.id
-            WHERE COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL'
+            WHERE ${durumFilter}
             ORDER BY p.id DESC, pt.id ASC
         `;
         const result = await pool.query(query);
