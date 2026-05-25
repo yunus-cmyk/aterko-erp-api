@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <style>
+      /* --- ATERKO KURUMSAL RENK PALETİ --- */
+      :root {
+        --aterko-orange: #FF7543; 
+        --aterko-orange-hover: #e06031; 
+        --aterko-dark: #212721;
+        --aterko-light: #f4f6f9;
+        --aterko-border: #d1d5db;
+      }
+
+      body { background-color: var(--aterko-light); padding: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+      .container { max-width: 1300px; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 25px rgba(0,0,0,0.05); }
+      
+      /* Ana Renk Sınıflarını Ezme */
+      .text-primary { color: var(--aterko-orange) !important; }
+      .bg-primary { background-color: var(--aterko-orange) !important; }
+      
+      /* Butonlar (Turuncu) */
+      .btn-primary { background-color: var(--aterko-orange) !important; border-color: var(--aterko-orange) !important; color: white !important; }
+      .btn-primary:hover, .btn-primary:focus, .btn-primary:active { 
+        background-color: var(--aterko-orange-hover) !important; 
+        border-color: var(--aterko-orange-hover) !important; 
+        box-shadow: 0 0 0 0.25rem rgba(255, 117, 67, 0.25) !important;
+      }
+      
+      /* YENİ: Dış Çizgili (Outline) Butonlar ve Üst Filtre Butonları (Maviler tamamen ezildi) */
+      .btn-outline-primary { 
+        color: var(--aterko-dark) !important; 
+        border-color: var(--aterko-border) !important; 
+        background-color: white !important;
+      }
+      .btn-outline-primary:hover { 
+        background-color: #fff4f0 !important; /* Üzerine gelince çok açık şık bir turuncu */
+        color: var(--aterko-orange) !important; 
+        border-color: var(--aterko-orange) !important; 
+      }
+      .btn-check:checked + .btn-outline-primary, .btn-check:active + .btn-outline-primary { 
+        background-color: var(--aterko-orange) !important; 
+        color: white !important; 
+        border-color: var(--aterko-orange) !important; 
+      }
+      .btn-check:focus + .btn-outline-primary, .btn-outline-primary:focus {
+        box-shadow: 0 0 0 0.25rem rgba(255, 117, 67, 0.25) !important;
+      }
+      
+      /* Sekmeler (Tablar) */
+      .nav-tabs .nav-link { color: var(--aterko-dark); font-weight: 500; border-bottom: 2px solid transparent; transition: 0.3s; opacity: 0.7; }
+      .nav-tabs .nav-link:hover { color: var(--aterko-orange); opacity: 1; border-color: transparent transparent #ffd0c0; }
+      .nav-tabs .nav-link.active { 
+        color: var(--aterko-orange) !important; 
+        border-color: transparent transparent var(--aterko-orange) !important; 
+        border-bottom-width: 3px; 
+        background: transparent; 
+        opacity: 1;
+      }
+      
+      /* Tablo Başlıkları (Aterko Koyu Füme Rengi) */
+      .table-dark { background-color: var(--aterko-dark); color: white; border-color: #3b443b; }
+      .table-dark th { background-color: var(--aterko-dark); border-color: #3b443b; color: white; }
+      
+      /* Seçim Kutuları ve Inputlar (Tıklayınca yanan turuncu çerçeve) */
+      .form-control:focus, .form-select:focus { 
+        border-color: var(--aterko-orange) !important; 
+        box-shadow: 0 0 0 0.25rem rgba(255, 117, 67, 0.25) !important; 
+      }
+      
+      /* Sayfalama (Pagination) Numaraları */
+      .page-link { color: var(--aterko-dark); }
+      .page-link:hover { color: var(--aterko-orange); background-color: #fff4f0; }
+      .page-item.active .page-link { 
+        background-color: var(--aterko-orange) !important; 
+        border-color: var(--aterko-orange) !important; 
+        color: white !important; 
+      }
+      .page-link:focus { box-shadow: 0 0 0 0.25rem rgba(255, 117, 67, 0.25) !important; }
+      
+      /* Diğer Mevcut Stiller */
+      .kritik-stok { background-color: #fff0f0 !important; color: #dc3545; font-weight: bold; }
+      .btn-edit { cursor: pointer; color: var(--aterko-orange); text-decoration: none; font-size: 1.1em; transition: 0.2s; }
+      .btn-edit:hover { color: var(--aterko-orange-hover); }
+      .user-badge { background-color: #f8f9fa; color: var(--aterko-dark); padding: 3px 8px; border-radius: 6px; font-size: 0.85em; border: 1px solid var(--aterko-border); }
+      #yetkiPaneli { font-size: 0.9em; background: #fff8f5; padding: 8px 15px; border-radius: 8px; display: inline-block; border: 1px solid #ffd0c0; color: var(--aterko-dark);}
+      .locked { color: #adb5bd; cursor: not-allowed; }
+      .tab-content { padding-top: 20px; }
+    </style>
+  </head>
+  <body>
+    
+    <div class="container">
+      <div class="d-flex justify-content-between align-items-center mb-4 pb-3 border-bottom">
+        
+        <h2 class="text-primary m-0 d-flex align-items-center">
+          <img src="https://www.aterko.com/uygulama/aterko-logo-zeminsiz.png" alt="Aterko Logo" style="height: 45px; margin-right: 15px;">
+          <span style="font-weight: 600; color: #212721;">Stok Yönetimi</span>
+        </h2>
+        
+        <div class="d-flex align-items-center gap-3">
+          
+          <div class="dropdown">
+            <button class="btn btn-outline-primary dropdown-toggle btn-sm fw-bold px-3" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-grid-3x3-gap-fill me-1"></i> Aterko Portalı
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 mt-2">
+              <li><a class="dropdown-item fw-bold py-2" href="https://www.aterko.com/" target="_blank"><i class="bi bi-globe me-2 text-primary"></i>ATERKO Web</a></li>
+              <li><a class="dropdown-item fw-bold py-2" href="https://aset.aterko.com/" target="_blank"><i class="bi bi-briefcase-fill me-2 text-success"></i>ASET</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item fw-bold py-2" href="https://script.google.com/a/macros/aterko.com/s/AKfycbyGPnS-6ap6vOhnlzTHRgaDuOM4kHnEzTd4ekJS-tfH1KzxIDWOIYzJyCz_-AqXCn-Olg/exec" target="_blank"><i class="bi bi-cart-check-fill me-2 text-danger"></i>SATINALMA</a></li>
+            </ul>
+          </div>
+
+          <div id="yetkiPaneli" class="shadow-sm">
+            <i class="bi bi-person-circle"></i> <b id="lblKullanici">Yükleniyor...</b> | Yetki: <span id="lblYetki" class="badge bg-secondary">-</span>
+          </div>
+          
+        </div>
+      </div>
+
+      <div id="yetkisizUyari" class="alert alert-danger" style="display:none;">
+        <i class="bi bi-shield-lock"></i> Sisteme erişim yetkiniz bulunmamaktadır. Sadece @aterko.com uzantılı hesaplar giriş yapabilir.
+      </div>
+      
+      <div class="card p-4 mb-4 bg-light border-0 shadow-sm rounded-3" id="formAlani">
+        <h5 class="text-secondary mb-3"><i class="bi bi-plus-circle"></i> Yeni İşlem Ekle</h5>
+        <form id="stokForm">
+          <div class="row g-3 mb-3">
+            <div class="col-md-2">
+              <label class="form-label small text-muted fw-bold">Stok Tipi</label>
+              <select class="form-select" id="stokTipiSecimi" onchange="stokTipiDegisti('stokTipiSecimi', 'kategoriSecimi', 'urunAdi')" required></select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small text-muted fw-bold">Kategori</label>
+              <select class="form-select" id="kategoriSecimi" onchange="kategoriDegisti('stokTipiSecimi', 'kategoriSecimi', 'urunAdi')" required>
+                <option disabled selected>Önce Tip Seç...</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small text-muted fw-bold">Ürün Adı</label>
+              <select class="form-select" id="urunAdi" required>
+                <option disabled selected>Önce Kategori Seç...</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small text-muted fw-bold">İşlem Tipi</label>
+              <select class="form-select" id="islemTipi">
+                <option value="Giriş">Giriş (+)</option>
+                <option value="Çıkış">Çıkış (-)</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small text-muted fw-bold">Miktar</label>
+              <input type="number" step="0.01" class="form-control" id="miktar" placeholder="0,00" required>
+            </div>
+          </div>
+          
+          <div class="row g-3 mb-4">
+            <div class="col-md-3">
+              <label class="form-label small text-muted fw-bold">Proje Adı</label>
+              <select class="form-select" id="projeSecimi"><option disabled selected>Proje Seç...</option></select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small text-muted fw-bold">Depo</label>
+              <select class="form-select" id="depoSecimi"><option disabled selected>Depo Seç...</option></select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small text-muted fw-bold">Açıklama</label>
+              <input type="text" class="form-control" id="aciklama" placeholder="İrsaliye no, not, vs. yazabilirsiniz...">
+            </div>
+          </div>
+          
+          <div class="row">
+            <div class="col-12">
+              <button type="button" class="btn btn-primary w-100 py-2 fw-bold" style="font-size: 1.1em;" onclick="kaydet()">
+                <i class="bi bi-save2 me-1"></i> İşlemi Kaydet
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div id="tablolarAlani">
+        
+        <div class="d-flex justify-content-center mb-4">
+          <div class="btn-group shadow-sm" role="group" aria-label="Stok Tipi Filtresi">
+            <input type="radio" class="btn-check" name="btnfiltre" id="btnTumu" autocomplete="off" checked onchange="filtrele('Tümü')">
+            <label class="btn btn-outline-primary px-4 fw-bold" for="btnTumu">Tüm Stoklar</label>
+
+            <input type="radio" class="btn-check" name="btnfiltre" id="btnHammadde" autocomplete="off" onchange="filtrele('Hammadde')">
+            <label class="btn btn-outline-primary px-4 fw-bold" for="btnHammadde">Hammadde</label>
+
+            <input type="radio" class="btn-check" name="btnfiltre" id="btnYarimamul" autocomplete="off" onchange="filtrele('Yarımamül')">
+            <label class="btn btn-outline-primary px-4 fw-bold" for="btnYarimamul">Yarımamül</label>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-end mb-2 border-bottom pb-2">
+          
+          <ul class="nav nav-tabs border-bottom-0 mb-0" id="uygulamaSekmeleri" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active fw-bold" id="stok-tab" data-bs-toggle="tab" data-bs-target="#stok-pane" type="button" role="tab" onclick="document.getElementById('sifirStokKapsayici').style.display='block'">
+                <i class="bi bi-box-seam fs-5"></i> Stok Durumu
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link fw-bold" id="hareket-tab" data-bs-toggle="tab" data-bs-target="#hareket-pane" type="button" role="tab" onclick="document.getElementById('sifirStokKapsayici').style.display='none'">
+                <i class="bi bi-arrow-left-right fs-5"></i> Stok Hareketleri
+              </button>
+            </li>
+          </ul>
+
+          <div class="d-flex gap-2 align-items-center">
+             <div class="form-check form-switch me-3" id="sifirStokKapsayici">
+                <input class="form-check-input" type="checkbox" id="chkSifirStok" onchange="tabloFiltreAksiyonu()">
+                <label class="form-check-label small text-muted mt-1 fw-bold" for="chkSifirStok">Stokta kalmayanları da göster</label>
+             </div>
+             <select class="form-select form-select-sm shadow-sm" style="width: 160px;" id="filtreKategori" onchange="filtreKategoriDegisti()">
+                <option value="Tümü">Tüm Kategoriler</option>
+             </select>
+             <select class="form-select form-select-sm shadow-sm" style="width: 180px;" id="filtreUrun" onchange="tabloFiltreAksiyonu()">
+                <option value="Tümü">Tüm Ürünler</option>
+             </select>
+          </div>
+
+        </div>
+        <div class="tab-content" id="uygulamaSekmeleriIcerik">
+          
+          <div class="tab-pane fade show active" id="stok-pane" role="tabpanel" tabindex="0">
+            <table class="table table-bordered table-hover mt-2">
+              <thead class="table-dark">
+                <tr>
+                  <th>Ürün Adı</th>
+                  <th>Kategori</th>
+                  <th class="text-end" style="width: 15%;">Miktar</th>
+                  <th style="width: 10%;">Birim</th>
+                  <th>Son İşlem</th>
+                </tr>
+              </thead>
+              <tbody id="stokTablosu"><tr><td colspan="5" class="text-center">Yükleniyor...</td></tr></tbody>
+            </table>
+            <nav><ul class="pagination pagination-sm justify-content-center" id="stokSayfalama"></ul></nav>
+          </div>
+          
+          <div class="tab-pane fade" id="hareket-pane" role="tabpanel" tabindex="0">
+            <table class="table table-hover table-striped mt-2">
+              <thead class="table-secondary">
+                <tr>
+                  <th>İşlem</th>
+                  <th>Tarih</th>
+                  <th>Kullanıcı</th>
+                  <th>Ürün</th>
+                  <th>Kategori</th>
+                  <th class="text-end">Miktar</th>
+                  <th class="text-start">Birim</th>
+                  <th>Yön</th>
+                  <th>Proje / Depo / Not</th>
+                </tr>
+              </thead>
+              <tbody id="gecmisTablosu"><tr><td colspan="9" class="text-center">Yükleniyor...</td></tr></tbody>
+            </table>
+            <nav><ul class="pagination pagination-sm justify-content-center" id="hareketSayfalama"></ul></nav>
+          </div>
+          
+        </div>
+      </div>
+
+    <div class="modal fade" id="duzenleModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header bg-light">
+            <h5 class="modal-title"><i class="bi bi-pencil-square"></i> Kayıt Düzenle</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-4">
+            <div class="alert alert-warning py-2 small"><i class="bi bi-info-circle"></i> İşlemi güncelleyen yönetici olarak kaydedilir.</div>
+            <input type="hidden" id="editSatirNo">
+            
+            <div class="row g-3 mb-3">
+                <div class="col-md-4"><label class="small text-muted fw-bold">Stok Tipi</label><select class="form-select" id="editStokTipi" onchange="stokTipiDegisti('editStokTipi', 'editKategori', 'editUrun')"></select></div>
+                <div class="col-md-4"><label class="small text-muted fw-bold">Kategori</label><select class="form-select" id="editKategori" onchange="kategoriDegisti('editStokTipi', 'editKategori', 'editUrun')"></select></div>
+                <div class="col-md-4"><label class="small text-muted fw-bold">Ürün</label><select class="form-select" id="editUrun"></select></div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6"><label class="small text-muted fw-bold">İşlem Tipi</label><select class="form-select" id="editTip"><option value="Giriş">Giriş (+)</option><option value="Çıkış">Çıkış (-)</option></select></div>
+                <div class="col-md-6"><label class="small text-muted fw-bold">Miktar</label><input type="number" step="0.01" class="form-control" id="editMiktar"></div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6"><label class="small text-muted fw-bold">Proje</label><select class="form-select" id="editProje"></select></div>
+                <div class="col-md-6"><label class="small text-muted fw-bold">Depo</label><select class="form-select" id="editDepo"></select></div>
+            </div>
+            <div class="mb-2"><label class="small text-muted fw-bold">Açıklama</label><input type="text" class="form-control" id="editAciklama"></div>
+          </div>
+          <div class="modal-footer bg-light">
+            <button type="button" class="btn btn-outline-danger me-auto fw-bold" onclick="sil()"><i class="bi bi-trash3"></i> Sil</button>
+            <button type="button" class="btn btn-primary fw-bold" onclick="guncelle()"><i class="bi bi-check2-circle"></i> Güncelle</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var gData = {};
+      var aktifYetki = "";
+      var gTipKategoriUrunMap = {}; // YENİ: Haritamızın adı ve yapısı değişti
+      var tumStoklar = [];
+      var tumHareketler = [];
+      var sayfaBasinaKayit = 100;
+      var aktifStokTipiFiltresi = "Tümü"; // Sayfa ilk açıldığında hepsi görünür
+
+      window.onload = function() { tumVerileriYukle(); };
+
+      function formatSayi(deger) {
+        var sayi = parseFloat(deger.toString().replace(',', '.'));
+        if (isNaN(sayi)) return "0,00";
+        return sayi.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function tumVerileriYukle() {
+        google.script.run.withSuccessHandler(function(data) {
+            gData = data;
+            gTipKategoriUrunMap = data.tipKategoriUrunMap; // YENİ VERİYİ ALDIK
+            
+            document.getElementById("lblKullanici").innerText = data.kullanici.isim;
+            document.getElementById("lblYetki").innerText = data.kullanici.yetki;
+            aktifYetki = data.kullanici.yetki;
+
+            if (aktifYetki === "Yetkisiz") {
+              document.getElementById("formAlani").style.display = "none";
+              document.getElementById("tablolarAlani").style.display = "none";
+              document.getElementById("yetkisizUyari").style.display = "block";
+              return; 
+            }
+            if (aktifYetki === "İzleyici") document.getElementById("formAlani").style.display = "none"; 
+            if (aktifYetki === "Admin") document.getElementById("lblYetki").className = "badge bg-danger";
+            else if (aktifYetki === "Standart") document.getElementById("lblYetki").className = "badge bg-success";
+
+            // YENİ: İlk olarak sadece Stok Tiplerini (Hammadde, Yarımamül) dolduruyoruz
+            var tipler = Object.keys(gTipKategoriUrunMap);
+            doldurSelect("stokTipiSecimi", tipler);
+            
+            doldurSelect("projeSecimi", data.projeler); 
+            doldurSelect("depoSecimi", data.depolar);
+            
+            filtreSecenekleriniDoldur();
+            verileriCek();
+        }).tumListeleriGetir();
+      }
+
+      // YENİ: Stok Tipi seçilince Kategorileri getiren fonksiyon
+      function stokTipiDegisti(tipSelectId, katSelectId, urunSelectId) {
+        var secilenTip = document.getElementById(tipSelectId).value;
+        var oTipeAitKategoriler = gTipKategoriUrunMap[secilenTip] ? Object.keys(gTipKategoriUrunMap[secilenTip]) : [];
+        doldurSelect(katSelectId, oTipeAitKategoriler);
+        
+        // Kategori değiştiği için ürün kutusunu sıfırla
+        document.getElementById(urunSelectId).innerHTML = '<option disabled selected>Önce Kategori Seç...</option>';
+      }
+
+      // GÜNCELLENDİ: Kategori seçilince Ürünleri getiren fonksiyon
+      function kategoriDegisti(tipSelectId, katSelectId, urunSelectId) {
+        var secilenTip = document.getElementById(tipSelectId).value;
+        var secilenKategori = document.getElementById(katSelectId).value;
+        var oKategoriyeAitUrunler = (gTipKategoriUrunMap[secilenTip] && gTipKategoriUrunMap[secilenTip][secilenKategori]) ? gTipKategoriUrunMap[secilenTip][secilenKategori] : [];
+        doldurSelect(urunSelectId, oKategoriyeAitUrunler);
+      }
+
+      function verileriCek() {
+        google.script.run.withSuccessHandler(function(d) {
+           tumStoklar = d; stokSayfasiniCiz(1);
+        }).stokGetir();
+
+        google.script.run.withSuccessHandler(function(d) {
+           tumHareketler = d; hareketSayfasiniCiz(1);
+        }).gecmisGetir();
+      }
+
+      // YENİ: Butonlara tıklanınca çalışacak filtreleme fonksiyonu
+      // Üstteki Ana Butonlara basılınca çalışır
+      function filtrele(tip) {
+        aktifStokTipiFiltresi = tip;
+        filtreSecenekleriniDoldur(); // Kategori listesini bu tipe göre yenile
+        tabloFiltreAksiyonu(); // Tabloları çiz
+      }
+
+      // Kategori ve Ürün dropdownlarını dolduran mantık
+      function filtreSecenekleriniDoldur() {
+         var katSelect = document.getElementById("filtreKategori");
+         var urunSelect = document.getElementById("filtreUrun");
+         
+         var kategoriler = [];
+         if (aktifStokTipiFiltresi === "Tümü") {
+            for(var t in gTipKategoriUrunMap) kategoriler = kategoriler.concat(Object.keys(gTipKategoriUrunMap[t]));
+            kategoriler = [...new Set(kategoriler)]; // Benzersiz (Unique) yapar
+         } else {
+            kategoriler = gTipKategoriUrunMap[aktifStokTipiFiltresi] ? Object.keys(gTipKategoriUrunMap[aktifStokTipiFiltresi]) : [];
+         }
+         
+         katSelect.innerHTML = '<option value="Tümü">Tüm Kategoriler</option>';
+         kategoriler.forEach(k => katSelect.innerHTML += `<option value="${k}">${k}</option>`);
+         
+         urunSelect.innerHTML = '<option value="Tümü">Tüm Ürünler</option>'; // Kategori değiştiği için ürün sıfırlanır
+      }
+
+      // Sadece Kategori filtresi değiştiğinde Ürün filtresini dolduran mantık
+      function filtreKategoriDegisti() {
+         var secilenKat = document.getElementById("filtreKategori").value;
+         var urunSelect = document.getElementById("filtreUrun");
+         urunSelect.innerHTML = '<option value="Tümü">Tüm Ürünler</option>';
+         
+         if(secilenKat !== "Tümü") {
+            var urunler = [];
+            if(aktifStokTipiFiltresi === "Tümü") {
+               for(var t in gTipKategoriUrunMap) {
+                  if(gTipKategoriUrunMap[t][secilenKat]) urunler = urunler.concat(gTipKategoriUrunMap[t][secilenKat]);
+               }
+            } else {
+               if(gTipKategoriUrunMap[aktifStokTipiFiltresi] && gTipKategoriUrunMap[aktifStokTipiFiltresi][secilenKat]) {
+                  urunler = gTipKategoriUrunMap[aktifStokTipiFiltresi][secilenKat];
+               }
+            }
+            urunler = [...new Set(urunler)];
+            urunler.forEach(u => urunSelect.innerHTML += `<option value="${u}">${u}</option>`);
+         }
+         tabloFiltreAksiyonu();
+      }
+
+      // Herhangi bir filtre (Checkbox, Dropdown) değiştiğinde tetiklenir
+      function tabloFiltreAksiyonu() {
+         stokSayfasiniCiz(1);
+         hareketSayfasiniCiz(1);
+      }
+
+      // GÜNCELLENDİ: Hem Sıfır Stok, Hem Kategori, Hem Ürün Filtresi
+      function stokSayfasiniCiz(sayfaNo) {
+        var gosterStoktaOlmayan = document.getElementById("chkSifirStok").checked;
+        var secilenKat = document.getElementById("filtreKategori").value;
+        var secilenUrun = document.getElementById("filtreUrun").value;
+
+        // Zincirleme Filtreleme Algoritması
+        var filtrelenmisStoklar = tumStoklar.filter(r => {
+           // r -> 0:Ürün, 1:Kategori, 2:Miktar, 6:Stok Tipi
+           if (aktifStokTipiFiltresi !== "Tümü" && r[6] !== aktifStokTipiFiltresi) return false;
+           if (secilenKat !== "Tümü" && r[1] !== secilenKat) return false;
+           if (secilenUrun !== "Tümü" && r[0] !== secilenUrun) return false;
+           if (!gosterStoktaOlmayan && parseFloat(r[2]) <= 0) return false; // Sıfır ve eksiyi gizle (checked değilse)
+           return true;
+        });
+
+        var baslangic = (sayfaNo - 1) * sayfaBasinaKayit;
+        var bitis = baslangic + sayfaBasinaKayit;
+        var gosterilecekVeri = filtrelenmisStoklar.slice(baslangic, bitis);
+        
+        var t = document.getElementById("stokTablosu"); t.innerHTML = "";
+        
+        if (gosterilecekVeri.length === 0) {
+           t.innerHTML = "<tr><td colspan='5' class='text-center text-muted py-4'>Seçtiğiniz filtrelere uygun ürün bulunamadı.</td></tr>";
+        } else {
+           gosterilecekVeri.forEach(r => {
+             var css = (r[2] < 5) ? "kritik-stok text-danger" : "";
+             var ikon = (r[2] < 5) ? '<i class="bi bi-exclamation-triangle-fill me-2"></i>' : '';
+             var islemRozeti = r[5] === "Giriş" ? "bg-success" : (r[5] === "Çıkış" ? "bg-danger" : "bg-secondary");
+             var sonIslemGorunumu = r[4] ? `${r[4]} <span class="badge ${islemRozeti} ms-1">${r[5]}</span>` : "-";
+
+             var html = `<tr class='${css}'>
+                <td>${ikon}${r[0]}</td>
+                <td><span class="badge bg-light text-dark border">${r[1]}</span></td>
+                <td class="fw-bold text-end">${formatSayi(r[2])}</td>
+                <td><span class="badge bg-light text-dark border">${r[3]}</span></td>
+                <td><small>${sonIslemGorunumu}</small></td>
+             </tr>`;
+             t.innerHTML += html;
+           });
+        }
+        sayfalamaOlustur("stokSayfalama", filtrelenmisStoklar.length, sayfaNo, "stokSayfasiniCiz");
+      }
+
+      // GÜNCELLENDİ: Hem Kategori, Hem Ürün Filtresi
+      function hareketSayfasiniCiz(sayfaNo) {
+        var secilenKat = document.getElementById("filtreKategori").value;
+        var secilenUrun = document.getElementById("filtreUrun").value;
+
+        // Zincirleme Filtreleme Algoritması
+        var filtrelenmisHareketler = tumHareketler.filter(r => {
+           // r -> 2:Ürün, 9:Kategori, 10:Stok Tipi
+           if (aktifStokTipiFiltresi !== "Tümü" && r[10] !== aktifStokTipiFiltresi) return false;
+           if (secilenKat !== "Tümü" && r[9] !== secilenKat) return false;
+           if (secilenUrun !== "Tümü" && r[2] !== secilenUrun) return false;
+           return true;
+        });
+
+        var baslangic = (sayfaNo - 1) * sayfaBasinaKayit;
+        var bitis = baslangic + sayfaBasinaKayit;
+        var gosterilecekVeri = filtrelenmisHareketler.slice(baslangic, bitis);
+
+        var t = document.getElementById("gecmisTablosu"); t.innerHTML = "";
+        
+        if (gosterilecekVeri.length === 0) {
+           t.innerHTML = "<tr><td colspan='9' class='text-center text-muted py-4'>Seçtiğiniz filtrelere uygun hareket bulunamadı.</td></tr>";
+        } else {
+           gosterilecekVeri.forEach(function(r) {
+             var renk = r[3] === "Giriş" ? "text-success" : "text-danger";
+             var islemYon = r[3] === "Giriş" ? '<i class="bi bi-arrow-down-left-circle-fill"></i>' : '<i class="bi bi-arrow-up-right-circle-fill"></i>';
+             var json = JSON.stringify(r).replace(/"/g, '&quot;');
+             
+             var islemIkonu = "";
+             if (aktifYetki === "Admin") islemIkonu = `<span class="btn-edit" onclick="modalAc(${json})"><i class="bi bi-pencil-square"></i></span>`;
+             else islemIkonu = `<span class="locked" title="Yetkisiz"><i class="bi bi-lock-fill"></i></span>`;
+             
+             var birim = "-";
+             var match = r[2].match(/\[(.*?)\]$/);
+             if (match) birim = match[1];
+
+             var html = `<tr>
+                <td class="text-center">${islemIkonu}</td>
+                <td><small class="text-muted">${r[1]}</small></td>
+                <td><span class="user-badge"><i class="bi bi-person"></i> ${r[8]}</span></td>
+                <td><span class="fw-bold">${r[2]}</span></td>
+                <td><span class="badge bg-light text-dark border">${r[9]}</span></td>
+                <td class="text-end fw-bold">${formatSayi(r[4])}</td>
+                <td class="text-start"><span class="badge bg-light text-dark border">${birim}</span></td>
+                <td class="${renk} fw-bold">${islemYon} ${r[3]}</td>
+                <td><small><b>P:</b> ${r[5]} | <b>D:</b> ${r[6]}<br><span class="text-muted fst-italic">${r[7]}</span></small></td>
+             </tr>`;
+             t.innerHTML += html;
+           });
+        }
+        sayfalamaOlustur("hareketSayfalama", filtrelenmisHareketler.length, sayfaNo, "hareketSayfasiniCiz");
+      }
+
+      // GÜNCELLENDİ: Sayfalama artık en fazla 10 adet sayfa butonu gösterecek (Kayan Pencere)
+      function sayfalamaOlustur(kutuId, toplamKayit, aktifSayfa, fonksiyonAdi) {
+        var toplamSayfa = Math.ceil(toplamKayit / sayfaBasinaKayit);
+        var ul = document.getElementById(kutuId); 
+        ul.innerHTML = "";
+        
+        if (toplamSayfa <= 1) return; 
+
+        // Önceki Butonu
+        var oncekiDisabled = (aktifSayfa === 1) ? "disabled" : "";
+        ul.innerHTML += `<li class="page-item ${oncekiDisabled}"><a class="page-link" href="#" onclick="${fonksiyonAdi}(${aktifSayfa - 1}); return false;">Önceki</a></li>`;
+
+        // En fazla gösterilecek sayfa butonu sayısı
+        var maxGosterim = 10;
+        var baslangicSayfa = 1;
+        var bitisSayfa = toplamSayfa;
+
+        // Kayan pencere matematiği
+        if (toplamSayfa > maxGosterim) {
+          var yari = Math.floor(maxGosterim / 2);
+          baslangicSayfa = aktifSayfa - yari;
+          bitisSayfa = aktifSayfa + yari - 1;
+
+          if (baslangicSayfa < 1) {
+            baslangicSayfa = 1;
+            bitisSayfa = maxGosterim;
+          }
+          if (bitisSayfa > toplamSayfa) {
+            bitisSayfa = toplamSayfa;
+            baslangicSayfa = toplamSayfa - maxGosterim + 1;
+          }
+        }
+
+        // Eğer başlangıç 1 değilse, en başa gitmek için "1.." kısayolu koy
+        if (baslangicSayfa > 1) {
+           ul.innerHTML += `<li class="page-item"><a class="page-link text-secondary" href="#" onclick="${fonksiyonAdi}(1); return false;">1..</a></li>`;
+        }
+
+        // Numaraları çiz
+        for (var i = baslangicSayfa; i <= bitisSayfa; i++) {
+          var aktifClass = (i === aktifSayfa) ? "active" : "";
+          ul.innerHTML += `<li class="page-item ${aktifClass}"><a class="page-link" href="#" onclick="${fonksiyonAdi}(${i}); return false;">${i}</a></li>`;
+        }
+
+        // Eğer bitiş son sayfa değilse, en sona gitmek için "..Son" kısayolu koy
+        if (bitisSayfa < toplamSayfa) {
+           ul.innerHTML += `<li class="page-item"><a class="page-link text-secondary" href="#" onclick="${fonksiyonAdi}(${toplamSayfa}); return false;">..${toplamSayfa}</a></li>`;
+        }
+
+        // Sonraki Butonu
+        var sonrakiDisabled = (aktifSayfa === toplamSayfa) ? "disabled" : "";
+        ul.innerHTML += `<li class="page-item ${sonrakiDisabled}"><a class="page-link" href="#" onclick="${fonksiyonAdi}(${aktifSayfa + 1}); return false;">Sonraki</a></li>`;
+      }
+
+      function kaydet() {
+        var veri = {
+          stokTipi: document.getElementById("stokTipiSecimi").value, // YENİ EKLENDİ
+          kategori: document.getElementById("kategoriSecimi").value, 
+          urun: document.getElementById("urunAdi").value, 
+          // ... (diğerleri aynı kalacak)
+          tip: document.getElementById("islemTipi").value,
+          miktar: document.getElementById("miktar").value, 
+          proje: document.getElementById("projeSecimi").value,
+          depo: document.getElementById("depoSecimi").value, 
+          aciklama: document.getElementById("aciklama").value
+        };
+        if(!veri.kategori || !veri.urun || !veri.miktar) { alert("Kategori, Ürün ve Miktar zorunludur!"); return; }
+        
+        var btn = document.querySelector(".btn-primary"); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Kaydediliyor...';
+        google.script.run.withSuccessHandler(function(r) {
+           if(!r.startsWith("HATA")) {
+             document.getElementById("stokForm").reset();
+             document.getElementById("urunAdi").innerHTML = '<option disabled selected>Önce Kategori Seç...</option>';
+           }
+           alert(r); verileriCek();
+           btn.disabled = false; btn.innerHTML = '<i class="bi bi-save2 me-1"></i> İşlemi Kaydet';
+        }).veriKaydet(veri);
+      }
+
+      // --- SADECE BU İKİ FONKSİYONU DEĞİŞTİRİYORUZ ---
+      function modalAc(v) {
+        if(aktifYetki !== "Admin") return;
+        
+        // 1. Stok Tiplerini Yükle ve Seç
+        doldurSelect("editStokTipi", Object.keys(gTipKategoriUrunMap));
+        document.getElementById("editStokTipi").value = v[10] && v[10] !== "-" ? v[10] : "Hammadde"; // v[10] = Stok Tipi
+        
+        // 2. Seçili Tipe Göre Kategorileri Yükle ve Seç
+        stokTipiDegisti("editStokTipi", "editKategori", "editUrun");
+        if(v[9] && v[9] !== "-") document.getElementById("editKategori").value = v[9]; // v[9] = Kategori
+        
+        // 3. Seçili Kategoriye Göre Ürünleri Yükle ve Seç
+        kategoriDegisti("editStokTipi", "editKategori", "editUrun");
+        document.getElementById("editUrun").value = v[2]; // v[2] = Ürün Adı
+        
+        // 4. Diğer Verileri Doldur
+        document.getElementById("editSatirNo").value = v[0]; 
+        document.getElementById("editTip").value = v[3]; 
+        document.getElementById("editMiktar").value = parseFloat(v[4].toString().replace(',', '.'));
+        
+        doldurSelect("editProje", gData.projeler); doldurSelect("editDepo", gData.depolar);
+        document.getElementById("editProje").value = v[5]; document.getElementById("editDepo").value = v[6];
+        document.getElementById("editAciklama").value = v[7];
+        
+        // Modalı Göster
+        new bootstrap.Modal(document.getElementById('duzenleModal')).show();
+      }
+
+      // GÜNCELLENDİ: İşlem başarılı olunca modal otomatik kapanacak
+      function guncelle() {
+        var s = document.getElementById("editSatirNo").value;
+        var veri = {
+          stokTipi: document.getElementById("editStokTipi").value, 
+          kategori: document.getElementById("editKategori").value,
+          urun: document.getElementById("editUrun").value, 
+          tip: document.getElementById("editTip").value,
+          miktar: document.getElementById("editMiktar").value, 
+          proje: document.getElementById("editProje").value,
+          depo: document.getElementById("editDepo").value, 
+          aciklama: document.getElementById("editAciklama").value
+        };
+        google.script.run.withSuccessHandler(function(r) { 
+            alert(r); 
+            verileriCek(); 
+            // İşlem bitince Modalı kapat
+            var modal = bootstrap.Modal.getInstance(document.getElementById('duzenleModal'));
+            if(modal) modal.hide();
+        }).kayitGuncelle(s, veri);
+      }
+
+      // GÜNCELLENDİ: Silme işlemi başarılı olunca modal otomatik kapanacak
+      function sil() {
+        if(confirm("Bu kaydı kalıcı olarak silmek istediğinize emin misiniz?")) {
+           google.script.run.withSuccessHandler(function(r) { 
+               alert(r); 
+               verileriCek(); 
+               // İşlem bitince Modalı kapat
+               var modal = bootstrap.Modal.getInstance(document.getElementById('duzenleModal'));
+               if(modal) modal.hide();
+           }).kayitSil(document.getElementById("editSatirNo").value);
+        }
+      }
+
+      function doldurSelect(id, l) {
+        var e = document.getElementById(id); e.innerHTML = "";
+        var defaultOpt = document.createElement("option"); defaultOpt.text = "Seçiniz..."; defaultOpt.disabled = true; defaultOpt.selected = true; e.add(defaultOpt);
+        if(l) l.forEach(i => { var o = document.createElement("option"); o.value = i; o.text = i; e.add(o); });
+      }
+    </script>
+  </body>
+</html>

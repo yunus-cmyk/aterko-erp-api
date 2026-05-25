@@ -1,0 +1,37 @@
+# Render Blueprint — Aterko ERP API
+# Render dashboard'da "New > Blueprint" diyerek bu dosyayı seçebilirsin.
+# Ya da manuel "New > Web Service" kurarsan, alttaki ayarları aynısı ile gir.
+
+services:
+  - type: web
+    name: aterko-erp
+    runtime: node
+    plan: free
+    region: frankfurt          # Türkiye'ye en yakın bölge
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      # Puppeteer Chromium'u node_modules'a indirsin (Render destekliyor)
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "false"
+      - key: PUPPETEER_CACHE_DIR
+        value: /opt/render/.cache/puppeteer
+      # Aşağıdaki gizli değerler dashboard'dan elle girilecek (sync: false → blueprint'e gömülmez)
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GMAIL_USER
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false

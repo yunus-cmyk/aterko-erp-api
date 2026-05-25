@@ -1,0 +1,36 @@
+# Bağımlılıklar
+node_modules/
+
+# Ortam değişkenleri (gizli anahtarlar!)
+.env
+.env.*
+!.env.example
+
+# Loglar
+*.log
+npm-debug.log*
+
+# Geçici / üretilen dosyalar
+pdfs/
+*.tmp
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Yedekler
+*.bak
+*.bak2
+
+# Büyük import dosyaları (artık ihtiyacımız yok)
+*.tsv
+*.csv
+PT_Prefabrik_TR.zip
+sablon-prefabrik.pdf
+sablon-prefabrik-extracted/
+aterko_erp_plan.pdf
+satinalma-old-*
+
+# Eski tek seferlik migration dosyaları (isteğe bağlı)
+# migrate-*.js

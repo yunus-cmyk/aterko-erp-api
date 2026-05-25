@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Sipariş — {{Sipariş No}}</title>
+<style>
+  @page { margin: 12mm; size: A4; }
+  body { font-family: 'Inter', Arial, sans-serif; font-size: 11pt; color: #212529; margin: 0; padding: 0; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #ff4c00; padding-bottom: 10px; margin-bottom: 16px; }
+  .header .logo { font-size: 22pt; font-weight: 900; color: #212529; }
+  .header .logo small { display: block; font-size: 9pt; color: #6c757d; font-weight: 400; margin-top: 2px; }
+  .header .meta { text-align: right; }
+  .header .meta .title { font-size: 16pt; font-weight: 700; color: #ff4c00; }
+  .header .meta .no { font-size: 12pt; font-weight: 600; }
+  .header .meta .date { font-size: 9pt; color: #6c757d; margin-top: 2px; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .info-card { background: #f8f9fa; border-left: 3px solid #ff4c00; padding: 8px 12px; border-radius: 4px; }
+  .info-card .label { font-size: 8.5pt; color: #6c757d; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .info-card .value { font-size: 10.5pt; font-weight: 600; color: #212529; margin-top: 2px; }
+
+  .section-title { font-size: 11pt; font-weight: 700; color: #495057; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; margin: 18px 0 8px; }
+
+  table.kalemler { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  table.kalemler th { background: #212529; color: white; padding: 8px 6px; text-align: left; font-weight: 600; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.3px; }
+  table.kalemler td { padding: 6px; border-bottom: 1px solid #e9ecef; vertical-align: top; }
+  table.kalemler tr:nth-child(even) td { background: #fafbfc; }
+  .text-end { text-align: right; }
+  .text-center { text-align: center; }
+
+  .totals { margin-top: 14px; width: 280px; margin-left: auto; }
+  .totals table { width: 100%; font-size: 10pt; }
+  .totals td { padding: 4px 8px; }
+  .totals .total-row td { border-top: 2px solid #212529; font-weight: 700; font-size: 12pt; color: #ff4c00; padding-top: 8px; }
+
+  .note-box { margin-top: 18px; padding: 10px 12px; background: #fff8e1; border-left: 3px solid #ffc107; font-size: 9.5pt; }
+  .note-box .label { font-weight: 600; color: #856404; margin-bottom: 3px; }
+
+  .footer { margin-top: 30px; padding-top: 12px; border-top: 1px solid #dee2e6; font-size: 8.5pt; color: #6c757d; display: flex; justify-content: space-between; }
+  .signature-area { margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; font-size: 9pt; }
+  .signature-box { border-top: 1px solid #212529; padding-top: 6px; text-align: center; color: #6c757d; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    ATERKO
+    <small>Prefabrik & Konteyner Yapı Sistemleri</small>
+  </div>
+  <div class="meta">
+    <div class="title">SATIN ALMA SİPARİŞİ</div>
+    <div class="no">{{Sipariş No}}</div>
+    <div class="date">Tarih: {{Sipariş Tarihi}}</div>
+  </div>
+</div>
+
+<div class="info-grid">
+  <div class="info-card">
+    <div class="label">TEDARİKÇİ</div>
+    <div class="value">{{Tedarikçi Adı}}</div>
+  </div>
+  <div class="info-card">
+    <div class="label">TERMİN TARİHİ</div>
+    <div class="value">{{Termin Tarihi}}</div>
+  </div>
+  <div class="info-card">
+    <div class="label">ÖDEME / VADE</div>
+    <div class="value">{{Ödeme Vadesi}}</div>
+  </div>
+  <div class="info-card">
+    <div class="label">TESLİM NAKLİYE</div>
+    <div class="value">{{Teslim Nakliye}}</div>
+  </div>
+  <div class="info-card" style="grid-column: 1 / -1;">
+    <div class="label">TESLİM ADRESİ</div>
+    <div class="value">{{Teslim Adresi}}</div>
+  </div>
+</div>
+
+<div class="section-title">SİPARİŞ KALEMLERİ</div>
+
+<table class="kalemler">
+  <thead>
+    <tr>
+      <th style="width: 8%;">Sıra</th>
+      <th style="width: 14%;">Kod</th>
+      <th>Ürün / Malzeme</th>
+      <th class="text-center" style="width: 10%;">Miktar</th>
+      <th class="text-center" style="width: 8%;">Birim</th>
+      <th class="text-end" style="width: 14%;">Birim Fiyat</th>
+      <th class="text-end" style="width: 16%;">Tutar</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{KALEM_SATIRLARI}}
+  </tbody>
+</table>
+
+<div class="totals">
+  <table>
+    <tr><td>Ara Toplam:</td><td class="text-end">{{Ara Toplam}}</td></tr>
+    <tr><td>KDV (%{{KDV Oranı}}):</td><td class="text-end">{{KDV Tutarı}}</td></tr>
+    <tr class="total-row"><td>GENEL TOPLAM:</td><td class="text-end">{{Genel Toplam}}</td></tr>
+  </table>
+</div>
+
+{{EGER:Sipariş Notu Var?=Evet:<div class="note-box"><div class="label">SİPARİŞ NOTU</div>{{Sipariş Notu}}</div>}}
+
+<div class="signature-area">
+  <div class="signature-box">Aterko — Hazırlayan<br><strong>{{Hazırlayan}}</strong></div>
+  <div class="signature-box">Tedarikçi — Onay</div>
+</div>
+
+<div class="footer">
+  <div>Aterko Prefabrik & Konteyner Yapı Sistemleri</div>
+  <div>{{Sipariş No}} — Sayfa 1</div>
+</div>
+
+</body>
+</html>
