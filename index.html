@@ -823,6 +823,68 @@
         </div>
     </div>
   </div>
+
+  <!-- Ürün Listesi → Satınalma Talebi Oluşturma Modal'ı -->
+  <div class="modal fade" id="modalTalepOlustur" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header py-3 bg-success text-white">
+          <h5 class="modal-title fw-bold"><i class="bi bi-cart-plus me-2"></i>Satınalma Talebi Oluştur</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4" style="background-color:#f8f9fa;">
+          <div class="alert alert-info py-2 mb-3 small">
+            <i class="bi bi-info-circle me-2"></i>Seçili kalemler için tek bir satınalma talebi oluşturulacak. <strong id="tom-kalem-sayisi">0</strong> kalem seçildi. Stoktaki miktarı görüp her kalem için <strong>talep edilecek miktarı</strong> düzenleyebilirsiniz.
+          </div>
+
+          <!-- Seçili Kalemler -->
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Talep Edilecek Kalemler</div>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead class="bg-dark text-white small">
+                  <tr>
+                    <th style="width:34%;">Ürün</th>
+                    <th class="text-center" style="width:14%;">Stokta Olan</th>
+                    <th class="text-center" style="width:14%;">Listedeki Miktar</th>
+                    <th class="text-center" style="width:18%;">Talep Miktarı <span class="text-warning">*</span></th>
+                    <th class="text-center" style="width:10%;">Birim</th>
+                    <th class="text-center" style="width:10%;">Stok</th>
+                  </tr>
+                </thead>
+                <tbody id="tom-kalem-tablosu"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-bold text-muted mb-1">İstenen Tarih</label>
+              <input type="date" id="tom-istenen-tarih" class="form-control form-control-sm">
+              <div class="small text-muted mt-1">Boş bırakırsanız belirtilmez.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-bold text-muted mb-1">Teslim Yeri (Depo) <span class="text-danger">*</span></label>
+              <select id="tom-teslim-yeri" class="form-select form-select-sm">
+                <option value="">-- Depo seçin --</option>
+              </select>
+            </div>
+            <div class="col-md-12">
+              <label class="form-label small fw-bold text-muted mb-1">Genel Açıklama</label>
+              <textarea id="tom-aciklama" class="form-control form-control-sm" rows="2" placeholder="Talep ile ilgili not, öncelik, hatırlatma vb. (opsiyonel)"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer bg-white">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+          <button type="button" class="btn btn-success fw-bold px-4" onclick="talepOlusturOnayla()">
+            <i class="bi bi-check2-circle me-1"></i>Talebi Oluştur
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <div class="modal fade" id="modalYeniTalep" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered">
           <div class="modal-content border-0 shadow-lg">
@@ -854,8 +916,10 @@
                         <input type="date" id="ntTarih" class="form-control form-control-sm border-info border-opacity-50 shadow-none">
                      </div>
                      <div class="col-md-3">
-                        <label class="small fw-bold text-muted mb-1"><i class="bi bi-geo-alt me-1"></i>Teslim Yeri</label>
-                        <input type="text" id="ntYer" class="form-control form-control-sm border-info border-opacity-50 shadow-none" placeholder="Örn: Merkez Depo Veya Şantiye">
+                        <label class="small fw-bold text-muted mb-1"><i class="bi bi-geo-alt me-1"></i>Teslim Yeri (Depo)</label>
+                        <select id="ntYer" class="form-select form-select-sm border-info border-opacity-50 shadow-none">
+                          <option value="">-- Depo seçin --</option>
+                        </select>
                      </div>
                   </div>
               </div>
@@ -1701,7 +1765,10 @@ function fetchTeslimatUrunleri() {
     showLoading();
     secureFetch(`/teslimat-urunleri/${teslimatId}`).then(res => {
         hideLoading();
-        if(res.ok) renderTeslimatUrunleri(res.data);
+        if(res.ok) {
+            window.teslimatUrunleriCache = res.data;  // Modal'da kullanmak için cache'le
+            renderTeslimatUrunleri(res.data);
+        }
     }).catch(err => { hideLoading(); showToast("Liste yüklenemedi.", "error"); });
 }
 
@@ -1789,28 +1856,120 @@ function urunHepsiToggle(el) {
 }
 
 // Talep oluşturma modali aç — sadece seçili ürün listesi kalemleri için
-async function openTalepOlusturModal() {
+function openTalepOlusturModal() {
     const kalem_idler = [...document.querySelectorAll('.ul-chk:checked')].map(cb => parseInt(cb.value));
     if (kalem_idler.length === 0) return showToast('Kalem seçilmedi.', 'error');
 
     const teslimat_id = parseInt(document.getElementById("aktifTeslimatSecimi").value);
     if (!teslimat_id) return showToast('Teslimat seçilmedi.', 'error');
 
-    // Basit prompt'lar — istersek modal yapabiliriz
-    const istenen_tarih = prompt('İstenen Tarih (YYYY-MM-DD), boş bırakırsanız yok sayılır:', '');
-    if (istenen_tarih === null) return;
-    const teslim_yeri = prompt('Teslim Yeri:', 'Merkez Depo');
-    if (teslim_yeri === null) return;
-    const genel_aciklama = prompt('Genel açıklama (opsiyonel):', '');
-    if (genel_aciklama === null) return;
+    // Cache'den seçili kalemlerin detaylarını al
+    const cache = window.teslimatUrunleriCache || [];
+    const seciliKalemler = cache.filter(k => kalem_idler.includes(k.id));
+
+    // Modal alanlarını sıfırla / varsayılanları doldur
+    document.getElementById('tom-kalem-sayisi').textContent = seciliKalemler.length;
+    document.getElementById('tom-istenen-tarih').value = '';
+    document.getElementById('tom-aciklama').value = '';
+
+    // Kalem tablosunu doldur
+    const tbody = document.getElementById('tom-kalem-tablosu');
+    tbody.innerHTML = seciliKalemler.map(k => {
+        const isOzel = !k.stok_kart_id;
+        const urunAdi = isOzel ? (k.ozel_urun_adi || '-') : (k.stok_adi || '-');
+        const birim = isOzel ? (k.ozel_urun_birim || '') : (k.stok_birim || '');
+        const stokta = isOzel ? '-' : (parseFloat(k.guncel_stok_miktari) || 0);
+        const stokTipi = isOzel ? 'Özel' : (k.stok_tipi || '-');
+        const listeMiktar = parseFloat(k.miktar) || 0;
+        // Varsayılan talep miktarı: stoğa göre eksik kalan (yoksa tüm miktar)
+        const eksik = isOzel ? listeMiktar : Math.max(0, listeMiktar - stokta);
+        const onerilenMiktar = eksik > 0 ? eksik : listeMiktar;
+        // Stok badge rengi
+        const durum = k.hesaplanan_stok_durumu;
+        const durumCls = durum === 'YETERLI' ? 'success' : (durum === 'YETERSIZ' ? 'warning' : (durum === 'YOK' ? 'danger' : 'secondary'));
+        const durumTxt = durum === 'YETERLI' ? '✓ Yeterli' : (durum === 'YETERSIZ' ? 'Yetersiz' : (durum === 'YOK' ? 'Yok' : '-'));
+        const kod = isOzel ? '' : `<small class="text-primary fw-bold">${esc(k.stok_kodu || '')}</small><br>`;
+        return `<tr data-kalem-id="${k.id}">
+            <td>${kod}<span class="${isOzel ? 'text-warning' : ''}">${esc(urunAdi)}</span><br><small class="text-muted">${esc(stokTipi)}</small></td>
+            <td class="text-center fw-bold">${isOzel ? '-' : stokta}</td>
+            <td class="text-center text-muted">${listeMiktar}</td>
+            <td class="text-center">
+                <input type="number" class="form-control form-control-sm tom-miktar text-center fw-bold" min="0.01" step="0.01" value="${onerilenMiktar}">
+            </td>
+            <td class="text-center small">${esc(birim)}</td>
+            <td class="text-center"><span class="badge bg-${durumCls}">${durumTxt}</span></td>
+        </tr>`;
+    }).join('');
+
+    // Depo dropdown'unu doldur (depolarGlobal lazım — yoksa fetch et)
+    tomDepoDropdownDoldur();
+
+    // Modal state'i sakla
+    const modalEl = document.getElementById('modalTalepOlustur');
+    modalEl.dataset.teslimatId = teslimat_id;
+
+    new bootstrap.Modal(modalEl).show();
+}
+
+function tomDepoDropdownDoldur() {
+    const sel = document.getElementById('tom-teslim-yeri');
+    const doldur = () => {
+        sel.innerHTML = '<option value="">-- Depo seçin --</option>' +
+            (depolarGlobal || []).map(d => `<option value="${esc(d.ad)}" ${d.ad === 'Merkez Depo' || d.ad === 'Fabrika' ? 'selected' : ''}>${esc(d.ad)}</option>`).join('');
+    };
+    if (!depolarGlobal || depolarGlobal.length === 0) {
+        secureFetch('/depolar').then(r => { if (r.ok) { depolarGlobal = r.data; doldur(); } });
+    } else {
+        doldur();
+    }
+}
+
+// Satınalma > Yeni Talep modal'ında teslim yeri depo dropdown'unu doldur
+function ntYerDepoDoldur() {
+    const sel = document.getElementById('ntYer');
+    if (!sel) return;
+    const doldur = () => {
+        sel.innerHTML = '<option value="">-- Depo seçin --</option>' +
+            (depolarGlobal || []).map(d => `<option value="${esc(d.ad)}">${esc(d.ad)}</option>`).join('');
+    };
+    if (!depolarGlobal || depolarGlobal.length === 0) {
+        secureFetch('/depolar').then(r => { if (r.ok) { depolarGlobal = r.data; doldur(); } });
+    } else {
+        doldur();
+    }
+}
+
+async function talepOlusturOnayla() {
+    const modalEl = document.getElementById('modalTalepOlustur');
+    const teslimat_id = parseInt(modalEl.dataset.teslimatId);
+
+    // Kalem tablosundan id + miktar'ı topla
+    const satirlar = [...document.querySelectorAll('#tom-kalem-tablosu tr')];
+    const kalemler = satirlar.map(tr => ({
+        id: parseInt(tr.dataset.kalemId),
+        miktar: parseFloat(tr.querySelector('.tom-miktar').value)
+    })).filter(k => k.id && k.miktar > 0);
+    if (kalemler.length === 0) return showToast('En az bir kalem için geçerli miktar girin.', 'error');
+
+    const teslim_yeri = document.getElementById('tom-teslim-yeri').value;
+    if (!teslim_yeri) return showToast('Teslim yeri zorunlu — depo seçin.', 'error');
+
+    const istenen_tarih = document.getElementById('tom-istenen-tarih').value || null;
+    const genel_aciklama = document.getElementById('tom-aciklama').value.trim();
 
     showLoading();
     const r = await secureFetch('/teslimat-urun-talep-olustur', {
         method: 'POST',
-        body: JSON.stringify({ teslimat_id, kalem_idler, istenen_tarih: istenen_tarih || null, teslim_yeri, genel_aciklama })
+        body: JSON.stringify({
+            teslimat_id,
+            kalem_idler: kalemler.map(k => k.id),
+            kalem_miktarlari: Object.fromEntries(kalemler.map(k => [k.id, k.miktar])),
+            istenen_tarih, teslim_yeri, genel_aciklama
+        })
     });
     hideLoading();
     if (r.ok) {
+        bootstrap.Modal.getInstance(modalEl).hide();
         showToast(r.mesaj, 'success');
         fetchTeslimatUrunleri();
     } else {
@@ -2137,6 +2296,8 @@ function openYeniTalepModal(duzenlemeData) {
     document.getElementById("ntPersonel").readOnly = isEdit; // Düzenlemede personel sabit
     document.getElementById("ntProje").value = t.proje_id || '';
     document.getElementById("ntTarih").value = isoTarih(t.istenen_tarih);
+    // Teslim Yeri: depo dropdown'undan seç
+    ntYerDepoDoldur();
     document.getElementById("ntYer").value = t.teslim_yeri || '';
     document.getElementById("ntNot").value = t.genel_aciklama || '';
 
@@ -2174,24 +2335,43 @@ function addNewReqRow(data) {
     if (d.id) rowDiv.dataset.kalemId = d.id;
 
     const isOzel = !d.stok_kart_id && d.ozel_urun_adi;
+    const birimSecenekleri = ['adet','kg','m²','metre','m³','takım','paket','lt','torba','ton'];
+    const seciliBirim = d.ozel_urun_birim || d.stok_birim || '';
+    const birimOptionsHtml = birimSecenekleri.map(b => `<option value="${b}" ${seciliBirim.toLowerCase() === b.toLowerCase() ? 'selected' : ''}>${b}</option>`).join('');
+
     rowDiv.innerHTML = `
-        <div class="row g-2 align-items-center">
-            <div class="col-md-7">
-                <label class="form-label small fw-bold text-muted m-0">Malzeme / Stok Kartı <span class="text-danger">*</span></label>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-bold text-muted m-0">Kategori</label>
+                <select class="form-select form-select-sm nt-kategori" onchange="ntFiltreUygula(this)">
+                    <option value="">Tüm Kategoriler</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-bold text-muted m-0">Malzeme / Stok Kartı <span class="text-danger">*</span> <small class="text-muted ms-1 nt-sayac"></small></label>
                 <select class="form-select form-select-sm nt-u" onchange="checkStockWarning(this)">
-                    <option value="">-- Katalogdan Seçin veya Özel Ürün Yazın --</option>
+                    <option value="">-- Yükleniyor... --</option>
                 </select>
                 <input type="text" class="form-control form-control-sm mt-1 ${isOzel ? '' : 'd-none'} nt-ozel-ad" placeholder="Katalog dışı ürün adı yazın..." value="${esc(d.ozel_urun_adi || '')}">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-1">
                 <label class="form-label small fw-bold text-muted m-0">Miktar <span class="text-danger">*</span></label>
                 <input type="number" class="form-control form-control-sm text-center nt-m" value="${d.miktar || '1.00'}" step="0.01">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-bold text-muted m-0">Birim <span class="text-danger">*</span></label>
+                <!-- Katalog seçilince readonly text gösterilir -->
+                <input type="text" class="form-control form-control-sm text-center nt-birim-text ${isOzel ? 'd-none' : ''}" value="${esc(seciliBirim)}" readonly>
+                <!-- Özel ürün seçilince dropdown -->
+                <select class="form-select form-select-sm nt-birim-sec ${isOzel ? '' : 'd-none'}">
+                    ${birimOptionsHtml}
+                </select>
             </div>
             <div class="col-md-2">
                 <label class="form-label small fw-bold text-muted m-0">Açıklama</label>
                 <input type="text" class="form-control form-control-sm nt-a" placeholder="Not..." value="${esc(d.aciklama || '')}">
             </div>
-            <div class="col-md-1 text-end mt-4">
+            <div class="col-md-1 text-end">
                 <button class="btn btn-sm btn-outline-danger" onclick="document.getElementById('${rowId}').remove()"><i class="bi bi-trash"></i></button>
             </div>
         </div>
@@ -2200,18 +2380,73 @@ function addNewReqRow(data) {
 
     listContainer.appendChild(rowDiv);
 
-    const select = rowDiv.querySelector(".nt-u");
-    secureFetch('/stok-kartlari').then(res => {
-        if(res.ok) {
-            res.data.forEach(s => {
-                select.innerHTML += `<option value="${s.id}" data-stok="${s.guncel_stok_miktari}" data-birim="${s.birim}">[${s.stok_kodu}] ${s.stok_adi} (Mevcut: ${s.guncel_stok_miktari} ${s.birim})</option>`;
-            });
-            select.innerHTML += '<option value="OZEL" class="text-warning">⚠️ KATALOG DIŞI ÖZEL ÜRÜN</option>';
-            // Mevcut değeri seç (düzenleme için)
-            if (d.stok_kart_id) select.value = d.stok_kart_id;
-            else if (isOzel) select.value = 'OZEL';
-        }
-    });
+    // Stok kartlarını cache'le, sonra dropdown'u doldur
+    const fillRow = () => {
+        // Kategori dropdown'unu cache'ten benzersiz kategorilerle doldur (Hammadde varsayılan filtresine göre)
+        ntKategoriDropdownDoldur(rowDiv);
+        // Stok kart listesi
+        ntDropdownDoldur(rowDiv, d);
+    };
+
+    if (stokKatalogListesi.length === 0) {
+        secureFetch('/stok-kartlari').then(res => {
+            if (res.ok) { stokKatalogListesi = res.data; fillRow(); }
+        });
+    } else {
+        fillRow();
+    }
+}
+
+// Talep satırı: Sadece Hammadde, kategoriye göre daraltılır
+function ntFiltreUygula(el) {
+    const row = el.closest('.nt-row');
+    ntDropdownDoldur(row);
+}
+
+function ntKategoriDropdownDoldur(row) {
+    // Sadece Hammadde tipindeki ürünlerin benzersiz kategorileri
+    const kategoriler = [...new Set(
+        stokKatalogListesi
+            .filter(s => s.stok_tipi === 'Hammadde')
+            .map(s => s.kategori).filter(Boolean)
+    )].sort();
+    const sel = row.querySelector('.nt-kategori');
+    const mevcutSecim = sel.value;
+    sel.innerHTML = '<option value="">Tüm Kategoriler</option>' +
+        kategoriler.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+    if (kategoriler.includes(mevcutSecim)) sel.value = mevcutSecim;
+}
+
+function ntDropdownDoldur(row, mevcutData) {
+    const kategori = row.querySelector('.nt-kategori').value;
+
+    // Daima sadece Hammadde
+    let liste = stokKatalogListesi.filter(s => s.stok_tipi === 'Hammadde');
+    if (kategori) liste = liste.filter(s => s.kategori === kategori);
+
+    const sayacEl = row.querySelector('.nt-sayac');
+    const SINIR = 500;
+    const gosterilecek = liste.slice(0, SINIR);
+    if (sayacEl) {
+        sayacEl.textContent = liste.length > SINIR
+            ? `(${liste.length} sonuç, ilk ${SINIR} — kategori seçin)`
+            : `(${liste.length} sonuç)`;
+    }
+
+    const select = row.querySelector('.nt-u');
+    const mevcutSecim = mevcutData?.stok_kart_id || select.value;
+    select.innerHTML = '<option value="">-- Katalogdan Seçin veya Özel Ürün Yazın --</option>' +
+        gosterilecek.map(s => `<option value="${s.id}" data-stok="${s.guncel_stok_miktari}" data-birim="${s.birim}">[${esc(s.stok_kodu)}] ${esc(s.stok_adi)} (Mevcut: ${s.guncel_stok_miktari} ${esc(s.birim)})</option>`).join('') +
+        '<option value="OZEL" class="text-warning">⚠️ KATALOG DIŞI ÖZEL ÜRÜN</option>';
+
+    // Mevcut seçimi koru (düzenleme veya filtreyi değiştirdiğinde)
+    if (mevcutData?.stok_kart_id) {
+        select.value = mevcutData.stok_kart_id;
+    } else if (mevcutData && !mevcutData.stok_kart_id && mevcutData.ozel_urun_adi) {
+        select.value = 'OZEL';
+    } else if (mevcutSecim && [...select.options].some(o => o.value === String(mevcutSecim))) {
+        select.value = mevcutSecim;
+    }
 }
 
 // 5. Katalog Dışı Seçildiğinde Özel Giriş Alanını Açar
@@ -2219,18 +2454,30 @@ function checkStockWarning(selectEl) {
     const rowDiv = selectEl.closest(".nt-row");
     const ozelInput = rowDiv.querySelector(".nt-ozel-ad");
     const uyariDiv = rowDiv.querySelector(".stok-uyari");
+    const birimText = rowDiv.querySelector(".nt-birim-text");
+    const birimSec = rowDiv.querySelector(".nt-birim-sec");
 
     if(selectEl.value === "OZEL") {
+        // Özel ürün: ad input'unu ve birim dropdown'unu göster
         ozelInput.classList.remove("d-none");
+        if (birimText) birimText.classList.add("d-none");
+        if (birimSec) birimSec.classList.remove("d-none");
         uyariDiv.classList.add("d-none");
     } else {
         ozelInput.classList.add("d-none");
         ozelInput.value = "";
-        
-        // Eğer seçilen ürünün stoğu kritikse uyarı ver (Zeki Stok Kontrolü)
+
+        // Seçilen ürünün birimini birim input'una yaz (readonly)
         const selectedOption = selectEl.options[selectEl.selectedIndex];
-        const stok = parseFloat(selectedOption.getAttribute("data-stok") || "0");
         const birim = selectedOption.getAttribute("data-birim") || "";
+        if (birimText) {
+            birimText.value = birim;
+            birimText.classList.remove("d-none");
+        }
+        if (birimSec) birimSec.classList.add("d-none");
+
+        // Eğer seçilen ürünün stoğu kritikse uyarı ver (Zeki Stok Kontrolü)
+        const stok = parseFloat(selectedOption.getAttribute("data-stok") || "0");
         if(stok > 0) {
             uyariDiv.innerHTML = `<i class="bi bi-info-circle-fill"></i> Bilgi: Depoda zaten <b>${formatTR(stok)} ${birim}</b> mevcut.`;
             uyariDiv.className = "stok-uyari text-primary small mt-1 fw-bold";
@@ -2246,7 +2493,7 @@ function saveNewRequest() {
     const isEdit = !!duzenlenenTalepId;
     const proje_id = document.getElementById("ntProje").value;
     const istenen_tarih = document.getElementById("ntTarih").value;
-    const teslim_yeri = document.getElementById("ntYer").value.trim();
+    const teslim_yeri = document.getElementById("ntYer").value;
     const genel_aciklama = document.getElementById("ntNot").value.trim();
 
     if(!proje_id) return showToast("Lütfen ilgili projeyi seçin!", "error");
@@ -2272,7 +2519,8 @@ function saveNewRequest() {
         if(select.value === "OZEL") {
             if(!ozelAd) { eksikVar = true; return; }
             k.ozel_urun_adi = ozelAd;
-            k.ozel_urun_birim = 'ADET';
+            const birimSec = r.querySelector(".nt-birim-sec");
+            k.ozel_urun_birim = (birimSec?.value || 'adet').trim();
         } else {
             k.stok_kart_id = select.value;
         }

@@ -661,10 +661,12 @@ app.post('/api/teslimat-urun-talep-olustur', yetkiKontrol, async (req, res, next
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const { teslimat_id, kalem_idler, istenen_tarih, teslim_yeri, genel_aciklama } = req.body;
+        const { teslimat_id, kalem_idler, kalem_miktarlari, istenen_tarih, teslim_yeri, genel_aciklama } = req.body;
         if (!teslimat_id || !Array.isArray(kalem_idler) || kalem_idler.length === 0) {
             return res.json({ ok: false, hata: 'Kalem seçilmedi.' });
         }
+        // kalem_miktarlari: { kalem_id: miktar } — kullanıcı talep miktarını listedeki değerden farklı isteyebilir
+        const miktarOverride = (kalem_miktarlari && typeof kalem_miktarlari === 'object') ? kalem_miktarlari : {};
 
         // Teslimatın projesini bul
         const tR = await client.query('SELECT proje_id FROM proje_teslimatlari WHERE id=$1', [teslimat_id]);
@@ -692,11 +694,14 @@ app.post('/api/teslimat-urun-talep-olustur', yetkiKontrol, async (req, res, next
             if (luR.rowCount === 0) continue;
             const ku = luR.rows[0];
 
+            // Talep miktarı: override varsa onu, yoksa ürün listesindeki miktarı kullan
+            const talepMiktari = (miktarOverride[tuId] !== undefined && miktarOverride[tuId] > 0)
+                ? Number(miktarOverride[tuId]) : ku.miktar;
             const yeniKalem = await client.query(`
                 INSERT INTO talep_urunleri (talep_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama, durum)
                 VALUES ($1,$2,$3,$4,$5,$6,'ONAY BEKLİYOR') RETURNING id
             `, [yeniTalepId, ku.stok_kart_id, ku.ozel_urun_adi, ku.ozel_urun_birim,
-                ku.miktar, ku.aciklama || `Teslimat #${teslimat_id}`]);
+                talepMiktari, ku.aciklama || `Teslimat #${teslimat_id}`]);
 
             // Ürün listesini bağla
             await client.query(`
