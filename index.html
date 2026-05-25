@@ -785,10 +785,33 @@
 
             <div class="col-md-8">
                 <div class="card shadow-sm border-0">
-                    <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                    <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <span><i class="bi bi-list-columns me-2"></i>Seçili Teslimatın Ürün Listesi</span>
-                        <span class="badge bg-primary" id="seciliTeslimatBadge">Bekleniyor...</span>
+                        <div class="d-flex gap-2 align-items-center">
+                            <span class="badge bg-primary" id="seciliTeslimatBadge">Bekleniyor...</span>
+                            <span id="yayinDurumBadge" class="badge bg-secondary d-none"></span>
+                        </div>
                     </div>
+
+                    <!-- Yayın akışı butonları (durum bazlı) -->
+                    <div id="yayinAkisBar" class="card-body py-2 px-3 border-bottom bg-light d-none">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <button id="btnOnayaGonder" class="btn btn-warning btn-sm fw-bold d-none" onclick="urunListesiOnayaGonder()">
+                                <i class="bi bi-send-check me-1"></i> Onaya Gönder
+                            </button>
+                            <button id="btnYayinOnayla" class="btn btn-success btn-sm fw-bold d-none" onclick="urunListesiOnayla()">
+                                <i class="bi bi-check2-circle me-1"></i> ADMIN Onayla (Yayınla)
+                            </button>
+                            <button id="btnYayinReddet" class="btn btn-outline-danger btn-sm fw-bold d-none" onclick="urunListesiReddet()">
+                                <i class="bi bi-x-circle me-1"></i> Reddet
+                            </button>
+                            <span id="yayinAciklama" class="small text-muted ms-auto"></span>
+                        </div>
+                        <div id="yayinRedNotu" class="alert alert-warning py-2 mt-2 mb-0 small d-none">
+                            <i class="bi bi-exclamation-triangle-fill me-1"></i><strong>ADMIN Red Notu:</strong> <span id="yayinRedNotuText"></span>
+                        </div>
+                    </div>
+
                     <div id="urunListesiAksiyonBar" class="card-body py-2 px-3 border-bottom bg-light d-none">
                         <div class="d-flex align-items-center gap-2 flex-wrap">
                             <span class="small fw-bold text-muted"><span id="urunSeciliSayisi">0</span> kalem seçili</span>
@@ -1481,12 +1504,16 @@ async function secureFetch(endpoint, options = {}) {
     return response.json();
 }
 
+// Aktif kullanıcının yetkisi — yayın akışı vb. yerlerde kullanılır
+let kullaniciYetki = '';
+
 window.addEventListener("DOMContentLoaded", function() {
     const token = localStorage.getItem('aterko_token');
     if (token) {
         document.getElementById("loginOverlay").classList.add("d-none");
         const user = JSON.parse(localStorage.getItem('aterko_user') || '{}');
         document.getElementById("userNameDisplay").textContent = user.adSoyad || "...";
+        kullaniciYetki = user.yetki || '';
         fetchStokKartlariForDropdown();
         setTab('projeler');
     } else {
@@ -1767,9 +1794,114 @@ function fetchTeslimatUrunleri() {
         hideLoading();
         if(res.ok) {
             window.teslimatUrunleriCache = res.data;  // Modal'da kullanmak için cache'le
+            window.teslimatYayinBilgisi = res.yayin || { urun_listesi_yayin_durumu: 'TASLAK' };
+            renderYayinAkisBar();
             renderTeslimatUrunleri(res.data);
         }
     }).catch(err => { hideLoading(); showToast("Liste yüklenemedi.", "error"); });
+}
+
+// Yayın akışı UI'sını duruma göre çiz
+function renderYayinAkisBar() {
+    const y = window.teslimatYayinBilgisi || { urun_listesi_yayin_durumu: 'TASLAK' };
+    const durum = y.urun_listesi_yayin_durumu || 'TASLAK';
+    const isAdmin = (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin');
+
+    const bar = document.getElementById('yayinAkisBar');
+    const badge = document.getElementById('yayinDurumBadge');
+    const btnGonder = document.getElementById('btnOnayaGonder');
+    const btnOnayla = document.getElementById('btnYayinOnayla');
+    const btnReddet = document.getElementById('btnYayinReddet');
+    const aciklama = document.getElementById('yayinAciklama');
+    const redKutu = document.getElementById('yayinRedNotu');
+    const redText = document.getElementById('yayinRedNotuText');
+
+    // Badge
+    const badgeMap = {
+        'TASLAK':        { cls: 'bg-secondary', txt: '📝 TASLAK' },
+        'ONAY BEKLİYOR': { cls: 'bg-warning text-dark', txt: '⏳ ONAY BEKLİYOR' },
+        'YAYINDA':       { cls: 'bg-success', txt: '✅ YAYINDA' }
+    };
+    const b = badgeMap[durum] || badgeMap.TASLAK;
+    badge.className = 'badge ' + b.cls;
+    badge.textContent = b.txt;
+    badge.classList.remove('d-none');
+
+    // Bar'ı göster
+    bar.classList.remove('d-none');
+
+    // Tüm butonları gizle, duruma göre aç
+    btnGonder.classList.add('d-none');
+    btnOnayla.classList.add('d-none');
+    btnReddet.classList.add('d-none');
+    redKutu.classList.add('d-none');
+
+    if (durum === 'TASLAK') {
+        btnGonder.classList.remove('d-none');
+        aciklama.textContent = 'Liste taslak — düzenlenebilir. Hazır olunca "Onaya Gönder" basın.';
+        if (y.yayin_red_notu) {
+            redKutu.classList.remove('d-none');
+            redText.textContent = y.yayin_red_notu;
+        }
+    } else if (durum === 'ONAY BEKLİYOR') {
+        if (isAdmin) {
+            btnOnayla.classList.remove('d-none');
+            btnReddet.classList.remove('d-none');
+            aciklama.textContent = `${y.yayin_onay_gonderen_email || 'Birisi'} onayınızı bekliyor.`;
+        } else {
+            aciklama.textContent = '⏳ ADMIN onayı bekleniyor — liste şu an düzenlemeye kapalı.';
+        }
+    } else if (durum === 'YAYINDA') {
+        const tarih = y.yayinlama_tarihi ? new Date(y.yayinlama_tarihi).toLocaleDateString('tr-TR') : '';
+        aciklama.textContent = `✅ Yayında (${y.yayinlayan_email || ''} • ${tarih}) — Mevcut kalemler kilitli. Ek ürün eklemek için aşağıdan ekleyin (ADMIN onayına gider).`;
+    }
+}
+
+async function urunListesiOnayaGonder() {
+    const teslimat_id = parseInt(document.getElementById("aktifTeslimatSecimi").value);
+    if (!teslimat_id) return showToast('Teslimat seçilmedi.', 'error');
+    if (!confirm('Liste ADMIN onayına gönderilecek. Onaya gönderildikten sonra ADMIN onay/red verene kadar liste düzenlenemez. Devam edilsin mi?')) return;
+    showLoading();
+    const r = await secureFetch('/urun-listesi-onaya-gonder', { method:'POST', body: JSON.stringify({ teslimat_id }) });
+    hideLoading();
+    if (r.ok) { showToast(r.mesaj, 'success'); fetchTeslimatUrunleri(); }
+    else showToast(r.hata, 'error');
+}
+
+async function urunListesiOnayla() {
+    const teslimat_id = parseInt(document.getElementById("aktifTeslimatSecimi").value);
+    if (!confirm('Liste YAYINLANACAK. Sonrasında mevcut kalemler kilitlenir, sadece ek ürünler eklenebilir (yine ADMIN onayıyla). Onaylıyor musunuz?')) return;
+    showLoading();
+    const r = await secureFetch('/urun-listesi-onayla', { method:'POST', body: JSON.stringify({ teslimat_id }) });
+    hideLoading();
+    if (r.ok) { showToast(r.mesaj, 'success'); fetchTeslimatUrunleri(); }
+    else showToast(r.hata, 'error');
+}
+
+async function urunListesiReddet() {
+    const teslimat_id = parseInt(document.getElementById("aktifTeslimatSecimi").value);
+    const red_notu = prompt('Red notu (ekip neyi düzeltsin?):', '');
+    if (red_notu === null) return; // İptal
+    if (!red_notu.trim()) return showToast('Red notu boş bırakılamaz.', 'error');
+    showLoading();
+    const r = await secureFetch('/urun-listesi-reddet', { method:'POST', body: JSON.stringify({ teslimat_id, red_notu }) });
+    hideLoading();
+    if (r.ok) { showToast(r.mesaj, 'success'); fetchTeslimatUrunleri(); }
+    else showToast(r.hata, 'error');
+}
+
+async function ekUrunOnayla(teslimat_urun_id) {
+    if (!confirm('Bu ek ürün onaylanacak ve aktif listeye eklenecek. Devam?')) return;
+    const r = await secureFetch('/urun-listesi-ek-urun-onayla', { method:'POST', body: JSON.stringify({ teslimat_urun_id }) });
+    if (r.ok) { showToast(r.mesaj, 'success'); fetchTeslimatUrunleri(); }
+    else showToast(r.hata, 'error');
+}
+
+async function ekUrunReddet(teslimat_urun_id) {
+    if (!confirm('Bu ek ürün reddedilip silinecek. Devam?')) return;
+    const r = await secureFetch('/urun-listesi-ek-urun-reddet', { method:'POST', body: JSON.stringify({ teslimat_urun_id }) });
+    if (r.ok) { showToast(r.mesaj, 'success'); fetchTeslimatUrunleri(); }
+    else showToast(r.hata, 'error');
 }
 
 function renderTeslimatUrunleri(liste) {
@@ -1816,6 +1948,23 @@ function renderTeslimatUrunleri(liste) {
                </a>`
             : '<span class="text-muted small">—</span>';
 
+        // EK ÜRÜN durumu badge'i + ADMIN onay butonları
+        const isAdmin = (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin');
+        let ekUrunBadge = '';
+        let ekUrunAksiyon = '';
+        if (u.is_ek_urun) {
+            if (u.ek_urun_onay_durumu === 'ONAYLI') {
+                ekUrunBadge = '<span class="badge bg-info ms-1" title="Yayın sonrası eklenmiş, onaylı">+ Ek</span>';
+            } else {
+                ekUrunBadge = '<span class="badge bg-warning text-dark ms-1" title="Ek ürün, ADMIN onayı bekliyor">⏳ Ek (Onay Bekliyor)</span>';
+                if (isAdmin) {
+                    ekUrunAksiyon = `
+                        <button class="btn btn-sm btn-success py-0 ms-1" onclick="ekUrunOnayla(${u.id})" title="Ek ürünü onayla"><i class="bi bi-check"></i></button>
+                        <button class="btn btn-sm btn-outline-danger py-0" onclick="ekUrunReddet(${u.id})" title="Ek ürünü reddet (sil)"><i class="bi bi-x"></i></button>`;
+                }
+            }
+        }
+
         // Talebe bağlıysa silme butonu disabled
         const silBtn = baglıTalep
             ? `<button class="btn btn-sm btn-outline-secondary py-0" disabled title="Talebe bağlı — önce talebi iptal et"><i class="bi bi-trash"></i></button>`
@@ -1828,7 +1977,7 @@ function renderTeslimatUrunleri(liste) {
 
         html += `<tr>
             <td>${chk}</td>
-            <td>${tipBadge}</td>
+            <td>${tipBadge}${ekUrunBadge}</td>
             <td>${stokKodu}</td>
             <td class="fw-bold text-dark">${urunAdi}<br><span class="small text-muted">${esc(u.aciklama || '')}</span></td>
             <td class="text-end fw-bold text-primary">${formatTR(u.miktar)}</td>
@@ -1836,7 +1985,7 @@ function renderTeslimatUrunleri(liste) {
             <td class="text-center small">${amac}</td>
             <td class="text-center">${stokBadge}</td>
             <td>${talepBaglantisi}</td>
-            <td class="text-center">${silBtn}</td>
+            <td class="text-center">${silBtn}${ekUrunAksiyon}</td>
         </tr>`;
     });
     tbody.innerHTML = html;

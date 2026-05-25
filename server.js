@@ -535,10 +535,133 @@ app.post('/api/teslimat-durum-guncelle', yetkiKontrol, async (req, res, next) =>
     } catch (error) { next(error); }
 });
 
+// ============================================================================
+// FAZ B-1: ÜRÜN LİSTESİ YAYIN AKIŞI
+// Durumlar: TASLAK → ONAY BEKLİYOR → YAYINDA (veya TASLAK'a geri red ile)
+// ============================================================================
+
+// Listeyi ADMIN onayına gönder (Proje ekibi basar)
+app.post('/api/urun-listesi-onaya-gonder', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { teslimat_id } = req.body;
+        if (!teslimat_id) return res.json({ ok: false, hata: 'Teslimat seçilmedi.' });
+
+        // En az 1 ürün olmalı
+        const c = await pool.query('SELECT COUNT(*)::int as n FROM teslimat_urunleri WHERE teslimat_id=$1', [teslimat_id]);
+        if (c.rows[0].n === 0) return res.json({ ok: false, hata: 'Boş liste onaya gönderilemez. Önce ürün ekleyin.' });
+
+        // Sadece TASLAK durumundan gönderilebilir
+        const t = await pool.query('SELECT urun_listesi_yayin_durumu FROM proje_teslimatlari WHERE id=$1', [teslimat_id]);
+        if (t.rowCount === 0) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+        const mevcut = t.rows[0].urun_listesi_yayin_durumu || 'TASLAK';
+        if (mevcut !== 'TASLAK') return res.json({ ok: false, hata: `Liste şu an "${mevcut}" durumunda — onaya gönderilemez.` });
+
+        await pool.query(`
+            UPDATE proje_teslimatlari
+            SET urun_listesi_yayin_durumu='ONAY BEKLİYOR',
+                yayin_onay_gonderen_email=$1,
+                yayin_onay_gonderme_tarihi=NOW(),
+                yayin_red_notu=NULL
+            WHERE id=$2
+        `, [req.user.email, teslimat_id]);
+
+        res.json({ ok: true, mesaj: 'Liste ADMIN onayına gönderildi.' });
+    } catch (error) { next(error); }
+});
+
+// ADMIN onayla (yayınla)
+app.post('/api/urun-listesi-onayla', yetkiKontrol, async (req, res, next) => {
+    try {
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+            return res.json({ ok: false, hata: 'Sadece ADMIN onaylayabilir.' });
+        }
+        const { teslimat_id } = req.body;
+        const t = await pool.query('SELECT urun_listesi_yayin_durumu FROM proje_teslimatlari WHERE id=$1', [teslimat_id]);
+        if (t.rowCount === 0) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+        const mevcut = t.rows[0].urun_listesi_yayin_durumu || 'TASLAK';
+        if (mevcut !== 'ONAY BEKLİYOR') return res.json({ ok: false, hata: `Sadece "ONAY BEKLİYOR" durumundaki listeler onaylanabilir (şu an: ${mevcut}).` });
+
+        await pool.query(`
+            UPDATE proje_teslimatlari
+            SET urun_listesi_yayin_durumu='YAYINDA',
+                yayinlayan_email=$1,
+                yayinlama_tarihi=NOW()
+            WHERE id=$2
+        `, [req.user.email, teslimat_id]);
+
+        res.json({ ok: true, mesaj: 'Liste YAYINLANDI — üretim, sevkiyat ve montaj modüllerinde görünür.' });
+    } catch (error) { next(error); }
+});
+
+// ADMIN reddet (TASLAK'a geri al + not)
+app.post('/api/urun-listesi-reddet', yetkiKontrol, async (req, res, next) => {
+    try {
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+            return res.json({ ok: false, hata: 'Sadece ADMIN reddedebilir.' });
+        }
+        const { teslimat_id, red_notu } = req.body;
+        if (!red_notu || !red_notu.trim()) return res.json({ ok: false, hata: 'Red notu zorunlu — ekip neyi düzelteceğini bilmeli.' });
+
+        const t = await pool.query('SELECT urun_listesi_yayin_durumu FROM proje_teslimatlari WHERE id=$1', [teslimat_id]);
+        if (t.rowCount === 0) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+        const mevcut = t.rows[0].urun_listesi_yayin_durumu || 'TASLAK';
+        if (mevcut !== 'ONAY BEKLİYOR') return res.json({ ok: false, hata: `Sadece "ONAY BEKLİYOR" durumundaki listeler reddedilebilir (şu an: ${mevcut}).` });
+
+        await pool.query(`
+            UPDATE proje_teslimatlari
+            SET urun_listesi_yayin_durumu='TASLAK',
+                yayin_red_notu=$1
+            WHERE id=$2
+        `, [red_notu.trim(), teslimat_id]);
+
+        res.json({ ok: true, mesaj: 'Liste reddedildi, taslak durumuna alındı.' });
+    } catch (error) { next(error); }
+});
+
+// Ek ürünü ADMIN onayla (yayınlı listede sonradan eklenen)
+app.post('/api/urun-listesi-ek-urun-onayla', yetkiKontrol, async (req, res, next) => {
+    try {
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+            return res.json({ ok: false, hata: 'Sadece ADMIN onaylayabilir.' });
+        }
+        const { teslimat_urun_id } = req.body;
+        const u = await pool.query('SELECT is_ek_urun, ek_urun_onay_durumu FROM teslimat_urunleri WHERE id=$1', [teslimat_urun_id]);
+        if (u.rowCount === 0) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
+        if (!u.rows[0].is_ek_urun) return res.json({ ok: false, hata: 'Bu ürün ek ürün değil — onay gerekmez.' });
+
+        await pool.query(`UPDATE teslimat_urunleri SET ek_urun_onay_durumu='ONAYLI' WHERE id=$1`, [teslimat_urun_id]);
+        res.json({ ok: true, mesaj: 'Ek ürün onaylandı.' });
+    } catch (error) { next(error); }
+});
+
+// Ek ürünü reddet (sil)
+app.post('/api/urun-listesi-ek-urun-reddet', yetkiKontrol, async (req, res, next) => {
+    try {
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+            return res.json({ ok: false, hata: 'Sadece ADMIN reddedebilir.' });
+        }
+        const { teslimat_urun_id } = req.body;
+        const u = await pool.query('SELECT is_ek_urun FROM teslimat_urunleri WHERE id=$1', [teslimat_urun_id]);
+        if (u.rowCount === 0) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
+        if (!u.rows[0].is_ek_urun) return res.json({ ok: false, hata: 'Bu ürün ek ürün değil.' });
+
+        await pool.query(`DELETE FROM teslimat_urunleri WHERE id=$1`, [teslimat_urun_id]);
+        res.json({ ok: true, mesaj: 'Ek ürün reddedildi (silindi).' });
+    } catch (error) { next(error); }
+});
+
 // Teslimata ait ürün listesini getir (Stok Miktarı Eklendi)
 app.get('/api/teslimat-urunleri/:teslimatId', yetkiKontrol, async (req, res, next) => {
     try {
         const { teslimatId } = req.params;
+
+        // Teslimatın yayın durumunu da getir (frontend kilidini uygulayabilsin diye)
+        const yR = await pool.query(`
+            SELECT urun_listesi_yayin_durumu, yayin_onay_gonderen_email, yayin_onay_gonderme_tarihi,
+                   yayinlayan_email, yayinlama_tarihi, yayin_red_notu
+            FROM proje_teslimatlari WHERE id=$1`, [teslimatId]);
+        const yayinBilgisi = yR.rows[0] || { urun_listesi_yayin_durumu: 'TASLAK' };
+
         // Ürün listesi + stok bilgisi + bağlı talep (varsa)
         const query = `
             SELECT tu.*,
@@ -568,7 +691,7 @@ app.get('/api/teslimat-urunleri/:teslimatId', yetkiKontrol, async (req, res, nex
             }
             return { ...r, hesaplanan_stok_durumu: stokDurumu };
         });
-        res.json({ ok: true, data });
+        res.json({ ok: true, data, yayin: yayinBilgisi });
     } catch (error) { next(error); }
 });
 
@@ -642,16 +765,25 @@ app.post('/api/teslimat-urun-ekle', yetkiKontrol, async (req, res, next) => {
             }
         }
 
+        // YAYIN AKIŞI: liste yayındaysa eklenenler "ek ürün" olarak ONAY BEKLİYOR durumunda kayda girer
+        const yR = await pool.query('SELECT urun_listesi_yayin_durumu FROM proje_teslimatlari WHERE id=$1', [teslimat_id]);
+        const yayinDurumu = (yR.rows[0]?.urun_listesi_yayin_durumu) || 'TASLAK';
+        const isEkUrun = yayinDurumu === 'YAYINDA';
+        const ekUrunOnay = isEkUrun ? 'ONAY BEKLİYOR' : null;
+        if (yayinDurumu === 'ONAY BEKLİYOR') {
+            return res.json({ ok: false, hata: 'Liste şu an onay bekliyor — yeni ürün eklenemez. ADMIN onay/red verene kadar bekleyin.' });
+        }
+
         const ekleyen = req.user.adSoyad;
         const r = await pool.query(
             `INSERT INTO teslimat_urunleri
              (teslimat_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama,
-              ekleyen_kullanici, kullanim_amaci, durum)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'TASLAK') RETURNING id`,
+              ekleyen_kullanici, kullanim_amaci, durum, is_ek_urun, ek_urun_onay_durumu)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'TASLAK', $9, $10) RETURNING id`,
             [teslimat_id, stok_kart_id || null, ozel_urun_adi, ozel_urun_birim,
-             miktar, aciklama, ekleyen, kullanim_amaci || 'URETIM']
+             miktar, aciklama, ekleyen, kullanim_amaci || 'URETIM', isEkUrun, ekUrunOnay]
         );
-        res.json({ ok: true, id: r.rows[0].id });
+        res.json({ ok: true, id: r.rows[0].id, ek_urun: isEkUrun });
     } catch (error) { next(error); }
 });
 
@@ -725,10 +857,22 @@ app.delete('/api/teslimat-urun-sil/:id', yetkiKontrol, async (req, res, next) =>
     try {
         const { id } = req.params;
         // Talebe bağlıysa engelle
-        const r = await pool.query('SELECT talep_urun_id FROM teslimat_urunleri WHERE id=$1', [id]);
+        const r = await pool.query(`
+            SELECT tu.talep_urun_id, tu.is_ek_urun, tu.ek_urun_onay_durumu,
+                   pt.urun_listesi_yayin_durumu as yayin
+            FROM teslimat_urunleri tu
+            JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+            WHERE tu.id=$1`, [id]);
         if (r.rowCount === 0) return res.json({ ok: false, hata: 'Kalem bulunamadı.' });
-        if (r.rows[0].talep_urun_id) {
-            return res.json({ ok: false, hata: 'Bu kalem bir satınalma talebine bağlı. Önce talebi iptal/sil.' });
+        const k = r.rows[0];
+        if (k.talep_urun_id) return res.json({ ok: false, hata: 'Bu kalem bir satınalma talebine bağlı. Önce talebi iptal/sil.' });
+
+        // YAYIN KİLİDİ: yayında ise sadece onaylanmamış ek ürünler silinebilir
+        if (k.yayin === 'YAYINDA' && !(k.is_ek_urun && k.ek_urun_onay_durumu !== 'ONAYLI')) {
+            return res.json({ ok: false, hata: 'Yayında olan listeden kalem silinemez. (Sadece onaylanmamış ek ürünler silinebilir.)' });
+        }
+        if (k.yayin === 'ONAY BEKLİYOR') {
+            return res.json({ ok: false, hata: 'Liste onay bekliyor — silme yapılamaz.' });
         }
         await pool.query('DELETE FROM teslimat_urunleri WHERE id = $1', [id]);
         res.json({ ok: true });
@@ -739,6 +883,25 @@ app.delete('/api/teslimat-urun-sil/:id', yetkiKontrol, async (req, res, next) =>
 app.post('/api/teslimat-urun-guncelle', yetkiKontrol, async (req, res, next) => {
     try {
         const { id, miktar, aciklama, kullanim_amaci } = req.body;
+
+        // YAYIN KİLİDİ: Yayında ise miktar değiştirilemez (sadece açıklama/amaç olabilir).
+        // Onay bekleyen ek ürünler de henüz onaylanmadığı için düzenlenebilir.
+        const r = await pool.query(`
+            SELECT tu.is_ek_urun, tu.ek_urun_onay_durumu, pt.urun_listesi_yayin_durumu as yayin
+            FROM teslimat_urunleri tu JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+            WHERE tu.id=$1`, [id]);
+        if (r.rowCount === 0) return res.json({ ok: false, hata: 'Kalem bulunamadı.' });
+        const k = r.rows[0];
+
+        if (k.yayin === 'YAYINDA' && !(k.is_ek_urun && k.ek_urun_onay_durumu !== 'ONAYLI')) {
+            // Yayında bir kalem → sadece aciklama güncellenebilir (miktar/amaç kilitli)
+            await pool.query(`UPDATE teslimat_urunleri SET aciklama=$1 WHERE id=$2`, [aciklama || null, id]);
+            return res.json({ ok: true, mesaj: 'Sadece açıklama güncellendi (yayında miktar değiştirilemez).' });
+        }
+        if (k.yayin === 'ONAY BEKLİYOR') {
+            return res.json({ ok: false, hata: 'Liste onay bekliyor — düzenleme yapılamaz.' });
+        }
+
         await pool.query(`
             UPDATE teslimat_urunleri SET miktar=$1, aciklama=$2, kullanim_amaci=$3
             WHERE id=$4
