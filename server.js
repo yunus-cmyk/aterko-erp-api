@@ -478,8 +478,9 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                         konteyner_ebadi=$7, konteyner_miktari=$8,
                         dis_duvar_kesiti=$9, ic_duvar_kesiti=$10,
                         buyukluk_m2=$11, sevkiyat_baslangici=$12,
-                        bina_yeri=$13, kdvsiz_tutar=$14, ek_veriler=$15
-                    WHERE id=$16
+                        bina_yeri=$13, kdvsiz_tutar=$14, ek_veriler=$15,
+                        montaj_gerekli=$16
+                    WHERE id=$17
                 `, [
                     t.bina_adi, t.bina_turu, t.bina_tipi,
                     t.kat_yuksekligi || null, t.kat_adedi || null, parseInt(t.bina_adedi) || null,
@@ -487,7 +488,7 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                     t.dis_duvar_kesiti || null, t.ic_duvar_kesiti || null,
                     parseFloat(t.buyukluk_m2) || null, sevkiyatBaslangici,
                     t.bina_yeri || null, parseFloat(t.kdvsiz_tutar) || 0,
-                    JSON.stringify(birlesik), t.id
+                    JSON.stringify(birlesik), !!t.montaj_gerekli, t.id
                 ]);
                 gonderilenIds.add(t.id);
             } else {
@@ -496,8 +497,8 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                     INSERT INTO proje_teslimatlari
                     (proje_id, bina_adi, bina_turu, bina_tipi, kat_yuksekligi, kat_adedi, bina_adedi,
                      konteyner_ebadi, konteyner_miktari, dis_duvar_kesiti, ic_duvar_kesiti,
-                     buyukluk_m2, sevkiyat_baslangici, bina_yeri, kdvsiz_tutar, ek_veriler)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                     buyukluk_m2, sevkiyat_baslangici, bina_yeri, kdvsiz_tutar, ek_veriler, montaj_gerekli)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
                 `, [
                     proje.id, t.bina_adi, t.bina_turu, t.bina_tipi,
                     t.kat_yuksekligi || null, t.kat_adedi || null, parseInt(t.bina_adedi) || null,
@@ -505,7 +506,7 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                     t.dis_duvar_kesiti || null, t.ic_duvar_kesiti || null,
                     parseFloat(t.buyukluk_m2) || null, sevkiyatBaslangici,
                     t.bina_yeri || null, parseFloat(t.kdvsiz_tutar) || 0,
-                    JSON.stringify(ekVeriler)
+                    JSON.stringify(ekVeriler), !!t.montaj_gerekli
                 ]);
             }
         }
@@ -2704,6 +2705,280 @@ app.post('/api/uretim-satinalma-talebi-olustur', yetkiKontrol, async (req, res, 
             mesaj: `${olusturulanTalepler.length} satınalma talebi oluşturuldu: ${ozet}`,
             talepler: olusturulanTalepler
         });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// ============================================================================
+// FAZ B-3: SEVKİYAT MODÜLÜ
+// ============================================================================
+
+// Sevke hazır kalemleri listele (sevkeHazir > sevk_edilen olanlar)
+app.get('/api/sevkiyat-urunleri', yetkiKontrol, async (req, res, next) => {
+    try {
+        const q = `
+            SELECT tu.id, tu.teslimat_id, tu.miktar as gerekli_miktar,
+                   tu.uretilen_miktar, tu.stoktan_ayrilan_miktar, tu.sevk_edilen_miktar,
+                   tu.is_ek_urun, tu.ek_urun_onay_durumu,
+                   tu.stok_kart_id, tu.ozel_urun_adi, tu.ozel_urun_birim,
+                   sk.stok_kodu, sk.stok_adi, sk.birim as stok_birim,
+                   pt.bina_adi, pt.bina_turu, pt.bina_tipi, pt.buyukluk_m2,
+                   p.proje_kodu, p.musteri_adi, p.proje_adi, p.id as proje_id
+            FROM teslimat_urunleri tu
+            JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+            JOIN projeler p ON pt.proje_id=p.id
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+            WHERE pt.urun_listesi_yayin_durumu='YAYINDA'
+            AND (tu.is_ek_urun = FALSE OR tu.ek_urun_onay_durumu='ONAYLI')
+            ORDER BY p.id DESC, pt.id ASC, tu.sira ASC, tu.id ASC
+        `;
+        const r = await pool.query(q);
+        const data = r.rows.map(u => {
+            const gerekli = parseFloat(u.gerekli_miktar) || 0;
+            const uretilen = parseFloat(u.uretilen_miktar) || 0;
+            const stoktan = parseFloat(u.stoktan_ayrilan_miktar) || 0;
+            const sevk = parseFloat(u.sevk_edilen_miktar) || 0;
+            const sevke_hazir = Math.max(0, uretilen + stoktan - sevk);
+            const sevk_edilebilir = sevke_hazir; // sevkedilebilir hazır olandır
+            let durum = 'BEKLEMEDE';
+            if (sevk >= gerekli) durum = 'TUM_SEVK';
+            else if (sevk > 0) durum = 'KISMI_SEVK';
+            else if (sevke_hazir > 0) durum = 'SEVKE_HAZIR';
+            return { ...u, sevke_hazir, sevk_edilebilir, kalem_durumu: durum };
+        });
+        res.json({ ok: true, data });
+    } catch (e) { next(e); }
+});
+
+// Yeni sevkiyat belgesi oluştur (cross-teslimat)
+// Body: { plaka, sofor_adi, sofor_telefon, irsaliye_no, sevk_tarihi, notlar,
+//         kalemler: [{teslimat_urun_id, miktar}] }
+app.post('/api/sevkiyat-belgesi-olustur', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { plaka, sofor_adi, sofor_telefon, irsaliye_no, sevk_tarihi, notlar, kalemler } = req.body;
+        if (!Array.isArray(kalemler) || kalemler.length === 0) {
+            return res.json({ ok: false, hata: 'Kalem seçilmedi.' });
+        }
+        if (!plaka || !plaka.trim()) return res.json({ ok: false, hata: 'Plaka zorunlu.' });
+
+        // Sevkiyat no üret
+        const c = await client.query("SELECT COUNT(*)::int as n FROM sevkiyat_belgeleri");
+        const sevkiyat_no = `SVK-${10001 + c.rows[0].n}`;
+
+        const sb = await client.query(`
+            INSERT INTO sevkiyat_belgeleri (sevkiyat_no, plaka, sofor_adi, sofor_telefon,
+                irsaliye_no, sevk_tarihi, durum, olusturan_email, notlar)
+            VALUES ($1, $2, $3, $4, $5, $6, 'HAZIRLANIYOR', $7, $8) RETURNING id
+        `, [sevkiyat_no, plaka.trim(), sofor_adi || null, sofor_telefon || null,
+            irsaliye_no || null, sevk_tarihi || null, req.user.email, notlar || null]);
+        const sbId = sb.rows[0].id;
+
+        // Her kalem için: sevk edilebilir kontrolü + kayıt + sayaç güncelle
+        let kayit = 0, hatalar = [];
+        for (const k of kalemler) {
+            const miktar = parseFloat(k.miktar);
+            if (!(miktar > 0)) continue;
+
+            const tu = await client.query(`
+                SELECT tu.uretilen_miktar, tu.stoktan_ayrilan_miktar, tu.sevk_edilen_miktar,
+                       tu.miktar as gerekli, sk.stok_adi, tu.ozel_urun_adi
+                FROM teslimat_urunleri tu
+                LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+                WHERE tu.id=$1
+            `, [k.teslimat_urun_id]);
+            if (tu.rowCount === 0) { hatalar.push(`Kalem #${k.teslimat_urun_id} yok`); continue; }
+            const row = tu.rows[0];
+            const sevkeHazir = (parseFloat(row.uretilen_miktar)||0) + (parseFloat(row.stoktan_ayrilan_miktar)||0) - (parseFloat(row.sevk_edilen_miktar)||0);
+            const ad = row.stok_adi || row.ozel_urun_adi || `Kalem #${k.teslimat_urun_id}`;
+            if (miktar > sevkeHazir + 0.0001) {
+                hatalar.push(`${ad}: sevke hazır ${sevkeHazir}, ${miktar} istendi`);
+                continue;
+            }
+
+            await client.query(`
+                INSERT INTO sevkiyat_kalemleri (sevkiyat_id, teslimat_urun_id, miktar)
+                VALUES ($1, $2, $3)
+            `, [sbId, k.teslimat_urun_id, miktar]);
+
+            await client.query(`
+                UPDATE teslimat_urunleri SET sevk_edilen_miktar = COALESCE(sevk_edilen_miktar,0) + $1
+                WHERE id=$2
+            `, [miktar, k.teslimat_urun_id]);
+            kayit++;
+        }
+
+        if (kayit === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ ok: false, hata: 'Hiçbir kalem işlenemedi: ' + hatalar.join(' | ') });
+        }
+
+        await client.query('COMMIT');
+        res.json({
+            ok: true, sevkiyat_no, sevkiyat_id: sbId,
+            mesaj: `${sevkiyat_no} oluşturuldu, ${kayit} kalem sevk edildi.` + (hatalar.length ? ` Uyarı: ${hatalar.length}` : ''),
+            hatalar
+        });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Sevkiyat belgeleri listesi
+app.get('/api/sevkiyat-belgeleri', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT sb.*,
+                   COUNT(sk.id)::int as kalem_sayisi,
+                   COALESCE(SUM(sk.miktar),0) as toplam_miktar
+            FROM sevkiyat_belgeleri sb
+            LEFT JOIN sevkiyat_kalemleri sk ON sb.id=sk.sevkiyat_id
+            GROUP BY sb.id
+            ORDER BY sb.id DESC
+        `);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Sevkiyat belgesi detay
+app.get('/api/sevkiyat-belgesi-detay/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const baslik = await pool.query('SELECT * FROM sevkiyat_belgeleri WHERE id=$1', [id]);
+        if (baslik.rowCount === 0) return res.json({ ok: false, hata: 'Sevkiyat belgesi bulunamadı.' });
+        const kalemler = await pool.query(`
+            SELECT sk.*,
+                   tu.ozel_urun_adi, tu.ozel_urun_birim,
+                   skk.stok_kodu, skk.stok_adi, skk.birim as stok_birim,
+                   pt.bina_adi, pt.bina_turu, pt.montaj_gerekli,
+                   p.proje_kodu, p.musteri_adi
+            FROM sevkiyat_kalemleri sk
+            JOIN teslimat_urunleri tu ON sk.teslimat_urun_id=tu.id
+            JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+            JOIN projeler p ON pt.proje_id=p.id
+            LEFT JOIN stok_kartlari skk ON tu.stok_kart_id=skk.id
+            WHERE sk.sevkiyat_id=$1
+            ORDER BY sk.id
+        `, [id]);
+        res.json({ ok: true, baslik: baslik.rows[0], kalemler: kalemler.rows });
+    } catch (e) { next(e); }
+});
+
+// Sevkiyat durumunu güncelle (HAZIRLANIYOR → YOLDA → TESLIM)
+// TESLIM'e geçilirken: teslimat.montaj_gerekli=false ise sevk edilen miktarlar
+// doğrudan teslim_edilen_miktar'a yazılır (montaj ekranı atlanır).
+app.post('/api/sevkiyat-durum-guncelle', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { sevkiyat_id, yeni_durum } = req.body;
+        const izin = ['HAZIRLANIYOR','YOLDA','TESLIM'];
+        if (!izin.includes(yeni_durum)) return res.json({ ok: false, hata: 'Geçersiz durum.' });
+
+        await client.query(`UPDATE sevkiyat_belgeleri SET durum=$1 WHERE id=$2`, [yeni_durum, sevkiyat_id]);
+
+        let montajsizSayisi = 0, montajliSayisi = 0;
+        if (yeni_durum === 'TESLIM') {
+            // Sevkiyat kalemlerini al
+            const kalemler = await client.query(`
+                SELECT sk.teslimat_urun_id, sk.miktar, pt.montaj_gerekli, pt.id as teslimat_id
+                FROM sevkiyat_kalemleri sk
+                JOIN teslimat_urunleri tu ON sk.teslimat_urun_id=tu.id
+                JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+                WHERE sk.sevkiyat_id=$1
+            `, [sevkiyat_id]);
+
+            for (const k of kalemler.rows) {
+                if (k.montaj_gerekli === false) {
+                    // Montajsız teslimat → direkt teslim_edilen_miktar'a yaz
+                    await client.query(`
+                        UPDATE teslimat_urunleri
+                        SET teslim_edilen_miktar = COALESCE(teslim_edilen_miktar,0) + $1
+                        WHERE id=$2
+                    `, [k.miktar, k.teslimat_urun_id]);
+                    // Montaj hareketi log'una da yaz (izlenebilirlik için MUSTERIYE_TESLIM)
+                    await client.query(`
+                        INSERT INTO montaj_hareketleri (teslimat_urun_id, hareket_tipi, miktar, kullanici_email, notlar)
+                        VALUES ($1, 'MUSTERIYE_TESLIM', $2, $3, $4)
+                    `, [k.teslimat_urun_id, k.miktar, req.user.email,
+                        `Otomatik: montajsız teslimat — sevkiyat #${sevkiyat_id} teslim onayı`]);
+                    montajsizSayisi++;
+                } else {
+                    // Montajlı teslimat → saha_teslim_miktar'a yaz (Montaj modülünde işlenecek)
+                    await client.query(`
+                        UPDATE teslimat_urunleri
+                        SET saha_teslim_miktar = COALESCE(saha_teslim_miktar,0) + $1
+                        WHERE id=$2
+                    `, [k.miktar, k.teslimat_urun_id]);
+                    await client.query(`
+                        INSERT INTO montaj_hareketleri (teslimat_urun_id, hareket_tipi, miktar, kullanici_email, notlar)
+                        VALUES ($1, 'SAHA_TESLIM', $2, $3, $4)
+                    `, [k.teslimat_urun_id, k.miktar, req.user.email,
+                        `Otomatik: sevkiyat #${sevkiyat_id} teslim onayı → sahaya teslim`]);
+                    montajliSayisi++;
+                }
+            }
+        }
+
+        await client.query('COMMIT');
+        let mesaj = `Durum güncellendi: ${yeni_durum}.`;
+        if (yeni_durum === 'TESLIM') {
+            if (montajsizSayisi > 0) mesaj += ` ${montajsizSayisi} kalem doğrudan müşteriye teslim edildi.`;
+            if (montajliSayisi > 0) mesaj += ` ${montajliSayisi} kalem montaj sürecine aktarıldı.`;
+        }
+        res.json({ ok: true, mesaj });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Sevkiyat iptal et — sevk_edilen_miktar geri çekilir
+app.post('/api/sevkiyat-iptal/:id', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { id } = req.params;
+        const sb = await client.query('SELECT durum FROM sevkiyat_belgeleri WHERE id=$1', [id]);
+        if (sb.rowCount === 0) return res.json({ ok: false, hata: 'Sevkiyat bulunamadı.' });
+        if (sb.rows[0].durum === 'IPTAL') return res.json({ ok: false, hata: 'Zaten iptal edilmiş.' });
+        if (sb.rows[0].durum === 'TESLIM') return res.json({ ok: false, hata: 'Teslim edilen sevkiyat iptal edilemez.' });
+
+        // Kalemleri geri çek — montaj_gerekli'ye göre teslim_edilen veya saha_teslim de geri çek
+        const eskiDurum = sb.rows[0].durum;
+        const kalemler = await client.query(`
+            SELECT sk.teslimat_urun_id, sk.miktar, pt.montaj_gerekli
+            FROM sevkiyat_kalemleri sk
+            JOIN teslimat_urunleri tu ON sk.teslimat_urun_id=tu.id
+            JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+            WHERE sk.sevkiyat_id=$1
+        `, [id]);
+        for (const k of kalemler.rows) {
+            await client.query(`
+                UPDATE teslimat_urunleri
+                SET sevk_edilen_miktar = GREATEST(0, COALESCE(sevk_edilen_miktar,0) - $1)
+                WHERE id=$2
+            `, [k.miktar, k.teslimat_urun_id]);
+
+            // Eğer "TESLIM" olduktan sonra iptal ediyorsak — teslim sayaçlarını da geri çek
+            if (eskiDurum === 'TESLIM') {
+                if (k.montaj_gerekli === false) {
+                    await client.query(`
+                        UPDATE teslimat_urunleri
+                        SET teslim_edilen_miktar = GREATEST(0, COALESCE(teslim_edilen_miktar,0) - $1)
+                        WHERE id=$2
+                    `, [k.miktar, k.teslimat_urun_id]);
+                } else {
+                    await client.query(`
+                        UPDATE teslimat_urunleri
+                        SET saha_teslim_miktar = GREATEST(0, COALESCE(saha_teslim_miktar,0) - $1)
+                        WHERE id=$2
+                    `, [k.miktar, k.teslimat_urun_id]);
+                }
+            }
+        }
+        await client.query(`UPDATE sevkiyat_belgeleri SET durum='IPTAL' WHERE id=$1`, [id]);
+
+        await client.query('COMMIT');
+        res.json({ ok: true, mesaj: 'Sevkiyat iptal edildi, miktarlar geri çekildi.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
 });

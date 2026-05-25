@@ -688,11 +688,204 @@
     </div>
 
     <div id="sevkiyatArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-truck me-2 text-primary"></i>Sevkiyat Planı</h5>
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-truck me-2 text-primary"></i>Sevkiyat Modülü</h5>
+            <ul class="nav nav-pills nav-fill" id="sevkiyatAltSekme" style="background:#f0f0f0; border-radius:6px;">
+                <li class="nav-item"><a class="nav-link active px-4 py-1" onclick="switchSevkiyatSekme('hazir')" id="svkTab-hazir">
+                    <i class="bi bi-truck-flatbed me-1"></i>Sevkiyata Hazır
+                </a></li>
+                <li class="nav-item"><a class="nav-link px-4 py-1" onclick="switchSevkiyatSekme('belgeler')" id="svkTab-belgeler">
+                    <i class="bi bi-file-earmark-text me-1"></i>Sevkiyat Belgeleri
+                </a></li>
+                <li class="nav-item"><a class="nav-link px-4 py-1" onclick="switchSevkiyatSekme('plan')" id="svkTab-plan">
+                    <i class="bi bi-calendar-range me-1"></i>Plan / Takvim
+                </a></li>
+            </ul>
         </div>
-        <div id="sevkiyatSummaryBar" class="sp-summary-bar"></div>
-        <div id="sevkiyatContent"></div>
+
+        <!-- Sevkiyata Hazır sekmesi -->
+        <div id="sevkiyatHazirArea">
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-body py-2 px-3 d-flex gap-2 flex-wrap align-items-center">
+                    <input type="text" id="svkAramaInput" class="form-control form-control-sm" placeholder="🔍 Ürün / proje / bina ile filtrele..." style="max-width:380px;" oninput="renderSevkiyatHazir()">
+                    <select id="svkDurumFiltre" class="form-select form-select-sm" style="max-width:200px;" onchange="renderSevkiyatHazir()">
+                        <option value="">Tüm durumlar</option>
+                        <option value="SEVKE_HAZIR">Sevke hazır (hiç sevk yok)</option>
+                        <option value="KISMI_SEVK">Kısmi sevk</option>
+                        <option value="TUM_SEVK">Tüm sevk tamamlandı</option>
+                        <option value="BEKLEMEDE">Henüz hazır değil</option>
+                    </select>
+                    <span class="small text-muted ms-auto" id="svkHazirSayac"></span>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="fw-bold"><i class="bi bi-box-seam me-2"></i>Sevke Hazır Kalemler</span>
+                    <div class="d-flex gap-2 align-items-center">
+                        <span class="small text-muted"><span id="svkSecilenSayisi">0</span> kalem seçili</span>
+                        <button class="btn btn-primary btn-sm fw-bold" onclick="openSevkiyatBelgesiModal()">
+                            <i class="bi bi-file-earmark-plus me-1"></i> Sevkiyat Belgesi Oluştur
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
+                        <thead class="bg-light">
+                            <tr>
+                                <th width="36"><input type="checkbox" id="svkHepsiChk" onchange="svkHepsiToggle(this)"></th>
+                                <th>Proje / Bina</th>
+                                <th>Ürün</th>
+                                <th class="text-end">Gerekli</th>
+                                <th class="text-end">Sevke Hazır</th>
+                                <th class="text-end">Sevk Edilen</th>
+                                <th class="text-end">Kalan Sevk</th>
+                                <th>Birim</th>
+                                <th class="text-center">Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody id="svkHazirBody">
+                            <tr><td colspan="9" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sevkiyat Belgeleri sekmesi -->
+        <div id="sevkiyatBelgelerArea" class="d-none">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white fw-bold"><i class="bi bi-file-earmark-text me-2"></i>Sevkiyat Belgeleri</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Sevk No</th>
+                                <th>Plaka</th>
+                                <th>Şoför</th>
+                                <th>İrsaliye No</th>
+                                <th class="text-center">Tarih</th>
+                                <th class="text-center">Kalem</th>
+                                <th class="text-end">Toplam</th>
+                                <th class="text-center">Durum</th>
+                                <th class="text-center">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="svkBelgelerBody">
+                            <tr><td colspan="9" class="text-center text-muted p-4">Henüz sevkiyat belgesi oluşturulmadı.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Plan / Takvim sekmesi (eski Sevkiyat Planı) -->
+        <div id="sevkiyatPlanArea" class="d-none">
+            <div id="sevkiyatSummaryBar" class="sp-summary-bar"></div>
+            <div id="sevkiyatContent"></div>
+        </div>
+    </div>
+
+    <!-- Sevkiyat Belgesi Oluştur Modal -->
+    <div class="modal fade" id="modalSevkiyatBelgesi" tabindex="-1" data-bs-backdrop="static">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-primary text-white">
+            <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-plus me-2"></i>Yeni Sevkiyat Belgesi</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" style="background:#f8f9fa;">
+            <div class="row g-3 mb-3">
+              <div class="col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Plaka <span class="text-danger">*</span></label>
+                <input type="text" id="sbPlaka" class="form-control form-control-sm" placeholder="34 ABC 123">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small fw-bold text-muted mb-1">Şoför Adı</label>
+                <input type="text" id="sbSofor" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small fw-bold text-muted mb-1">Şoför Telefon</label>
+                <input type="text" id="sbSoforTel" class="form-control form-control-sm" placeholder="05XX...">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small fw-bold text-muted mb-1">İrsaliye No</label>
+                <input type="text" id="sbIrsaliye" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label small fw-bold text-muted mb-1">Sevk Tarihi</label>
+                <input type="date" id="sbTarih" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-12">
+                <label class="form-label small fw-bold text-muted mb-1">Notlar</label>
+                <textarea id="sbNotlar" class="form-control form-control-sm" rows="2" placeholder="Sevkiyat ile ilgili not..."></textarea>
+              </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+              <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Yüklenecek Kalemler — sevk edilecek miktarı düzenleyebilirsin</div>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="bg-dark text-white small">
+                    <tr>
+                      <th>Proje / Bina</th>
+                      <th>Ürün</th>
+                      <th class="text-end">Sevke Hazır</th>
+                      <th class="text-center" style="width:140px;">Sevk Miktarı *</th>
+                      <th>Birim</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sbKalemTablosu"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer bg-white">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-primary fw-bold px-4" onclick="sevkiyatBelgesiOnayla()">
+              <i class="bi bi-check2-circle me-1"></i>Sevkiyat Belgesini Oluştur
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sevkiyat Belgesi Detay Modal -->
+    <div class="modal fade" id="modalSevkiyatDetay" tabindex="-1" data-bs-backdrop="static">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-text me-2"></i>Sevkiyat Belgesi — <span id="svdTitle"></span></h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" style="background:#f8f9fa;">
+            <div id="svdBaslik" class="mb-3"></div>
+            <div class="card border-0 shadow-sm">
+              <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Kalemler</div>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="bg-dark text-white small">
+                    <tr>
+                      <th>Proje / Bina</th>
+                      <th>Ürün</th>
+                      <th class="text-end">Sevk Miktarı</th>
+                      <th>Birim</th>
+                    </tr>
+                  </thead>
+                  <tbody id="svdKalemler"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer bg-white">
+            <button type="button" id="svdIptalBtn" class="btn btn-outline-danger me-auto d-none" onclick="sevkiyatIptal()">
+              <i class="bi bi-x-circle me-1"></i>Sevkiyatı İptal Et
+            </button>
+            <div id="svdDurumBtns" class="me-auto"></div>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ÜRETİM MODÜLÜ -->
@@ -752,13 +945,14 @@
                                 <th class="text-end">Stoktan</th>
                                 <th class="text-end">İş Emrinde</th>
                                 <th class="text-end">Sevke Hazır</th>
+                                <th class="text-end">Sevk Edilen</th>
                                 <th class="text-end">Kalan</th>
                                 <th>Birim</th>
                                 <th class="text-center">Durum</th>
                             </tr>
                         </thead>
                         <tbody id="urtPlanBody">
-                            <tr><td colspan="11" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
+                            <tr><td colspan="12" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1855,7 +2049,7 @@ function setTab(tab) {
         fetchProjeler();
     } else if (tab === 'sevkiyat') {
         document.getElementById("sevkiyatArea").classList.remove("d-none");
-        fetchSevkiyatPlani();
+        switchSevkiyatSekme('hazir');
     } else if (tab === 'ozet') {
         document.getElementById("ozetArea").classList.remove("d-none");
         fetchOzet();
@@ -2515,7 +2709,7 @@ function renderUretimPlan() {
 
     const tbody = document.getElementById('urtPlanBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
         return;
     }
 
@@ -2540,6 +2734,7 @@ function renderUretimPlan() {
             <td class="text-end">${formatTR(u.stoktan_ayrilan_miktar)}</td>
             <td class="text-end text-info">${formatTR(u.is_emrinde_bekleyen_miktar)}</td>
             <td class="text-end fw-bold ${sevkeHazir >= parseFloat(u.gerekli_miktar) ? 'text-success' : ''}">${formatTR(sevkeHazir)}</td>
+            <td class="text-end">${formatTR(u.sevk_edilen_miktar)}</td>
             <td class="text-end ${kalan > 0 ? 'text-danger fw-bold' : 'text-muted'}">${formatTR(kalan)}</td>
             <td>${birim}</td>
             <td class="text-center"><span class="badge bg-${cls}">${txt}</span></td>
@@ -2868,6 +3063,282 @@ async function urtSatinalmaOnayla() {
     } else {
         showToast(r.hata, 'error');
     }
+}
+
+// ============================================================================
+// SEVKİYAT MODÜLÜ (B-3)
+// ============================================================================
+let sevkiyatHazirCache = [];
+let sevkiyatBelgelerCache = [];
+
+function switchSevkiyatSekme(sekme) {
+    document.querySelectorAll('#sevkiyatAltSekme .nav-link').forEach(a => a.classList.remove('active'));
+    document.getElementById('svkTab-' + sekme).classList.add('active');
+    document.getElementById('sevkiyatHazirArea').classList.toggle('d-none', sekme !== 'hazir');
+    document.getElementById('sevkiyatBelgelerArea').classList.toggle('d-none', sekme !== 'belgeler');
+    document.getElementById('sevkiyatPlanArea').classList.toggle('d-none', sekme !== 'plan');
+    if (sekme === 'hazir') fetchSevkiyatHazir();
+    else if (sekme === 'belgeler') fetchSevkiyatBelgeleri();
+    else if (sekme === 'plan') fetchSevkiyatPlani();
+}
+
+function fetchSevkiyatHazir() {
+    showLoading();
+    secureFetch('/sevkiyat-urunleri').then(r => {
+        hideLoading();
+        if (r.ok) { sevkiyatHazirCache = r.data; renderSevkiyatHazir(); }
+    });
+}
+
+function renderSevkiyatHazir() {
+    const arama = (document.getElementById('svkAramaInput')?.value || '').toLowerCase().trim();
+    const durumF = document.getElementById('svkDurumFiltre')?.value || '';
+
+    let liste = sevkiyatHazirCache;
+    if (durumF) liste = liste.filter(u => u.kalem_durumu === durumF);
+    if (arama) liste = liste.filter(u => {
+        const txt = `${u.stok_kodu||''} ${u.stok_adi||''} ${u.ozel_urun_adi||''} ${u.proje_kodu||''} ${u.musteri_adi||''} ${u.bina_adi||''}`.toLowerCase();
+        return txt.includes(arama);
+    });
+
+    document.getElementById('svkHazirSayac').textContent = `${liste.length} kalem`;
+
+    const tbody = document.getElementById('svkHazirBody');
+    if (liste.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = liste.map(u => {
+        const isOzel = !u.stok_kart_id;
+        const urunAdi = isOzel ? esc(u.ozel_urun_adi || '-') : esc(u.stok_adi || '-');
+        const kod = isOzel ? '<span class="text-warning small">Özel</span>' : `<span class="text-primary small fw-bold">${esc(u.stok_kodu)}</span>`;
+        const birim = isOzel ? esc(u.ozel_urun_birim || '') : esc(u.stok_birim || '');
+        const projeBina = `<small class="text-muted">${esc(u.proje_kodu)} / ${esc(u.musteri_adi || '')}</small><br><strong>${esc(u.bina_adi)}</strong>`;
+        const hazir = parseFloat(u.sevke_hazir) || 0;
+        const sevk = parseFloat(u.sevk_edilen_miktar) || 0;
+        const gerekli = parseFloat(u.gerekli_miktar) || 0;
+        const kalanSevk = Math.max(0, gerekli - sevk);
+        const durumMap = {
+            'BEKLEMEDE': ['secondary','Bekliyor'],
+            'SEVKE_HAZIR': ['info','Sevke Hazır'],
+            'KISMI_SEVK': ['warning','Kısmi Sevk'],
+            'TUM_SEVK': ['success','Tüm Sevk']
+        };
+        const [cls, txt] = durumMap[u.kalem_durumu] || ['secondary','-'];
+        // Sevke hazır kalemi yoksa seçilemez
+        const chkDisabled = hazir <= 0 ? 'disabled title="Henüz sevke hazır kalem yok"' : '';
+        return `<tr>
+            <td><input type="checkbox" class="svk-chk form-check-input" value="${u.id}" data-hazir="${hazir}" data-ad="${esc(urunAdi)}" data-birim="${esc(birim)}" data-proje="${esc(u.proje_kodu + ' / ' + (u.musteri_adi||''))}" data-bina="${esc(u.bina_adi)}" onchange="svkSeciliGuncelle()" ${chkDisabled}></td>
+            <td>${projeBina}</td>
+            <td>${kod}<br><span class="fw-bold">${urunAdi}</span></td>
+            <td class="text-end">${formatTR(gerekli)}</td>
+            <td class="text-end fw-bold ${hazir > 0 ? 'text-success' : 'text-muted'}">${formatTR(hazir)}</td>
+            <td class="text-end">${formatTR(sevk)}</td>
+            <td class="text-end ${kalanSevk > 0 ? 'text-danger' : 'text-muted'}">${formatTR(kalanSevk)}</td>
+            <td>${birim}</td>
+            <td class="text-center"><span class="badge bg-${cls}">${txt}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function svkHepsiToggle(chk) {
+    document.querySelectorAll('.svk-chk:not(:disabled)').forEach(c => c.checked = chk.checked);
+    svkSeciliGuncelle();
+}
+
+function svkSeciliGuncelle() {
+    document.getElementById('svkSecilenSayisi').textContent = document.querySelectorAll('.svk-chk:checked').length;
+}
+
+function openSevkiyatBelgesiModal() {
+    const secili = [...document.querySelectorAll('.svk-chk:checked')];
+    if (secili.length === 0) return showToast('Kalem seçilmedi.', 'error');
+
+    document.getElementById('sbPlaka').value = '';
+    document.getElementById('sbSofor').value = '';
+    document.getElementById('sbSoforTel').value = '';
+    document.getElementById('sbIrsaliye').value = '';
+    document.getElementById('sbTarih').value = new Date().toISOString().substring(0,10);
+    document.getElementById('sbNotlar').value = '';
+
+    const tbody = document.getElementById('sbKalemTablosu');
+    tbody.innerHTML = secili.map(c => {
+        const hazir = parseFloat(c.dataset.hazir) || 0;
+        return `<tr data-kalem-id="${c.value}">
+            <td><small class="text-muted">${esc(c.dataset.proje)}</small><br><strong>${esc(c.dataset.bina)}</strong></td>
+            <td class="fw-bold">${esc(c.dataset.ad)}</td>
+            <td class="text-end fw-bold text-success">${formatTR(hazir)}</td>
+            <td class="text-center">
+                <input type="number" class="form-control form-control-sm text-center sb-miktar fw-bold" step="0.01" min="0.01" max="${hazir}" value="${hazir}">
+            </td>
+            <td>${esc(c.dataset.birim)}</td>
+        </tr>`;
+    }).join('');
+
+    new bootstrap.Modal(document.getElementById('modalSevkiyatBelgesi')).show();
+}
+
+async function sevkiyatBelgesiOnayla() {
+    const plaka = document.getElementById('sbPlaka').value.trim();
+    if (!plaka) return showToast('Plaka zorunlu.', 'error');
+
+    const kalemler = [...document.querySelectorAll('#sbKalemTablosu tr')].map(tr => ({
+        teslimat_urun_id: parseInt(tr.dataset.kalemId),
+        miktar: parseFloat(tr.querySelector('.sb-miktar').value) || 0
+    })).filter(k => k.teslimat_urun_id && k.miktar > 0);
+    if (kalemler.length === 0) return showToast('Hiçbir kalem için geçerli miktar girilmedi.', 'error');
+
+    const body = {
+        plaka,
+        sofor_adi:     document.getElementById('sbSofor').value.trim(),
+        sofor_telefon: document.getElementById('sbSoforTel').value.trim(),
+        irsaliye_no:   document.getElementById('sbIrsaliye').value.trim(),
+        sevk_tarihi:   document.getElementById('sbTarih').value || null,
+        notlar:        document.getElementById('sbNotlar').value.trim(),
+        kalemler
+    };
+
+    showLoading();
+    const r = await secureFetch('/sevkiyat-belgesi-olustur', { method:'POST', body: JSON.stringify(body) });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalSevkiyatBelgesi')).hide();
+        showToast(r.mesaj, 'success');
+        if (r.hatalar?.length) setTimeout(()=>showToast(r.hatalar.join('\n'), 'error'), 600);
+        fetchSevkiyatHazir();
+    } else showToast(r.hata, 'error');
+}
+
+function fetchSevkiyatBelgeleri() {
+    showLoading();
+    secureFetch('/sevkiyat-belgeleri').then(r => {
+        hideLoading();
+        if (r.ok) { sevkiyatBelgelerCache = r.data; renderSevkiyatBelgeleri(); }
+    });
+}
+
+function renderSevkiyatBelgeleri() {
+    const tbody = document.getElementById('svkBelgelerBody');
+    if (sevkiyatBelgelerCache.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Henüz sevkiyat belgesi yok.</td></tr>';
+        return;
+    }
+    const durumMap = {
+        'HAZIRLANIYOR': ['secondary','📦 Hazırlanıyor'],
+        'YOLDA':        ['warning','🚚 Yolda'],
+        'TESLIM':       ['success','✅ Teslim'],
+        'IPTAL':        ['danger','❌ İptal']
+    };
+    tbody.innerHTML = sevkiyatBelgelerCache.map(s => {
+        const [cls, txt] = durumMap[s.durum] || ['secondary','-'];
+        const tarih = s.sevk_tarihi ? new Date(s.sevk_tarihi).toLocaleDateString('tr-TR') : '-';
+        return `<tr>
+            <td class="fw-bold text-primary">${esc(s.sevkiyat_no)}</td>
+            <td class="fw-bold">${esc(s.plaka || '-')}</td>
+            <td>${esc(s.sofor_adi || '-')}</td>
+            <td>${esc(s.irsaliye_no || '-')}</td>
+            <td class="text-center small">${tarih}</td>
+            <td class="text-center"><span class="badge bg-info">${s.kalem_sayisi}</span></td>
+            <td class="text-end">${formatTR(s.toplam_miktar)}</td>
+            <td class="text-center"><span class="badge bg-${cls}">${txt}</span></td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-dark py-0" onclick="openSevkiyatDetay(${s.id})"><i class="bi bi-eye"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+let aktifSevkiyatId = null;
+async function openSevkiyatDetay(id) {
+    aktifSevkiyatId = id;
+    showLoading();
+    const r = await secureFetch('/sevkiyat-belgesi-detay/' + id);
+    hideLoading();
+    if (!r.ok) return showToast(r.hata, 'error');
+
+    const b = r.baslik;
+    document.getElementById('svdTitle').textContent = b.sevkiyat_no;
+    const durumMap = {
+        'HAZIRLANIYOR': ['secondary','Hazırlanıyor'], 'YOLDA':['warning','Yolda'],
+        'TESLIM':['success','Teslim'], 'IPTAL':['danger','İptal']
+    };
+    const [cls, txt] = durumMap[b.durum] || ['secondary','-'];
+    document.getElementById('svdBaslik').innerHTML = `
+        <div class="row g-2">
+            <div class="col-md-3"><small class="text-muted">Plaka</small><div class="fw-bold">${esc(b.plaka || '-')}</div></div>
+            <div class="col-md-3"><small class="text-muted">Şoför</small><div>${esc(b.sofor_adi || '-')}${b.sofor_telefon ? ' • ' + esc(b.sofor_telefon) : ''}</div></div>
+            <div class="col-md-2"><small class="text-muted">İrsaliye</small><div>${esc(b.irsaliye_no || '-')}</div></div>
+            <div class="col-md-2"><small class="text-muted">Sevk Tarihi</small><div>${b.sevk_tarihi ? new Date(b.sevk_tarihi).toLocaleDateString('tr-TR') : '-'}</div></div>
+            <div class="col-md-2"><small class="text-muted">Durum</small><div><span class="badge bg-${cls}">${txt}</span></div></div>
+            ${b.notlar ? `<div class="col-md-12 mt-2"><div class="alert alert-light py-2 mb-0 small"><strong>Not:</strong> ${esc(b.notlar)}</div></div>` : ''}
+        </div>`;
+
+    const tbody = document.getElementById('svdKalemler');
+    tbody.innerHTML = r.kalemler.map(k => {
+        const isOzel = !k.stok_kodu;
+        const ad = isOzel ? esc(k.ozel_urun_adi || '-') : esc(k.stok_adi || '-');
+        const kod = isOzel ? '<span class="text-warning small">Özel</span>' : `<small class="text-primary fw-bold">${esc(k.stok_kodu)}</small>`;
+        const birim = isOzel ? esc(k.ozel_urun_birim || '') : esc(k.stok_birim || '');
+        const montajBadge = k.montaj_gerekli
+            ? '<span class="badge bg-warning text-dark ms-1" title="Sahaya gidip montaj yapılacak">🔧 Montajlı</span>'
+            : '<span class="badge bg-success ms-1" title="Müşteriye direkt teslim">✅ Montajsız</span>';
+        return `<tr>
+            <td><small class="text-muted">${esc(k.proje_kodu)} / ${esc(k.musteri_adi||'')}</small><br><strong>${esc(k.bina_adi)}</strong>${montajBadge}</td>
+            <td>${kod}<br><span class="fw-bold">${ad}</span></td>
+            <td class="text-end fw-bold">${formatTR(k.miktar)}</td>
+            <td>${birim}</td>
+        </tr>`;
+    }).join('');
+
+    // Durum geçiş butonları
+    const btnAlani = document.getElementById('svdDurumBtns');
+    btnAlani.innerHTML = '';
+    if (b.durum === 'HAZIRLANIYOR') {
+        btnAlani.innerHTML = `<button class="btn btn-warning btn-sm fw-bold" onclick="sevkiyatDurumGuncelle('YOLDA')">🚚 Yola Çıkar</button>`;
+    } else if (b.durum === 'YOLDA') {
+        btnAlani.innerHTML = `<button class="btn btn-success btn-sm fw-bold" onclick="sevkiyatDurumGuncelle('TESLIM')">✅ Teslim Edildi</button>`;
+        // Bilgi notu: montaj_gerekli durumuna göre ne olacağını söyle
+        const montajli = r.kalemler.filter(k => k.montaj_gerekli).length;
+        const montajsiz = r.kalemler.filter(k => !k.montaj_gerekli).length;
+        const bilgi = [];
+        if (montajsiz > 0) bilgi.push(`${montajsiz} kalem ✅ direkt müşteriye teslim`);
+        if (montajli > 0) bilgi.push(`${montajli} kalem 🔧 montaj sürecine aktarılır`);
+        if (bilgi.length > 0) {
+            btnAlani.innerHTML += `<div class="small text-muted mt-1">Teslim onayında: ${bilgi.join(', ')}.</div>`;
+        }
+    }
+    document.getElementById('svdIptalBtn').classList.toggle('d-none', !(b.durum === 'HAZIRLANIYOR' || b.durum === 'YOLDA'));
+
+    new bootstrap.Modal(document.getElementById('modalSevkiyatDetay')).show();
+}
+
+async function sevkiyatDurumGuncelle(yeni_durum) {
+    if (!aktifSevkiyatId) return;
+    showLoading();
+    const r = await secureFetch('/sevkiyat-durum-guncelle', {
+        method:'POST', body: JSON.stringify({ sevkiyat_id: aktifSevkiyatId, yeni_durum })
+    });
+    hideLoading();
+    if (r.ok) {
+        showToast(r.mesaj, 'success');
+        bootstrap.Modal.getInstance(document.getElementById('modalSevkiyatDetay')).hide();
+        fetchSevkiyatBelgeleri();
+    } else showToast(r.hata, 'error');
+}
+
+async function sevkiyatIptal() {
+    if (!aktifSevkiyatId) return;
+    if (!confirm('Sevkiyat iptal edilecek ve sevk edilen miktarlar geri çekilecek. Devam?')) return;
+    showLoading();
+    const r = await secureFetch('/sevkiyat-iptal/' + aktifSevkiyatId, { method:'POST' });
+    hideLoading();
+    if (r.ok) {
+        showToast(r.mesaj, 'success');
+        bootstrap.Modal.getInstance(document.getElementById('modalSevkiyatDetay')).hide();
+        fetchSevkiyatBelgeleri();
+        fetchSevkiyatHazir();
+    } else showToast(r.hata, 'error');
 }
 
 function showLoading() { document.getElementById("topLoadingBar").style.display = "block"; }
@@ -5958,7 +6429,8 @@ function renderProjeDetay(proje, teslimatlar) {
                   <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Durum</span>${getDurumBadge(t.durum)}</div></div>
 
                   <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Büyüklük</span><span class="fw-bold text-dark">${t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '-'}</span></div></div>
-                  <div class="col-md-6"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Kurulum / Bina Yeri</span><span class="fw-bold text-dark">${esc(t.bina_yeri || '-')}</span></div></div>
+                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Kurulum / Bina Yeri</span><span class="fw-bold text-dark">${esc(t.bina_yeri || '-')}</span></div></div>
+                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold"><i class="bi bi-wrench-adjustable me-1"></i>Sahada Montaj</span>${t.montaj_gerekli ? '<span class="badge bg-warning text-dark">🔧 Gerekli (Montajlı)</span>' : '<span class="badge bg-success">✅ Gerekmez (Direkt teslim)</span>'}</div></div>
                   <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold"><i class="bi bi-calendar-week me-1"></i>Sevkiyat ${sevkiyatlar.length > 1 ? '(' + sevkiyatlar.length + ' tarih)' : ''}</span>${sevkiyatHTML}</div></div>
                 </div>
 
@@ -6124,6 +6596,16 @@ function addTeslimatRow(data) {
                 <input type="number" class="form-control form-control-sm text-end fw-bold t-tutar" step="0.01" value="${esc(d.kdvsiz_tutar || '')}">
             </div>
 
+            <div class="col-md-12">
+                <div class="form-check form-switch">
+                    <input class="form-check-input t-montaj-gerekli" type="checkbox" id="mg_${Math.random().toString(36).substring(2,8)}" ${d.montaj_gerekli ? 'checked' : ''}>
+                    <label class="form-check-label small fw-bold text-muted" for="${''}">
+                        <i class="bi bi-wrench-adjustable me-1"></i>Montaj gerekli — sahada montaj/uygulama yapılacak
+                        <span class="text-muted">(işaretsiz: sevkiyat = müşteriye teslim, montaj ekranı atlanır)</span>
+                    </label>
+                </div>
+            </div>
+
             <div class="col-12 t-sevkiyat-coklu-container">
                 <label class="small fw-bold text-muted mb-1"><i class="bi bi-calendar-week me-1"></i>Sevkiyat Tarihleri</label>
                 <div class="t-sevkiyat-tarihleri border rounded p-2 bg-light"></div>
@@ -6271,6 +6753,7 @@ function saveProjeGelis() {
             buyukluk_m2: parseFloat(row.querySelector(".t-m2").value) || null,
             sevkiyat_baslangici: ilkTarih,
             bina_yeri: row.querySelector(".t-yer").value.trim(),
+            montaj_gerekli: row.querySelector(".t-montaj-gerekli")?.checked || false,
             kdvsiz_tutar: parseFloat(row.querySelector(".t-tutar").value) || 0,
             sevkiyatlar: sevkiyatlar
         };
