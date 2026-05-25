@@ -752,7 +752,9 @@ app.get('/api/teslimat-secenekleri', yetkiKontrol, async (req, res, next) => {
             ? `COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL'`
             : `pt.durum = 'PROJE'`;
         const query = `
-            SELECT pt.id as teslimat_id, pt.bina_adi, pt.bina_turu, pt.proje_id, pt.durum,
+            SELECT pt.id as teslimat_id, pt.bina_adi, pt.bina_turu, pt.bina_tipi,
+                   pt.buyukluk_m2, pt.bina_adedi, pt.konteyner_miktari,
+                   pt.proje_id, pt.durum,
                    p.proje_kodu, p.musteri_adi, p.proje_adi
             FROM proje_teslimatlari pt
             JOIN projeler p ON pt.proje_id = p.id
@@ -760,6 +762,7 @@ app.get('/api/teslimat-secenekleri', yetkiKontrol, async (req, res, next) => {
             ORDER BY p.id DESC, pt.id ASC
         `;
         const result = await pool.query(query);
+        res.set('Cache-Control', 'no-store');
         res.json({ ok: true, data: result.rows });
     } catch (error) { next(error); }
 });

@@ -1493,7 +1493,8 @@ function setTab(tab) {
         fetchTedarikciler();
     } else if (tab === 'urun-listesi') {
         document.getElementById("urunListesiArea").classList.remove("d-none");
-        fetchTeslimatUrunleri();
+        fetchTeslimatSecenekleri();   // Proje + teslimat dropdown'larını doldur
+        fetchStokKartlariForDropdown(); // Ürün ekleme dropdown'unu da hazırla
     } else if (tab === 'satinalma') {
         document.getElementById("satinalmaArea").classList.remove("d-none");
         switchSatinalmaSubTab('talepler');
@@ -1591,7 +1592,8 @@ function toggleUrunTipi() {
 window.ulTeslimatlarCache = [];
 
 function fetchTeslimatSecenekleri() {
-    secureFetch('/teslimat-secenekleri').then(res => {
+    // Cache-busting query param ekle → eski browser cache'ini bypass et
+    secureFetch('/teslimat-secenekleri?_t=' + Date.now()).then(res => {
         if(!res.ok) return;
         window.ulTeslimatlarCache = res.data || [];
 
@@ -1617,7 +1619,8 @@ function fetchTeslimatSecenekleri() {
         } else {
             projeSelect.innerHTML = `<option value="">-- Proje seçin (${projeler.length} proje, ${window.ulTeslimatlarCache.length} teslimat) --</option>`;
             projeler.forEach(p => {
-                const etiket = `${p.proje_kodu} — ${p.musteri_adi || ''} (${p.proje_adi}) [${p.teslimat_sayisi} bina]`;
+                // Eski sistemin "Proje No ve Adı (gizli)" formatı: "kod / müşteri - proje_adı"
+                const etiket = `${p.proje_kodu} / ${p.musteri_adi || ''} - ${p.proje_adi}  [${p.teslimat_sayisi} bina]`;
                 projeSelect.innerHTML += `<option value="${p.id}">${esc(etiket)}</option>`;
             });
         }
@@ -1641,9 +1644,35 @@ function ulProjeDegisti() {
     }
 
     const teslimatlar = window.ulTeslimatlarCache.filter(t => String(t.proje_id) === String(projeId));
-    teslimatSelect.innerHTML = `<option value="">-- Teslimat (bina) seçin (${teslimatlar.length} adet) --</option>`;
+
+    // AYNI bina'yı tek satıra indir: bina_adi + bina_turu + bina_tipi imzasıyla grupla.
+    // Adet hesabı:
+    //   - Aynı imzadan kaç FARKLI teslimat satırı var (kardeş kayıtlar)
+    //   - + Her teslimat kaydının kendi içindeki üretim miktarı (bina_adedi veya konteyner_miktari)
+    const binaMap = new Map();
     teslimatlar.forEach(t => {
-        teslimatSelect.innerHTML += `<option value="${t.teslimat_id}">${esc(t.bina_adi)} — ${esc(t.bina_turu || '')}</option>`;
+        const imza = `${t.bina_adi || ''}|${t.bina_turu || ''}|${t.bina_tipi || ''}|${t.buyukluk_m2 || ''}`;
+        const icAdet = Number(t.bina_adedi || t.konteyner_miktari || 1) || 1;
+        if (!binaMap.has(imza)) {
+            binaMap.set(imza, { ...t, adet: icAdet });
+        } else {
+            binaMap.get(imza).adet += icAdet;
+        }
+    });
+    const benzersizBinalar = [...binaMap.values()];
+
+    const baslik = benzersizBinalar.length === teslimatlar.length
+        ? `${benzersizBinalar.length} bina`
+        : `${benzersizBinalar.length} farklı bina, ${teslimatlar.length} toplam teslimat`;
+    teslimatSelect.innerHTML = `<option value="">-- Teslimat (bina) seçin (${baslik}) --</option>`;
+
+    benzersizBinalar.forEach(t => {
+        // Eski sistemin "Teslimat Adı (gizli)" formatı:
+        // "[ bina_adı / bina_türü ]  bina_tipi - m²"  ekrana ×N ekleyebiliriz
+        const ekDetay = [t.bina_tipi, t.buyukluk_m2 ? `${t.buyukluk_m2} m²` : null].filter(Boolean).join(' - ');
+        const adetEk = t.adet > 1 ? `  ×${t.adet} adet` : '';
+        const etiket = `[ ${t.bina_adi} / ${t.bina_turu || ''} ]${ekDetay ? '  ' + ekDetay : ''}${adetEk}`;
+        teslimatSelect.innerHTML += `<option value="${t.teslimat_id}">${esc(etiket)}</option>`;
     });
     teslimatSelect.disabled = false;
     teslimatSelect.value = "";
@@ -4978,7 +5007,7 @@ function addTeslimatRow(data) {
                     ${[1,2,3,4].map(n => `<option value="${n}" ${String(d.kat_adedi) === String(n) ? 'selected' : ''}>${n}</option>`).join('')}
                 </select>
             </div>
-            <div class="col-md-2 kosul-prefabrik" style="display:none;">
+            <div class="col-md-2 kosul-prefabrik kosul-hafif" style="display:none;">
                 <label class="small fw-bold text-muted mb-1">Bina Adedi</label>
                 <input type="number" class="form-control form-control-sm t-bina-adedi" value="${esc(d.bina_adedi || '')}" onchange="sevkiyatTarihleriYenile(this)">
             </div>
@@ -5050,10 +5079,10 @@ function sevkiyatTarihleriYenile(srcEl, mevcutSevkiyatlar) {
     if (!row) return;
     const tur = row.querySelector('.t-tur').value;
     let miktar = 1;
-    if (tur === 'Prefabrik') {
-        miktar = parseInt(row.querySelector('.t-bina-adedi').value) || 1;
+    if (tur === 'Prefabrik' || tur === 'Hafif Çelik') {
+        miktar = parseInt(row.querySelector('.t-bina-adedi')?.value) || 1;
     } else if (tur === 'Konteyner') {
-        miktar = parseInt(row.querySelector('.t-konteyner-miktari').value) || 1;
+        miktar = parseInt(row.querySelector('.t-konteyner-miktari')?.value) || 1;
     }
     if (miktar < 1) miktar = 1;
 
