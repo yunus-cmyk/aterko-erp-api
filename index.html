@@ -129,6 +129,7 @@
       <li class="nav-item"><a class="nav-link" id="nav-stok" onclick="setTab('stok')"><i class="bi bi-box-seam me-2"></i>Stok / Katalog</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-tedarikci" onclick="setTab('tedarikci')"><i class="bi bi-shop me-2"></i>Tedarikçiler</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-2"></i>Ürün Listesi</a></li>
+      <li class="nav-item"><a class="nav-link text-warning" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-2"></i>Üretim</a></li>
       <li class="nav-item"><a class="nav-link text-success" id="nav-satinalma" onclick="setTab('satinalma')"><i class="bi bi-cart-check me-2"></i>Satınalma Talepleri</a></li>
     </ul>
     <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" onclick="alert('Proje Ekleme (Daha Sonra Aktif Edilecek)')"><i class="bi bi-plus-lg me-1"></i> Yeni Proje Girişi</button>
@@ -692,6 +693,293 @@
         </div>
         <div id="sevkiyatSummaryBar" class="sp-summary-bar"></div>
         <div id="sevkiyatContent"></div>
+    </div>
+
+    <!-- ÜRETİM MODÜLÜ -->
+    <div id="uretimArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-tools me-2 text-warning"></i>Üretim Modülü</h5>
+            <ul class="nav nav-pills nav-fill" id="uretimAltSekme" style="background:#f0f0f0; border-radius:6px;">
+                <li class="nav-item"><a class="nav-link active px-4 py-1" onclick="switchUretimSekme('plan')" id="urtTab-plan">
+                    <i class="bi bi-card-checklist me-1"></i>Üretim Planı (Yayında Ürünler)
+                </a></li>
+                <li class="nav-item"><a class="nav-link px-4 py-1" onclick="switchUretimSekme('emirler')" id="urtTab-emirler">
+                    <i class="bi bi-clipboard-data me-1"></i>İş Emirleri
+                </a></li>
+            </ul>
+        </div>
+
+        <!-- Üretim Planı sekmesi: Tüm yayında ürünler (cross-teslimat) -->
+        <div id="uretimPlanArea">
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-body py-2 px-3 d-flex gap-2 flex-wrap align-items-center">
+                    <input type="text" id="urtAramaInput" class="form-control form-control-sm" placeholder="🔍 Ürün adı / kod / proje / bina ile filtrele..." style="max-width:380px;" oninput="renderUretimPlan()">
+                    <select id="urtDurumFiltre" class="form-select form-select-sm" style="max-width:200px;" onchange="renderUretimPlan()">
+                        <option value="">Tüm durumlar</option>
+                        <option value="BEKLEMEDE">Beklemede (henüz başlamadı)</option>
+                        <option value="KISMI">Kısmi</option>
+                        <option value="HAZIR">Hazır (tamamlandı)</option>
+                    </select>
+                    <span class="small text-muted ms-auto" id="urtPlanSayac"></span>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="fw-bold"><i class="bi bi-list-columns-reverse me-2"></i>Üretim İçin Bekleyen Kalemler</span>
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <span class="small text-muted"><span id="urtSecilenSayisi">0</span> kalem seçili</span>
+                        <button class="btn btn-warning btn-sm fw-bold" onclick="openIsEmriOlusturModal()" title="Atölyeye iş emri çıkar">
+                            <i class="bi bi-tools me-1"></i> İş Emri Oluştur
+                        </button>
+                        <button class="btn btn-success btn-sm fw-bold" onclick="openUretimSatinalmaModal()" title="Seçili kalemler için satınalma talebi aç">
+                            <i class="bi bi-cart-plus me-1"></i> Satınalma Talebi
+                        </button>
+                        <button class="btn btn-info btn-sm fw-bold text-white" onclick="openStoktanKarsilaModal()" title="Stokta olanı sevkiyat için ayır">
+                            <i class="bi bi-box-arrow-right me-1"></i> Stoktan Karşıla
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
+                        <thead class="bg-light">
+                            <tr>
+                                <th width="36"><input type="checkbox" id="urtHepsiChk" onchange="urtHepsiToggle(this)"></th>
+                                <th>Proje / Bina</th>
+                                <th>Ürün</th>
+                                <th class="text-end">Gerekli</th>
+                                <th class="text-end">Üretilen</th>
+                                <th class="text-end">Stoktan</th>
+                                <th class="text-end">İş Emrinde</th>
+                                <th class="text-end">Sevke Hazır</th>
+                                <th class="text-end">Kalan</th>
+                                <th>Birim</th>
+                                <th class="text-center">Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody id="urtPlanBody">
+                            <tr><td colspan="11" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- İş Emirleri sekmesi -->
+        <div id="uretimEmirlerArea" class="d-none">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white fw-bold"><i class="bi bi-clipboard-data me-2"></i>İş Emirleri</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Emir No</th>
+                                <th>Ustabaşı</th>
+                                <th class="text-center">Kalem</th>
+                                <th class="text-end">Toplam Atanan</th>
+                                <th class="text-end">Tamamlanan</th>
+                                <th class="text-center">Durum</th>
+                                <th class="text-center">Oluşturma</th>
+                                <th class="text-center">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="urtEmirlerBody">
+                            <tr><td colspan="8" class="text-center text-muted p-4">Henüz iş emri oluşturulmadı.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- İş Emri Oluştur Modal -->
+    <div class="modal fade" id="modalIsEmriOlustur" tabindex="-1" data-bs-backdrop="static">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-warning">
+            <h5 class="modal-title fw-bold"><i class="bi bi-clipboard-plus me-2"></i>Yeni İş Emri Oluştur</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" style="background:#f8f9fa;">
+            <div class="row g-3 mb-3">
+              <div class="col-md-8">
+                <label class="form-label small fw-bold text-muted mb-1">Ustabaşı Adı <span class="text-danger">*</span></label>
+                <input type="text" id="ieUstabasi" class="form-control form-control-sm" placeholder="İş emrinin teslim edileceği ustabaşı adı...">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label small fw-bold text-muted mb-1">Tarih</label>
+                <input type="text" class="form-control form-control-sm" id="ieTarih" readonly>
+              </div>
+              <div class="col-md-12">
+                <label class="form-label small fw-bold text-muted mb-1">Notlar</label>
+                <textarea id="ieNotlar" class="form-control form-control-sm" rows="2" placeholder="İş emri ile ilgili not (opsiyonel)..."></textarea>
+              </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+              <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Atanacak Kalemler — atanan miktarı düzenleyebilirsiniz</div>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="bg-dark text-white small">
+                    <tr>
+                      <th>Proje / Bina</th>
+                      <th>Ürün</th>
+                      <th class="text-end">Gerekli</th>
+                      <th class="text-end">Mevcut Üretilen</th>
+                      <th class="text-end">Üretilmesi Kalan</th>
+                      <th class="text-center" style="width:140px;">Atanan Miktar *</th>
+                      <th>Birim</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ieKalemTablosu"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer bg-white">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-warning fw-bold px-4" onclick="isEmriOlusturOnayla()">
+              <i class="bi bi-check2-circle me-1"></i>İş Emrini Oluştur
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stoktan Karşıla Modal -->
+    <div class="modal fade" id="modalStoktanKarsila" tabindex="-1" data-bs-backdrop="static">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-info text-white">
+            <h5 class="modal-title fw-bold"><i class="bi bi-box-arrow-right me-2"></i>Stoktan Karşılama</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" style="background:#f8f9fa;">
+            <div class="alert alert-info py-2 mb-3 small">
+              <i class="bi bi-info-circle me-2"></i>Seçili kalemler için stoktan ayırma yapılacak. Her ürün için kullanılacak miktarı düzenleyebilirsin. Stok hareketi olarak <strong>Çıkış / Sevkiyat Rezervi</strong> kaydı oluşur, stok kartı bakiyesi düşer ve "Stoktan" sayacı artar.
+            </div>
+            <div class="card border-0 shadow-sm">
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="bg-dark text-white small">
+                    <tr>
+                      <th>Ürün</th>
+                      <th class="text-end">Stokta Olan</th>
+                      <th class="text-end">Üretilmesi Kalan</th>
+                      <th class="text-center" style="width:140px;">Stoktan Ayrılacak *</th>
+                      <th>Birim</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stkKalemTablosu"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer bg-white">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-info fw-bold px-4 text-white" onclick="stoktanKarsilaOnayla()">
+              <i class="bi bi-check2-circle me-1"></i>Stoktan Ayır
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Üretim → Satınalma Talebi Modal -->
+    <div class="modal fade" id="modalUretimSatinalma" tabindex="-1" data-bs-backdrop="static">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-success text-white">
+            <h5 class="modal-title fw-bold"><i class="bi bi-cart-plus me-2"></i>Satınalma Talebi Oluştur (Üretim Planı)</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" style="background:#f8f9fa;">
+            <div class="alert alert-warning py-2 mb-3 small">
+              <i class="bi bi-info-circle me-2"></i>Farklı projelerden kalem seçtiysen <strong>her proje için ayrı talep</strong> açılır. Her kalemin talep miktarını düzenleyebilirsin.
+            </div>
+            <div class="card border-0 shadow-sm mb-3">
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="bg-dark text-white small">
+                    <tr>
+                      <th>Proje / Bina</th>
+                      <th>Ürün</th>
+                      <th class="text-end">Stokta</th>
+                      <th class="text-end">Üretilmesi Kalan</th>
+                      <th class="text-center" style="width:140px;">Talep Miktarı *</th>
+                      <th>Birim</th>
+                    </tr>
+                  </thead>
+                  <tbody id="urtSatinalmaKalemTablosu"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label small fw-bold text-muted mb-1">İstenen Tarih</label>
+                <input type="date" id="urtSatTarih" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label small fw-bold text-muted mb-1">Teslim Yeri (Depo) <span class="text-danger">*</span></label>
+                <select id="urtSatTeslim" class="form-select form-select-sm">
+                  <option value="">-- Depo seçin --</option>
+                </select>
+              </div>
+              <div class="col-md-12">
+                <label class="form-label small fw-bold text-muted mb-1">Genel Açıklama</label>
+                <textarea id="urtSatNot" class="form-control form-control-sm" rows="2" placeholder="Talep notu (opsiyonel)..."></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer bg-white">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-success fw-bold px-4" onclick="urtSatinalmaOnayla()">
+              <i class="bi bi-check2-circle me-1"></i>Talep(leri) Oluştur
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- İş Emri Detay Modal -->
+    <div class="modal fade" id="modalIsEmriDetay" tabindex="-1" data-bs-backdrop="static">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h5 class="modal-title fw-bold"><i class="bi bi-clipboard-check me-2"></i>İş Emri Detayı — <span id="iedTitle"></span></h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" style="background:#f8f9fa;">
+            <div id="iedBaslik" class="mb-3"></div>
+            <div class="card border-0 shadow-sm">
+              <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Kalemler — tamamlanan miktarı girerek üretimi işle</div>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="bg-dark text-white small">
+                    <tr>
+                      <th>Proje / Bina</th>
+                      <th>Ürün</th>
+                      <th class="text-end">Atanan</th>
+                      <th class="text-center" style="width:160px;">Tamamlanan</th>
+                      <th>Birim</th>
+                    </tr>
+                  </thead>
+                  <tbody id="iedKalemler"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer bg-white">
+            <button type="button" id="iedIptalBtn" class="btn btn-outline-danger me-auto d-none" onclick="isEmriIptal()">
+              <i class="bi bi-x-circle me-1"></i>İş Emrini İptal Et
+            </button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+            <button type="button" id="iedKaydetBtn" class="btn btn-success fw-bold px-4" onclick="isEmriTamamlamaKaydet()">
+              <i class="bi bi-save me-1"></i>Tamamlama Bilgisini Kaydet
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div id="ozetArea" class="d-none p-3">
@@ -1556,7 +1844,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','ozetArea','tedarikciArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','ozetArea','tedarikciArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -1586,6 +1874,9 @@ function setTab(tab) {
         document.getElementById("urunListesiArea").classList.remove("d-none");
         fetchTeslimatSecenekleri();   // Proje + teslimat dropdown'larını doldur
         fetchStokKartlariForDropdown(); // Ürün ekleme dropdown'unu da hazırla
+    } else if (tab === 'uretim') {
+        document.getElementById("uretimArea").classList.remove("d-none");
+        switchUretimSekme('plan');
     } else if (tab === 'satinalma') {
         document.getElementById("satinalmaArea").classList.remove("d-none");
         switchSatinalmaSubTab('talepler');
@@ -2184,6 +2475,399 @@ function urunSil(id) {
         hideLoading();
         if(res.ok) { showToast("Ürün silindi.", "success"); fetchTeslimatUrunleri(); }
     });
+}
+
+// ============================================================================
+// ÜRETİM MODÜLÜ
+// ============================================================================
+let uretimPlanCache = [];
+let uretimEmirlerCache = [];
+
+function switchUretimSekme(sekme) {
+    document.querySelectorAll('#uretimAltSekme .nav-link').forEach(a => a.classList.remove('active'));
+    document.getElementById('urtTab-' + sekme).classList.add('active');
+    document.getElementById('uretimPlanArea').classList.toggle('d-none', sekme !== 'plan');
+    document.getElementById('uretimEmirlerArea').classList.toggle('d-none', sekme !== 'emirler');
+    if (sekme === 'plan') fetchUretimPlan();
+    else fetchUretimIsEmirleri();
+}
+
+function fetchUretimPlan() {
+    showLoading();
+    secureFetch('/uretim-urunleri').then(r => {
+        hideLoading();
+        if (r.ok) { uretimPlanCache = r.data; renderUretimPlan(); }
+    });
+}
+
+function renderUretimPlan() {
+    const arama = (document.getElementById('urtAramaInput')?.value || '').toLowerCase().trim();
+    const durumF = document.getElementById('urtDurumFiltre')?.value || '';
+
+    let liste = uretimPlanCache;
+    if (durumF) liste = liste.filter(u => u.kalem_durumu === durumF);
+    if (arama) liste = liste.filter(u => {
+        const txt = `${u.stok_kodu||''} ${u.stok_adi||''} ${u.ozel_urun_adi||''} ${u.proje_kodu||''} ${u.musteri_adi||''} ${u.bina_adi||''}`.toLowerCase();
+        return txt.includes(arama);
+    });
+
+    document.getElementById('urtPlanSayac').textContent = `${liste.length} kalem`;
+
+    const tbody = document.getElementById('urtPlanBody');
+    if (liste.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = liste.map(u => {
+        const isOzel = !u.stok_kart_id;
+        const urunAdi = isOzel ? esc(u.ozel_urun_adi || '-') : esc(u.stok_adi || '-');
+        const kod = isOzel ? '<span class="text-warning small">Özel</span>' : `<span class="text-primary small fw-bold">${esc(u.stok_kodu)}</span>`;
+        const birim = isOzel ? esc(u.ozel_urun_birim || '') : esc(u.stok_birim || '');
+        const projeBina = `<small class="text-muted">${esc(u.proje_kodu)} / ${esc(u.musteri_adi || '')}</small><br><strong>${esc(u.bina_adi)}</strong>`;
+        const sevkeHazir = parseFloat(u.sevke_hazir) || 0;
+        const kalan = parseFloat(u.uretilmesi_kalan) || 0;
+        const durumMap = { 'BEKLEMEDE': ['secondary','Beklemede'], 'KISMI': ['warning','Kısmi'], 'HAZIR': ['success','Hazır'] };
+        const [cls, txt] = durumMap[u.kalem_durumu] || ['secondary', '-'];
+        // Sevke hazır = gerekli ise checkbox disabled (üretim ihtiyacı yok)
+        const chkDisabled = kalan <= 0 ? 'disabled title="Üretim ihtiyacı yok (zaten hazır)"' : '';
+        return `<tr>
+            <td><input type="checkbox" class="urt-chk form-check-input" value="${u.id}" data-kalan="${kalan}" data-ad="${esc(urunAdi)}" data-birim="${esc(birim)}" data-gerekli="${u.gerekli_miktar}" data-uretilen="${u.uretilen_miktar}" data-proje="${esc(u.proje_kodu + ' / ' + (u.musteri_adi||''))}" data-bina="${esc(u.bina_adi)}" onchange="urtSeciliGuncelle()" ${chkDisabled}></td>
+            <td>${projeBina}</td>
+            <td>${kod}<br><span class="fw-bold">${urunAdi}</span></td>
+            <td class="text-end fw-bold">${formatTR(u.gerekli_miktar)}</td>
+            <td class="text-end">${formatTR(u.uretilen_miktar)}</td>
+            <td class="text-end">${formatTR(u.stoktan_ayrilan_miktar)}</td>
+            <td class="text-end text-info">${formatTR(u.is_emrinde_bekleyen_miktar)}</td>
+            <td class="text-end fw-bold ${sevkeHazir >= parseFloat(u.gerekli_miktar) ? 'text-success' : ''}">${formatTR(sevkeHazir)}</td>
+            <td class="text-end ${kalan > 0 ? 'text-danger fw-bold' : 'text-muted'}">${formatTR(kalan)}</td>
+            <td>${birim}</td>
+            <td class="text-center"><span class="badge bg-${cls}">${txt}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function urtHepsiToggle(chk) {
+    document.querySelectorAll('.urt-chk:not(:disabled)').forEach(c => c.checked = chk.checked);
+    urtSeciliGuncelle();
+}
+
+function urtSeciliGuncelle() {
+    document.getElementById('urtSecilenSayisi').textContent = document.querySelectorAll('.urt-chk:checked').length;
+}
+
+function openIsEmriOlusturModal() {
+    const secili = [...document.querySelectorAll('.urt-chk:checked')];
+    if (secili.length === 0) return showToast('Kalem seçilmedi.', 'error');
+
+    document.getElementById('ieUstabasi').value = '';
+    document.getElementById('ieNotlar').value = '';
+    document.getElementById('ieTarih').value = new Date().toLocaleDateString('tr-TR');
+
+    // Kalem tablosunu doldur — varsayılan atanan miktar = "üretilmesi_kalan"
+    const tbody = document.getElementById('ieKalemTablosu');
+    tbody.innerHTML = secili.map(c => {
+        const kalan = parseFloat(c.dataset.kalan) || 0;
+        const gerekli = parseFloat(c.dataset.gerekli) || 0;
+        const uretilen = parseFloat(c.dataset.uretilen) || 0;
+        return `<tr data-kalem-id="${c.value}">
+            <td><small class="text-muted">${esc(c.dataset.proje)}</small><br><strong>${esc(c.dataset.bina)}</strong></td>
+            <td class="fw-bold">${esc(c.dataset.ad)}</td>
+            <td class="text-end">${formatTR(gerekli)}</td>
+            <td class="text-end">${formatTR(uretilen)}</td>
+            <td class="text-end fw-bold text-danger">${formatTR(kalan)}</td>
+            <td class="text-center">
+                <input type="number" class="form-control form-control-sm text-center ie-atanan fw-bold" step="0.01" min="0.01" max="${kalan}" value="${kalan}">
+            </td>
+            <td>${esc(c.dataset.birim)}</td>
+        </tr>`;
+    }).join('');
+
+    new bootstrap.Modal(document.getElementById('modalIsEmriOlustur')).show();
+}
+
+async function isEmriOlusturOnayla() {
+    const ustabasi = document.getElementById('ieUstabasi').value.trim();
+    if (!ustabasi) return showToast('Ustabaşı adı zorunlu.', 'error');
+    const notlar = document.getElementById('ieNotlar').value.trim();
+
+    const kalemler = [...document.querySelectorAll('#ieKalemTablosu tr')].map(tr => ({
+        teslimat_urun_id: parseInt(tr.dataset.kalemId),
+        atanan_miktar: parseFloat(tr.querySelector('.ie-atanan').value)
+    })).filter(k => k.teslimat_urun_id && k.atanan_miktar > 0);
+
+    if (kalemler.length === 0) return showToast('En az bir kalem için geçerli miktar girin.', 'error');
+
+    showLoading();
+    const r = await secureFetch('/uretim-is-emri-olustur', {
+        method: 'POST', body: JSON.stringify({ ustabasi_adi: ustabasi, notlar, kalemler })
+    });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalIsEmriOlustur')).hide();
+        showToast(r.mesaj, 'success');
+        fetchUretimPlan();
+    } else {
+        showToast(r.hata, 'error');
+    }
+}
+
+function fetchUretimIsEmirleri() {
+    showLoading();
+    secureFetch('/uretim-is-emirleri').then(r => {
+        hideLoading();
+        if (r.ok) { uretimEmirlerCache = r.data; renderUretimIsEmirleri(); }
+    });
+}
+
+function renderUretimIsEmirleri() {
+    const tbody = document.getElementById('urtEmirlerBody');
+    if (uretimEmirlerCache.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">Henüz iş emri oluşturulmadı.</td></tr>';
+        return;
+    }
+    const durumMap = {
+        'HAZIR': ['secondary','📋 Hazır'],
+        'UYGULANIYOR': ['warning','🔧 Uygulanıyor'],
+        'TAMAMLANDI': ['success','✅ Tamamlandı'],
+        'IPTAL': ['danger','❌ İptal']
+    };
+    tbody.innerHTML = uretimEmirlerCache.map(e => {
+        const [cls, txt] = durumMap[e.durum] || ['secondary','-'];
+        const tarih = e.olusturma_tarihi ? new Date(e.olusturma_tarihi).toLocaleDateString('tr-TR') : '-';
+        const yuzde = parseFloat(e.toplam_atanan) > 0
+            ? Math.round((parseFloat(e.toplam_tamamlanan) / parseFloat(e.toplam_atanan)) * 100)
+            : 0;
+        return `<tr>
+            <td class="fw-bold text-primary">${esc(e.emir_no)}</td>
+            <td>${esc(e.ustabasi_adi || '-')}</td>
+            <td class="text-center"><span class="badge bg-info">${e.kalem_sayisi}</span></td>
+            <td class="text-end">${formatTR(e.toplam_atanan)}</td>
+            <td class="text-end">${formatTR(e.toplam_tamamlanan)} <small class="text-muted">(%${yuzde})</small></td>
+            <td class="text-center"><span class="badge bg-${cls}">${txt}</span></td>
+            <td class="text-center small">${tarih}</td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-dark py-0" onclick="openIsEmriDetay(${e.id})"><i class="bi bi-eye"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+let aktifIsEmriId = null;
+async function openIsEmriDetay(id) {
+    aktifIsEmriId = id;
+    showLoading();
+    const r = await secureFetch('/uretim-is-emri-detay/' + id);
+    hideLoading();
+    if (!r.ok) return showToast(r.hata, 'error');
+
+    const b = r.baslik;
+    document.getElementById('iedTitle').textContent = b.emir_no;
+    const durumMap = {
+        'HAZIR': ['secondary','Hazır'], 'UYGULANIYOR': ['warning','Uygulanıyor'],
+        'TAMAMLANDI': ['success','Tamamlandı'], 'IPTAL': ['danger','İptal']
+    };
+    const [cls, txt] = durumMap[b.durum] || ['secondary','-'];
+    document.getElementById('iedBaslik').innerHTML = `
+        <div class="row g-2">
+            <div class="col-md-3"><small class="text-muted">Ustabaşı</small><div class="fw-bold">${esc(b.ustabasi_adi || '-')}</div></div>
+            <div class="col-md-3"><small class="text-muted">Durum</small><div><span class="badge bg-${cls}">${txt}</span></div></div>
+            <div class="col-md-3"><small class="text-muted">Oluşturma</small><div>${b.olusturma_tarihi ? new Date(b.olusturma_tarihi).toLocaleString('tr-TR') : '-'}</div></div>
+            <div class="col-md-3"><small class="text-muted">Tamamlanma</small><div>${b.tamamlanma_tarihi ? new Date(b.tamamlanma_tarihi).toLocaleString('tr-TR') : '-'}</div></div>
+            ${b.notlar ? `<div class="col-md-12 mt-2"><div class="alert alert-light py-2 mb-0 small"><strong>Not:</strong> ${esc(b.notlar)}</div></div>` : ''}
+        </div>`;
+
+    const tbody = document.getElementById('iedKalemler');
+    tbody.innerHTML = r.kalemler.map(k => {
+        const isOzel = !k.stok_kodu;
+        const ad = isOzel ? esc(k.ozel_urun_adi || '-') : esc(k.stok_adi || '-');
+        const kod = isOzel ? '<span class="text-warning small">Özel</span>' : `<small class="text-primary fw-bold">${esc(k.stok_kodu)}</small>`;
+        const birim = isOzel ? esc(k.ozel_urun_birim || '') : esc(k.stok_birim || '');
+        const projeBina = `<small class="text-muted">${esc(k.proje_kodu)} / ${esc(k.musteri_adi||'')}</small><br><strong>${esc(k.bina_adi)}</strong>`;
+        const readonly = (b.durum === 'TAMAMLANDI' || b.durum === 'IPTAL') ? 'readonly' : '';
+        return `<tr data-kalem-id="${k.id}">
+            <td>${projeBina}</td>
+            <td>${kod}<br><span class="fw-bold">${ad}</span></td>
+            <td class="text-end fw-bold">${formatTR(k.atanan_miktar)}</td>
+            <td class="text-center">
+                <input type="number" class="form-control form-control-sm text-center ied-tamam fw-bold" step="0.01" min="0" max="${k.atanan_miktar}" value="${k.tamamlanan_miktar}" ${readonly}>
+            </td>
+            <td>${birim}</td>
+        </tr>`;
+    }).join('');
+
+    // Buton görünürlüğü
+    const aktif = !(b.durum === 'TAMAMLANDI' || b.durum === 'IPTAL');
+    document.getElementById('iedIptalBtn').classList.toggle('d-none', !aktif);
+    document.getElementById('iedKaydetBtn').style.display = aktif ? '' : 'none';
+
+    new bootstrap.Modal(document.getElementById('modalIsEmriDetay')).show();
+}
+
+async function isEmriTamamlamaKaydet() {
+    if (!aktifIsEmriId) return;
+    const kalemler = [...document.querySelectorAll('#iedKalemler tr')].map(tr => ({
+        kalem_id: parseInt(tr.dataset.kalemId),
+        tamamlanan_miktar: parseFloat(tr.querySelector('.ied-tamam').value) || 0
+    }));
+    showLoading();
+    const r = await secureFetch('/uretim-is-emri-tamamla', {
+        method: 'POST', body: JSON.stringify({ is_emri_id: aktifIsEmriId, kalemler })
+    });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalIsEmriDetay')).hide();
+        showToast(`İş emri güncellendi (${r.durum}).`, 'success');
+        fetchUretimIsEmirleri();
+        fetchUretimPlan();   // BUG FİX: Üretim Planı tablosu da yenilensin
+    } else {
+        showToast(r.hata, 'error');
+    }
+}
+
+async function isEmriIptal() {
+    if (!aktifIsEmriId) return;
+    if (!confirm('İş emri iptal edilecek. Tamamlanmış miktarlar üretilen olarak korunur, ama kalan atamalar serbest bırakılır. Devam?')) return;
+    showLoading();
+    const r = await secureFetch('/uretim-is-emri-iptal/' + aktifIsEmriId, { method: 'POST' });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalIsEmriDetay')).hide();
+        showToast(r.mesaj, 'success');
+        fetchUretimIsEmirleri();
+        fetchUretimPlan();
+    } else {
+        showToast(r.hata, 'error');
+    }
+}
+
+// === STOKTAN KARŞILAMA ===
+function openStoktanKarsilaModal() {
+    const secili = [...document.querySelectorAll('.urt-chk:checked')];
+    if (secili.length === 0) return showToast('Kalem seçilmedi.', 'error');
+
+    const tbody = document.getElementById('stkKalemTablosu');
+    tbody.innerHTML = secili.map(c => {
+        const kalem = uretimPlanCache.find(u => u.id == c.value);
+        if (!kalem) return '';
+        const stokta = parseFloat(kalem.guncel_stok_miktari) || 0;
+        const kalan = parseFloat(kalem.uretilmesi_kalan) || 0;
+        const onerilen = Math.min(stokta, kalan);
+        const isOzel = !kalem.stok_kart_id;
+        const ad = isOzel ? (kalem.ozel_urun_adi || '-') : (kalem.stok_adi || '-');
+        const birim = isOzel ? (kalem.ozel_urun_birim || '') : (kalem.stok_birim || '');
+        const uyari = isOzel
+            ? '<div class="small text-danger"><i class="bi bi-x-circle"></i> Özel ürün — stoktan karşılanamaz</div>'
+            : (stokta < kalan ? `<div class="small text-warning"><i class="bi bi-exclamation-triangle"></i> Stok yetersiz, en fazla ${stokta} ${birim} ayrılabilir</div>` : '');
+        const disabled = isOzel || stokta <= 0 ? 'disabled' : '';
+        return `<tr data-kalem-id="${kalem.id}" data-stok="${stokta}" data-ozel="${isOzel ? 1 : 0}">
+            <td><small class="text-muted">${esc(kalem.proje_kodu)} / ${esc(kalem.bina_adi)}</small><br><strong>${esc(ad)}</strong>${uyari}</td>
+            <td class="text-end fw-bold ${stokta > 0 ? 'text-success' : 'text-danger'}">${formatTR(stokta)}</td>
+            <td class="text-end">${formatTR(kalan)}</td>
+            <td class="text-center">
+                <input type="number" class="form-control form-control-sm text-center stk-miktar fw-bold" step="0.01" min="0" max="${Math.min(stokta, kalan)}" value="${onerilen}" ${disabled}>
+            </td>
+            <td>${esc(birim)}</td>
+        </tr>`;
+    }).join('');
+
+    new bootstrap.Modal(document.getElementById('modalStoktanKarsila')).show();
+}
+
+async function stoktanKarsilaOnayla() {
+    const kalemler = [...document.querySelectorAll('#stkKalemTablosu tr')].map(tr => ({
+        teslimat_urun_id: parseInt(tr.dataset.kalemId),
+        miktar: parseFloat(tr.querySelector('.stk-miktar')?.value) || 0
+    })).filter(k => k.teslimat_urun_id && k.miktar > 0);
+
+    if (kalemler.length === 0) return showToast('Hiçbir kalem için geçerli miktar girilmedi.', 'error');
+
+    showLoading();
+    const r = await secureFetch('/uretim-stoktan-karsila', { method:'POST', body: JSON.stringify({ kalemler }) });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalStoktanKarsila')).hide();
+        showToast(r.mesaj, 'success');
+        if (r.hatalar?.length) {
+            // uyarıları ayrı bir toast'ta uzun göster
+            setTimeout(() => showToast(r.hatalar.join('\n'), 'error'), 600);
+        }
+        fetchUretimPlan();
+    } else {
+        showToast(r.hata, 'error');
+    }
+}
+
+// === ÜRETİM PLANI'NDAN SATINALMA TALEBİ ===
+function openUretimSatinalmaModal() {
+    const secili = [...document.querySelectorAll('.urt-chk:checked')];
+    if (secili.length === 0) return showToast('Kalem seçilmedi.', 'error');
+
+    const tbody = document.getElementById('urtSatinalmaKalemTablosu');
+    tbody.innerHTML = secili.map(c => {
+        const kalem = uretimPlanCache.find(u => u.id == c.value);
+        if (!kalem) return '';
+        const stokta = parseFloat(kalem.guncel_stok_miktari) || 0;
+        const kalan = parseFloat(kalem.uretilmesi_kalan) || 0;
+        const isOzel = !kalem.stok_kart_id;
+        const ad = isOzel ? (kalem.ozel_urun_adi || '-') : (kalem.stok_adi || '-');
+        const birim = isOzel ? (kalem.ozel_urun_birim || '') : (kalem.stok_birim || '');
+        // Varsayılan: stoktan düşülmüş eksik miktar (yoksa kalan miktar)
+        const onerilen = isOzel ? kalan : Math.max(0, kalan - stokta);
+        return `<tr data-kalem-id="${kalem.id}">
+            <td><small class="text-muted">${esc(kalem.proje_kodu)}</small><br><strong>${esc(kalem.bina_adi)}</strong></td>
+            <td>${isOzel ? '<span class="text-warning small">Özel</span>' : `<small class="text-primary fw-bold">${esc(kalem.stok_kodu)}</small>`}<br><span class="fw-bold">${esc(ad)}</span></td>
+            <td class="text-end">${isOzel ? '-' : formatTR(stokta)}</td>
+            <td class="text-end fw-bold text-danger">${formatTR(kalan)}</td>
+            <td class="text-center">
+                <input type="number" class="form-control form-control-sm text-center us-miktar fw-bold" step="0.01" min="0.01" value="${onerilen || kalan}">
+            </td>
+            <td>${esc(birim)}</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('urtSatTarih').value = '';
+    document.getElementById('urtSatNot').value = '';
+    // Depo dropdown'u doldur
+    const sel = document.getElementById('urtSatTeslim');
+    const doldur = () => {
+        sel.innerHTML = '<option value="">-- Depo seçin --</option>' +
+            (depolarGlobal || []).map(d => `<option value="${esc(d.ad)}" ${d.ad === 'Merkez Depo' || d.ad === 'Fabrika' ? 'selected' : ''}>${esc(d.ad)}</option>`).join('');
+    };
+    if (!depolarGlobal || depolarGlobal.length === 0) {
+        secureFetch('/depolar').then(r => { if (r.ok) { depolarGlobal = r.data; doldur(); } });
+    } else doldur();
+
+    new bootstrap.Modal(document.getElementById('modalUretimSatinalma')).show();
+}
+
+async function urtSatinalmaOnayla() {
+    const kalemler = [...document.querySelectorAll('#urtSatinalmaKalemTablosu tr')].map(tr => ({
+        teslimat_urun_id: parseInt(tr.dataset.kalemId),
+        miktar: parseFloat(tr.querySelector('.us-miktar').value) || 0
+    })).filter(k => k.teslimat_urun_id && k.miktar > 0);
+
+    if (kalemler.length === 0) return showToast('Hiçbir kalem için geçerli miktar girilmedi.', 'error');
+
+    const teslim_yeri = document.getElementById('urtSatTeslim').value;
+    if (!teslim_yeri) return showToast('Teslim Yeri (depo) zorunlu.', 'error');
+
+    const istenen_tarih = document.getElementById('urtSatTarih').value || null;
+    const genel_aciklama = document.getElementById('urtSatNot').value.trim();
+
+    showLoading();
+    const r = await secureFetch('/uretim-satinalma-talebi-olustur', {
+        method:'POST',
+        body: JSON.stringify({ kalemler, istenen_tarih, teslim_yeri, genel_aciklama })
+    });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalUretimSatinalma')).hide();
+        showToast(r.mesaj, 'success');
+        fetchUretimPlan();
+    } else {
+        showToast(r.hata, 'error');
+    }
 }
 
 function showLoading() { document.getElementById("topLoadingBar").style.display = "block"; }

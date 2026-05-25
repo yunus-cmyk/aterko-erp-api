@@ -2376,6 +2376,362 @@ app.get('/api/get-lists', yetkiKontrol, async (req, res, next) => {
 
 app.post('/api/durum-guncelle', yetkiKontrol, async (req, res, next) => { res.json({ok:true}); });
 
+// ============================================================================
+// FAZ B-2: ÜRETİM MODÜLÜ
+// ============================================================================
+
+// Yayında olan tüm ürün satırlarını cross-teslimat olarak listele
+// (Üretim sekmesinde tek bir tablo, hangi binanın hangi ürünü olduğu görünür)
+app.get('/api/uretim-urunleri', yetkiKontrol, async (req, res, next) => {
+    try {
+        const q = `
+            SELECT tu.id, tu.teslimat_id, tu.miktar as gerekli_miktar,
+                   tu.uretilen_miktar, tu.stoktan_ayrilan_miktar, tu.sevk_edilen_miktar,
+                   tu.is_ek_urun, tu.ek_urun_onay_durumu, tu.aciklama,
+                   tu.stok_kart_id, tu.ozel_urun_adi, tu.ozel_urun_birim,
+                   sk.stok_kodu, sk.stok_adi, sk.stok_tipi, sk.birim as stok_birim,
+                   sk.guncel_stok_miktari, sk.kategori,
+                   pt.bina_adi, pt.bina_turu, pt.bina_tipi, pt.buyukluk_m2,
+                   pt.bina_adedi, pt.konteyner_miktari,
+                   p.proje_kodu, p.musteri_adi, p.proje_adi, p.id as proje_id,
+                   -- Aktif iş emirlerinde atanmış toplam miktar
+                   COALESCE((
+                       SELECT SUM(iek.atanan_miktar - COALESCE(iek.tamamlanan_miktar,0))
+                       FROM uretim_is_emri_kalemleri iek
+                       JOIN uretim_is_emirleri ie ON iek.is_emri_id=ie.id
+                       WHERE iek.teslimat_urun_id=tu.id AND ie.durum IN ('HAZIR','UYGULANIYOR')
+                   ), 0) as is_emrinde_bekleyen_miktar
+            FROM teslimat_urunleri tu
+            JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+            JOIN projeler p ON pt.proje_id=p.id
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+            WHERE pt.urun_listesi_yayin_durumu='YAYINDA'
+            AND (tu.is_ek_urun = FALSE OR tu.ek_urun_onay_durumu='ONAYLI')  -- onay bekleyen ek ürünler henüz aktif değil
+            ORDER BY p.id DESC, pt.id ASC, tu.sira ASC, tu.id ASC
+        `;
+        const r = await pool.query(q);
+        const data = r.rows.map(u => {
+            const gerekli = parseFloat(u.gerekli_miktar) || 0;
+            const uretilen = parseFloat(u.uretilen_miktar) || 0;
+            const stoktan = parseFloat(u.stoktan_ayrilan_miktar) || 0;
+            const sevk = parseFloat(u.sevk_edilen_miktar) || 0;
+            const bekleyen = parseFloat(u.is_emrinde_bekleyen_miktar) || 0;
+            const sevke_hazir = uretilen + stoktan - sevk;
+            // Üretilmesi gereken kalan: gerekli - (üretilen + stoktan ayrılmış) - bekleyen iş emri
+            const uretilmesi_kalan = Math.max(0, gerekli - uretilen - stoktan - bekleyen);
+            let durum = 'BEKLEMEDE';
+            if (sevke_hazir >= gerekli) durum = 'HAZIR';
+            else if (uretilen > 0 || stoktan > 0 || bekleyen > 0) durum = 'KISMI';
+            return { ...u, sevke_hazir, uretilmesi_kalan, kalem_durumu: durum };
+        });
+        res.json({ ok: true, data });
+    } catch (e) { next(e); }
+});
+
+// Yeni iş emri oluştur (cross-teslimat çoklu kalem)
+// Body: { ustabasi_adi, notlar, kalemler: [{teslimat_urun_id, atanan_miktar}] }
+app.post('/api/uretim-is-emri-olustur', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { ustabasi_adi, notlar, kalemler } = req.body;
+        if (!Array.isArray(kalemler) || kalemler.length === 0) {
+            return res.json({ ok: false, hata: 'En az 1 kalem seçilmeli.' });
+        }
+        const gecerli = kalemler.filter(k => k.teslimat_urun_id && parseFloat(k.atanan_miktar) > 0);
+        if (gecerli.length === 0) return res.json({ ok: false, hata: 'Geçerli miktar girilmedi.' });
+
+        // İş emri no üret
+        const c = await client.query("SELECT COUNT(*)::int as n FROM uretim_is_emirleri");
+        const emir_no = `IE-${10001 + c.rows[0].n}`;
+
+        // Başlık
+        const ie = await client.query(`
+            INSERT INTO uretim_is_emirleri (emir_no, ustabasi_adi, durum, olusturan_email, notlar)
+            VALUES ($1, $2, 'HAZIR', $3, $4) RETURNING id
+        `, [emir_no, ustabasi_adi || null, req.user.email, notlar || null]);
+        const ieId = ie.rows[0].id;
+
+        for (const k of gecerli) {
+            await client.query(`
+                INSERT INTO uretim_is_emri_kalemleri (is_emri_id, teslimat_urun_id, atanan_miktar)
+                VALUES ($1, $2, $3)
+            `, [ieId, k.teslimat_urun_id, parseFloat(k.atanan_miktar)]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ ok: true, mesaj: `${emir_no} oluşturuldu, ${gecerli.length} kalem atandı.`, emir_no, is_emri_id: ieId });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// İş emirleri listesi (özetli)
+app.get('/api/uretim-is-emirleri', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT ie.*,
+                   COUNT(iek.id)::int as kalem_sayisi,
+                   COALESCE(SUM(iek.atanan_miktar),0) as toplam_atanan,
+                   COALESCE(SUM(iek.tamamlanan_miktar),0) as toplam_tamamlanan
+            FROM uretim_is_emirleri ie
+            LEFT JOIN uretim_is_emri_kalemleri iek ON ie.id=iek.is_emri_id
+            GROUP BY ie.id
+            ORDER BY ie.id DESC
+        `);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// İş emri detay (kalemleri ile)
+app.get('/api/uretim-is-emri-detay/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const baslik = await pool.query('SELECT * FROM uretim_is_emirleri WHERE id=$1', [id]);
+        if (baslik.rowCount === 0) return res.json({ ok: false, hata: 'İş emri bulunamadı.' });
+        const kalemler = await pool.query(`
+            SELECT iek.*,
+                   tu.miktar as listedeki_miktar, tu.ozel_urun_adi, tu.ozel_urun_birim,
+                   sk.stok_kodu, sk.stok_adi, sk.birim as stok_birim,
+                   pt.bina_adi, pt.bina_turu, p.proje_kodu, p.musteri_adi
+            FROM uretim_is_emri_kalemleri iek
+            JOIN teslimat_urunleri tu ON iek.teslimat_urun_id=tu.id
+            JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+            JOIN projeler p ON pt.proje_id=p.id
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+            WHERE iek.is_emri_id=$1
+            ORDER BY iek.id
+        `, [id]);
+        res.json({ ok: true, baslik: baslik.rows[0], kalemler: kalemler.rows });
+    } catch (e) { next(e); }
+});
+
+// İş emrinde kalemleri tamamlama (kısmi veya tam) — uretilen_miktar artar
+// Body: { is_emri_id, kalemler: [{kalem_id, tamamlanan_miktar}] }
+app.post('/api/uretim-is-emri-tamamla', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { is_emri_id, kalemler } = req.body;
+        if (!is_emri_id || !Array.isArray(kalemler)) {
+            return res.json({ ok: false, hata: 'Geçersiz veri.' });
+        }
+
+        for (const k of kalemler) {
+            const yeniMiktar = parseFloat(k.tamamlanan_miktar);
+            if (!(yeniMiktar >= 0)) continue;
+
+            // Kalemin mevcut durumunu al
+            const mevcut = await client.query(`
+                SELECT atanan_miktar, COALESCE(tamamlanan_miktar,0) as eski_tamam, teslimat_urun_id
+                FROM uretim_is_emri_kalemleri WHERE id=$1 AND is_emri_id=$2
+            `, [k.kalem_id, is_emri_id]);
+            if (mevcut.rowCount === 0) continue;
+            const m = mevcut.rows[0];
+            const sinir = parseFloat(m.atanan_miktar);
+            const nihai = Math.min(yeniMiktar, sinir); // Atanan miktardan fazla olmasın
+            const fark = nihai - parseFloat(m.eski_tamam);
+
+            // Kalem güncelle
+            await client.query(`UPDATE uretim_is_emri_kalemleri SET tamamlanan_miktar=$1 WHERE id=$2`,
+                [nihai, k.kalem_id]);
+
+            // teslimat_urunleri.uretilen_miktar'ı farkı kadar artır/azalt
+            await client.query(`
+                UPDATE teslimat_urunleri SET uretilen_miktar = COALESCE(uretilen_miktar,0) + $1 WHERE id=$2
+            `, [fark, m.teslimat_urun_id]);
+        }
+
+        // İş emrinin genel durumunu güncelle
+        const ozet = await client.query(`
+            SELECT COALESCE(SUM(atanan_miktar),0) as atanan,
+                   COALESCE(SUM(tamamlanan_miktar),0) as tamamlanan
+            FROM uretim_is_emri_kalemleri WHERE is_emri_id=$1
+        `, [is_emri_id]);
+        const { atanan, tamamlanan } = ozet.rows[0];
+        let yeniDurum = 'HAZIR';
+        if (parseFloat(tamamlanan) >= parseFloat(atanan) && parseFloat(atanan) > 0) yeniDurum = 'TAMAMLANDI';
+        else if (parseFloat(tamamlanan) > 0) yeniDurum = 'UYGULANIYOR';
+
+        const tamamlanmaTarihi = yeniDurum === 'TAMAMLANDI' ? 'NOW()' : 'NULL';
+        await client.query(`
+            UPDATE uretim_is_emirleri SET durum=$1, tamamlanma_tarihi=${tamamlanmaTarihi}
+            WHERE id=$2
+        `, [yeniDurum, is_emri_id]);
+
+        await client.query('COMMIT');
+        res.json({ ok: true, mesaj: 'İş emri güncellendi.', durum: yeniDurum });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Üretim Planı'ndan seçili kalemleri stoktan karşıla (manuel rezervasyon)
+// Body: { kalemler: [{teslimat_urun_id, miktar}] }
+app.post('/api/uretim-stoktan-karsila', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { kalemler } = req.body;
+        if (!Array.isArray(kalemler) || kalemler.length === 0) {
+            return res.json({ ok: false, hata: 'Kalem seçilmedi.' });
+        }
+
+        let basarili = 0, hatalar = [];
+        for (const k of kalemler) {
+            const miktar = parseFloat(k.miktar);
+            if (!(miktar > 0)) continue;
+
+            // Kalem bilgisini al
+            const tu = await client.query(`
+                SELECT tu.*, sk.guncel_stok_miktari, sk.stok_adi, sk.stok_kodu, sk.birim,
+                       pt.proje_id
+                FROM teslimat_urunleri tu
+                LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+                JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+                WHERE tu.id=$1
+            `, [k.teslimat_urun_id]);
+            if (tu.rowCount === 0) { hatalar.push(`Kalem #${k.teslimat_urun_id} bulunamadı`); continue; }
+            const row = tu.rows[0];
+
+            if (!row.stok_kart_id) { hatalar.push(`${row.ozel_urun_adi || 'Özel ürün'} stoktan karşılanamaz — stok kartı yok`); continue; }
+
+            // Stok kontrolü
+            const mevcutStok = parseFloat(row.guncel_stok_miktari) || 0;
+            if (mevcutStok < miktar) {
+                hatalar.push(`${row.stok_adi}: stokta ${mevcutStok} ${row.birim} var, ${miktar} istendi — yetersiz`);
+                continue;
+            }
+
+            // Sayaç güncelle
+            await client.query(`
+                UPDATE teslimat_urunleri SET stoktan_ayrilan_miktar = COALESCE(stoktan_ayrilan_miktar,0) + $1
+                WHERE id=$2
+            `, [miktar, k.teslimat_urun_id]);
+
+            // Stok hareket kaydı (Çıkış - Sevkiyat Rezervi)
+            await client.query(`
+                INSERT INTO stok_hareketleri (stok_kart_id, tip, miktar, proje_id, aciklama, kullanici_email, kullanici_adsoyad)
+                VALUES ($1, 'Çıkış', $2, $3, $4, $5, $6)
+            `, [row.stok_kart_id, miktar, row.proje_id,
+                `Sevkiyat Rezervi (Teslimat #${row.teslimat_id} ürün listesi)`,
+                req.user.email, req.user.adSoyad]);
+
+            // Stok kartı bakiyesini düş
+            await client.query(`
+                UPDATE stok_kartlari SET guncel_stok_miktari = COALESCE(guncel_stok_miktari,0) - $1
+                WHERE id=$2
+            `, [miktar, row.stok_kart_id]);
+
+            basarili++;
+        }
+
+        await client.query('COMMIT');
+        if (hatalar.length > 0 && basarili === 0) {
+            return res.json({ ok: false, hata: hatalar.join(' | ') });
+        }
+        res.json({
+            ok: true,
+            mesaj: `${basarili} kalem stoktan ayrıldı.` + (hatalar.length > 0 ? ` Uyarı: ${hatalar.length} kalem işlenemedi.` : ''),
+            hatalar: hatalar
+        });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Üretim Planı'ndan seçili kalemler için cross-teslimat satınalma talebi oluştur
+// Body: { kalemler: [{teslimat_urun_id, miktar}], istenen_tarih, teslim_yeri, genel_aciklama }
+// NOT: Cross-teslimat olabilir, ama bir talep tek projeye bağlı olmalı.
+// Aynı projeden gelenleri grupla — birden çok proje varsa hata ver veya birden çok talep aç.
+app.post('/api/uretim-satinalma-talebi-olustur', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { kalemler, istenen_tarih, teslim_yeri, genel_aciklama } = req.body;
+        if (!Array.isArray(kalemler) || kalemler.length === 0) {
+            return res.json({ ok: false, hata: 'Kalem seçilmedi.' });
+        }
+
+        // Kalem detaylarını + proje_id'lerini topla
+        const ids = kalemler.map(k => k.teslimat_urun_id).filter(Boolean);
+        const r = await client.query(`
+            SELECT tu.id, tu.stok_kart_id, tu.ozel_urun_adi, tu.ozel_urun_birim, tu.aciklama,
+                   pt.proje_id, pt.bina_adi
+            FROM teslimat_urunleri tu
+            JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
+            WHERE tu.id = ANY($1::int[])
+        `, [ids]);
+
+        // Proje bazında grupla
+        const byProje = {};
+        for (const row of r.rows) {
+            const m = kalemler.find(k => k.teslimat_urun_id === row.id);
+            if (!m || !(parseFloat(m.miktar) > 0)) continue;
+            if (!byProje[row.proje_id]) byProje[row.proje_id] = [];
+            byProje[row.proje_id].push({ ...row, talep_miktari: parseFloat(m.miktar) });
+        }
+
+        const olusturulanTalepler = [];
+        for (const [projeId, kalemlerListe] of Object.entries(byProje)) {
+            // Talep no üret
+            const c = await client.query('SELECT COUNT(*)::int as n FROM satinalma_talepleri');
+            const talep_no = `SAT-T-${1001 + c.rows[0].n + olusturulanTalepler.length}`;
+
+            const tIns = await client.query(`
+                INSERT INTO satinalma_talepleri (talep_no, proje_id, talep_eden, istenen_tarih, teslim_yeri, genel_aciklama, durum)
+                VALUES ($1,$2,$3,$4,$5,$6,'ONAY BEKLİYOR') RETURNING id
+            `, [talep_no, projeId, req.user.adSoyad, istenen_tarih || null,
+                teslim_yeri || 'Merkez Depo',
+                genel_aciklama || `Üretim modülünden otomatik: ${kalemlerListe.length} kalem`]);
+            const talepId = tIns.rows[0].id;
+
+            for (const k of kalemlerListe) {
+                const tuRow = await client.query('SELECT stok_birim FROM teslimat_urunleri tu LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id LEFT JOIN LATERAL (SELECT sk.birim as stok_birim) bn ON true WHERE tu.id=$1', [k.id]).catch(()=>({rowCount:0}));
+                const yk = await client.query(`
+                    INSERT INTO talep_urunleri (talep_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama, durum)
+                    VALUES ($1,$2,$3,$4,$5,$6,'ONAY BEKLİYOR') RETURNING id
+                `, [talepId, k.stok_kart_id, k.ozel_urun_adi, k.ozel_urun_birim,
+                    k.talep_miktari, k.aciklama || `Üretim Planı'ndan: ${k.bina_adi}`]);
+                // Bağlantıyı kur — ürün listesindeki kalem hangi talebe gitti
+                await client.query(`UPDATE teslimat_urunleri SET talep_urun_id=$1, durum='TALEP EDILDI' WHERE id=$2`,
+                    [yk.rows[0].id, k.id]);
+            }
+            olusturulanTalepler.push({ talep_no, talep_id: talepId, kalem_sayisi: kalemlerListe.length, proje_id: projeId });
+        }
+
+        await client.query('COMMIT');
+        const ozet = olusturulanTalepler.map(t => `${t.talep_no} (${t.kalem_sayisi} kalem)`).join(', ');
+        res.json({
+            ok: true,
+            mesaj: `${olusturulanTalepler.length} satınalma talebi oluşturuldu: ${ozet}`,
+            talepler: olusturulanTalepler
+        });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// İş emri iptal et — atanan miktarlar serbest bırakılır (henüz tamamlanmamış olanlar)
+app.post('/api/uretim-is-emri-iptal/:id', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { id } = req.params;
+        const ie = await client.query('SELECT durum FROM uretim_is_emirleri WHERE id=$1', [id]);
+        if (ie.rowCount === 0) return res.json({ ok: false, hata: 'İş emri bulunamadı.' });
+        if (ie.rows[0].durum === 'TAMAMLANDI') {
+            return res.json({ ok: false, hata: 'Tamamlanmış iş emri iptal edilemez.' });
+        }
+        // Tamamlanmış miktarlar zaten uretilen_miktar'a işlenmiş — onları geri çekmiyoruz.
+        // Sadece atanan ama tamamlanmayan kısmı serbest bırakıyoruz (atanan_miktar=tamamlanan_miktar yapıyoruz).
+        await client.query(`
+            UPDATE uretim_is_emri_kalemleri SET atanan_miktar = COALESCE(tamamlanan_miktar,0)
+            WHERE is_emri_id=$1
+        `, [id]);
+        await client.query(`UPDATE uretim_is_emirleri SET durum='IPTAL' WHERE id=$1`, [id]);
+        await client.query('COMMIT');
+        res.json({ ok: true, mesaj: 'İş emri iptal edildi.' });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
 app.use((err, req, res, next) => {
     console.error("🔥 Hata:", err.message);
     res.status(500).json({ ok: false, hata: err.message });
