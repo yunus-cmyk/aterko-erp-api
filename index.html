@@ -648,6 +648,7 @@
                         <th class="text-center">Kalem</th>
                         <th class="text-end">Genel Toplam (KDV Dahil)</th>
                         <th class="text-center">Durum</th>
+                        <th class="text-center">Fatura</th>
                         <th class="text-center">Aksiyon</th>
                     </tr>
                 </thead>
@@ -7216,8 +7217,11 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
         const al = parseFloat(k.teslim_alinan_miktar) || 0;
         const sip2 = parseFloat(k.siparis_miktari) || 0;
         const tutar = sip2 * (parseFloat(k.birim_fiyat) || 0);
+        const fiyatBtn = k.stok_kart_id
+            ? `<button class="btn btn-sm btn-link p-0 ms-1" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${esc(k.urun_adi)}')" title="Tedarikçi fiyat karşılaştırması"><i class="bi bi-graph-up text-info"></i></button>`
+            : '';
         return `<tr>
-            <td class="small">${esc(k.stok_kodu)}<br><span class="text-muted">${esc(k.urun_adi)}</span></td>
+            <td class="small">${esc(k.stok_kodu)} ${fiyatBtn}<br><span class="text-muted">${esc(k.urun_adi)}</span></td>
             <td class="text-end">${formatTR(sip2)} ${esc(k.birim || '')}</td>
             <td class="text-end small">${formatTR(parseFloat(k.birim_fiyat)||0)} ${esc(para)}</td>
             <td class="text-end fw-bold">${formatTR(tutar)} ${esc(para)}</td>
@@ -7269,6 +7273,51 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
             </table>
         </div>
 
+        <!-- FATURA ONAY (sadece TAM/KISMI TESLIM siparişler) -->
+        ${['TAM TESLİM','KISMİ TESLİM','TAMAMLANDI'].includes(sip?.durum) ? `
+        <div class="card border-0 shadow-sm mt-4" style="border-left: 4px solid #198754 !important;">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+                <h6 class="mb-0 fw-bold ${sip?.fatura_onay_durumu === 'ONAYLI' ? 'text-success' : 'text-warning'}">
+                    <i class="bi bi-${sip?.fatura_onay_durumu === 'ONAYLI' ? 'check-circle-fill' : 'receipt'} me-2"></i>
+                    Fatura Onayı
+                    ${sip?.fatura_onay_durumu === 'ONAYLI'
+                        ? '<span class="badge bg-success ms-1">✓ Onaylı</span>'
+                        : '<span class="badge bg-warning text-dark ms-1">⏳ Bekliyor</span>'}
+                </h6>
+                <small class="text-muted">Fiziksel kontrol sonrası fatura no(ları) gir</small>
+            </div>
+            <div class="card-body py-3">
+                <div class="row g-2 align-items-start">
+                    <div class="col-md-8">
+                        <label class="form-label small fw-bold text-muted mb-1">Fatura No(ları)</label>
+                        <input type="text" id="faturaNolari-${siparisId}" class="form-control form-control-sm"
+                               placeholder="Örn: AC2024000123, AC2024000124 (virgülle ayır)"
+                               value="${esc((sip?.fatura_nolari || []).join(', '))}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-bold text-muted mb-1">İşlem</label>
+                        <button class="btn btn-success btn-sm w-100 fw-bold" onclick="faturaOnayla(${siparisId})">
+                            <i class="bi bi-check2-circle me-1"></i>${sip?.fatura_onay_durumu === 'ONAYLI' ? 'Güncelle' : 'Onayla'}
+                        </button>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label small fw-bold text-muted mb-1">Not (opsiyonel)</label>
+                        <input type="text" id="faturaNotu-${siparisId}" class="form-control form-control-sm"
+                               placeholder="Fatura ile ilgili not, eksik kontrol vs."
+                               value="${esc(sip?.fatura_notu || '')}">
+                    </div>
+                    ${sip?.fatura_onay_durumu === 'ONAYLI' ? `
+                    <div class="col-md-12 mt-2">
+                        <small class="text-muted">
+                            <i class="bi bi-clock me-1"></i>Onaylayan: ${esc(sip?.fatura_onaylayan_email || '-')} •
+                            ${sip?.fatura_onay_tarihi ? new Date(sip.fatura_onay_tarihi).toLocaleString('tr-TR') : '-'}
+                        </small>
+                    </div>` : ''}
+                </div>
+            </div>
+        </div>
+        ` : ''}
+
         <!-- DOSYA EKLERİ -->
         <div class="card border-0 shadow-sm mt-4">
             <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
@@ -7302,6 +7351,92 @@ function formatDosyaBoyut(b) {
     if (n < 1024) return n + ' B';
     if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
     return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+// ============================================================================
+// FATURA ONAY
+// ============================================================================
+async function faturaOnayla(siparisId) {
+    const noInput = document.getElementById('faturaNolari-' + siparisId);
+    const notInput = document.getElementById('faturaNotu-' + siparisId);
+    if (!noInput) return;
+    const fatura_nolari = noInput.value.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+    const notlar = notInput.value.trim();
+
+    const r = await secureFetch('/siparis-fatura-onayla', {
+        method: 'POST',
+        body: JSON.stringify({ siparis_id: siparisId, fatura_nolari, notlar })
+    });
+    if (r.ok) {
+        showToast(r.mesaj, 'success');
+        // Cache'i yenile + modal'ı tazele
+        await fetchSiparisListesi();
+        const cache = (window.siparislerCache || []).find(s => s.id === siparisId);
+        if (cache) openSiparisDetayModal(siparisId, cache.siparis_no);
+    } else showToast(r.hata, 'error');
+}
+
+// ============================================================================
+// FİYAT GEÇMİŞİ POPOVER (stok kart için tedarikçi karşılaştırması)
+// ============================================================================
+async function openFiyatGecmisiModal(stokKartId, urunAdi) {
+    const r = await secureFetch('/urun-fiyat-gecmisi/' + stokKartId).catch(()=>null);
+    if (!r || !r.ok) return showToast('Fiyat geçmişi yüklenemedi.', 'error');
+
+    let html = `<h6 class="fw-bold">${esc(urunAdi || 'Ürün')} — Fiyat Geçmişi</h6>`;
+    if (r.tedarikci_ozet.length === 0) {
+        html += '<div class="text-muted small p-3 text-center">Bu ürün için sipariş kaydı yok.</div>';
+    } else {
+        // Tedarikçi özeti
+        html += '<div class="table-responsive mt-2"><table class="table table-sm table-bordered mb-0" style="font-size:0.82rem;"><thead class="bg-light"><tr><th>Tedarikçi</th><th class="text-end">Son Fiyat</th><th class="text-end">Min</th><th class="text-end">Ort.</th><th class="text-end">Max</th><th class="text-center">Sip.</th></tr></thead><tbody>';
+        r.tedarikci_ozet.forEach(t => {
+            html += `<tr>
+                <td class="small fw-bold">${esc(t.tedarikci_adi)}</td>
+                <td class="text-end fw-bold text-primary">${formatTR(t.son_fiyat)} ${esc(t.para_birimi)}</td>
+                <td class="text-end small text-success">${formatTR(t.min_fiyat)}</td>
+                <td class="text-end small">${formatTR(t.ortalama)}</td>
+                <td class="text-end small text-danger">${formatTR(t.max_fiyat)}</td>
+                <td class="text-center"><span class="badge bg-info">${t.siparis_sayisi}</span></td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+
+        // Detay tablo (son 10 sipariş)
+        html += '<h6 class="fw-bold small mt-3 mb-2">Son Siparişler</h6>';
+        html += '<div class="table-responsive" style="max-height:30vh; overflow-y:auto;"><table class="table table-sm table-hover mb-0" style="font-size:0.78rem;"><thead class="bg-light"><tr><th>Sip. No</th><th>Tedarikçi</th><th class="text-end">Tarih</th><th class="text-end">Birim Fiyat</th><th class="text-end">Miktar</th></tr></thead><tbody>';
+        r.gecmis.slice(0, 15).forEach(g => {
+            html += `<tr>
+                <td class="small text-primary fw-bold">${esc(g.siparis_no)}</td>
+                <td class="small">${esc(g.tedarikci_adi || '-')}</td>
+                <td class="text-end small text-muted">${g.siparis_tarihi ? new Date(g.siparis_tarihi).toLocaleDateString('tr-TR') : '-'}</td>
+                <td class="text-end fw-bold">${formatTR(g.birim_fiyat)} ${esc(g.para_birimi || '')}</td>
+                <td class="text-end small">${formatTR(g.siparis_miktari)}</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+    }
+
+    // Generic modal (yoksa oluştur)
+    let modal = document.getElementById('modalFiyatGecmisi');
+    if (!modal) {
+        const div = document.createElement('div');
+        div.innerHTML = `
+        <div class="modal fade" id="modalFiyatGecmisi" tabindex="-1">
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header py-3 bg-dark text-white">
+                        <h5 class="modal-title fw-bold"><i class="bi bi-graph-up me-2"></i>Tedarikçi Fiyat Karşılaştırma</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4" style="background:#f8f9fa;" id="fiyatGecmisiBody"></div>
+                </div>
+            </div>
+        </div>`;
+        document.body.appendChild(div.firstElementChild);
+        modal = document.getElementById('modalFiyatGecmisi');
+    }
+    document.getElementById('fiyatGecmisiBody').innerHTML = html;
+    new bootstrap.Modal(modal).show();
 }
 
 async function uploadSiparisDosya(siparisId, inputEl) {
@@ -7348,7 +7483,7 @@ function renderSiparisTable(siparisler) {
     window.siparislerCache = siparisler; // Detay modal için
     const tbody = document.getElementById("siparisTableBody");
     if(siparisler.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</td></tr>';
         return;
     }
 
@@ -7359,6 +7494,17 @@ function renderSiparisTable(siparisler) {
         const kdvTutari = araToplam * (kdvOrani / 100);
         const genelToplam = araToplam + kdvTutari;
 
+        // Fatura durumu (sadece TAM/KISMI/TAMAMLANDI için anlamlı)
+        let faturaCell = '<span class="text-muted small">—</span>';
+        if (['TAM TESLİM','KISMİ TESLİM','TAMAMLANDI'].includes(s.durum)) {
+            if (s.fatura_onay_durumu === 'ONAYLI') {
+                const sayi = Array.isArray(s.fatura_nolari) ? s.fatura_nolari.length : 0;
+                faturaCell = `<span class="badge bg-success" title="${esc((s.fatura_nolari||[]).join(', '))}"><i class="bi bi-check-circle"></i> ${sayi} fatura</span>`;
+            } else {
+                faturaCell = '<span class="badge bg-warning text-dark" title="Fatura bekliyor"><i class="bi bi-receipt"></i> Bekliyor</span>';
+            }
+        }
+
         html += `<tr>
             <td class="fw-bold text-success">${esc(s.siparis_no)}</td>
             <td class="fw-bold text-dark">${esc(s.tedarikci_adi || '-')}</td>
@@ -7367,6 +7513,7 @@ function renderSiparisTable(siparisler) {
             <td class="text-center"><span class="badge bg-secondary">${s.kalem_sayisi} Ürün</span></td>
             <td class="text-end fw-bold">${formatTR(genelToplam)} ${s.para_birimi}</td>
             <td class="text-center">${getSatinalmaDurumBadge(s.durum)}</td>
+            <td class="text-center">${faturaCell}</td>
             <td class="text-center">${getSiparisAksiyonlari(s)}</td>
         </tr>`;
     });

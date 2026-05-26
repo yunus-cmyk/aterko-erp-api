@@ -1275,7 +1275,9 @@ app.get('/api/siparis-listesi', yetkiKontrol, async (req, res, next) => {
                    COALESCE(s.durum, 'SİPARİŞ VERİLDİ') as durum,
                    t.firma_adi as tedarikci_adi,
                    COALESCE(SUM(sk.siparis_miktari * sk.birim_fiyat), 0) as ara_toplam,
-                   COUNT(sk.id) as kalem_sayisi
+                   COUNT(sk.id) as kalem_sayisi,
+                   s.fatura_nolari, s.fatura_onay_durumu, s.fatura_onay_tarihi,
+                   s.fatura_onaylayan_email, s.fatura_notu
             FROM satinalma_siparisleri s
             LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
             LEFT JOIN siparis_kalemleri sk ON s.id = sk.siparis_id
@@ -1841,6 +1843,123 @@ app.post('/api/siparis-iptal', yetkiKontrol, async (req, res, next) => {
         res.json({ ok: true, mesaj: 'Sipariş iptal edildi, talepler geri alındı.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
+});
+
+// ============================================================================
+// FATURA ONAY SİSTEMİ
+// ============================================================================
+// Siparişe fatura no(ları) ekle ve onayla
+// Body: { siparis_id, fatura_nolari: [], notlar }
+app.post('/api/siparis-fatura-onayla', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { siparis_id, fatura_nolari, notlar } = req.body;
+        if (!siparis_id) return res.json({ ok: false, hata: 'Sipariş ID gerekli.' });
+        const liste = Array.isArray(fatura_nolari)
+            ? fatura_nolari.map(s => String(s).trim()).filter(Boolean)
+            : [];
+
+        // Sipariş durumunu kontrol — sadece TAM/KISMI TESLIM siparişler için fatura onay
+        const sR = await pool.query('SELECT durum, siparis_no FROM satinalma_siparisleri WHERE id=$1', [siparis_id]);
+        if (sR.rowCount === 0) return res.json({ ok: false, hata: 'Sipariş bulunamadı.' });
+        const durum = sR.rows[0].durum;
+        if (!['TAM TESLİM', 'KISMİ TESLİM', 'TAMAMLANDI'].includes(durum)) {
+            return res.json({ ok: false, hata: `Bu siparişe fatura ekleyebilmek için en az kısmi teslim olmalı (şu an: ${durum}).` });
+        }
+
+        const yeniDurum = liste.length > 0 ? 'ONAYLI' : 'YOK';
+        await pool.query(`
+            UPDATE satinalma_siparisleri SET
+                fatura_nolari = $1,
+                fatura_onay_durumu = $2,
+                fatura_onay_tarihi = ${liste.length > 0 ? 'NOW()' : 'NULL'},
+                fatura_onaylayan_email = $3,
+                fatura_notu = $4
+            WHERE id = $5
+        `, [liste, yeniDurum, liste.length > 0 ? req.user.email : null, notlar || null, siparis_id]);
+
+        await auditLogla(req, {
+            eylem: 'UPDATE', tablo: 'satinalma_siparisleri', kayit_id: siparis_id,
+            kayit_no: sR.rows[0].siparis_no,
+            ozet: liste.length > 0
+                ? `Fatura onaylandı: ${liste.join(', ')}`
+                : 'Fatura onayı kaldırıldı'
+        });
+        res.json({ ok: true, mesaj: liste.length > 0 ? `${liste.length} fatura onaylandı.` : 'Fatura onayı kaldırıldı.' });
+    } catch (e) { next(e); }
+});
+
+// Fatura bekleyen siparişler (TAM/KISMI teslim + fatura_onay_durumu = YOK)
+app.get('/api/fatura-bekleyen-siparisler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT s.id, s.siparis_no, s.durum, s.fatura_onay_durumu, s.fatura_nolari,
+                   s.termin_tarihi, s.para_birimi,
+                   t.firma_adi as tedarikci_adi,
+                   COALESCE(SUM(sk.birim_fiyat * sk.siparis_miktari),0)::numeric as toplam_tutar
+            FROM satinalma_siparisleri s
+            LEFT JOIN tedarikciler t ON s.tedarikci_id=t.id
+            LEFT JOIN siparis_kalemleri sk ON sk.siparis_id=s.id
+            WHERE s.durum IN ('TAM TESLİM', 'KISMİ TESLİM', 'TAMAMLANDI')
+              AND COALESCE(s.fatura_onay_durumu, 'YOK') = 'YOK'
+              AND COALESCE(s.arsiv, false) = false
+            GROUP BY s.id, t.firma_adi
+            ORDER BY s.id DESC
+        `);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// ============================================================================
+// TEDARİKÇİ FİYAT KARŞILAŞTIRMA
+// ============================================================================
+// Bir stok kartı için tedarikçi başına son fiyat geçmişi
+app.get('/api/urun-fiyat-gecmisi/:stokKartId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT
+                t.id as tedarikci_id, t.firma_adi as tedarikci_adi,
+                s.siparis_no, s.siparis_tarihi, s.para_birimi,
+                sk.birim_fiyat, sk.siparis_miktari
+            FROM siparis_kalemleri sk
+            JOIN satinalma_siparisleri s ON sk.siparis_id=s.id
+            LEFT JOIN tedarikciler t ON s.tedarikci_id=t.id
+            JOIN talep_urunleri tu ON sk.talep_urun_id=tu.id
+            WHERE tu.stok_kart_id = $1
+              AND COALESCE(sk.birim_fiyat,0) > 0
+              AND s.durum NOT IN ('İPTAL')
+              AND COALESCE(s.arsiv, false) = false
+            ORDER BY s.siparis_tarihi DESC, s.id DESC
+            LIMIT 50
+        `, [req.params.stokKartId]);
+
+        // Tedarikçi başına özet de hesapla
+        const tedarikciOzet = {};
+        r.rows.forEach(row => {
+            const k = row.tedarikci_id || 0;
+            if (!tedarikciOzet[k]) {
+                tedarikciOzet[k] = {
+                    tedarikci_id: row.tedarikci_id,
+                    tedarikci_adi: row.tedarikci_adi || '-',
+                    para_birimi: row.para_birimi,
+                    son_fiyat: parseFloat(row.birim_fiyat),
+                    son_tarih: row.siparis_tarihi,
+                    fiyatlar: [],
+                    siparis_sayisi: 0
+                };
+            }
+            tedarikciOzet[k].fiyatlar.push(parseFloat(row.birim_fiyat));
+            tedarikciOzet[k].siparis_sayisi++;
+        });
+        // Min, max, ortalama
+        Object.values(tedarikciOzet).forEach(o => {
+            o.min_fiyat = Math.min(...o.fiyatlar);
+            o.max_fiyat = Math.max(...o.fiyatlar);
+            o.ortalama = o.fiyatlar.reduce((a,b)=>a+b,0) / o.fiyatlar.length;
+            delete o.fiyatlar;
+        });
+
+        res.json({ ok: true, gecmis: r.rows, tedarikci_ozet: Object.values(tedarikciOzet) });
+    } catch (e) { next(e); }
 });
 
 app.post('/api/siparis-arsivle', yetkiKontrol, async (req, res, next) => {
