@@ -3247,10 +3247,22 @@ async function getKullaniciIzinleri(rolAd) {
 function izinCacheTemizle() { IZIN_CACHE.clear(); }
 
 // Endpoint: Aktif kullanıcının izin haritası
+// ?as=ROL parametresi: sadece ADMIN için — başka rolün izinlerini simüle eder
 app.get('/api/me/izinler', yetkiKontrol, async (req, res, next) => {
     try {
-        const izinler = await getKullaniciIzinleri(req.user.rol);
-        res.json({ ok: true, rol: req.user.rol, izinler, modul_katalog: MODUL_KATALOG });
+        let etkinRol = req.user.rol;
+        let simulasyon = false;
+        const yansitilan = (req.query.as || '').trim().toUpperCase();
+        if (yansitilan && (req.user.rol === 'ADMIN' || req.user.rol === 'Admin')) {
+            // Geçerli rol mü?
+            const r = await pool.query('SELECT 1 FROM roller WHERE ad=$1', [yansitilan]);
+            if (r.rowCount > 0) {
+                etkinRol = yansitilan;
+                simulasyon = true;
+            }
+        }
+        const izinler = await getKullaniciIzinleri(etkinRol);
+        res.json({ ok: true, rol: etkinRol, gercek_rol: req.user.rol, simulasyon, izinler, modul_katalog: MODUL_KATALOG });
     } catch (e) { next(e); }
 });
 

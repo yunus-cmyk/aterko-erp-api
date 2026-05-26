@@ -113,6 +113,42 @@
   <div id="topLoadingBar"></div>
   <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastContainer" style="z-index: 10500;"></div>
 
+  <!-- Rol Simülasyon Banner'ı -->
+  <div id="simulasyonBanner" class="d-none" style="background: linear-gradient(90deg, #6f42c1, #d63384); color: white; padding: 6px 16px; text-align: center; font-weight: 600; font-size: 0.85rem;">
+    <i class="bi bi-incognito me-1"></i>
+    <strong>Rol Simülasyonu Aktif:</strong> Şu an <span id="simulasyonRolAd">-</span> rolü gibi görüyorsun (gerçek yetkin: ADMIN).
+    <button class="btn btn-sm btn-light ms-2 py-0 px-2" onclick="simulasyonCikis()" style="font-size:0.75rem;">
+      <i class="bi bi-x-circle"></i> Çık
+    </button>
+  </div>
+
+  <!-- Simülasyon Modal -->
+  <div class="modal fade" id="modalSimulasyon" tabindex="-1">
+    <div class="modal-dialog modal-md modal-dialog-centered">
+      <div class="modal-content border-0 shadow-lg">
+        <div class="modal-header py-3" style="background: linear-gradient(90deg, #6f42c1, #d63384); color: white;">
+          <h5 class="modal-title fw-bold"><i class="bi bi-incognito me-2"></i>Rol Simülasyonu</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4" style="background:#f8f9fa;">
+          <div class="alert alert-info py-2 small">
+            <i class="bi bi-info-circle me-1"></i>Test amaçlı başka bir rolün ekranını görmek için kullanılır. Sadece <strong>arayüz simüle edilir</strong>; gerçek backend yetkisi <strong>değişmez</strong>. ADMIN olarak kalırsın.
+          </div>
+          <label class="form-label small fw-bold text-muted mb-1">Simüle Edilecek Rol</label>
+          <select id="simulasyonRolSecim" class="form-select form-select-sm">
+            <option value="">-- Gerçek rolüme dön (ADMIN) --</option>
+          </select>
+        </div>
+        <div class="modal-footer bg-white">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+          <button type="button" class="btn fw-bold px-4 text-white" style="background:#6f42c1;" onclick="simulasyonBaslat()">
+            <i class="bi bi-check2-circle me-1"></i>Uygula
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="header-box">
     <div class="d-flex align-items-center">
       <img src="https://www.aterko.com/wp-content/uploads/2022/07/aterko-logo-light.png" height="30" class="me-3">
@@ -134,6 +170,7 @@
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('roller')"><i class="bi bi-person-badge me-2"></i>Roller &amp; İzinler</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('formtanim')"><i class="bi bi-ui-checks me-2"></i>Form Tanımları</a></li>
           <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); openSimulasyonModal()"><i class="bi bi-incognito me-2"></i>Rol Simülasyonu</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
         </ul>
       </div>
@@ -2891,10 +2928,63 @@ function sekmeGorunur(modul) {
 
 // İzin haritasını yükle ve UI'ı uygula
 async function izinHaritasiYukle() {
-    const r = await secureFetch('/me/izinler').catch(() => null);
+    // Aktif simülasyon var mı kontrol et
+    const simRol = localStorage.getItem('aterko_simulasyon_rol');
+    const url = simRol ? '/me/izinler?as=' + encodeURIComponent(simRol) : '/me/izinler';
+    const r = await secureFetch(url).catch(() => null);
     if (!r || !r.ok) return;
     window.kullaniciIzinleri = r.izinler || {};
+
+    // Simülasyon banner kontrolü
+    const banner = document.getElementById('simulasyonBanner');
+    if (r.simulasyon && banner) {
+        banner.classList.remove('d-none');
+        document.getElementById('simulasyonRolAd').textContent = r.rol;
+        // Etkin yetkiyi de override et (sekmeGorunur ADMIN bypass'ını devre dışı bırakmak için)
+        kullaniciYetki = r.rol;
+    } else if (banner) {
+        banner.classList.add('d-none');
+        // Gerçek yetkiyi geri yükle
+        const user = JSON.parse(localStorage.getItem('aterko_user') || '{}');
+        kullaniciYetki = user.yetki || '';
+    }
+
     izinleriUygula();
+}
+
+// === ROL SİMÜLASYONU ===
+async function openSimulasyonModal() {
+    // Rolleri yükle
+    const r = await secureFetch('/roller').catch(()=>null);
+    if (!r || !r.ok) return showToast('Roller yüklenemedi.', 'error');
+
+    const sel = document.getElementById('simulasyonRolSecim');
+    const aktif = localStorage.getItem('aterko_simulasyon_rol') || '';
+    sel.innerHTML = '<option value="">-- Gerçek rolüme dön (ADMIN) --</option>' +
+        r.data.filter(x => x.ad !== 'ADMIN').map(x =>
+            `<option value="${esc(x.ad)}" ${x.ad === aktif ? 'selected' : ''}>${esc(x.ad)} — ${esc(x.aciklama || '')}</option>`
+        ).join('');
+    new bootstrap.Modal(document.getElementById('modalSimulasyon')).show();
+}
+
+function simulasyonBaslat() {
+    const yeniRol = document.getElementById('simulasyonRolSecim').value;
+    if (yeniRol) {
+        localStorage.setItem('aterko_simulasyon_rol', yeniRol);
+        showToast(`Simülasyon başladı: ${yeniRol} rolü gibi göreceksin.`, 'success');
+    } else {
+        localStorage.removeItem('aterko_simulasyon_rol');
+        showToast('Gerçek role dönüldü.', 'success');
+    }
+    bootstrap.Modal.getInstance(document.getElementById('modalSimulasyon'))?.hide();
+    // Sayfayı yenile — izinler tekrar yüklenir
+    setTimeout(() => location.reload(), 300);
+}
+
+function simulasyonCikis() {
+    localStorage.removeItem('aterko_simulasyon_rol');
+    showToast('Simülasyon kapatıldı. Sayfa yenileniyor...', 'success');
+    setTimeout(() => location.reload(), 500);
 }
 
 // Navbar sekmelerini ve dropdown'u izinlere göre göster/gizle
