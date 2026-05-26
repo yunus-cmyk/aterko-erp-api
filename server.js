@@ -2710,6 +2710,215 @@ app.post('/api/uretim-satinalma-talebi-olustur', yetkiKontrol, async (req, res, 
 });
 
 // ============================================================================
+// FAZ B-4: MONTAJ MODÜLÜ
+// ============================================================================
+
+// Montaja düşmüş teslimatlar: montaj_gerekli=true VE en az bir kalemi sahaya teslim olmuş
+app.get('/api/montaj-teslimatlar', yetkiKontrol, async (req, res, next) => {
+    try {
+        const q = `
+            SELECT pt.id as teslimat_id, pt.bina_adi, pt.bina_turu, pt.bina_tipi,
+                   pt.buyukluk_m2, pt.bina_yeri,
+                   p.proje_kodu, p.musteri_adi, p.proje_adi, p.id as proje_id,
+                   COALESCE(SUM(tu.miktar), 0) as toplam_gerekli,
+                   COALESCE(SUM(tu.saha_teslim_miktar), 0) as toplam_saha,
+                   COALESCE(SUM(tu.uygulanan_miktar), 0) as toplam_uygulanan,
+                   COALESCE(SUM(tu.teslim_edilen_miktar), 0) as toplam_teslim
+            FROM proje_teslimatlari pt
+            JOIN projeler p ON pt.proje_id=p.id
+            LEFT JOIN teslimat_urunleri tu ON tu.teslimat_id=pt.id
+                AND (tu.is_ek_urun = FALSE OR tu.ek_urun_onay_durumu='ONAYLI')
+            WHERE pt.montaj_gerekli = TRUE
+              AND pt.urun_listesi_yayin_durumu = 'YAYINDA'
+            GROUP BY pt.id, p.id
+            HAVING COALESCE(SUM(tu.saha_teslim_miktar), 0) > 0
+            ORDER BY pt.id DESC
+        `;
+        const r = await pool.query(q);
+        const data = r.rows.map(t => {
+            const ger = parseFloat(t.toplam_gerekli) || 0;
+            const sah = parseFloat(t.toplam_saha) || 0;
+            const uyg = parseFloat(t.toplam_uygulanan) || 0;
+            const tes = parseFloat(t.toplam_teslim) || 0;
+            let durum = 'BEKLEMEDE';
+            if (tes >= ger && ger > 0) durum = 'TESLIM';
+            else if (uyg >= sah && sah > 0) durum = 'UYGULANDI';   // uygulama bitti, teslim bekliyor
+            else if (uyg > 0) durum = 'UYGULANIYOR';
+            else durum = 'SAHADA';
+            return { ...t, durum, ilerleme_yuzde: ger > 0 ? Math.round((tes / ger) * 100) : 0 };
+        });
+        res.json({ ok: true, data });
+    } catch (e) { next(e); }
+});
+
+// Bir teslimatın montaj odaklı ürün listesi
+app.get('/api/montaj-teslimat-urunleri/:teslimatId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { teslimatId } = req.params;
+        const baslik = await pool.query(`
+            SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi
+            FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id=p.id
+            WHERE pt.id=$1
+        `, [teslimatId]);
+        if (baslik.rowCount === 0) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+
+        const r = await pool.query(`
+            SELECT tu.*,
+                   sk.stok_kodu, sk.stok_adi, sk.birim as stok_birim
+            FROM teslimat_urunleri tu
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+            WHERE tu.teslimat_id=$1
+            AND (tu.is_ek_urun = FALSE OR tu.ek_urun_onay_durumu='ONAYLI')
+            ORDER BY tu.sira ASC, tu.id ASC
+        `, [teslimatId]);
+
+        const data = r.rows.map(u => {
+            const ger = parseFloat(u.miktar) || 0;
+            const sah = parseFloat(u.saha_teslim_miktar) || 0;
+            const uyg = parseFloat(u.uygulanan_miktar) || 0;
+            const tes = parseFloat(u.teslim_edilen_miktar) || 0;
+            const sahaBekleyen = Math.max(0, sah - uyg);             // sahaya geldi ama uygulanmamış
+            const uygulamaBekleyen = Math.max(0, uyg - tes);         // uygulandı, müşteri teslimi bekliyor
+            let durum = 'SAHADA';
+            if (tes >= ger) durum = 'TESLIM';
+            else if (uyg >= sah && sah > 0) durum = 'UYGULANDI';
+            else if (uyg > 0) durum = 'UYGULANIYOR';
+            else if (sah > 0) durum = 'SAHADA';
+            else durum = 'BEKLEMEDE';
+            return { ...u, sahaBekleyen, uygulamaBekleyen, kalem_durumu: durum };
+        });
+        res.json({ ok: true, baslik: baslik.rows[0], data });
+    } catch (e) { next(e); }
+});
+
+// Uygulama kaydet — kalemler için uygulanan_miktar artırılır
+// Body: { kalemler: [{teslimat_urun_id, fark_miktar}] }
+// fark_miktar = bu sefer eklenecek uygulama miktarı (delta), mutlak değer değil
+app.post('/api/montaj-uygulama-kaydet', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { kalemler } = req.body;
+        if (!Array.isArray(kalemler) || kalemler.length === 0) {
+            return res.json({ ok: false, hata: 'Kalem seçilmedi.' });
+        }
+
+        let kayit = 0, hatalar = [];
+        for (const k of kalemler) {
+            const fark = parseFloat(k.fark_miktar);
+            if (!(fark > 0)) continue;
+
+            // Mevcut durumu al
+            const tu = await client.query(`
+                SELECT tu.uygulanan_miktar, tu.saha_teslim_miktar,
+                       sk.stok_adi, tu.ozel_urun_adi
+                FROM teslimat_urunleri tu
+                LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+                WHERE tu.id=$1
+            `, [k.teslimat_urun_id]);
+            if (tu.rowCount === 0) { hatalar.push(`Kalem #${k.teslimat_urun_id} yok`); continue; }
+            const row = tu.rows[0];
+            const ad = row.stok_adi || row.ozel_urun_adi || `Kalem #${k.teslimat_urun_id}`;
+
+            const mevcutUyg = parseFloat(row.uygulanan_miktar) || 0;
+            const sah = parseFloat(row.saha_teslim_miktar) || 0;
+            // Toplam uygulanan saha_teslim'i geçemez
+            const yeniUyg = mevcutUyg + fark;
+            if (yeniUyg > sah + 0.0001) {
+                hatalar.push(`${ad}: sahada ${sah - mevcutUyg} kaldı, +${fark} eklenemez`);
+                continue;
+            }
+
+            await client.query(`
+                UPDATE teslimat_urunleri SET uygulanan_miktar = COALESCE(uygulanan_miktar,0) + $1
+                WHERE id=$2
+            `, [fark, k.teslimat_urun_id]);
+
+            await client.query(`
+                INSERT INTO montaj_hareketleri (teslimat_urun_id, hareket_tipi, miktar, kullanici_email, notlar)
+                VALUES ($1, 'UYGULANDI', $2, $3, $4)
+            `, [k.teslimat_urun_id, fark, req.user.email, k.notlar || null]);
+            kayit++;
+        }
+
+        if (kayit === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ ok: false, hata: 'Hiçbir kalem işlenemedi: ' + (hatalar.join(' | ') || 'geçerli miktar yok') });
+        }
+
+        await client.query('COMMIT');
+        res.json({
+            ok: true,
+            mesaj: `${kayit} kalem için uygulama kaydedildi.` + (hatalar.length ? ` Uyarı: ${hatalar.length}` : ''),
+            hatalar
+        });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Müşteri teslimi — teslimatın tüm uygulanan miktarları teslim_edilen'e geçer
+// Body: { teslimat_id, notlar }
+app.post('/api/montaj-musteri-teslim', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { teslimat_id, notlar } = req.body;
+
+        // Teslimatın kalemlerini al — uygulanan - teslim_edilen = teslim edilecek miktar
+        const kalemler = await client.query(`
+            SELECT id, uygulanan_miktar, teslim_edilen_miktar
+            FROM teslimat_urunleri
+            WHERE teslimat_id=$1
+            AND (is_ek_urun = FALSE OR ek_urun_onay_durumu='ONAYLI')
+        `, [teslimat_id]);
+
+        let kayit = 0;
+        for (const k of kalemler.rows) {
+            const uyg = parseFloat(k.uygulanan_miktar) || 0;
+            const tes = parseFloat(k.teslim_edilen_miktar) || 0;
+            const fark = uyg - tes;
+            if (fark <= 0) continue;
+
+            await client.query(`
+                UPDATE teslimat_urunleri SET teslim_edilen_miktar = COALESCE(teslim_edilen_miktar,0) + $1
+                WHERE id=$2
+            `, [fark, k.id]);
+
+            await client.query(`
+                INSERT INTO montaj_hareketleri (teslimat_urun_id, hareket_tipi, miktar, kullanici_email, notlar)
+                VALUES ($1, 'MUSTERIYE_TESLIM', $2, $3, $4)
+            `, [k.id, fark, req.user.email,
+                notlar || `Bina (teslimat #${teslimat_id}) müşteriye teslim`]);
+            kayit++;
+        }
+
+        if (kayit === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ ok: false, hata: 'Müşteriye teslim edilecek uygulanmış kalem yok.' });
+        }
+
+        await client.query('COMMIT');
+        res.json({ ok: true, mesaj: `${kayit} kalem müşteriye teslim edildi.` });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Montaj hareketleri log'u (bir teslimat için)
+app.get('/api/montaj-hareketleri/:teslimatId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT mh.*, tu.ozel_urun_adi, sk.stok_kodu, sk.stok_adi
+            FROM montaj_hareketleri mh
+            JOIN teslimat_urunleri tu ON mh.teslimat_urun_id=tu.id
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+            WHERE tu.teslimat_id=$1
+            ORDER BY mh.kayit_tarihi DESC, mh.id DESC
+        `, [req.params.teslimatId]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// ============================================================================
 // FAZ B-3: SEVKİYAT MODÜLÜ
 // ============================================================================
 

@@ -130,6 +130,7 @@
       <li class="nav-item"><a class="nav-link" id="nav-tedarikci" onclick="setTab('tedarikci')"><i class="bi bi-shop me-2"></i>Tedarikçiler</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-2"></i>Ürün Listesi</a></li>
       <li class="nav-item"><a class="nav-link text-warning" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-2"></i>Üretim</a></li>
+      <li class="nav-item"><a class="nav-link" id="nav-montaj" onclick="setTab('montaj')" style="color:#6f42c1;"><i class="bi bi-wrench-adjustable me-2"></i>Montaj</a></li>
       <li class="nav-item"><a class="nav-link text-success" id="nav-satinalma" onclick="setTab('satinalma')"><i class="bi bi-cart-check me-2"></i>Satınalma Talepleri</a></li>
     </ul>
     <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" onclick="alert('Proje Ekleme (Daha Sonra Aktif Edilecek)')"><i class="bi bi-plus-lg me-1"></i> Yeni Proje Girişi</button>
@@ -784,6 +785,84 @@
             <div id="sevkiyatSummaryBar" class="sp-summary-bar"></div>
             <div id="sevkiyatContent"></div>
         </div>
+    </div>
+
+    <!-- MONTAJ MODÜLÜ -->
+    <div id="montajArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-wrench-adjustable me-2" style="color:#6f42c1;"></i>Montaj Modülü</h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="fetchMontajTeslimatlar()" title="Yenile"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+
+        <div class="row g-3">
+            <!-- Sol: Teslimat listesi -->
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white fw-bold py-2">
+                        <i class="bi bi-buildings me-2"></i>Montajlı Teslimatlar
+                        <span class="badge bg-secondary ms-1" id="montajTeslimatSayisi">0</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="montajTeslimatListe" style="max-height: 70vh; overflow-y:auto;">
+                            <div class="text-center text-muted p-4 small">Yükleniyor...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sağ: Seçili teslimatın detayı -->
+            <div class="col-md-8">
+                <div id="montajDetayBos" class="card shadow-sm border-0 text-center p-5 text-muted">
+                    <i class="bi bi-arrow-left-circle display-4 text-muted mb-3"></i>
+                    <h6>Soldan bir teslimat seçin</h6>
+                    <small>Sahaya teslim olmuş montajlı binalar listelenir. Birini seçerek kalemlerin durumunu görüp uygulama miktarı kaydedebilirsin.</small>
+                </div>
+                <div id="montajDetay" class="d-none"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Uygulama Kaydet Modal -->
+    <div class="modal fade" id="modalMontajUygulama" tabindex="-1" data-bs-backdrop="static">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3" style="background:#6f42c1; color:white;">
+            <h5 class="modal-title fw-bold"><i class="bi bi-wrench-adjustable me-2"></i>Uygulama Miktarı Kaydet</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4" style="background:#f8f9fa;">
+            <div class="alert alert-info py-2 mb-3 small">
+              <i class="bi bi-info-circle me-2"></i>Sahada uygulanmış miktarı her kalem için gir. Sahadaki bekleyen miktarı geçemezsin. Girilen miktar mevcut "Uygulanan" değerin üzerine eklenir.
+            </div>
+            <div class="card border-0 shadow-sm">
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="bg-dark text-white small">
+                    <tr>
+                      <th>Ürün</th>
+                      <th class="text-end">Sahada Bekleyen</th>
+                      <th class="text-end">Mevcut Uygulanan</th>
+                      <th class="text-center" style="width:140px;">Bu Sefer Eklenecek *</th>
+                      <th>Birim</th>
+                    </tr>
+                  </thead>
+                  <tbody id="muyKalemTablosu"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="form-label small fw-bold text-muted mb-1">Genel Not (opsiyonel)</label>
+              <textarea id="muyNot" class="form-control form-control-sm" rows="2" placeholder="Uygulama notu, ekip, sahadaki durum..."></textarea>
+            </div>
+          </div>
+          <div class="modal-footer bg-white">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn fw-bold px-4 text-white" style="background:#6f42c1;" onclick="montajUygulamaOnayla()">
+              <i class="bi bi-check2-circle me-1"></i>Uygulamayı Kaydet
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Sevkiyat Belgesi Oluştur Modal -->
@@ -2038,7 +2117,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','ozetArea','tedarikciArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -2071,6 +2150,9 @@ function setTab(tab) {
     } else if (tab === 'uretim') {
         document.getElementById("uretimArea").classList.remove("d-none");
         switchUretimSekme('plan');
+    } else if (tab === 'montaj') {
+        document.getElementById("montajArea").classList.remove("d-none");
+        fetchMontajTeslimatlar();
     } else if (tab === 'satinalma') {
         document.getElementById("satinalmaArea").classList.remove("d-none");
         switchSatinalmaSubTab('talepler');
@@ -3338,6 +3420,246 @@ async function sevkiyatIptal() {
         bootstrap.Modal.getInstance(document.getElementById('modalSevkiyatDetay')).hide();
         fetchSevkiyatBelgeleri();
         fetchSevkiyatHazir();
+    } else showToast(r.hata, 'error');
+}
+
+// ============================================================================
+// MONTAJ MODÜLÜ (B-4)
+// ============================================================================
+let montajTeslimatCache = [];
+let aktifMontajTeslimatId = null;
+let aktifMontajDetayCache = null;
+
+function fetchMontajTeslimatlar() {
+    showLoading();
+    secureFetch('/montaj-teslimatlar').then(r => {
+        hideLoading();
+        if (r.ok) {
+            montajTeslimatCache = r.data;
+            renderMontajTeslimatListe();
+            // Aktif olan yenile
+            if (aktifMontajTeslimatId) selectMontajTeslimat(aktifMontajTeslimatId);
+        }
+    });
+}
+
+function renderMontajTeslimatListe() {
+    document.getElementById('montajTeslimatSayisi').textContent = montajTeslimatCache.length;
+    const div = document.getElementById('montajTeslimatListe');
+    if (montajTeslimatCache.length === 0) {
+        div.innerHTML = '<div class="text-center text-muted p-4 small">Henüz sahaya teslim olmuş montajlı teslimat yok.<br><br>Bir teslimatın <strong>Montaj gerekli</strong> işaretli olması ve sevkiyatının <strong>"Teslim Edildi"</strong> durumuna geçmesi gerekir.</div>';
+        return;
+    }
+
+    const durumMap = {
+        'BEKLEMEDE': ['secondary','Bekliyor'],
+        'SAHADA': ['info','Sahaya Geldi'],
+        'UYGULANIYOR': ['warning','Uygulanıyor'],
+        'UYGULANDI': ['primary','Uygulandı'],
+        'TESLIM': ['success','Müşteriye Teslim']
+    };
+
+    div.innerHTML = montajTeslimatCache.map(t => {
+        const [cls, txt] = durumMap[t.durum] || ['secondary','-'];
+        const active = (t.teslimat_id == aktifMontajTeslimatId) ? 'border-primary border-2' : '';
+        return `<div class="border-bottom p-3 ${active}" style="cursor:pointer;" onclick="selectMontajTeslimat(${t.teslimat_id})">
+            <div class="d-flex justify-content-between mb-1">
+                <small class="text-muted">${esc(t.proje_kodu)} / ${esc(t.musteri_adi||'')}</small>
+                <span class="badge bg-${cls}">${txt}</span>
+            </div>
+            <div class="fw-bold mb-1">${esc(t.bina_adi)}</div>
+            <div class="small text-muted">${esc(t.bina_turu || '')} ${t.buyukluk_m2 ? '• ' + t.buyukluk_m2 + ' m²' : ''}</div>
+            <div class="progress mt-2" style="height:6px;">
+                <div class="progress-bar bg-success" style="width:${t.ilerleme_yuzde}%"></div>
+            </div>
+            <div class="small text-muted text-end mt-1">%${t.ilerleme_yuzde} müşteriye teslim</div>
+        </div>`;
+    }).join('');
+}
+
+async function selectMontajTeslimat(teslimatId) {
+    aktifMontajTeslimatId = teslimatId;
+    renderMontajTeslimatListe(); // active highlight
+    showLoading();
+    const r = await secureFetch('/montaj-teslimat-urunleri/' + teslimatId);
+    hideLoading();
+    if (!r.ok) return showToast(r.hata, 'error');
+
+    aktifMontajDetayCache = r;
+    renderMontajDetay();
+}
+
+function renderMontajDetay() {
+    if (!aktifMontajDetayCache) return;
+    const { baslik: b, data: liste } = aktifMontajDetayCache;
+
+    document.getElementById('montajDetayBos').classList.add('d-none');
+    const div = document.getElementById('montajDetay');
+    div.classList.remove('d-none');
+
+    const durumMap = {
+        'BEKLEMEDE': ['secondary','Bekliyor'], 'SAHADA': ['info','Sahaya Geldi'],
+        'UYGULANIYOR': ['warning','Uygulanıyor'], 'UYGULANDI': ['primary','Uygulandı'],
+        'TESLIM': ['success','Müşteriye Teslim']
+    };
+
+    // Bina seviyesi özet
+    const toplam = { ger: 0, sah: 0, uyg: 0, tes: 0 };
+    liste.forEach(u => {
+        toplam.ger += parseFloat(u.miktar) || 0;
+        toplam.sah += parseFloat(u.saha_teslim_miktar) || 0;
+        toplam.uyg += parseFloat(u.uygulanan_miktar) || 0;
+        toplam.tes += parseFloat(u.teslim_edilen_miktar) || 0;
+    });
+    const uygTeslimBekleyen = toplam.uyg - toplam.tes;
+
+    div.innerHTML = `
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-header bg-white">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <h6 class="mb-1 fw-bold">${esc(b.bina_adi)}</h6>
+                        <small class="text-muted">${esc(b.proje_kodu)} / ${esc(b.musteri_adi||'')} — ${esc(b.bina_turu||'')} ${b.buyukluk_m2 ? '• ' + b.buyukluk_m2 + ' m²' : ''}</small>
+                        ${b.bina_yeri ? `<div class="small text-muted mt-1"><i class="bi bi-geo-alt"></i> ${esc(b.bina_yeri)}</div>` : ''}
+                    </div>
+                    <div class="text-end">
+                        <div class="small text-muted">Müşteri Teslim İlerleme</div>
+                        <div class="fw-bold text-success">${toplam.ger > 0 ? Math.round((toplam.tes/toplam.ger)*100) : 0}%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body bg-light p-3">
+                <div class="row g-2 small">
+                    <div class="col"><div class="p-2 bg-white rounded text-center"><div class="text-muted">Gerekli</div><div class="fw-bold">${formatTR(toplam.ger)}</div></div></div>
+                    <div class="col"><div class="p-2 bg-white rounded text-center"><div class="text-muted">Sahaya Geldi</div><div class="fw-bold text-info">${formatTR(toplam.sah)}</div></div></div>
+                    <div class="col"><div class="p-2 bg-white rounded text-center"><div class="text-muted">Uygulandı</div><div class="fw-bold text-warning">${formatTR(toplam.uyg)}</div></div></div>
+                    <div class="col"><div class="p-2 bg-white rounded text-center"><div class="text-muted">Müşteri Teslim</div><div class="fw-bold text-success">${formatTR(toplam.tes)}</div></div></div>
+                </div>
+                <div class="d-flex gap-2 mt-3 flex-wrap">
+                    <button class="btn btn-sm fw-bold text-white" style="background:#6f42c1;" onclick="openMontajUygulamaModal()">
+                        <i class="bi bi-wrench me-1"></i>Seçili Kalemlerde Uygulama Kaydet
+                    </button>
+                    <button class="btn btn-sm btn-success fw-bold" onclick="montajMusteriyeTeslim()" ${uygTeslimBekleyen <= 0 ? 'disabled title="Müşteriye teslim edilecek uygulanmış kalem yok"' : ''}>
+                        <i class="bi bi-flag-fill me-1"></i>Tüm Uygulananları Müşteriye Teslim Et ${uygTeslimBekleyen > 0 ? `(${formatTR(uygTeslimBekleyen)} birim)` : ''}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="bi bi-list-ul me-2"></i>Bina Ürün Listesi</span>
+                <span class="small text-muted"><span id="muyKalemSecili">0</span> kalem seçili</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
+                    <thead class="bg-light">
+                        <tr>
+                            <th width="36"><input type="checkbox" id="muyHepsiChk" onchange="muyHepsiToggle(this)"></th>
+                            <th>Ürün</th>
+                            <th class="text-end">Gerekli</th>
+                            <th class="text-end">Saha Teslim</th>
+                            <th class="text-end">Uygulanan</th>
+                            <th class="text-end">Sahada Bekleyen</th>
+                            <th class="text-end">Müşteri Teslim</th>
+                            <th>Birim</th>
+                            <th class="text-center">Durum</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${liste.map(u => {
+                            const isOzel = !u.stok_kart_id;
+                            const ad = isOzel ? esc(u.ozel_urun_adi || '-') : esc(u.stok_adi || '-');
+                            const kod = isOzel ? '<span class="text-warning small">Özel</span>' : `<small class="text-primary fw-bold">${esc(u.stok_kodu||'')}</small>`;
+                            const birim = isOzel ? esc(u.ozel_urun_birim || '') : esc(u.stok_birim || '');
+                            const [cls, txt] = durumMap[u.kalem_durumu] || ['secondary','-'];
+                            const sahaBekl = parseFloat(u.sahaBekleyen) || 0;
+                            const chkDisabled = sahaBekl <= 0 ? 'disabled title="Uygulanacak miktar yok"' : '';
+                            return `<tr>
+                                <td><input type="checkbox" class="muy-chk form-check-input" value="${u.id}" data-saha-bekleyen="${sahaBekl}" data-uyg="${u.uygulanan_miktar}" data-ad="${esc(ad)}" data-birim="${esc(birim)}" onchange="muySeciliGuncelle()" ${chkDisabled}></td>
+                                <td>${kod}<br><span class="fw-bold">${ad}</span></td>
+                                <td class="text-end">${formatTR(u.miktar)}</td>
+                                <td class="text-end text-info">${formatTR(u.saha_teslim_miktar)}</td>
+                                <td class="text-end text-warning">${formatTR(u.uygulanan_miktar)}</td>
+                                <td class="text-end ${sahaBekl > 0 ? 'fw-bold' : 'text-muted'}">${formatTR(sahaBekl)}</td>
+                                <td class="text-end text-success">${formatTR(u.teslim_edilen_miktar)}</td>
+                                <td>${birim}</td>
+                                <td class="text-center"><span class="badge bg-${cls}">${txt}</span></td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function muyHepsiToggle(chk) {
+    document.querySelectorAll('.muy-chk:not(:disabled)').forEach(c => c.checked = chk.checked);
+    muySeciliGuncelle();
+}
+
+function muySeciliGuncelle() {
+    document.getElementById('muyKalemSecili').textContent = document.querySelectorAll('.muy-chk:checked').length;
+}
+
+function openMontajUygulamaModal() {
+    const secili = [...document.querySelectorAll('.muy-chk:checked')];
+    if (secili.length === 0) return showToast('Kalem seçilmedi.', 'error');
+
+    const tbody = document.getElementById('muyKalemTablosu');
+    tbody.innerHTML = secili.map(c => {
+        const sb = parseFloat(c.dataset.sahaBekleyen) || 0;
+        return `<tr data-kalem-id="${c.value}">
+            <td class="fw-bold">${esc(c.dataset.ad)}</td>
+            <td class="text-end text-info fw-bold">${formatTR(sb)}</td>
+            <td class="text-end">${formatTR(parseFloat(c.dataset.uyg)||0)}</td>
+            <td class="text-center">
+                <input type="number" class="form-control form-control-sm text-center muy-fark fw-bold" step="0.01" min="0" max="${sb}" value="${sb}">
+            </td>
+            <td>${esc(c.dataset.birim)}</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('muyNot').value = '';
+    new bootstrap.Modal(document.getElementById('modalMontajUygulama')).show();
+}
+
+async function montajUygulamaOnayla() {
+    const not = document.getElementById('muyNot').value.trim();
+    const kalemler = [...document.querySelectorAll('#muyKalemTablosu tr')].map(tr => ({
+        teslimat_urun_id: parseInt(tr.dataset.kalemId),
+        fark_miktar: parseFloat(tr.querySelector('.muy-fark').value) || 0,
+        notlar: not
+    })).filter(k => k.teslimat_urun_id && k.fark_miktar > 0);
+
+    if (kalemler.length === 0) return showToast('Hiçbir kalem için geçerli miktar girilmedi.', 'error');
+
+    showLoading();
+    const r = await secureFetch('/montaj-uygulama-kaydet', { method:'POST', body: JSON.stringify({ kalemler }) });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalMontajUygulama')).hide();
+        showToast(r.mesaj, 'success');
+        if (r.hatalar?.length) setTimeout(()=>showToast(r.hatalar.join('\n'), 'error'), 600);
+        fetchMontajTeslimatlar();
+    } else showToast(r.hata, 'error');
+}
+
+async function montajMusteriyeTeslim() {
+    if (!aktifMontajTeslimatId) return;
+    const not = prompt('Müşteri teslim notu (opsiyonel — imza, tutanak no vs.):', '');
+    if (not === null) return;
+    if (!confirm('Bu binadaki tüm uygulanmış kalemler "Müşteriye Teslim" durumuna alınacak. Devam?')) return;
+
+    showLoading();
+    const r = await secureFetch('/montaj-musteri-teslim', {
+        method:'POST', body: JSON.stringify({ teslimat_id: aktifMontajTeslimatId, notlar: not })
+    });
+    hideLoading();
+    if (r.ok) {
+        showToast(r.mesaj, 'success');
+        fetchMontajTeslimatlar();
     } else showToast(r.hata, 'error');
 }
 
