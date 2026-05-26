@@ -1330,13 +1330,7 @@
                         </div>
 
                         <div class="row g-2 mb-3">
-                            <div class="col-6"><label class="form-label small fw-bold text-muted">Miktar <span class="text-danger">*</span></label><input type="number" id="urunMiktar" class="form-control" value="1.00" step="0.01"></div>
-                            <div class="col-6"><label class="form-label small fw-bold text-muted">Kullanım Amacı</label>
-                                <select id="urunKullanimAmaci" class="form-select">
-                                    <option value="URETIM">🏭 Üretimde Kullanılacak</option>
-                                    <option value="DIREKT_SEVKIYAT">🚚 Direkt Sevkiyat</option>
-                                </select>
-                            </div>
+                            <div class="col-12"><label class="form-label small fw-bold text-muted">Miktar <span class="text-danger">*</span></label><input type="number" id="urunMiktar" class="form-control" value="1.00" step="0.01"></div>
                         </div>
                         <div class="mb-3"><label class="form-label small fw-bold text-muted">Açıklama / Not</label><input type="text" id="urunAciklama" class="form-control" placeholder="Teknik, Üretim veya Satın Alma için not..."></div>
                         <button class="btn btn-primary w-100 fw-bold" onclick="listeyeEkle()"><i class="bi bi-check2-all me-2"></i>Ekle</button>
@@ -1373,32 +1367,20 @@
                         </div>
                     </div>
 
-                    <div id="urunListesiAksiyonBar" class="card-body py-2 px-3 border-bottom bg-light d-none">
-                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                            <span class="small fw-bold text-muted"><span id="urunSeciliSayisi">0</span> kalem seçili</span>
-                            <button class="btn btn-success btn-sm fw-bold" onclick="openTalepOlusturModal()">
-                                <i class="bi bi-cart-plus me-1"></i> Seçilenler için Talep Oluştur
-                            </button>
-                        </div>
-                    </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table liste-table mb-0 table-hover" style="font-size:0.82rem;">
                                 <thead>
                                     <tr>
-                                        <th width="36"><input type="checkbox" id="urunHepsiChk" onchange="urunHepsiToggle(this)"></th>
                                         <th>Tip</th>
                                         <th>Stok Kodu</th>
                                         <th>Ürün Adı</th>
                                         <th class="text-end">İstenen</th>
                                         <th>Birim</th>
-                                        <th class="text-center">Amaç</th>
-                                        <th class="text-center">Stok Durumu</th>
-                                        <th>Bağlı Talep</th>
                                         <th class="text-center">İşlem</th>
                                     </tr>
                                 </thead>
-                                <tbody id="teslimatUrunleriBody"><tr><td colspan="10" class="text-center text-muted p-4">Lütfen yukarıdan proje seçin.</td></tr></tbody>
+                                <tbody id="teslimatUrunleriBody"><tr><td colspan="6" class="text-center text-muted p-4">Lütfen yukarıdan proje seçin.</td></tr></tbody>
                             </table>
                         </div>
                     </div>
@@ -2474,46 +2456,19 @@ async function ekUrunReddet(teslimat_urun_id) {
 function renderTeslimatUrunleri(liste) {
     const tbody = document.getElementById("teslimatUrunleriBody");
     if(!liste || liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted p-4">Bu teslimata henüz ürün eklenmemiş.</td></tr>';
-        document.getElementById('urunListesiAksiyonBar')?.classList.add('d-none');
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4">Bu teslimata henüz ürün eklenmemiş.</td></tr>';
         return;
     }
 
     let html = '';
     liste.forEach(u => {
         const isOzel = !u.stok_kart_id;
-        const baglıTalep = u.bagli_talep_no;
         const tip = u.stok_tipi || (isOzel ? 'Özel' : '-');
         const tipColor = { 'Ürün': 'success', 'Hammadde': 'warning', 'Yarımamül': 'info', 'Direkt Malzeme': 'secondary', 'Özel': 'dark' }[tip] || 'light';
         const tipBadge = `<span class="badge bg-${tipColor} text-${tipColor === 'warning' || tipColor === 'light' ? 'dark' : 'white'}">${esc(tip)}</span>`;
         const stokKodu = isOzel ? '<span class="text-muted">-</span>' : `<span class="text-primary small fw-bold">${esc(u.stok_kodu)}</span>`;
         const urunAdi = isOzel ? esc(u.ozel_urun_adi) : esc(u.stok_adi);
         const birim = isOzel ? esc(u.ozel_urun_birim) : esc(u.stok_birim);
-
-        // Stok durumu badge (backend'den gelen hesaplanan değer)
-        let stokBadge = '';
-        if (isOzel) {
-            stokBadge = '<span class="badge bg-danger" title="Özel ürün — stokta yok, mutlaka satın alınacak"><i class="bi bi-cart-x"></i> Satın Alınacak</span>';
-        } else if (u.hesaplanan_stok_durumu === 'YETERLI') {
-            const fazla = parseFloat(u.guncel_stok_miktari) - parseFloat(u.miktar);
-            stokBadge = `<span class="badge bg-success" title="Stoktan karşılanabilir"><i class="bi bi-check-circle"></i> Yeterli (+${formatTR(fazla)})</span>`;
-        } else if (u.hesaplanan_stok_durumu === 'YETERSIZ') {
-            const eksik = parseFloat(u.miktar) - parseFloat(u.guncel_stok_miktari);
-            stokBadge = `<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Eksik: ${formatTR(eksik)} ${birim}</span>`;
-        } else {
-            stokBadge = `<span class="badge bg-danger"><i class="bi bi-x-circle"></i> Stokta Yok</span>`;
-        }
-
-        // Amaç ikonu
-        const amac = u.kullanim_amaci === 'DIREKT_SEVKIYAT' ? '🚚 Sevkiyat' : '🏭 Üretim';
-
-        // Bağlı talep linki
-        const talepBaglantisi = baglıTalep
-            ? `<a href="#" class="text-decoration-none small" onclick="event.preventDefault(); setTab('satinalma'); setTimeout(()=>{switchSatinalmaSubTab('talepler'); setTimeout(()=>openTalepDetayModal(${u.bagli_talep_urun_id ? 0 : 0}, '${esc(baglıTalep)}'), 200);}, 200);">
-                  <span class="badge bg-info text-dark">${esc(baglıTalep)}</span>
-                  ${u.bagli_talep_durum ? `<br><span class="small text-muted">${esc(u.bagli_talep_durum)}</span>` : ''}
-               </a>`
-            : '<span class="text-muted small">—</span>';
 
         // EK ÜRÜN durumu badge'i + ADMIN onay butonları
         const isAdmin = (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin');
@@ -2533,30 +2488,20 @@ function renderTeslimatUrunleri(liste) {
         }
 
         // Talebe bağlıysa silme butonu disabled
-        const silBtn = baglıTalep
+        const silBtn = u.bagli_talep_no
             ? `<button class="btn btn-sm btn-outline-secondary py-0" disabled title="Talebe bağlı — önce talebi iptal et"><i class="bi bi-trash"></i></button>`
             : `<button class="btn btn-sm btn-outline-danger py-0" onclick="urunSil(${u.id})"><i class="bi bi-trash"></i></button>`;
 
-        // Checkbox sadece talebe BAĞLI OLMAYANLAR için aktif (zaten bağlıysa tekrar talep gerekmiyor)
-        const chk = baglıTalep
-            ? '<input type="checkbox" disabled title="Zaten talep oluşturulmuş">'
-            : `<input type="checkbox" class="ul-chk form-check-input" value="${u.id}" onchange="urunSeciliSayisinGuncelle()">`;
-
         html += `<tr>
-            <td>${chk}</td>
             <td>${tipBadge}${ekUrunBadge}</td>
             <td>${stokKodu}</td>
             <td class="fw-bold text-dark">${urunAdi}<br><span class="small text-muted">${esc(u.aciklama || '')}</span></td>
             <td class="text-end fw-bold text-primary">${formatTR(u.miktar)}</td>
             <td>${birim}</td>
-            <td class="text-center small">${amac}</td>
-            <td class="text-center">${stokBadge}</td>
-            <td>${talepBaglantisi}</td>
             <td class="text-center">${silBtn}${ekUrunAksiyon}</td>
         </tr>`;
     });
     tbody.innerHTML = html;
-    urunSeciliSayisinGuncelle();
 }
 
 function urunSeciliSayisinGuncelle() {
@@ -2700,9 +2645,8 @@ function listeyeEkle() {
     const isKatalog = document.getElementById("tipKatalog").checked;
     const miktar = document.getElementById("urunMiktar").value;
     const aciklama = document.getElementById("urunAciklama").value.trim();
-    const kullanim_amaci = document.getElementById("urunKullanimAmaci")?.value || 'URETIM';
 
-    const data = { teslimat_id: teslimatId, miktar: miktar, aciklama: aciklama, kullanim_amaci };
+    const data = { teslimat_id: teslimatId, miktar: miktar, aciklama: aciklama };
 
     if(isKatalog) {
         data.stok_kart_id = document.getElementById("seciliStokKart").value;
