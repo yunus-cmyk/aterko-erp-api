@@ -2408,9 +2408,10 @@ STK-002		50	adet
                                             <input type="checkbox" class="form-check-input" id="chkAllDetail" onchange="toggleAllDetailLines(this)">
                                         </th>
                                         <th>Ürün / Malzeme Adı</th>
-                                        <th class="text-center" width="150">İstenen Miktar</th>
+                                        <th class="text-center" width="120">İstenen Miktar</th>
+                                        <th width="200">Son Alış</th>
                                         <th>Açıklama / Not</th>
-                                        <th class="text-center" width="180">Durum</th>
+                                        <th class="text-center" width="160">Durum</th>
                                     </tr>
                                 </thead>
                                 <tbody id="detayTableBody">
@@ -6469,7 +6470,7 @@ async function openTalepDetayModal(talepId, talepNo) {
     document.getElementById("chkAllDetail").checked = false;
 
     const tbody = document.getElementById("detayTableBody");
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Kalemler çekiliyor...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Kalemler çekiliyor...</td></tr>';
 
     // Bağlı sipariş listesi panelini de yükle
     talepOzetVeSiparisleriYukle(talepId);
@@ -6540,11 +6541,17 @@ function renderTalepDetayLines(kalemler) {
         const isOzel = !k.stok_kart_id;
         const urunAdi = isOzel ? k.ozel_urun_adi : k.stok_adi;
         const birim = isOzel ? k.ozel_urun_birim : k.stok_birim;
-        
+
         let badgeClass = "bg-warning text-dark";
         if(k.durum === 'ONAYLANDI') badgeClass = "bg-success";
         if(k.durum === 'İPTAL' || k.durum === 'REDDEDİLDİ') badgeClass = "bg-danger";
         if(k.durum === 'İŞLEME ALINDI') badgeClass = "bg-info text-dark";
+
+        // Son alış hücresi — async yüklenecek
+        const sonAlisId = `sonAlis_${k.id}`;
+        const sonAlisHtml = isOzel
+            ? '<span class="text-muted small">—</span>'
+            : `<span id="${sonAlisId}" class="small text-muted"><i class="bi bi-hourglass-split"></i></span>`;
 
         tbody.innerHTML += `
             <tr id="line_${k.id}">
@@ -6557,12 +6564,42 @@ function renderTalepDetayLines(kalemler) {
                     <span class="text-muted small d-block">${isOzel ? '-' : esc(k.stok_kodu)}</span>
                 </td>
                 <td class="text-center fw-bold text-primary">${formatTR(k.miktar)} <small class="text-muted fw-normal">${birim}</small></td>
+                <td>${sonAlisHtml}</td>
                 <td class="text-muted small">${esc(k.aciklama || '-')}</td>
                 <td class="text-center"><span class="badge ${badgeClass}">${esc(k.durum)}</span></td>
             </tr>
         `;
+
+        // Stok kart varsa son alış bilgisini async çek
+        if (k.stok_kart_id) {
+            sonAlisBilgisiYukle(k.stok_kart_id, sonAlisId, k.stok_adi);
+        }
     });
-    updateLineActionButtons(); // İlk açılışta buton panelini sıfırla
+    updateLineActionButtons();
+}
+
+// Bir stok kart için son alış bilgisini çek ve göster
+async function sonAlisBilgisiYukle(stokKartId, hedefId, urunAdi) {
+    try {
+        const r = await secureFetch('/urun-fiyat-gecmisi/' + stokKartId);
+        const el = document.getElementById(hedefId);
+        if (!el) return;
+        if (!r.ok || !r.gecmis || r.gecmis.length === 0) {
+            el.innerHTML = '<span class="text-muted small fst-italic">Önceki sipariş yok</span>';
+            return;
+        }
+        const son = r.gecmis[0]; // en yeni
+        const tarih = son.siparis_tarihi ? new Date(son.siparis_tarihi).toLocaleDateString('tr-TR') : '-';
+        el.innerHTML = `
+            <div class="fw-bold text-success small">${formatTR(son.birim_fiyat)} ${esc(son.para_birimi || '')}</div>
+            <small class="text-muted">${esc(son.tedarikci_adi || '-')}</small>
+            <small class="text-muted d-block">${tarih}</small>
+            <a href="#" class="small" onclick="event.preventDefault(); openFiyatGecmisiModal(${stokKartId}, '${esc(urunAdi || '').replace(/'/g, '\\\'')}');"><i class="bi bi-graph-up me-1"></i>Karşılaştır</a>
+        `;
+    } catch (e) {
+        const el = document.getElementById(hedefId);
+        if (el) el.innerHTML = '<span class="text-muted small">—</span>';
+    }
 }
 
 // 3. Tablo Başlığındaki Toplu Seçim Checkbox Davranışı
