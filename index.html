@@ -7420,37 +7420,48 @@ async function openFiyatGecmisiModal(stokKartId, urunAdi) {
     const r = await secureFetch('/urun-fiyat-gecmisi/' + stokKartId).catch(()=>null);
     if (!r || !r.ok) return showToast('Fiyat geçmişi yüklenemedi.', 'error');
 
-    let html = `<h6 class="fw-bold">${esc(urunAdi || 'Ürün')} — Fiyat Geçmişi</h6>`;
-    if (r.tedarikci_ozet.length === 0) {
+    let html = `<h6 class="fw-bold mb-3">${esc(urunAdi || 'Ürün')} — Fiyat Geçmişi</h6>`;
+    if (r.gecmis.length === 0) {
         html += '<div class="text-muted small p-3 text-center">Bu ürün için sipariş kaydı yok.</div>';
     } else {
-        // Tedarikçi özeti
-        html += '<div class="table-responsive mt-2"><table class="table table-sm table-bordered mb-0" style="font-size:0.82rem;"><thead class="bg-light"><tr><th>Tedarikçi</th><th class="text-end">Son Fiyat</th><th class="text-end">Min</th><th class="text-end">Ort.</th><th class="text-end">Max</th><th class="text-center">Sip.</th></tr></thead><tbody>';
-        r.tedarikci_ozet.forEach(t => {
+        // Son 5 alış — ana liste
+        const son5 = r.gecmis.slice(0, 5);
+        html += '<h6 class="fw-bold small mb-2"><i class="bi bi-clock-history me-1"></i>Son 5 Alış</h6>';
+        html += '<div class="table-responsive mb-3"><table class="table table-sm table-hover mb-0 align-middle" style="font-size:0.85rem;"><thead class="bg-dark text-white"><tr><th>Tarih</th><th>Tedarikçi</th><th>Sipariş No</th><th class="text-end">Birim Fiyat</th><th class="text-end">Miktar</th></tr></thead><tbody>';
+        son5.forEach((g, i) => {
+            const tarih = g.siparis_tarihi ? new Date(g.siparis_tarihi).toLocaleDateString('tr-TR') : '-';
+            const yeni = i === 0 ? '<span class="badge bg-success ms-1" style="font-size:0.65rem;">EN YENİ</span>' : '';
             html += `<tr>
-                <td class="small fw-bold">${esc(t.tedarikci_adi)}</td>
-                <td class="text-end fw-bold text-primary">${formatTR(t.son_fiyat)} ${esc(t.para_birimi)}</td>
-                <td class="text-end small text-success">${formatTR(t.min_fiyat)}</td>
-                <td class="text-end small">${formatTR(t.ortalama)}</td>
-                <td class="text-end small text-danger">${formatTR(t.max_fiyat)}</td>
-                <td class="text-center"><span class="badge bg-info">${t.siparis_sayisi}</span></td>
+                <td class="small text-muted">${tarih}${yeni}</td>
+                <td class="small fw-bold">${esc(g.tedarikci_adi || '-')}</td>
+                <td class="small text-primary">${esc(g.siparis_no)}</td>
+                <td class="text-end fw-bold text-success" style="font-size:0.95rem;">${formatTR(g.birim_fiyat)} ${esc(g.para_birimi || '')}</td>
+                <td class="text-end small text-muted">${formatTR(g.siparis_miktari)}</td>
             </tr>`;
         });
         html += '</tbody></table></div>';
 
-        // Detay tablo (son 10 sipariş)
-        html += '<h6 class="fw-bold small mt-3 mb-2">Son Siparişler</h6>';
-        html += '<div class="table-responsive" style="max-height:30vh; overflow-y:auto;"><table class="table table-sm table-hover mb-0" style="font-size:0.78rem;"><thead class="bg-light"><tr><th>Sip. No</th><th>Tedarikçi</th><th class="text-end">Tarih</th><th class="text-end">Birim Fiyat</th><th class="text-end">Miktar</th></tr></thead><tbody>';
-        r.gecmis.slice(0, 15).forEach(g => {
-            html += `<tr>
-                <td class="small text-primary fw-bold">${esc(g.siparis_no)}</td>
-                <td class="small">${esc(g.tedarikci_adi || '-')}</td>
-                <td class="text-end small text-muted">${g.siparis_tarihi ? new Date(g.siparis_tarihi).toLocaleDateString('tr-TR') : '-'}</td>
-                <td class="text-end fw-bold">${formatTR(g.birim_fiyat)} ${esc(g.para_birimi || '')}</td>
-                <td class="text-end small">${formatTR(g.siparis_miktari)}</td>
-            </tr>`;
-        });
-        html += '</tbody></table></div>';
+        // Tedarikçi özeti kompakt (eğer 1'den fazla tedarikçi varsa)
+        if (r.tedarikci_ozet.length > 1) {
+            html += '<h6 class="fw-bold small mb-2 text-muted"><i class="bi bi-shop me-1"></i>Tedarikçi Bazlı Özet</h6>';
+            html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-0" style="font-size:0.78rem;"><thead class="bg-light"><tr><th>Tedarikçi</th><th class="text-end">Son</th><th class="text-end">Min</th><th class="text-end">Ort.</th><th class="text-end">Max</th><th class="text-center">Sip.</th></tr></thead><tbody>';
+            r.tedarikci_ozet.forEach(t => {
+                html += `<tr>
+                    <td class="small fw-bold">${esc(t.tedarikci_adi)}</td>
+                    <td class="text-end fw-bold">${formatTR(t.son_fiyat)} ${esc(t.para_birimi)}</td>
+                    <td class="text-end small text-success">${formatTR(t.min_fiyat)}</td>
+                    <td class="text-end small">${formatTR(t.ortalama)}</td>
+                    <td class="text-end small text-danger">${formatTR(t.max_fiyat)}</td>
+                    <td class="text-center"><span class="badge bg-info">${t.siparis_sayisi}</span></td>
+                </tr>`;
+            });
+            html += '</tbody></table></div>';
+        }
+
+        // Toplam kayıt sayısı bilgilendirme
+        if (r.gecmis.length > 5) {
+            html += `<div class="small text-muted mt-2 text-end"><i class="bi bi-info-circle"></i> Bu ürün toplam <strong>${r.gecmis.length}</strong> kez sipariş edildi (gösterilenler en son 5'i).</div>`;
+        }
     }
 
     // Generic modal (yoksa oluştur)
