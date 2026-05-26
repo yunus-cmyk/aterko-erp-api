@@ -605,6 +605,8 @@ app.post('/api/urun-listesi-onayla', yetkiKontrol, async (req, res, next) => {
             eylem: 'PUBLISH', tablo: 'proje_teslimatlari', kayit_id: teslimat_id,
             ozet: 'Ürün Listesi YAYINLANDI'
         });
+        // Versiyon snapshot: yayın anında listenin tam fotoğrafını kaydet
+        await urunListesiVersiyonAl(teslimat_id, 'YAYIN', 'Liste yayınlandı', req);
         res.json({ ok: true, mesaj: 'Liste YAYINLANDI — üretim, sevkiyat ve montaj modüllerinde görünür.' });
     } catch (error) { next(error); }
 });
@@ -634,6 +636,7 @@ app.post('/api/urun-listesi-reddet', yetkiKontrol, async (req, res, next) => {
             eylem: 'REJECT', tablo: 'proje_teslimatlari', kayit_id: teslimat_id,
             ozet: `Ürün Listesi reddedildi: ${red_notu.trim().substring(0,200)}`
         });
+        await urunListesiVersiyonAl(teslimat_id, 'YAYIN_RED', `Reddedildi: ${red_notu.trim().substring(0,200)}`, req);
         res.json({ ok: true, mesaj: 'Liste reddedildi, taslak durumuna alındı.' });
     } catch (error) { next(error); }
 });
@@ -2630,6 +2633,243 @@ app.get('/api/quick-search', yetkiKontrol, async (req, res, next) => {
         }));
 
         res.json({ ok: true, sonuclar, toplam: sonuclar.length });
+    } catch (e) { next(e); }
+});
+
+// ============================================================================
+// ÜRÜN LİSTESİ — KOPYALA / ŞABLON / IMPORT / VERSİYON
+// ============================================================================
+
+// Kopya kaynağı olabilecek teslimatların listesi (içinde ürün olan)
+// Şablonlar üstte gösterilir, sonra son yayınlanan teslimatlar
+app.get('/api/urun-listesi-kopya-kaynaklari', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { bina_turu } = req.query;
+        const turFilter = bina_turu ? `AND pt.bina_turu = $1` : '';
+        const params = bina_turu ? [bina_turu] : [];
+
+        const q = `
+            SELECT pt.id, pt.bina_adi, pt.bina_turu, pt.bina_tipi, pt.buyukluk_m2,
+                   pt.is_sablon, pt.sablon_etiketi,
+                   pt.urun_listesi_yayin_durumu,
+                   p.proje_kodu, p.musteri_adi,
+                   (SELECT COUNT(*)::int FROM teslimat_urunleri WHERE teslimat_id=pt.id) as kalem_sayisi
+            FROM proje_teslimatlari pt
+            JOIN projeler p ON pt.proje_id=p.id
+            WHERE EXISTS (SELECT 1 FROM teslimat_urunleri WHERE teslimat_id=pt.id)
+              ${turFilter}
+            ORDER BY pt.is_sablon DESC,
+                     CASE WHEN pt.urun_listesi_yayin_durumu='YAYINDA' THEN 0 ELSE 1 END,
+                     pt.id DESC
+            LIMIT 100
+        `;
+        const r = await pool.query(q, params);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Bir teslimattan diğerine ürünleri kopyala
+// Body: { kaynak_id, hedef_id, mevcut_listeyi_temizle (bool), kalem_idler (opsiyonel — null=hepsi) }
+app.post('/api/urun-listesi-kopyala', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { kaynak_id, hedef_id, mevcut_listeyi_temizle, kalem_idler } = req.body;
+        if (!kaynak_id || !hedef_id) return res.json({ ok: false, hata: 'Kaynak ve hedef gerekli.' });
+        if (kaynak_id === hedef_id) return res.json({ ok: false, hata: 'Kaynak ve hedef aynı teslimat olamaz.' });
+
+        // Hedef teslimat yayın durumunda mı?
+        const h = await client.query('SELECT urun_listesi_yayin_durumu FROM proje_teslimatlari WHERE id=$1', [hedef_id]);
+        if (h.rowCount === 0) return res.json({ ok: false, hata: 'Hedef teslimat bulunamadı.' });
+        const hedefDurum = h.rows[0].urun_listesi_yayin_durumu;
+        if (hedefDurum === 'ONAY BEKLİYOR') return res.json({ ok: false, hata: 'Onay bekleyen listeye kopyalama yapılamaz.' });
+        const yayinda = hedefDurum === 'YAYINDA';
+
+        // Mevcut listeyi temizle (sadece taslakta + bağlı talebi olmayan kalemler)
+        if (mevcut_listeyi_temizle && !yayinda) {
+            await client.query(`
+                DELETE FROM teslimat_urunleri
+                WHERE teslimat_id=$1 AND talep_urun_id IS NULL
+            `, [hedef_id]);
+        }
+
+        // Kaynak kalemlerini al
+        const idFilter = Array.isArray(kalem_idler) && kalem_idler.length > 0
+            ? `AND id = ANY($2::int[])` : '';
+        const kaynakParams = idFilter ? [kaynak_id, kalem_idler] : [kaynak_id];
+        const kaynakR = await client.query(`
+            SELECT stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama, sira
+            FROM teslimat_urunleri WHERE teslimat_id=$1 ${idFilter}
+            ORDER BY sira ASC, id ASC
+        `, kaynakParams);
+
+        // Hedefe ekle (yayındaysa ek_urun=true)
+        let eklendi = 0;
+        for (const k of kaynakR.rows) {
+            await client.query(`
+                INSERT INTO teslimat_urunleri
+                  (teslimat_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama,
+                   ekleyen_kullanici, kullanim_amaci, durum, is_ek_urun, ek_urun_onay_durumu)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,'URETIM','TASLAK',$8,$9)
+            `, [hedef_id, k.stok_kart_id || null, k.ozel_urun_adi || null, k.ozel_urun_birim || null,
+                k.miktar, k.aciklama || null, req.user.adSoyad, yayinda, yayinda ? 'ONAY BEKLİYOR' : null]);
+            eklendi++;
+        }
+
+        await client.query('COMMIT');
+        await auditLogla(req, {
+            eylem: 'CREATE', tablo: 'teslimat_urunleri',
+            kayit_id: hedef_id,
+            ozet: `Kopyalama: kaynak teslimat #${kaynak_id} → hedef #${hedef_id} (${eklendi} kalem${yayinda ? ', ek ürün onay bekliyor' : ''})`
+        });
+        res.json({
+            ok: true,
+            mesaj: `${eklendi} kalem kopyalandı.` + (yayinda ? ' Yayında olduğu için ek ürün olarak işaretlendi, ADMIN onayını bekliyor.' : '')
+        });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Teslimatı şablon olarak işaretle / kaldır
+app.post('/api/teslimat-sablon-isaretle', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { teslimat_id, is_sablon, sablon_etiketi } = req.body;
+        await pool.query(`
+            UPDATE proje_teslimatlari SET is_sablon=$1, sablon_etiketi=$2 WHERE id=$3
+        `, [!!is_sablon, sablon_etiketi || null, teslimat_id]);
+        await auditLogla(req, {
+            eylem: 'UPDATE', tablo: 'proje_teslimatlari', kayit_id: teslimat_id,
+            ozet: is_sablon ? `Şablon olarak işaretlendi: ${sablon_etiketi || ''}` : 'Şablon işareti kaldırıldı'
+        });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// Excel/CSV import — kalemleri toplu ekle
+// Body: { teslimat_id, kalemler: [{stok_kodu, ozel_urun_adi, miktar, birim, aciklama}] }
+app.post('/api/urun-listesi-import', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { teslimat_id, kalemler } = req.body;
+        if (!teslimat_id || !Array.isArray(kalemler) || kalemler.length === 0) {
+            return res.json({ ok: false, hata: 'Teslimat ve kalem listesi gerekli.' });
+        }
+
+        const h = await client.query('SELECT urun_listesi_yayin_durumu FROM proje_teslimatlari WHERE id=$1', [teslimat_id]);
+        if (h.rowCount === 0) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+        const yayinDurum = h.rows[0].urun_listesi_yayin_durumu;
+        if (yayinDurum === 'ONAY BEKLİYOR') return res.json({ ok: false, hata: 'Onay bekleyen listeye import yapılamaz.' });
+        const yayinda = yayinDurum === 'YAYINDA';
+
+        let basarili = 0, eslesmeyen = 0;
+        const eslesmeyenler = [];
+
+        for (const k of kalemler) {
+            const miktar = parseFloat(k.miktar);
+            if (!(miktar > 0)) continue;
+
+            let stok_kart_id = null;
+            // Stok kodu ile eşleştir
+            if (k.stok_kodu) {
+                const sR = await client.query('SELECT id FROM stok_kartlari WHERE stok_kodu = $1', [k.stok_kodu.trim()]);
+                if (sR.rowCount > 0) stok_kart_id = sR.rows[0].id;
+            }
+
+            if (!stok_kart_id && !k.ozel_urun_adi) {
+                eslesmeyen++;
+                eslesmeyenler.push(`Stok kodu '${k.stok_kodu||''}' eşleşmedi (özel ad yok)`);
+                continue;
+            }
+
+            await client.query(`
+                INSERT INTO teslimat_urunleri
+                  (teslimat_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama,
+                   ekleyen_kullanici, kullanim_amaci, durum, is_ek_urun, ek_urun_onay_durumu)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,'URETIM','TASLAK',$8,$9)
+            `, [teslimat_id, stok_kart_id, stok_kart_id ? null : (k.ozel_urun_adi || '').trim(),
+                stok_kart_id ? null : (k.birim || 'adet'),
+                miktar, k.aciklama || null,
+                req.user.adSoyad, yayinda, yayinda ? 'ONAY BEKLİYOR' : null]);
+            basarili++;
+        }
+
+        await client.query('COMMIT');
+        await auditLogla(req, {
+            eylem: 'CREATE', tablo: 'teslimat_urunleri', kayit_id: teslimat_id,
+            ozet: `Toplu import: ${basarili} kalem eklendi, ${eslesmeyen} eşleşmedi`
+        });
+        res.json({
+            ok: true,
+            mesaj: `${basarili} kalem eklendi.` + (eslesmeyen > 0 ? ` ${eslesmeyen} kalem eşleşmedi.` : ''),
+            basarili, eslesmeyen, eslesmeyenler
+        });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Versiyon snapshot al (manuel veya otomatik tetikleyici çağırır)
+async function urunListesiVersiyonAl(teslimat_id, etiket, ozet, req) {
+    try {
+        const r = await pool.query(`
+            SELECT id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama,
+                   is_ek_urun, ek_urun_onay_durumu, sira
+            FROM teslimat_urunleri WHERE teslimat_id=$1
+            ORDER BY sira, id
+        `, [teslimat_id]);
+        await pool.query(`
+            INSERT INTO urun_listesi_versiyonlari (teslimat_id, etiket, kalemler_snapshot, ozet, kullanici_email, kullanici_adsoyad)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        `, [teslimat_id, etiket, JSON.stringify(r.rows), ozet || null,
+            req?.user?.email || null, req?.user?.adSoyad || null]);
+    } catch (e) {
+        console.warn('Versiyon snapshot hatası:', e.message);
+    }
+}
+
+// Versiyon listesi
+app.get('/api/urun-listesi-versiyonlar/:teslimatId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT id, etiket, ozet, kullanici_email, kullanici_adsoyad, kayit_tarihi,
+                   jsonb_array_length(kalemler_snapshot) as kalem_sayisi
+            FROM urun_listesi_versiyonlari
+            WHERE teslimat_id=$1
+            ORDER BY kayit_tarihi DESC, id DESC
+        `, [req.params.teslimatId]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Tek versiyonun detayı (snapshot ile)
+app.get('/api/urun-listesi-versiyon/:versiyonId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT v.*, pt.bina_adi, p.proje_kodu, p.musteri_adi
+            FROM urun_listesi_versiyonlari v
+            JOIN proje_teslimatlari pt ON v.teslimat_id=pt.id
+            JOIN projeler p ON pt.proje_id=p.id
+            WHERE v.id=$1
+        `, [req.params.versiyonId]);
+        if (r.rowCount === 0) return res.json({ ok: false, hata: 'Versiyon bulunamadı.' });
+
+        // Snapshot içindeki stok_kart_id'ler için detay çek
+        const v = r.rows[0];
+        const kalemler = v.kalemler_snapshot || [];
+        const stokIds = kalemler.map(k => k.stok_kart_id).filter(Boolean);
+        let stokMap = {};
+        if (stokIds.length > 0) {
+            const sR = await pool.query(`SELECT id, stok_kodu, stok_adi, birim FROM stok_kartlari WHERE id = ANY($1::int[])`, [stokIds]);
+            sR.rows.forEach(s => { stokMap[s.id] = s; });
+        }
+        // Kalemlere stok detayını ekle
+        const zenginlestir = kalemler.map(k => ({
+            ...k,
+            stok_kodu: stokMap[k.stok_kart_id]?.stok_kodu || null,
+            stok_adi: stokMap[k.stok_kart_id]?.stok_adi || null,
+            stok_birim: stokMap[k.stok_kart_id]?.birim || null
+        }));
+        res.json({ ok: true, baslik: v, kalemler: zenginlestir });
     } catch (e) { next(e); }
 });
 

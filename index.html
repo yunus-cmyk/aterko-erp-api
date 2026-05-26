@@ -1842,6 +1842,26 @@
                         </div>
                     </div>
 
+                    <!-- Araç çubuğu — kopyala / import / versiyon / şablon -->
+                    <div id="ulAracCubugu" class="card-body py-2 px-3 border-bottom bg-white d-none">
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <button class="btn btn-sm btn-outline-primary" onclick="openListeKopyalaModal()" title="Başka bir teslimatın ürün listesini kopyala">
+                                <i class="bi bi-clipboard2-data me-1"></i>Listeden Kopyala
+                            </button>
+                            <button class="btn btn-sm btn-outline-success" onclick="openListeImportModal()" title="Excel/CSV'den toplu ürün ekle">
+                                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel'den Import
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" onclick="openVersiyonGecmisi()" title="Yayın geçmişi snapshot'ları">
+                                <i class="bi bi-clock-history me-1"></i>Versiyon Geçmişi
+                            </button>
+                            <span class="vr"></span>
+                            <button id="btnSablonToggle" class="btn btn-sm btn-outline-warning" onclick="sablonToggle()" title="Bu teslimatı şablon olarak işaretle">
+                                <i class="bi bi-bookmark me-1"></i><span id="btnSablonToggleText">Şablon Yap</span>
+                            </button>
+                            <span class="small text-muted ms-auto" id="sablonEtiketBilgi"></span>
+                        </div>
+                    </div>
+
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table liste-table mb-0 table-hover" style="font-size:0.82rem;">
@@ -1864,6 +1884,123 @@
         </div>
     </div>
   </div>
+
+    <!-- Liste Kopyala Modal -->
+    <div class="modal fade" id="modalListeKopyala" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-3 bg-primary text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-clipboard2-data me-2"></i>Başka Bir Listeden Kopyala</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="background:#f8f9fa;">
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-muted mb-1">Bina Türü Filtresi</label>
+                            <select id="lkBinaTurFiltre" class="form-select form-select-sm" onchange="lkKaynaklariYukle()">
+                                <option value="">Tümü</option>
+                                <option value="Prefabrik">Prefabrik</option>
+                                <option value="Konteyner">Konteyner</option>
+                                <option value="Hafif Çelik">Hafif Çelik</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-bold text-muted mb-1">Arama</label>
+                            <input id="lkArama" class="form-control form-control-sm" placeholder="🔍 Proje, müşteri, bina..." oninput="lkKaynaklariRender()">
+                        </div>
+                    </div>
+
+                    <div class="card border-0 shadow-sm" style="max-height: 45vh; overflow-y:auto;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="bg-dark text-white small">
+                                <tr><th></th><th>Proje / Bina</th><th class="text-center">Yayın</th><th class="text-center">Kalem</th></tr>
+                            </thead>
+                            <tbody id="lkKaynakListe"><tr><td colspan="4" class="text-center text-muted p-4">Yükleniyor...</td></tr></tbody>
+                        </table>
+                    </div>
+
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" id="lkTemizle">
+                        <label class="form-check-label small" for="lkTemizle">
+                            Mevcut listeyi önce temizle (bağlı talepler korunur)
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer bg-white">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-primary fw-bold px-4" onclick="listeKopyalaOnayla()">
+                        <i class="bi bi-clipboard2-check me-1"></i>Seçili Listeyi Kopyala
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste Import Modal -->
+    <div class="modal fade" id="modalListeImport" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-3 bg-success text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Excel / CSV'den Toplu Ürün Ekle</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="background:#f8f9fa;">
+                    <div class="alert alert-info py-2 mb-3 small">
+                        <strong>Format:</strong> Her satır bir ürün. Excel'den kopyala-yapıştır veya CSV içeriği yapıştır.
+                        <br>Sütun sırası: <code>stok_kodu | ozel_urun_adi | miktar | birim | aciklama</code> — sekme veya virgülle ayrılmış.
+                        <br>Stok kodu varsa katalogdan eşleştirilir; yoksa "özel ürün" olarak eklenir.
+                    </div>
+                    <label class="form-label small fw-bold text-muted mb-1">Veriyi Yapıştır</label>
+                    <textarea id="liImportText" class="form-control form-control-sm font-monospace" rows="12" placeholder="STK-001	Civata M8	100	adet	Üst panel için
+STK-002		50	adet
+		Özel Vida	20	adet	Katalog dışı"></textarea>
+                    <div class="mt-3 small text-muted">💡 Excel'de tabloyu seçip Cmd+C ile kopyalayıp buraya yapıştırabilirsin.</div>
+                    <div id="liImportOnizleme" class="mt-3"></div>
+                </div>
+                <div class="modal-footer bg-white">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-outline-info" onclick="liImportOnizle()">
+                        <i class="bi bi-eye me-1"></i>Önizle
+                    </button>
+                    <button type="button" class="btn btn-success fw-bold px-4" onclick="liImportOnayla()">
+                        <i class="bi bi-upload me-1"></i>Listeye Aktar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Versiyon Geçmişi Modal -->
+    <div class="modal fade" id="modalVersiyon" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-3 bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-clock-history me-2"></i>Versiyon Geçmişi</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="background:#f8f9fa;">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list me-2"></i>Snapshot'lar</div>
+                                <div id="verSnapList" style="max-height:60vh; overflow-y:auto;">
+                                    <div class="text-center text-muted small p-4">Yükleniyor...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-header bg-white fw-bold py-2"><i class="bi bi-file-earmark-text me-2"></i>Snapshot Detayı</div>
+                                <div id="verSnapDetay" class="p-3">
+                                    <div class="text-center text-muted small p-4">Soldan bir snapshot seçin.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
   <!-- Ürün Listesi → Satınalma Talebi Oluşturma Modal'ı -->
   <div class="modal fade" id="modalTalepOlustur" tabindex="-1" data-bs-backdrop="static">
@@ -3446,6 +3583,9 @@ function renderYayinAkisBar() {
     // Bar'ı göster
     bar.classList.remove('d-none');
 
+    // Araç çubuğunu da göster
+    ulAracCubuguGuncelle();
+
     // Tüm butonları gizle, duruma göre aç
     btnGonder.classList.add('d-none');
     btnOnayla.classList.add('d-none');
@@ -3518,6 +3658,273 @@ async function ekUrunReddet(teslimat_urun_id) {
     const r = await secureFetch('/urun-listesi-ek-urun-reddet', { method:'POST', body: JSON.stringify({ teslimat_urun_id }) });
     if (r.ok) { showToast(r.mesaj, 'success'); fetchTeslimatUrunleri(); }
     else showToast(r.hata, 'error');
+}
+
+// ============================================================================
+// ÜRÜN LİSTESİ — KOPYALA / IMPORT / VERSİYON / ŞABLON
+// ============================================================================
+
+// Araç çubuğunu göster/gizle (teslimat seçilince)
+function ulAracCubuguGuncelle() {
+    const tId = document.getElementById("aktifTeslimatSecimi").value;
+    const bar = document.getElementById('ulAracCubugu');
+    if (!bar) return;
+    if (tId) {
+        bar.classList.remove('d-none');
+        // Şablon durumunu güncelle
+        const cache = window.ulTeslimatlarCache || [];
+        const t = cache.find(x => String(x.teslimat_id) === String(tId));
+        // Şablon bilgisini de yayin verisinden okumayı dene (yayin bilgisi içinde değil aslında, ayrı çekmek lazım)
+        // Şimdilik basit: butonun durumunu güncelle
+        const btnText = document.getElementById('btnSablonToggleText');
+        // Şablon durumunu yayin endpoint'inde gelmiyor — gerekirse ek istekle çekeriz; şimdilik default
+        if (btnText) btnText.textContent = 'Şablon Yap';
+    } else {
+        bar.classList.add('d-none');
+    }
+}
+
+// --- LİSTEDEN KOPYALA ---
+let lkKaynaklarCache = [];
+let lkSeciliKaynakId = null;
+
+async function openListeKopyalaModal() {
+    const hedef = document.getElementById("aktifTeslimatSecimi").value;
+    if (!hedef) return showToast('Önce hedef teslimatı seçin.', 'error');
+    lkSeciliKaynakId = null;
+    document.getElementById('lkArama').value = '';
+    document.getElementById('lkBinaTurFiltre').value = '';
+    document.getElementById('lkTemizle').checked = false;
+    await lkKaynaklariYukle();
+    new bootstrap.Modal(document.getElementById('modalListeKopyala')).show();
+}
+
+async function lkKaynaklariYukle() {
+    const turFiltre = document.getElementById('lkBinaTurFiltre')?.value || '';
+    const url = '/urun-listesi-kopya-kaynaklari' + (turFiltre ? '?bina_turu=' + encodeURIComponent(turFiltre) : '');
+    const r = await secureFetch(url).catch(()=>null);
+    if (!r || !r.ok) return;
+    lkKaynaklarCache = r.data || [];
+    lkKaynaklariRender();
+}
+
+function lkKaynaklariRender() {
+    const arama = (document.getElementById('lkArama')?.value || '').toLowerCase().trim();
+    const aktifHedef = document.getElementById("aktifTeslimatSecimi").value;
+    let liste = lkKaynaklarCache.filter(x => String(x.id) !== String(aktifHedef));
+    if (arama) liste = liste.filter(x =>
+        (x.proje_kodu||'').toLowerCase().includes(arama) ||
+        (x.musteri_adi||'').toLowerCase().includes(arama) ||
+        (x.bina_adi||'').toLowerCase().includes(arama)
+    );
+
+    const tbody = document.getElementById('lkKaynakListe');
+    if (liste.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted p-4">Eşleşen kaynak yok.</td></tr>';
+        return;
+    }
+    const yayinMap = {
+        'TASLAK': ['secondary','Taslak'],
+        'ONAY BEKLİYOR': ['warning text-dark','Onay bekliyor'],
+        'YAYINDA': ['success','Yayında']
+    };
+    tbody.innerHTML = liste.map(x => {
+        const [cls,txt] = yayinMap[x.urun_listesi_yayin_durumu] || ['secondary','-'];
+        const sablon = x.is_sablon ? `<span class="badge bg-warning text-dark ms-1" title="Şablon">📑 ${esc(x.sablon_etiketi || 'Şablon')}</span>` : '';
+        const secili = String(x.id) === String(lkSeciliKaynakId) ? 'table-primary' : '';
+        return `<tr class="${secili}" style="cursor:pointer;" onclick="lkSec(${x.id})">
+            <td><input type="radio" name="lkRadio" class="form-check-input" ${secili ? 'checked' : ''}></td>
+            <td>
+                <strong class="small">${esc(x.proje_kodu||'-')}</strong> / <span class="small">${esc(x.musteri_adi||'')}</span>${sablon}
+                <br><small class="text-muted">${esc(x.bina_adi||'-')} ${x.bina_turu ? '• ' + esc(x.bina_turu) : ''}</small>
+            </td>
+            <td class="text-center"><span class="badge bg-${cls}">${txt}</span></td>
+            <td class="text-center"><span class="badge bg-info">${x.kalem_sayisi||0}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function lkSec(id) {
+    lkSeciliKaynakId = id;
+    lkKaynaklariRender();
+}
+
+async function listeKopyalaOnayla() {
+    if (!lkSeciliKaynakId) return showToast('Kaynak teslimat seçin.', 'error');
+    const hedef = parseInt(document.getElementById("aktifTeslimatSecimi").value);
+    const temizle = document.getElementById('lkTemizle').checked;
+    if (temizle && !confirm('Mevcut listedeki ürünler silinecek (bağlı talepli olanlar korunacak). Devam?')) return;
+
+    showLoading();
+    const r = await secureFetch('/urun-listesi-kopyala', {
+        method:'POST', body: JSON.stringify({ kaynak_id: lkSeciliKaynakId, hedef_id: hedef, mevcut_listeyi_temizle: temizle })
+    });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalListeKopyala')).hide();
+        showToast(r.mesaj, 'success');
+        fetchTeslimatUrunleri();
+    } else showToast(r.hata, 'error');
+}
+
+// --- EXCEL/CSV IMPORT ---
+function openListeImportModal() {
+    const tId = document.getElementById("aktifTeslimatSecimi").value;
+    if (!tId) return showToast('Önce teslimat seçin.', 'error');
+    document.getElementById('liImportText').value = '';
+    document.getElementById('liImportOnizleme').innerHTML = '';
+    new bootstrap.Modal(document.getElementById('modalListeImport')).show();
+}
+
+function liImportParse() {
+    const text = document.getElementById('liImportText').value.trim();
+    if (!text) return [];
+    const satirlar = text.split('\n').map(s => s.trim()).filter(Boolean);
+    return satirlar.map(satir => {
+        // Tab veya virgülle ayır
+        const ayrac = satir.includes('\t') ? '\t' : ',';
+        const parca = satir.split(ayrac).map(p => p.trim());
+        return {
+            stok_kodu: parca[0] || '',
+            ozel_urun_adi: parca[1] || '',
+            miktar: parca[2] || '',
+            birim: parca[3] || 'adet',
+            aciklama: parca[4] || ''
+        };
+    });
+}
+
+function liImportOnizle() {
+    const kalemler = liImportParse();
+    const div = document.getElementById('liImportOnizleme');
+    if (kalemler.length === 0) {
+        div.innerHTML = '<div class="alert alert-warning py-2 small">Önce metin yapıştırın.</div>';
+        return;
+    }
+    let gecerli = 0, gecersiz = 0;
+    const html = kalemler.map((k,i) => {
+        const m = parseFloat(k.miktar);
+        const gec = (k.stok_kodu || k.ozel_urun_adi) && m > 0;
+        if (gec) gecerli++; else gecersiz++;
+        return `<tr class="${gec ? '' : 'table-danger'}">
+            <td class="small">${i+1}</td>
+            <td class="small">${esc(k.stok_kodu||'-')}</td>
+            <td class="small">${esc(k.ozel_urun_adi||'-')}</td>
+            <td class="text-end small">${esc(k.miktar)}</td>
+            <td class="small">${esc(k.birim)}</td>
+            <td class="small">${esc(k.aciklama)}</td>
+            <td class="text-center">${gec ? '<i class="bi bi-check-circle text-success"></i>' : '<i class="bi bi-x-circle text-danger"></i>'}</td>
+        </tr>`;
+    }).join('');
+    div.innerHTML = `
+        <div class="alert alert-${gecersiz === 0 ? 'success' : 'warning'} py-2 small">
+            <strong>${gecerli}</strong> geçerli, <strong>${gecersiz}</strong> geçersiz satır.
+        </div>
+        <div style="max-height:30vh; overflow-y:auto;">
+        <table class="table table-sm table-bordered mb-0">
+            <thead class="bg-light small"><tr><th>#</th><th>Stok Kodu</th><th>Özel Ad</th><th>Miktar</th><th>Birim</th><th>Açıklama</th><th></th></tr></thead>
+            <tbody>${html}</tbody>
+        </table></div>`;
+}
+
+async function liImportOnayla() {
+    const kalemler = liImportParse().filter(k => (k.stok_kodu || k.ozel_urun_adi) && parseFloat(k.miktar) > 0);
+    if (kalemler.length === 0) return showToast('Geçerli satır yok.', 'error');
+    const tId = parseInt(document.getElementById("aktifTeslimatSecimi").value);
+
+    showLoading();
+    const r = await secureFetch('/urun-listesi-import', { method:'POST', body: JSON.stringify({ teslimat_id: tId, kalemler }) });
+    hideLoading();
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalListeImport')).hide();
+        showToast(r.mesaj, 'success');
+        if (r.eslesmeyenler?.length) setTimeout(()=>showToast(r.eslesmeyenler.slice(0,5).join('\n'), 'error'), 600);
+        fetchTeslimatUrunleri();
+    } else showToast(r.hata, 'error');
+}
+
+// --- VERSİYON GEÇMİŞİ ---
+async function openVersiyonGecmisi() {
+    const tId = document.getElementById("aktifTeslimatSecimi").value;
+    if (!tId) return showToast('Önce teslimat seçin.', 'error');
+
+    new bootstrap.Modal(document.getElementById('modalVersiyon')).show();
+    document.getElementById('verSnapList').innerHTML = '<div class="text-center small p-4 text-muted">Yükleniyor...</div>';
+    document.getElementById('verSnapDetay').innerHTML = '<div class="text-center text-muted small p-4">Soldan bir snapshot seçin.</div>';
+
+    const r = await secureFetch('/urun-listesi-versiyonlar/' + tId);
+    if (!r.ok) return;
+    const liste = r.data;
+    if (liste.length === 0) {
+        document.getElementById('verSnapList').innerHTML = '<div class="text-center small p-4 text-muted">Henüz snapshot yok.<br><small>Liste yayınlandığında veya reddedildiğinde otomatik kayıt alınır.</small></div>';
+        return;
+    }
+    const etiketMap = {
+        'YAYIN':       { cls:'success',  ikon:'bi-check-circle', txt:'Yayınlandı' },
+        'YAYIN_RED':   { cls:'danger',   ikon:'bi-x-circle',     txt:'Yayın Reddi' },
+        'REVIZE':      { cls:'warning',  ikon:'bi-arrow-clockwise', txt:'Revize' },
+        'EK_URUN_ONAY':{ cls:'info',     ikon:'bi-plus-circle',  txt:'Ek Ürün' }
+    };
+    document.getElementById('verSnapList').innerHTML = liste.map(v => {
+        const e = etiketMap[v.etiket] || { cls:'secondary', ikon:'bi-circle', txt: v.etiket || '-' };
+        const tarih = v.kayit_tarihi ? new Date(v.kayit_tarihi).toLocaleString('tr-TR') : '-';
+        return `<div class="p-2 border-bottom" style="cursor:pointer;" onclick="verSnapAc(${v.id})">
+            <div class="d-flex justify-content-between align-items-start">
+                <span class="badge bg-${e.cls}"><i class="bi ${e.ikon} me-1"></i>${e.txt}</span>
+                <small class="text-muted">${v.kalem_sayisi || 0} kalem</small>
+            </div>
+            <div class="small mt-1">${esc(v.ozet || '-')}</div>
+            <div class="small text-muted mt-1"><i class="bi bi-clock"></i> ${tarih} • ${esc(v.kullanici_adsoyad || '-')}</div>
+        </div>`;
+    }).join('');
+}
+
+async function verSnapAc(versiyonId) {
+    const detay = document.getElementById('verSnapDetay');
+    detay.innerHTML = '<div class="text-center small p-4 text-muted">Yükleniyor...</div>';
+    const r = await secureFetch('/urun-listesi-versiyon/' + versiyonId);
+    if (!r.ok) { detay.innerHTML = '<div class="alert alert-danger small">' + r.hata + '</div>'; return; }
+
+    const v = r.baslik;
+    const tarih = v.kayit_tarihi ? new Date(v.kayit_tarihi).toLocaleString('tr-TR') : '-';
+    const kalemler = r.kalemler || [];
+    detay.innerHTML = `
+        <div class="mb-3">
+            <h6 class="fw-bold mb-1">${esc(v.etiket || 'Snapshot')} <span class="badge bg-light text-dark ms-1">#${v.id}</span></h6>
+            <small class="text-muted">${esc(v.ozet || '')}<br>📅 ${tarih} • 👤 ${esc(v.kullanici_adsoyad || '-')}<br>📦 ${esc(v.bina_adi || '')} (${esc(v.proje_kodu || '')})</small>
+        </div>
+        <div class="table-responsive" style="max-height:50vh; overflow-y:auto;">
+            <table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
+                <thead class="bg-light"><tr><th>#</th><th>Stok Kodu</th><th>Ürün</th><th class="text-end">Miktar</th><th>Birim</th></tr></thead>
+                <tbody>
+                    ${kalemler.map((k,i) => `<tr>
+                        <td class="small text-muted">${i+1}</td>
+                        <td class="small text-primary">${esc(k.stok_kodu || '<span class="text-warning">Özel</span>')}</td>
+                        <td class="small fw-bold">${esc(k.stok_adi || k.ozel_urun_adi || '-')}</td>
+                        <td class="text-end small fw-bold">${formatTR(k.miktar)}</td>
+                        <td class="small">${esc(k.stok_birim || k.ozel_urun_birim || '-')}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted p-3">Snapshot boş</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+// --- ŞABLON İŞARETLEME ---
+async function sablonToggle() {
+    const tId = document.getElementById("aktifTeslimatSecimi").value;
+    if (!tId) return;
+    const yapilacak = confirm('Bu teslimatı ŞABLON olarak işaretle?\n\n(Şablonlar "Listeden Kopyala" modalında üstte gösterilir.)');
+    if (!yapilacak) return;
+    const etiket = prompt('Şablon etiketi (opsiyonel — örn. "Standart Konteyner"):', '');
+    if (etiket === null) return;
+
+    const r = await secureFetch('/teslimat-sablon-isaretle', {
+        method:'POST', body: JSON.stringify({ teslimat_id: parseInt(tId), is_sablon: true, sablon_etiketi: etiket || null })
+    });
+    if (r.ok) {
+        showToast('Şablon olarak işaretlendi.', 'success');
+    } else showToast(r.hata, 'error');
 }
 
 function renderTeslimatUrunleri(liste) {
