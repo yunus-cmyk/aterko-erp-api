@@ -1028,11 +1028,12 @@
                                 <th class="text-end">Sevk Edilen</th>
                                 <th class="text-end">Kalan</th>
                                 <th>Birim</th>
+                                <th class="text-center">Bağlı Talep</th>
                                 <th class="text-center">Durum</th>
                             </tr>
                         </thead>
                         <tbody id="urtPlanBody">
-                            <tr><td colspan="13" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
+                            <tr><td colspan="14" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2736,7 +2737,7 @@ function renderUretimPlan() {
 
     const tbody = document.getElementById('urtPlanBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="13" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
         return;
     }
 
@@ -2765,6 +2766,22 @@ function renderUretimPlan() {
         } else {
             stokCls = 'text-danger fw-bold'; stokIcerik = `0 <i class="bi bi-x-circle"></i>`;
         }
+        // Bağlı satınalma talebi — tıklanınca Satınalma sekmesine + talep detayına gider
+        let baglıTalep = '<span class="text-muted small">—</span>';
+        if (u.bagli_talep_no) {
+            const talepDurumCls = {
+                'ONAY BEKLİYOR': 'warning text-dark', 'ONAYLI': 'info',
+                'İŞLEME ALINDI': 'primary', 'SİPARİŞ VERİLDİ': 'primary',
+                'KISMİ TESLİM': 'warning text-dark', 'TAMAMLANDI': 'success',
+                'REDDEDİLDİ': 'danger', 'İPTAL': 'secondary'
+            }[u.bagli_talep_durum] || 'secondary';
+            baglıTalep = `
+                <a href="#" class="text-decoration-none" onclick="event.preventDefault(); setTab('satinalma'); setTimeout(()=>{switchSatinalmaSubTab('talepler'); setTimeout(()=>openTalepDetayModal(0, '${esc(u.bagli_talep_no)}'), 200);}, 200);"
+                   title="Satınalma sekmesinde aç">
+                    <span class="badge bg-info text-dark">${esc(u.bagli_talep_no)}</span>
+                    ${u.bagli_talep_durum ? `<br><span class="badge bg-${talepDurumCls} mt-1" style="font-size:0.65rem;">${esc(u.bagli_talep_durum)}</span>` : ''}
+                </a>`;
+        }
         return `<tr>
             <td><input type="checkbox" class="urt-chk form-check-input" value="${u.id}" data-kalan="${kalan}" data-ad="${esc(urunAdi)}" data-birim="${esc(birim)}" data-gerekli="${u.gerekli_miktar}" data-uretilen="${u.uretilen_miktar}" data-proje="${esc(u.proje_kodu + ' / ' + (u.musteri_adi||''))}" data-bina="${esc(u.bina_adi)}" onchange="urtSeciliGuncelle()" ${chkDisabled}></td>
             <td>${projeBina}</td>
@@ -2778,6 +2795,7 @@ function renderUretimPlan() {
             <td class="text-end">${formatTR(u.sevk_edilen_miktar)}</td>
             <td class="text-end ${kalan > 0 ? 'text-danger fw-bold' : 'text-muted'}">${formatTR(kalan)}</td>
             <td>${birim}</td>
+            <td class="text-center">${baglıTalep}</td>
             <td class="text-center"><span class="badge bg-${cls}">${txt}</span></td>
         </tr>`;
     }).join('');

@@ -2390,11 +2390,17 @@ app.get('/api/uretim-urunleri', yetkiKontrol, async (req, res, next) => {
                    tu.uretilen_miktar, tu.stoktan_ayrilan_miktar, tu.sevk_edilen_miktar,
                    tu.is_ek_urun, tu.ek_urun_onay_durumu, tu.aciklama,
                    tu.stok_kart_id, tu.ozel_urun_adi, tu.ozel_urun_birim,
+                   tu.talep_urun_id,
                    sk.stok_kodu, sk.stok_adi, sk.stok_tipi, sk.birim as stok_birim,
                    sk.guncel_stok_miktari, sk.kategori,
                    pt.bina_adi, pt.bina_turu, pt.bina_tipi, pt.buyukluk_m2,
                    pt.bina_adedi, pt.konteyner_miktari,
                    p.proje_kodu, p.musteri_adi, p.proje_adi, p.id as proje_id,
+                   -- Bağlı satınalma talebi (varsa)
+                   tlpu.id as bagli_talep_urun_id,
+                   tlp.id as bagli_talep_id,
+                   tlp.talep_no as bagli_talep_no,
+                   tlpu.durum as bagli_talep_durum,
                    -- Aktif iş emirlerinde atanmış toplam miktar
                    COALESCE((
                        SELECT SUM(iek.atanan_miktar - COALESCE(iek.tamamlanan_miktar,0))
@@ -2406,6 +2412,8 @@ app.get('/api/uretim-urunleri', yetkiKontrol, async (req, res, next) => {
             JOIN proje_teslimatlari pt ON tu.teslimat_id=pt.id
             JOIN projeler p ON pt.proje_id=p.id
             LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
+            LEFT JOIN talep_urunleri tlpu ON tu.talep_urun_id=tlpu.id
+            LEFT JOIN satinalma_talepleri tlp ON tlpu.talep_id=tlp.id
             WHERE pt.urun_listesi_yayin_durumu='YAYINDA'
             AND (tu.is_ek_urun = FALSE OR tu.ek_urun_onay_durumu='ONAYLI')  -- onay bekleyen ek ürünler henüz aktif değil
             ORDER BY p.id DESC, pt.id ASC, tu.sira ASC, tu.id ASC
