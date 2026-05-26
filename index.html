@@ -2871,6 +2871,103 @@ async function secureFetch(endpoint, options = {}) {
 // Aktif kullanıcının yetkisi — yayın akışı vb. yerlerde kullanılır
 let kullaniciYetki = '';
 
+// İzin haritası — login sonrası yüklenir: { modul_kod: 'YOK'|'OKUMA'|'YAZMA'|'TAM' }
+window.kullaniciIzinleri = {};
+const IZIN_SIRA = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
+
+// İzin kontrol helper'ı: kullanıcının bu modülde en az gerekliSeviye'si var mı?
+function izinVarMi(modul, gerekliSeviye) {
+    if (!modul) return true;
+    if (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') return true;
+    const sahip = window.kullaniciIzinleri[modul] || 'YOK';
+    const gerekli = gerekliSeviye || 'OKUMA';
+    return IZIN_SIRA[sahip] >= IZIN_SIRA[gerekli];
+}
+
+// Bir sekme için kullanılır: en az OKUMA varsa görünür
+function sekmeGorunur(modul) {
+    return izinVarMi(modul, 'OKUMA');
+}
+
+// İzin haritasını yükle ve UI'ı uygula
+async function izinHaritasiYukle() {
+    const r = await secureFetch('/me/izinler').catch(() => null);
+    if (!r || !r.ok) return;
+    window.kullaniciIzinleri = r.izinler || {};
+    izinleriUygula();
+}
+
+// Navbar sekmelerini ve dropdown'u izinlere göre göster/gizle
+function izinleriUygula() {
+    // Üst navbar sekmeleri
+    const sekmeModulMap = {
+        'nav-anasayfa':     'anasayfa',
+        'nav-projeler':     'projeler',
+        'nav-satinalma':    'satinalma.talepler', // ana sekme; alt sekmeler ayrı kontrol edilir
+        'nav-stok':         'stok',
+        'nav-urun-listesi': 'bina_listeleri',
+        'nav-uretim':       'uretim',
+        'nav-sevkiyat':     'sevkiyat',
+        'nav-montaj':       'montaj',
+        'nav-ozet':         'rapor.ozet'
+    };
+    for (const [navId, modul] of Object.entries(sekmeModulMap)) {
+        const el = document.getElementById(navId);
+        if (!el) continue;
+        const li = el.closest('li');
+        if (sekmeGorunur(modul)) {
+            li.classList.remove('d-none');
+        } else {
+            li.classList.add('d-none');
+        }
+    }
+
+    // Yönetim dropdown — sadece ADMIN
+    const adminMenu = document.getElementById('adminMenuWrap');
+    if (adminMenu) {
+        adminMenu.style.display = (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') ? '' : 'none';
+    }
+
+    // Satınalma alt sekmeleri (Yönetim panel olmayan, modül bazlı)
+    const altSekmeMap = {
+        'btnSubTalepler':     'satinalma.talepler',
+        'btnSubTeklif':       'satinalma.talepler',  // teklif ≈ talep yetkisi
+        'btnSubSiparisler':   'satinalma.siparisler',
+        'btnSubTedarikciler': 'satinalma.tedarikci',
+        'btnSubArsiv':        'satinalma.talepler'
+    };
+    for (const [btnId, modul] of Object.entries(altSekmeMap)) {
+        const btn = document.getElementById(btnId);
+        if (!btn) continue;
+        btn.classList.toggle('d-none', !sekmeGorunur(modul));
+    }
+}
+
+// setTab guard: izin yoksa erişimi engelle (setTab içinde çağrılır)
+function sekmeGuard(tab) {
+    const guardMap = {
+        'anasayfa':     'anasayfa',
+        'projeler':     'projeler',
+        'satinalma':    'satinalma.talepler',
+        'stok':         'stok',
+        'urun-listesi': 'bina_listeleri',
+        'uretim':       'uretim',
+        'sevkiyat':     'sevkiyat',
+        'montaj':       'montaj',
+        'ozet':         'rapor.ozet',
+        'audit':        'yonetim.audit_log',
+        'formtanim':    'yonetim.form_tanimi',
+        'kullanicilar': 'yonetim.kullanicilar',
+        'roller':       'yonetim.roller'
+    };
+    const modul = guardMap[tab];
+    if (modul && !sekmeGorunur(modul)) {
+        if (typeof showToast === 'function') showToast('Bu sayfaya erişim yetkiniz yok.', 'error');
+        return false;
+    }
+    return true;
+}
+
 // Tedarikçi alanını fiziksel olarak Satınalma'nın içine taşı (alt sekme olarak çalışsın)
 // Burada erken bir taşıma — sayfa yüklendiğinde daha DOMContentLoaded öncesi çalışır
 (function tedarikciAreaSatınalmaIciTasi() {
@@ -2891,12 +2988,28 @@ window.addEventListener("DOMContentLoaded", function() {
         document.getElementById("userNameDisplay").textContent = user.adSoyad || "...";
         kullaniciYetki = user.yetki || '';
         fetchStokKartlariForDropdown();
-        // ADMIN için "Yönetim" dropdown menüsünü göster (Audit Log + Form Tanımları)
-        if (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') {
-            const adminMenu = document.getElementById('adminMenuWrap');
-            if (adminMenu) adminMenu.style.display = '';
-        }
-        setTab('anasayfa');
+        // İzin haritasını yükle ve uygula (navbar filtreleme dahil)
+        izinHaritasiYukle().then(() => {
+            // İzinler geldi, hangi sekmeye gidilecek?
+            // Anasayfa'ya gitmeyi dene; izni yoksa ilk erişilebilir sekmeye gönder
+            if (sekmeGorunur('anasayfa')) {
+                setTab('anasayfa');
+            } else {
+                // İzni olan ilk sekmeyi bul
+                const aday = ['projeler','satinalma.talepler','stok','bina_listeleri','uretim','sevkiyat','montaj','rapor.ozet'];
+                const ilk = aday.find(m => sekmeGorunur(m));
+                if (ilk) {
+                    const tabMap = {
+                        'projeler':'projeler', 'satinalma.talepler':'satinalma', 'stok':'stok',
+                        'bina_listeleri':'urun-listesi', 'uretim':'uretim', 'sevkiyat':'sevkiyat',
+                        'montaj':'montaj', 'rapor.ozet':'ozet'
+                    };
+                    setTab(tabMap[ilk]);
+                } else {
+                    setTab('anasayfa'); // fallback
+                }
+            }
+        });
         // Bildirim merkezini başlat (her 90 sn yenilenir)
         bildirimOtoYenile();
     } else {
@@ -3841,6 +3954,11 @@ async function auditOzetYukle() {
 }
 
 function setTab(tab) {
+    // 0. İzin kontrolü — yoksa anasayfa'ya yönlendir
+    if (typeof sekmeGuard === 'function' && !sekmeGuard(tab)) {
+        tab = 'anasayfa';
+    }
+
     // 1. Menüdeki aktif sekme rengini ayarla
     document.querySelectorAll(".nav-pills .nav-link").forEach(el => el.classList.remove("active"));
     if(document.getElementById(`nav-${tab}`)) {

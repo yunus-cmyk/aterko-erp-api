@@ -3119,7 +3119,7 @@ app.post('/api/rol-kaydet', yetkiKontrol, async (req, res, next) => {
                 return res.json({ ok: false, hata: 'Sistem rolünün adı değiştirilemez (sadece açıklaması).' });
             }
             await pool.query(`UPDATE roller SET ad=$1, aciklama=$2 WHERE id=$3`, [adNorm, aciklama || null, id]);
-            rolCacheTemizle();
+            rolCacheTemizle(); izinCacheTemizle();
             await auditLogla(req, { eylem: 'UPDATE', tablo: 'roller', kayit_id: id, ozet: `Rol güncellendi: ${adNorm}` });
             return res.json({ ok: true, mesaj: 'Rol güncellendi.' });
         } else {
@@ -3129,7 +3129,7 @@ app.post('/api/rol-kaydet', yetkiKontrol, async (req, res, next) => {
             const ins = await pool.query(`
                 INSERT INTO roller (ad, aciklama, sistem_rol) VALUES ($1, $2, FALSE) RETURNING id
             `, [adNorm, aciklama || null]);
-            rolCacheTemizle();
+            rolCacheTemizle(); izinCacheTemizle();
             await auditLogla(req, { eylem: 'CREATE', tablo: 'roller', kayit_id: ins.rows[0].id, ozet: `Yeni rol: ${adNorm}` });
             return res.json({ ok: true, mesaj: 'Rol oluşturuldu.', id: ins.rows[0].id });
         }
@@ -3202,6 +3202,7 @@ app.post('/api/rol-izinleri-kaydet', yetkiKontrol, async (req, res, next) => {
             n++;
         }
         await client.query('COMMIT');
+        izinCacheTemizle();
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'rol_izinleri', ozet: `İzin matrisi güncellendi: ${n} hücre` });
         res.json({ ok: true, mesaj: `${n} izin kaydı güncellendi.` });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
@@ -3213,6 +3214,45 @@ async function rolListesiniGetir() {
     const r = await pool.query('SELECT ad FROM roller ORDER BY sistem_rol DESC, ad');
     return r.rows.map(x => x.ad);
 }
+
+// Bir rolün tüm modüllerdeki izin haritasını döndür
+// ADMIN için tüm modüller TAM (matriste yoksa bile)
+const IZIN_CACHE = new Map();
+async function getKullaniciIzinleri(rolAd) {
+    if (!rolAd) return {};
+    if (IZIN_CACHE.has(rolAd)) return IZIN_CACHE.get(rolAd);
+
+    const izinler = {};
+    // ADMIN her şeye TAM
+    if (rolAd === 'ADMIN' || rolAd === 'Admin') {
+        MODUL_KATALOG.forEach(m => { izinler[m.kod] = 'TAM'; });
+        IZIN_CACHE.set(rolAd, izinler);
+        return izinler;
+    }
+    // Diğer roller için DB'den oku
+    const r = await pool.query(`
+        SELECT ri.modul_kod, ri.seviye
+        FROM rol_izinleri ri
+        JOIN roller ro ON ri.rol_id = ro.id
+        WHERE ro.ad = $1
+    `, [rolAd]);
+    // Varsayılan tüm modüller YOK
+    MODUL_KATALOG.forEach(m => { izinler[m.kod] = 'YOK'; });
+    // DB'deki tanımları overwrite et
+    r.rows.forEach(row => { izinler[row.modul_kod] = row.seviye; });
+    IZIN_CACHE.set(rolAd, izinler);
+    return izinler;
+}
+
+function izinCacheTemizle() { IZIN_CACHE.clear(); }
+
+// Endpoint: Aktif kullanıcının izin haritası
+app.get('/api/me/izinler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const izinler = await getKullaniciIzinleri(req.user.rol);
+        res.json({ ok: true, rol: req.user.rol, izinler, modul_katalog: MODUL_KATALOG });
+    } catch (e) { next(e); }
+});
 
 // ============================================================================
 // KULLANICI YÖNETİMİ (sadece ADMIN)
