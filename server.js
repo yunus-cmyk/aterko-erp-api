@@ -76,10 +76,15 @@ app.post('/api/auth/google', async (req, res, next) => {
     try {
         const { credential } = req.body;
         const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
-        const email = ticket.getPayload().email;
+        const email = (ticket.getPayload().email || '').toLowerCase();
 
-        const userRes = await pool.query("SELECT * FROM kullanicilar WHERE email = $1", [email]);
-        if (userRes.rowCount === 0) return res.status(401).json({ ok: false, hata: "Sisteme giriş yetkiniz yok." });
+        // Ekstra güvenlik: sadece @aterko.com domain'i kabul
+        if (!email.endsWith('@aterko.com')) {
+            return res.status(401).json({ ok: false, hata: "Sadece @aterko.com e-posta hesapları sisteme giriş yapabilir." });
+        }
+
+        const userRes = await pool.query("SELECT * FROM kullanicilar WHERE LOWER(email) = $1", [email]);
+        if (userRes.rowCount === 0) return res.status(401).json({ ok: false, hata: "Sisteme giriş yetkiniz yok. ADMIN ile iletişime geçin." });
         
         const user = userRes.rows[0];
         if (user.durum !== 'AKTIF') return res.status(401).json({ ok: false, hata: "Hesabınız pasif durumdadır." });
@@ -3046,6 +3051,101 @@ app.get('/api/proje-karlilik/:projeId', yetkiKontrol, async (req, res, next) => 
             siparisler: siparisler.rows,
             tedarikciOzet: tedarikciOzet.rows
         });
+    } catch (e) { next(e); }
+});
+
+// ============================================================================
+// KULLANICI YÖNETİMİ (sadece ADMIN)
+// ============================================================================
+const KULLANICI_ROLLERI = ['ADMIN', 'SATIS', 'SATINALMA', 'URETIM', 'MUHASEBE', 'KULLANICI'];
+
+app.get('/api/kullanicilar', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.status(403).json({ ok: false, hata: 'Sadece ADMIN erişebilir.' });
+    }
+    try {
+        const r = await pool.query(`
+            SELECT id, email, ad_soyad, rol, durum, son_giris, kayit_tarihi
+            FROM kullanicilar ORDER BY id ASC
+        `);
+        res.json({ ok: true, data: r.rows, roller: KULLANICI_ROLLERI });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
+    }
+    try {
+        const { id, email, ad_soyad, rol, durum } = req.body;
+        const emailNorm = (email || '').trim().toLowerCase();
+        const adSoyadNorm = (ad_soyad || '').trim();
+        const rolNorm = (rol || 'KULLANICI').trim().toUpperCase();
+        const durumNorm = (durum || 'AKTIF').trim().toUpperCase();
+
+        // Validation
+        if (!emailNorm) return res.json({ ok: false, hata: 'E-posta zorunlu.' });
+        if (!emailNorm.endsWith('@aterko.com')) return res.json({ ok: false, hata: 'Sadece @aterko.com e-postaları kabul edilir.' });
+        if (!adSoyadNorm) return res.json({ ok: false, hata: 'Ad Soyad zorunlu.' });
+        if (!KULLANICI_ROLLERI.includes(rolNorm)) return res.json({ ok: false, hata: 'Geçersiz rol: ' + rolNorm });
+        if (!['AKTIF','PASIF'].includes(durumNorm)) return res.json({ ok: false, hata: 'Geçersiz durum.' });
+
+        let eski = null;
+        if (id) {
+            const eR = await pool.query('SELECT * FROM kullanicilar WHERE id=$1', [id]);
+            if (eR.rowCount > 0) eski = eR.rows[0];
+            // Kendinin rolünü ADMIN'den çıkaramaz
+            if (eski && eski.email === req.user.email && eski.rol === 'ADMIN' && rolNorm !== 'ADMIN') {
+                return res.json({ ok: false, hata: 'Kendi ADMIN yetkinizi kaldıramazsınız.' });
+            }
+            await pool.query(`
+                UPDATE kullanicilar SET email=$1, ad_soyad=$2, rol=$3, durum=$4 WHERE id=$5
+            `, [emailNorm, adSoyadNorm, rolNorm, durumNorm, id]);
+            await auditLogla(req, {
+                eylem: 'UPDATE', tablo: 'kullanicilar', kayit_id: id,
+                ozet: `Kullanıcı güncellendi: ${emailNorm} (rol: ${rolNorm}, durum: ${durumNorm})`,
+                eski_veri: eski, yeni_veri: req.body
+            });
+        } else {
+            // E-posta benzersiz olmalı
+            const x = await pool.query('SELECT id FROM kullanicilar WHERE LOWER(email)=$1', [emailNorm]);
+            if (x.rowCount > 0) return res.json({ ok: false, hata: 'Bu e-posta zaten kayıtlı.' });
+            const ins = await pool.query(`
+                INSERT INTO kullanicilar (email, ad_soyad, rol, durum) VALUES ($1,$2,$3,$4) RETURNING id
+            `, [emailNorm, adSoyadNorm, rolNorm, durumNorm]);
+            await auditLogla(req, {
+                eylem: 'CREATE', tablo: 'kullanicilar', kayit_id: ins.rows[0].id,
+                ozet: `Yeni kullanıcı: ${emailNorm} (${rolNorm})`, yeni_veri: req.body
+            });
+        }
+        res.json({ ok: true, mesaj: 'Kullanıcı kaydedildi.' });
+    } catch (e) { next(e); }
+});
+
+app.delete('/api/kullanici-sil/:id', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
+    }
+    try {
+        const id = parseInt(req.params.id);
+        // Kendini silemez
+        const r = await pool.query('SELECT email FROM kullanicilar WHERE id=$1', [id]);
+        if (r.rowCount === 0) return res.json({ ok: false, hata: 'Kullanıcı bulunamadı.' });
+        if (r.rows[0].email === req.user.email) {
+            return res.json({ ok: false, hata: 'Kendinizi silemezsiniz.' });
+        }
+        // En az 1 ADMIN kalmalı
+        const adminSay = await pool.query("SELECT COUNT(*)::int as n FROM kullanicilar WHERE rol='ADMIN' AND durum='AKTIF'");
+        const silinen = await pool.query("SELECT rol FROM kullanicilar WHERE id=$1", [id]);
+        if (silinen.rows[0].rol === 'ADMIN' && adminSay.rows[0].n <= 1) {
+            return res.json({ ok: false, hata: 'Son AKTIF ADMIN silinemez. Önce başka bir ADMIN tanımlayın.' });
+        }
+        await pool.query('DELETE FROM kullanicilar WHERE id=$1', [id]);
+        await auditLogla(req, {
+            eylem: 'DELETE', tablo: 'kullanicilar', kayit_id: id,
+            ozet: `Kullanıcı silindi: ${r.rows[0].email}`
+        });
+        res.json({ ok: true, mesaj: 'Kullanıcı silindi.' });
     } catch (e) { next(e); }
 });
 

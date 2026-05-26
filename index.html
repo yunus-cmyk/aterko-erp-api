@@ -130,8 +130,10 @@
           <i class="bi bi-gear-fill"></i> <small class="d-none d-md-inline ms-1">Yönetim</small>
         </button>
         <ul class="dropdown-menu dropdown-menu-end shadow">
-          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
+          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('kullanicilar')"><i class="bi bi-people me-2"></i>Kullanıcılar</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('formtanim')"><i class="bi bi-ui-checks me-2"></i>Form Tanımları</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
         </ul>
       </div>
 
@@ -1006,6 +1008,96 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- KULLANICILAR YÖNETİMİ (sadece ADMIN) -->
+    <div id="kullanicilarArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h5 class="fw-bold text-dark mb-0"><i class="bi bi-people me-2 text-secondary"></i>Kullanıcılar</h5>
+                <small class="text-muted">Sisteme giriş yapabilecek <strong>@aterko.com</strong> kullanıcılarını buradan yönetin. Listede olmayan kullanıcılar giriş yapamaz.</small>
+            </div>
+            <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" onclick="openKullaniciModal()"><i class="bi bi-plus-lg me-1"></i> Yeni Kullanıcı</button>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body py-2 px-3 d-flex gap-2 flex-wrap align-items-end">
+                <input id="kulArama" class="form-control form-control-sm" placeholder="🔍 Ad, e-posta..." style="max-width:280px;" oninput="renderKullanicilar()">
+                <select id="kulRolFiltre" class="form-select form-select-sm" style="max-width:180px;" onchange="renderKullanicilar()">
+                    <option value="">Tüm Roller</option>
+                </select>
+                <select id="kulDurumFiltre" class="form-select form-select-sm" style="max-width:140px;" onchange="renderKullanicilar()">
+                    <option value="">Tüm Durumlar</option>
+                    <option value="AKTIF">Aktif</option>
+                    <option value="PASIF">Pasif</option>
+                </select>
+                <span class="ms-auto small text-muted" id="kulSayac">0 kullanıcı</span>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0" style="font-size:0.85rem;">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>Ad Soyad</th>
+                            <th>E-posta</th>
+                            <th class="text-center">Rol</th>
+                            <th class="text-center">Durum</th>
+                            <th class="text-center">Son Giriş</th>
+                            <th class="text-center">Kayıt</th>
+                            <th class="text-center">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody id="kulTabloBody">
+                        <tr><td colspan="7" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Kullanıcı Ekle/Düzenle Modal -->
+    <div class="modal fade" id="modalKullanici" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-md modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-3 bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-person me-2"></i><span id="kulModalBaslik">Yeni Kullanıcı</span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="background:#f8f9fa;">
+                    <input type="hidden" id="kulId">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold text-muted mb-1">Ad Soyad <span class="text-danger">*</span></label>
+                            <input id="kulAdSoyad" class="form-control form-control-sm" placeholder="Örn: Mehmet Yılmaz">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold text-muted mb-1">E-posta (@aterko.com) <span class="text-danger">*</span></label>
+                            <input id="kulEmail" class="form-control form-control-sm" type="email" placeholder="kullaniciadi@aterko.com">
+                            <small class="text-muted">Bu e-posta ile Google'dan giriş yapabilecek.</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted mb-1">Rol <span class="text-danger">*</span></label>
+                            <select id="kulRol" class="form-select form-select-sm"></select>
+                            <small class="text-muted" id="kulRolBilgi"></small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted mb-1">Durum</label>
+                            <select id="kulDurum" class="form-select form-select-sm">
+                                <option value="AKTIF">Aktif</option>
+                                <option value="PASIF">Pasif (giriş yapamaz)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-white">
+                    <button id="kulSilBtn" type="button" class="btn btn-outline-danger me-auto d-none" onclick="kullaniciSil()"><i class="bi bi-trash me-1"></i>Sil</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-dark fw-bold px-4" onclick="kullaniciKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- FORM TANIMLARI YÖNETİMİ (sadece ADMIN) -->
@@ -3284,6 +3376,151 @@ async function formTanimiSil(id) {
     else showToast(r.hata, 'error');
 }
 
+// ============================================================================
+// KULLANICILAR YÖNETİMİ
+// ============================================================================
+let kullanicilarCache = [];
+let kullaniciRolleri = ['ADMIN', 'SATIS', 'SATINALMA', 'URETIM', 'MUHASEBE', 'KULLANICI'];
+
+const KUL_ROL_ACIKLAMA = {
+    'ADMIN':     'Tüm modüller + yönetim',
+    'SATIS':     'Projeler + müşteri yönetimi',
+    'SATINALMA': 'Talep, sipariş, tedarikçi, mal kabul',
+    'URETIM':    'Üretim, sevkiyat, montaj, stok',
+    'MUHASEBE':  'Rapor + karlılık (okuma)',
+    'KULLANICI': 'Kendi modülleri (henüz tanımsız)'
+};
+const KUL_ROL_RENK = {
+    'ADMIN': 'danger', 'SATIS': 'primary', 'SATINALMA': 'success',
+    'URETIM': 'warning text-dark', 'MUHASEBE': 'info text-dark', 'KULLANICI': 'secondary'
+};
+
+async function kullanicilariYukle() {
+    const r = await secureFetch('/kullanicilar').catch(()=>null);
+    if (!r || !r.ok) return showToast(r?.hata || 'Yüklenemedi.', 'error');
+    kullanicilarCache = r.data;
+    kullaniciRolleri = r.roller || kullaniciRolleri;
+
+    // Rol filtre dropdown'unu doldur
+    const rolSel = document.getElementById('kulRolFiltre');
+    rolSel.innerHTML = '<option value="">Tüm Roller</option>' +
+        kullaniciRolleri.map(rol => `<option value="${rol}">${rol}</option>`).join('');
+
+    renderKullanicilar();
+}
+
+function renderKullanicilar() {
+    const arama = (document.getElementById('kulArama')?.value || '').toLowerCase().trim();
+    const rolF = document.getElementById('kulRolFiltre')?.value || '';
+    const durumF = document.getElementById('kulDurumFiltre')?.value || '';
+
+    let liste = kullanicilarCache.filter(u => {
+        if (rolF && u.rol !== rolF) return false;
+        if (durumF && u.durum !== durumF) return false;
+        if (arama && !((u.ad_soyad||'').toLowerCase().includes(arama) || (u.email||'').toLowerCase().includes(arama))) return false;
+        return true;
+    });
+
+    document.getElementById('kulSayac').textContent = `${liste.length} kullanıcı`;
+
+    const tbody = document.getElementById('kulTabloBody');
+    if (liste.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">Eşleşen kullanıcı yok.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = liste.map(u => {
+        const renk = KUL_ROL_RENK[u.rol] || 'secondary';
+        const sonGiris = u.son_giris ? new Date(u.son_giris).toLocaleString('tr-TR') : '<span class="text-muted small">Hiç giriş yok</span>';
+        const kayit = u.kayit_tarihi ? new Date(u.kayit_tarihi).toLocaleDateString('tr-TR') : '-';
+        const durumBadge = u.durum === 'AKTIF' ? '<span class="badge bg-success">AKTİF</span>' : '<span class="badge bg-secondary">PASİF</span>';
+        return `<tr>
+            <td class="fw-bold">${esc(u.ad_soyad)}</td>
+            <td><code class="small">${esc(u.email)}</code></td>
+            <td class="text-center"><span class="badge bg-${renk}">${esc(u.rol)}</span></td>
+            <td class="text-center">${durumBadge}</td>
+            <td class="text-center small">${sonGiris}</td>
+            <td class="text-center small text-muted">${kayit}</td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-primary py-0" onclick="kullaniciDuzenle(${u.id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function openKullaniciModal(data) {
+    const d = data || {};
+    document.getElementById('kulModalBaslik').textContent = d.id ? 'Kullanıcı Düzenle' : 'Yeni Kullanıcı';
+    document.getElementById('kulId').value = d.id || '';
+    document.getElementById('kulAdSoyad').value = d.ad_soyad || '';
+    document.getElementById('kulEmail').value = d.email || '';
+    document.getElementById('kulEmail').readOnly = !!d.id;  // Düzenlemede e-posta sabit
+
+    // Rol dropdown
+    const rolSel = document.getElementById('kulRol');
+    rolSel.innerHTML = kullaniciRolleri.map(rol =>
+        `<option value="${rol}">${rol}</option>`
+    ).join('');
+    rolSel.value = d.rol || 'KULLANICI';
+    kulRolDegisti();
+
+    document.getElementById('kulDurum').value = d.durum || 'AKTIF';
+
+    // Silme butonu sadece düzenlemede (ve kendi olmayanda)
+    const silBtn = document.getElementById('kulSilBtn');
+    const isKendi = d.email && (JSON.parse(localStorage.getItem('aterko_user')||'{}').email === d.email);
+    silBtn.classList.toggle('d-none', !d.id || isKendi);
+
+    new bootstrap.Modal(document.getElementById('modalKullanici')).show();
+}
+
+function kulRolDegisti() {
+    const rol = document.getElementById('kulRol').value;
+    document.getElementById('kulRolBilgi').textContent = KUL_ROL_ACIKLAMA[rol] || '';
+}
+// Rol değişimini dinle
+document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'kulRol') kulRolDegisti();
+});
+
+function kullaniciDuzenle(id) {
+    const u = kullanicilarCache.find(x => x.id === id);
+    if (u) openKullaniciModal(u);
+}
+
+async function kullaniciKaydet() {
+    const payload = {
+        id: parseInt(document.getElementById('kulId').value) || null,
+        ad_soyad: document.getElementById('kulAdSoyad').value.trim(),
+        email: document.getElementById('kulEmail').value.trim().toLowerCase(),
+        rol: document.getElementById('kulRol').value,
+        durum: document.getElementById('kulDurum').value
+    };
+    if (!payload.ad_soyad) return showToast('Ad Soyad zorunlu.', 'error');
+    if (!payload.email) return showToast('E-posta zorunlu.', 'error');
+    if (!payload.email.endsWith('@aterko.com')) return showToast('Sadece @aterko.com e-postaları kabul edilir.', 'error');
+
+    const r = await secureFetch('/kullanici-kaydet', { method:'POST', body: JSON.stringify(payload) });
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalKullanici')).hide();
+        showToast(r.mesaj, 'success');
+        kullanicilariYukle();
+    } else showToast(r.hata, 'error');
+}
+
+async function kullaniciSil() {
+    const id = parseInt(document.getElementById('kulId').value);
+    if (!id) return;
+    const u = kullanicilarCache.find(x => x.id === id);
+    if (!confirm(`${u?.ad_soyad || 'Bu kullanıcı'} silinecek. Sisteme giriş yapamayacak. Devam?`)) return;
+    const r = await secureFetch('/kullanici-sil/' + id, { method:'DELETE' });
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalKullanici')).hide();
+        showToast(r.mesaj, 'success');
+        kullanicilariYukle();
+    } else showToast(r.hata, 'error');
+}
+
 async function auditOzetYukle() {
     const r = await secureFetch('/audit-log-ozet').catch(()=>null);
     if (!r || !r.ok) return;
@@ -3317,7 +3554,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','kullanicilarArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -3333,6 +3570,9 @@ function setTab(tab) {
     } else if (tab === 'formtanim') {
         document.getElementById("formtanimArea").classList.remove("d-none");
         formTanimlariYukle();
+    } else if (tab === 'kullanicilar') {
+        document.getElementById("kullanicilarArea").classList.remove("d-none");
+        kullanicilariYukle();
     } else if (tab === 'projeler') {
         document.getElementById("projeArea").classList.remove("d-none");
         fetchProjeler();
