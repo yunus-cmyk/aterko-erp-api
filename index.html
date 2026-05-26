@@ -118,7 +118,26 @@
       <img src="https://www.aterko.com/wp-content/uploads/2022/07/aterko-logo-light.png" height="30" class="me-3">
       <div><h6 class="m-0 fw-bold">Aterko ERP Sistemi</h6><small class="opacity-75" id="userNameDisplay">...</small></div>
     </div>
-    <div><button class="btn btn-sm btn-outline-light" onclick="cikisYap()">Çıkış Yap</button></div>
+    <div class="d-flex align-items-center gap-2">
+      <!-- Bildirim Merkezi -->
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-light position-relative" id="bildirimBtn" onclick="bildirimleriYukle()" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Bildirimler">
+          <i class="bi bi-bell-fill"></i>
+          <span id="bildirimSayac" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" style="font-size:0.65rem;">0</span>
+        </button>
+        <div class="dropdown-menu dropdown-menu-end shadow-lg" style="width: 380px; max-height: 75vh; overflow-y: auto;" id="bildirimMenu">
+          <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom">
+            <strong class="text-dark"><i class="bi bi-bell me-2"></i>Bildirimler</strong>
+            <button class="btn btn-sm btn-link p-0 text-decoration-none" onclick="bildirimHepsiniOkundu(event)" id="bildirimOkundu" title="Hepsini okundu işaretle"><i class="bi bi-check2-all"></i> Hepsini okundu işaretle</button>
+          </div>
+          <div id="bildirimListe">
+            <div class="text-center text-muted small p-4">Yükleniyor...</div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-sm btn-outline-light" onclick="cikisYap()">Çıkış Yap</button>
+    </div>
   </div>
 
   <div class="tabs-box py-2 px-1">
@@ -2061,6 +2080,8 @@ window.addEventListener("DOMContentLoaded", function() {
         kullaniciYetki = user.yetki || '';
         fetchStokKartlariForDropdown();
         setTab('projeler');
+        // Bildirim merkezini başlat (her 90 sn yenilenir)
+        bildirimOtoYenile();
     } else {
         document.getElementById("loginOverlay").classList.remove("d-none");
         google.accounts.id.initialize({ client_id: "147823112806-t1er1p9uka98t04i26riqp5mtpp2ejri.apps.googleusercontent.com", callback: handleCredentialResponse });
@@ -2092,6 +2113,104 @@ function handleCredentialResponse(response) {
     });
 }
 function cikisYap() { localStorage.removeItem('aterko_token'); localStorage.removeItem('aterko_user'); location.reload(); }
+
+// ============================================================================
+// BİLDİRİM MERKEZİ (D-1)
+// ============================================================================
+let bildirimRefreshTimer = null;
+
+async function bildirimleriYukle() {
+    const r = await secureFetch('/bildirimler?limit=30').catch(() => null);
+    if (!r || !r.ok) return;
+    bildirimRender(r.data, r.okunmamis);
+}
+
+function bildirimRender(liste, okunmamis) {
+    const sayacEl = document.getElementById('bildirimSayac');
+    if (okunmamis > 0) {
+        sayacEl.textContent = okunmamis > 99 ? '99+' : okunmamis;
+        sayacEl.classList.remove('d-none');
+    } else {
+        sayacEl.classList.add('d-none');
+    }
+
+    const liste_el = document.getElementById('bildirimListe');
+    if (!liste || liste.length === 0) {
+        liste_el.innerHTML = '<div class="text-center text-muted small p-4"><i class="bi bi-bell-slash me-1"></i>Hiç bildirim yok.</div>';
+        return;
+    }
+
+    const tipMap = {
+        'INFO':    { icon: 'bi-info-circle-fill', cls: 'text-info' },
+        'UYARI':   { icon: 'bi-exclamation-triangle-fill', cls: 'text-warning' },
+        'KRITIK':  { icon: 'bi-exclamation-octagon-fill', cls: 'text-danger' },
+        'BASARI':  { icon: 'bi-check-circle-fill', cls: 'text-success' }
+    };
+
+    liste_el.innerHTML = liste.map(b => {
+        const t = tipMap[b.tip] || tipMap.INFO;
+        const okundu = b.okundu ? 'bg-white' : 'bg-light';
+        const tarih = bildirimGoreceTarih(b.kayit_tarihi);
+        const linkBtn = b.link
+            ? `<a href="${esc(b.link)}" class="stretched-link" onclick="bildirimTikla(${b.id}, '${esc(b.link)}', event)"></a>`
+            : `<a href="#" class="stretched-link" onclick="event.preventDefault(); bildirimOkundu([${b.id}]);"></a>`;
+        return `<div class="dropdown-item-text position-relative px-3 py-2 border-bottom ${okundu}" style="cursor:pointer; white-space:normal;">
+            <div class="d-flex gap-2">
+                <i class="bi ${t.icon} ${t.cls} flex-shrink-0 mt-1"></i>
+                <div class="flex-grow-1 small">
+                    <div class="fw-bold ${b.okundu ? '' : 'text-dark'}">${esc(b.baslik)}</div>
+                    ${b.mesaj ? `<div class="text-muted">${esc(b.mesaj)}</div>` : ''}
+                    <div class="text-muted small mt-1"><i class="bi bi-clock"></i> ${tarih}</div>
+                </div>
+                ${!b.okundu ? '<span class="badge bg-primary rounded-pill flex-shrink-0" style="width:8px; height:8px; padding:0;"></span>' : ''}
+            </div>
+            ${linkBtn}
+        </div>`;
+    }).join('');
+}
+
+function bildirimGoreceTarih(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const fark = (Date.now() - d.getTime()) / 1000;
+    if (fark < 60) return 'şimdi';
+    if (fark < 3600) return Math.floor(fark/60) + ' dk önce';
+    if (fark < 86400) return Math.floor(fark/3600) + ' sa önce';
+    if (fark < 604800) return Math.floor(fark/86400) + ' gün önce';
+    return d.toLocaleDateString('tr-TR');
+}
+
+async function bildirimOkundu(ids) {
+    await secureFetch('/bildirim-okundu', { method:'POST', body: JSON.stringify({ ids }) }).catch(() => {});
+    bildirimleriYukle();
+}
+
+async function bildirimHepsiniOkundu(event) {
+    if (event) event.stopPropagation();
+    await secureFetch('/bildirim-okundu', { method:'POST', body: JSON.stringify({ hepsi: true }) }).catch(() => {});
+    bildirimleriYukle();
+}
+
+function bildirimTikla(id, link, event) {
+    // Okundu işaretle (asenkron)
+    bildirimOkundu([id]);
+    // Link "#stok" gibi sekme adı ise setTab'a yönlendir
+    if (link && link.startsWith('#')) {
+        event.preventDefault();
+        const tab = link.substring(1);
+        if (typeof setTab === 'function') setTab(tab);
+        // Dropdown'u kapat
+        const drop = bootstrap.Dropdown.getInstance(document.getElementById('bildirimBtn'));
+        if (drop) drop.hide();
+    }
+}
+
+// Periyodik yenileme — 90 saniye
+function bildirimOtoYenile() {
+    if (bildirimRefreshTimer) clearInterval(bildirimRefreshTimer);
+    bildirimleriYukle();
+    bildirimRefreshTimer = setInterval(bildirimleriYukle, 90 * 1000);
+}
 
 function setTab(tab) {
     // 1. Menüdeki aktif sekme rengini ayarla

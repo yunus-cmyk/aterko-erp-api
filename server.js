@@ -2378,6 +2378,207 @@ app.get('/api/get-lists', yetkiKontrol, async (req, res, next) => {
 app.post('/api/durum-guncelle', yetkiKontrol, async (req, res, next) => { res.json({ok:true}); });
 
 // ============================================================================
+// BİLDİRİM SİSTEMİ (D-1)
+// ============================================================================
+
+// Sistem içi bildirim oluştur (diğer endpoint'lerden çağırılır)
+// opts: { tip, link, kaynak_modul, referans_id }
+async function bildirimOlustur(email, baslik, mesaj, opts = {}) {
+    try {
+        await pool.query(`
+            INSERT INTO bildirimler (kullanici_email, tip, baslik, mesaj, link, kaynak_modul, referans_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [email, opts.tip || 'INFO', baslik, mesaj || null, opts.link || null,
+            opts.kaynak_modul || null, opts.referans_id || null]);
+    } catch (e) {
+        console.warn('Bildirim oluşturulamadı:', e.message);
+    }
+}
+
+// Çoklu hedef için (örn. tüm kullanıcılara) bildirim
+async function bildirimOlusturToplu(emailler, baslik, mesaj, opts = {}) {
+    for (const email of emailler) {
+        await bildirimOlustur(email, baslik, mesaj, opts);
+    }
+}
+
+// Aktif kullanıcı için bildirim listesi (son N adet)
+app.get('/api/bildirimler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const limit = parseInt(req.query.limit) || 30;
+        // Kullanıcının kendi bildirimleri + herkese olanlar (kullanici_email NULL)
+        const r = await pool.query(`
+            SELECT * FROM bildirimler
+            WHERE kullanici_email = $1 OR kullanici_email IS NULL
+            ORDER BY kayit_tarihi DESC
+            LIMIT $2
+        `, [req.user.email, limit]);
+
+        // Okunmamış sayısı
+        const c = await pool.query(`
+            SELECT COUNT(*)::int as n FROM bildirimler
+            WHERE (kullanici_email = $1 OR kullanici_email IS NULL) AND okundu = FALSE
+        `, [req.user.email]);
+
+        res.json({ ok: true, data: r.rows, okunmamis: c.rows[0].n });
+    } catch (e) { next(e); }
+});
+
+// Bildirim okundu işaretle (tek veya çoklu)
+// Body: { ids: [1,2,3] } veya { hepsi: true }
+app.post('/api/bildirim-okundu', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { ids, hepsi } = req.body;
+        if (hepsi) {
+            await pool.query(`
+                UPDATE bildirimler SET okundu = TRUE, okundu_tarihi = NOW()
+                WHERE (kullanici_email = $1 OR kullanici_email IS NULL) AND okundu = FALSE
+            `, [req.user.email]);
+        } else if (Array.isArray(ids) && ids.length > 0) {
+            await pool.query(`
+                UPDATE bildirimler SET okundu = TRUE, okundu_tarihi = NOW()
+                WHERE id = ANY($1::int[]) AND (kullanici_email = $2 OR kullanici_email IS NULL)
+            `, [ids, req.user.email]);
+        }
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// ============================================================================
+// OTOMATIK BİLDİRİM ÜRETİMİ (D-2)
+// Periyodik check: termin yaklaşan siparişler + pasif kalan talepler
+// ============================================================================
+
+// Termin tarihi 3 gün içinde olan aktif siparişler için bildirim
+async function bildirimUret_TerminYaklasan() {
+    const r = await pool.query(`
+        SELECT s.id, s.siparis_no, s.termin_tarihi,
+               t.firma_adi as tedarikci_adi,
+               (s.termin_tarihi - CURRENT_DATE)::int as kalan_gun
+        FROM satinalma_siparisleri s
+        LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
+        WHERE s.termin_tarihi IS NOT NULL
+          AND s.termin_tarihi BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '3 days'
+          AND s.durum NOT IN ('TAMAMLANDI', 'İPTAL', 'TAMAMLANDI ARŞİV')
+          AND COALESCE(s.arsiv, false) = false
+    `);
+    let yeni = 0;
+    for (const s of r.rows) {
+        // Aynı sipariş için son 24 saatte aynı tipte bildirim atılmışsa atlayalım
+        const c = await pool.query(`
+            SELECT 1 FROM bildirimler
+            WHERE kaynak_modul='satinalma_termin' AND referans_id=$1
+              AND kayit_tarihi > NOW() - INTERVAL '24 hours' LIMIT 1
+        `, [s.id]);
+        if (c.rowCount > 0) continue;
+
+        const kalan = s.kalan_gun;
+        const tip = kalan <= 0 ? 'KRITIK' : (kalan <= 1 ? 'KRITIK' : 'UYARI');
+        const gunMsg = kalan <= 0 ? 'BUGÜN' : (kalan === 1 ? 'yarın' : kalan + ' gün sonra');
+        await bildirimOlustur(null,
+            `${kalan <= 0 ? '🔴 Termin bugün' : '⏰ Termin yaklaşıyor'}: ${s.siparis_no}`,
+            `${s.tedarikci_adi || 'Tedarikçi'} — termin ${gunMsg}`,
+            { tip, link: '#satinalma', kaynak_modul: 'satinalma_termin', referans_id: s.id }
+        );
+        yeni++;
+    }
+    return yeni;
+}
+
+// 7+ gündür ONAY BEKLİYOR durumundaki talepler için bildirim
+async function bildirimUret_PasifTalep() {
+    const r = await pool.query(`
+        SELECT id, talep_no, talep_eden,
+               EXTRACT(DAY FROM (NOW() - kayit_tarihi))::int as gun
+        FROM satinalma_talepleri
+        WHERE durum = 'ONAY BEKLİYOR'
+          AND kayit_tarihi < NOW() - INTERVAL '7 days'
+          AND COALESCE(arsiv, false) = false
+    `);
+    let yeni = 0;
+    for (const t of r.rows) {
+        const c = await pool.query(`
+            SELECT 1 FROM bildirimler
+            WHERE kaynak_modul='satinalma_pasif_talep' AND referans_id=$1
+              AND kayit_tarihi > NOW() - INTERVAL '7 days' LIMIT 1
+        `, [t.id]);
+        if (c.rowCount > 0) continue;
+
+        await bildirimOlustur(null,
+            `📌 Pasif talep: ${t.talep_no}`,
+            `${t.gun} gündür ONAY BEKLİYOR durumunda. Talep eden: ${t.talep_eden || '—'}`,
+            { tip: 'UYARI', link: '#satinalma', kaynak_modul: 'satinalma_pasif_talep', referans_id: t.id }
+        );
+        yeni++;
+    }
+    return yeni;
+}
+
+// Kritik stok altına düşen kalemler için bildirim
+async function bildirimUret_KritikStok() {
+    const r = await pool.query(`
+        SELECT id, stok_kodu, stok_adi, guncel_stok_miktari, kritik_stok_miktari, birim
+        FROM stok_kartlari
+        WHERE kritik_stok_miktari IS NOT NULL
+          AND kritik_stok_miktari > 0
+          AND guncel_stok_miktari < kritik_stok_miktari
+          AND stok_tipi != 'Ürün'
+    `);
+    let yeni = 0;
+    for (const s of r.rows) {
+        const c = await pool.query(`
+            SELECT 1 FROM bildirimler
+            WHERE kaynak_modul='kritik_stok' AND referans_id=$1
+              AND kayit_tarihi > NOW() - INTERVAL '24 hours' LIMIT 1
+        `, [s.id]);
+        if (c.rowCount > 0) continue;
+
+        await bildirimOlustur(null,
+            `📦 Kritik stok: ${s.stok_kodu}`,
+            `${s.stok_adi} — ${s.guncel_stok_miktari} ${s.birim} kaldı (kritik: ${s.kritik_stok_miktari})`,
+            { tip: 'UYARI', link: '#stok', kaynak_modul: 'kritik_stok', referans_id: s.id }
+        );
+        yeni++;
+    }
+    return yeni;
+}
+
+// Master fonksiyon — periyodik tetikleyici çağırır
+async function bildirimleriOtomatikUret() {
+    try {
+        const t = await bildirimUret_TerminYaklasan();
+        const p = await bildirimUret_PasifTalep();
+        const k = await bildirimUret_KritikStok();
+        if (t + p + k > 0) {
+            console.log(`📨 Bildirim üretildi → termin:${t}, pasif:${p}, kritik:${k}`);
+        }
+    } catch (e) {
+        console.warn('Bildirim otomasyon hatası:', e.message);
+    }
+}
+
+// Manuel tetikleme endpoint'i (admin için)
+app.post('/api/bildirim-otomatik-tetikle', yetkiKontrol, async (req, res, next) => {
+    try {
+        const t = await bildirimUret_TerminYaklasan();
+        const p = await bildirimUret_PasifTalep();
+        const k = await bildirimUret_KritikStok();
+        res.json({ ok: true, mesaj: `Üretildi: ${t} termin, ${p} pasif talep, ${k} kritik stok.` });
+    } catch (e) { next(e); }
+});
+
+// Bildirim sil (kullanıcının kendi bildirimi)
+app.delete('/api/bildirim-sil/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        await pool.query(`
+            DELETE FROM bildirimler
+            WHERE id = $1 AND kullanici_email = $2
+        `, [req.params.id, req.user.email]);
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// ============================================================================
 // FAZ B-2: ÜRETİM MODÜLÜ
 // ============================================================================
 
@@ -3230,4 +3431,9 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 API Sunucusu ${PORT} portunda Korumalı modda çalışıyor!`));
+app.listen(PORT, () => {
+    console.log(`🚀 API Sunucusu ${PORT} portunda Korumalı modda çalışıyor!`);
+    // Bildirim otomasyonu: server'ın 10 saniye sonra ilk kontrolü, sonra her saat
+    setTimeout(() => bildirimleriOtomatikUret().catch(()=>{}), 10 * 1000);
+    setInterval(() => bildirimleriOtomatikUret().catch(()=>{}), 60 * 60 * 1000);
+});
