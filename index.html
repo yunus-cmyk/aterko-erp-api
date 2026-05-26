@@ -522,10 +522,10 @@
             </button>
         </div>
         <div class="d-flex gap-2">
-            <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnYeniTalepUst" onclick="openYeniTalepModal()">
+            <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnYeniTalepUst" data-izin-modul="satinalma.talepler" data-izin-seviye="YAZMA" onclick="openYeniTalepModal()">
                 <i class="bi bi-plus-lg me-1"></i> Yeni Talep Oluştur
             </button>
-            <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniTedarikciUst" onclick="openTedarikciModal()">
+            <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniTedarikciUst" data-izin-modul="satinalma.tedarikci" data-izin-seviye="YAZMA" onclick="openTedarikciModal()">
                 <i class="bi bi-plus-lg me-1"></i> Yeni Tedarikçi
             </button>
         </div>
@@ -2899,10 +2899,22 @@ function formatGorelTarih(isoString) {
 async function secureFetch(endpoint, options = {}) {
     const token = localStorage.getItem('aterko_token');
     if (!token) throw new Error("Oturum bulunamadı.");
-    options.headers = { ...options.headers, 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+    const headers = { ...options.headers, 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+    // Rol simülasyonu aktifse backend'e de bildir
+    const simRol = localStorage.getItem('aterko_simulasyon_rol');
+    if (simRol) headers['X-Yansit-Rol'] = simRol;
+    options.headers = headers;
     const response = await fetch(`${API_URL}${endpoint}`, options);
-    if (response.status === 401 || response.status === 403) { cikisYap(); throw new Error("Oturum süresi doldu."); }
-    return response.json();
+
+    // 401 = oturum yok → çıkış. 403 = yetkisiz erişim → oturum açık kal, hata göster
+    if (response.status === 401) { cikisYap(); throw new Error("Oturum süresi doldu."); }
+
+    const data = await response.json().catch(() => ({ ok: false, hata: 'Cevap okunamadı.' }));
+    // İzin hatası — toast göster ama oturumu kapatma
+    if (response.status === 403 && data.izin_hatasi) {
+        if (typeof showToast === 'function') showToast(data.hata || 'Bu işlem için yetkin yok.', 'error');
+    }
+    return data;
 }
 
 // Aktif kullanıcının yetkisi — yayın akışı vb. yerlerde kullanılır
@@ -2987,6 +2999,22 @@ function simulasyonCikis() {
     setTimeout(() => location.reload(), 500);
 }
 
+// data-izin-modul + data-izin-seviye attribute'lu tüm elementleri tara, izin yoksa gizle
+function izinAttributesUygula() {
+    document.querySelectorAll('[data-izin-modul]').forEach(el => {
+        const modul = el.getAttribute('data-izin-modul');
+        const seviye = el.getAttribute('data-izin-seviye') || 'OKUMA';
+        if (izinVarMi(modul, seviye)) {
+            el.classList.remove('d-none-by-izin');
+            // Mevcut display restore et (d-none-by-izin sınıfı removeWillUnhide)
+            el.style.display = '';
+        } else {
+            el.style.display = 'none';
+            el.classList.add('d-none-by-izin');
+        }
+    });
+}
+
 // Navbar sekmelerini ve dropdown'u izinlere göre göster/gizle
 function izinleriUygula() {
     // Üst navbar sekmeleri
@@ -3031,6 +3059,9 @@ function izinleriUygula() {
         if (!btn) continue;
         btn.classList.toggle('d-none', !sekmeGorunur(modul));
     }
+
+    // data-izin-modul attribute'lu tüm elementleri uygula
+    izinAttributesUygula();
 }
 
 // setTab guard: izin yoksa erişimi engelle (setTab içinde çağrılır)

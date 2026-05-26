@@ -66,6 +66,17 @@ const yetkiKontrol = (req, res, next) => {
     const token = authHeader.split(' ')[1];
     try {
         req.user = jwt.verify(token, JWT_SECRET);
+        // Token'dan gelen kullaniciYansit header'ı varsa (admin simülasyon için)
+        const yansit = req.headers['x-yansit-rol'];
+        if (yansit && (req.user.rol === 'ADMIN' || req.user.rol === 'Admin')) {
+            req.user.gercek_rol = req.user.rol;
+            req.user.rol = yansit;
+            req.user.simulasyon = true;
+        }
+        // İzin middleware'ini çağır (genelIzinMiddleware tanımlı olmalı)
+        if (typeof genelIzinMiddleware === 'function') {
+            return genelIzinMiddleware(req, res, next);
+        }
         next();
     } catch (err) {
         return res.status(401).json({ ok: false, hata: "Oturum süreniz dolmuş." });
@@ -3245,6 +3256,123 @@ async function getKullaniciIzinleri(rolAd) {
 }
 
 function izinCacheTemizle() { IZIN_CACHE.clear(); }
+
+// İzin gerektiren middleware
+// Kullanım: app.post('/x', yetkiKontrol, izinGerekli('modul.kod', 'YAZMA'), handler)
+function izinGerekli(modulKod, gerekliSeviye = 'OKUMA') {
+    return async (req, res, next) => {
+        try {
+            // ADMIN her zaman geçer
+            if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return next();
+
+            const izinler = await getKullaniciIzinleri(req.user.rol);
+            const sahip = izinler[modulKod] || 'YOK';
+            const seviyeSira = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
+            if (seviyeSira[sahip] < seviyeSira[gerekliSeviye]) {
+                return res.status(403).json({
+                    ok: false,
+                    hata: `Bu işlem için yetkin yok (${modulKod} → ${gerekliSeviye} gerekli, sende ${sahip}).`
+                });
+            }
+            next();
+        } catch (e) { next(e); }
+    };
+}
+
+// Endpoint → modül eşleme tablosu (regex pattern + gerekli seviye)
+// İlk eşleşen kural uygulanır. Eşleşmeyen endpoint'ler için kontrol yok (örn. /me/izinler).
+const ENDPOINT_IZIN_KURALLARI = [
+    // Yönetim — sadece ADMIN (route handler'da zaten kontrol var, çift kontrol için bunlar burada)
+    { pattern: /^\/api\/(kullanicilar|kullanici-|roller|rol-|modul-katalog|form-tanim|audit-log)/, modul: 'yonetim.kullanicilar', seviye: 'TAM' },
+    // Bildirimler — herkes kendi bildirimlerini görür
+    { pattern: /^\/api\/bildirim/, modul: 'anasayfa', seviye: 'OKUMA' },
+    // Dashboard
+    { pattern: /^\/api\/dashboard/, modul: 'anasayfa', seviye: 'OKUMA' },
+    // Hızlı arama — temel okuma
+    { pattern: /^\/api\/quick-search/, modul: 'anasayfa', seviye: 'OKUMA' },
+
+    // Projeler
+    { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
+    { pattern: /^\/api\/(proje-kaydet|proje-sil|teslimat-durum)/, modul: 'projeler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/proje-karlilik/, modul: 'rapor.karlilik', seviye: 'OKUMA' },
+
+    // Bina Listeleri (Ürün Listesi)
+    { pattern: /^\/api\/teslimat-secenekleri/, modul: 'bina_listeleri', seviye: 'OKUMA' },
+    { pattern: /^\/api\/teslimat-urunleri/, method: 'GET', modul: 'bina_listeleri', seviye: 'OKUMA' },
+    { pattern: /^\/api\/teslimat-urun-(ekle|guncelle|sil)/, modul: 'bina_listeleri', seviye: 'YAZMA' },
+    { pattern: /^\/api\/teslimat-urun-talep-olustur/, modul: 'bina_listeleri', seviye: 'YAZMA' },
+    { pattern: /^\/api\/urun-listesi-(onaya|onayla|reddet|kopyala|import|sablon|ek-urun|kopya-kaynak)/, modul: 'bina_listeleri', seviye: 'YAZMA' },
+    { pattern: /^\/api\/urun-listesi-(versiyon|teslimat-sablon)/, modul: 'bina_listeleri', seviye: 'OKUMA' },
+
+    // Satınalma — Talepler
+    { pattern: /^\/api\/(satinalma-listesi|talep-detay|talep-urunleri|teklif-havuzu|arsiv)/, method: 'GET', modul: 'satinalma.talepler', seviye: 'OKUMA' },
+    { pattern: /^\/api\/(talep-kaydet|talep-guncelle|talep-onayla|talep-reddet|talep-iptal|talep-arsivle|teklif-iste|teklif-iptal)/, modul: 'satinalma.talepler', seviye: 'TAM' },
+
+    // Satınalma — Siparişler
+    { pattern: /^\/api\/(siparis-listesi|siparis-detay|siparis-pdf|siparis-dosya)/, method: 'GET', modul: 'satinalma.siparisler', seviye: 'OKUMA' },
+    { pattern: /^\/api\/(siparis-kaydet|siparis-guncelle|siparis-onayla|siparis-gonder|siparis-iptal|siparis-arsivle|siparis-gerial|siparis-dosya-yukle|siparis-dosya-sil)/, modul: 'satinalma.siparisler', seviye: 'TAM' },
+
+    // Satınalma — Mal Kabul
+    { pattern: /^\/api\/mal-kabul/, modul: 'satinalma.mal_kabul', seviye: 'YAZMA' },
+
+    // Tedarikçiler
+    { pattern: /^\/api\/tedarikci/, method: 'GET', modul: 'satinalma.tedarikci', seviye: 'OKUMA' },
+    { pattern: /^\/api\/(tedarikci-kaydet|tedarikci-sil|tedarikci-)/, modul: 'satinalma.tedarikci', seviye: 'YAZMA' },
+
+    // Stok
+    { pattern: /^\/api\/(stok-kart|stok-hareketler|depolar|stok-kartlari)/, method: 'GET', modul: 'stok', seviye: 'OKUMA' },
+    { pattern: /^\/api\/(stok-kaydet|stok-hareket-kaydet|stok-hareket-guncelle|stok-hareket-sil|depo-kaydet)/, modul: 'stok', seviye: 'YAZMA' },
+
+    // Üretim
+    { pattern: /^\/api\/uretim-(urunleri|is-emirleri|is-emri-detay)/, method: 'GET', modul: 'uretim', seviye: 'OKUMA' },
+    { pattern: /^\/api\/uretim-/, modul: 'uretim', seviye: 'YAZMA' },
+
+    // Sevkiyat
+    { pattern: /^\/api\/sevkiyat-(urunleri|belgeleri|belgesi-detay|plani)/, method: 'GET', modul: 'sevkiyat', seviye: 'OKUMA' },
+    { pattern: /^\/api\/sevkiyat-/, modul: 'sevkiyat', seviye: 'YAZMA' },
+
+    // Montaj
+    { pattern: /^\/api\/montaj-(teslimatlar|teslimat-urunleri|hareketler)/, method: 'GET', modul: 'montaj', seviye: 'OKUMA' },
+    { pattern: /^\/api\/montaj-/, modul: 'montaj', seviye: 'YAZMA' },
+
+    // Rapor
+    { pattern: /^\/api\/ozet/, modul: 'rapor.ozet', seviye: 'OKUMA' },
+
+    // Teknik şartname / form
+    { pattern: /^\/api\/teknik-sartname/, modul: 'projeler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/form-tanimlari/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' }
+];
+
+// Global izin middleware — tüm /api endpoint'lerine uygulanır
+async function genelIzinMiddleware(req, res, next) {
+    // yetkiKontrol'den sonra çalışır, req.user mevcut
+    if (!req.user) return next();
+    // ADMIN her zaman geçer
+    if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return next();
+
+    // /me/izinler ve auth gibi her zaman erişilebilir olmalı
+    if (req.path === '/me/izinler' || req.path === '/durum-guncelle') return next();
+
+    // Eşleşen ilk kural uygulanır
+    for (const k of ENDPOINT_IZIN_KURALLARI) {
+        if (!k.pattern.test(req.path)) continue;
+        if (k.method && k.method !== req.method) continue;
+        // İzin kontrolü
+        const izinler = await getKullaniciIzinleri(req.user.rol);
+        const sahip = izinler[k.modul] || 'YOK';
+        const seviyeSira = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
+        if (seviyeSira[sahip] < seviyeSira[k.seviye]) {
+            return res.status(403).json({
+                ok: false,
+                hata: `Yetkin yok: ${k.modul} → ${k.seviye} gerekli, sende ${sahip}.`,
+                izin_hatasi: true
+            });
+        }
+        return next();
+    }
+    // Hiçbir kural eşleşmediyse erişim ver (whitelist olmadığı için)
+    next();
+}
 
 // Endpoint: Aktif kullanıcının izin haritası
 // ?as=ROL parametresi: sadece ADMIN için — başka rolün izinlerini simüle eder
