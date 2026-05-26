@@ -2591,6 +2591,136 @@ app.get('/api/quick-search', yetkiKontrol, async (req, res, next) => {
 });
 
 // ============================================================================
+// PROJE KARLILIK RAPORU — Aşama 1 (brüt: gelir - sipariş)
+// ============================================================================
+// Mantık:
+//   Gelir = SUM(proje_teslimatlari.kdvsiz_tutar) — projenin sözleşme bedeli
+//   Maliyet = SUM(siparis_kalemleri.birim_fiyat × siparis_miktari) — talep üzerinden bağlı siparişler
+//   Brüt Kâr = Gelir - Maliyet (sadece aynı para biriminde anlamlı)
+//   Diğer para birimlerinden maliyet ayrı sütun olarak gösterilir
+app.get('/api/proje-karlilik', yetkiKontrol, async (req, res, next) => {
+    try {
+        const q = `
+            WITH gelir AS (
+                SELECT proje_id, SUM(COALESCE(kdvsiz_tutar, 0))::numeric as toplam_gelir,
+                       COUNT(*)::int as teslimat_sayisi
+                FROM proje_teslimatlari
+                WHERE COALESCE(durum,'') <> 'İPTAL'
+                GROUP BY proje_id
+            ),
+            maliyet AS (
+                SELECT t.proje_id,
+                       s.para_birimi,
+                       SUM(COALESCE(sk.birim_fiyat,0) * COALESCE(sk.siparis_miktari,0))::numeric as toplam,
+                       COUNT(DISTINCT s.id)::int as siparis_sayisi
+                FROM satinalma_siparisleri s
+                JOIN siparis_kalemleri sk ON sk.siparis_id = s.id
+                JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+                JOIN satinalma_talepleri t ON tu.talep_id = t.id
+                WHERE COALESCE(s.arsiv,false)=false
+                  AND COALESCE(s.durum,'') <> 'İPTAL'
+                  AND t.proje_id IS NOT NULL
+                GROUP BY t.proje_id, s.para_birimi
+            ),
+            maliyet_grup AS (
+                SELECT proje_id,
+                       json_object_agg(para_birimi, json_build_object('toplam', toplam, 'siparis_sayisi', siparis_sayisi)) as breakdown,
+                       SUM(siparis_sayisi)::int as toplam_siparis
+                FROM maliyet
+                GROUP BY proje_id
+            )
+            SELECT p.id, p.proje_kodu, p.musteri_adi, p.proje_adi, p.durum,
+                   COALESCE(p.para_birimi, 'TL') as proje_para_birimi,
+                   COALESCE(g.toplam_gelir, 0)::numeric as gelir,
+                   COALESCE(g.teslimat_sayisi, 0) as teslimat_sayisi,
+                   COALESCE(mg.breakdown, '{}'::json) as maliyet_breakdown,
+                   COALESCE(mg.toplam_siparis, 0) as siparis_sayisi
+            FROM projeler p
+            LEFT JOIN gelir g ON g.proje_id = p.id
+            LEFT JOIN maliyet_grup mg ON mg.proje_id = p.id
+            WHERE COALESCE(p.durum,'') NOT IN ('İPTAL')
+            ORDER BY g.toplam_gelir DESC NULLS LAST
+        `;
+        const r = await pool.query(q);
+        // Aynı para biriminde olanları hesapla
+        const data = r.rows.map(p => {
+            const breakdown = p.maliyet_breakdown || {};
+            const pbm = breakdown[p.proje_para_birimi];
+            const ayni_pb_maliyet = pbm ? parseFloat(pbm.toplam) : 0;
+            const gelir = parseFloat(p.gelir);
+            const brutKar = gelir - ayni_pb_maliyet;
+            const marjYuzde = gelir > 0 ? Math.round((brutKar / gelir) * 100) : 0;
+            // Diğer para birimlerinde maliyetler
+            const diger = {};
+            for (const [pb, v] of Object.entries(breakdown)) {
+                if (pb !== p.proje_para_birimi) diger[pb] = parseFloat(v.toplam);
+            }
+            return { ...p, gelir, ayni_pb_maliyet, brutKar, marjYuzde, diger_para_maliyet: diger };
+        });
+        res.json({ ok: true, data });
+    } catch (e) { next(e); }
+});
+
+// Bir projenin maliyet kalemleri (detay)
+app.get('/api/proje-karlilik/:projeId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { projeId } = req.params;
+        const baslik = await pool.query(`
+            SELECT p.*,
+                   (SELECT SUM(COALESCE(kdvsiz_tutar,0)) FROM proje_teslimatlari WHERE proje_id=p.id AND COALESCE(durum,'')<>'İPTAL') as toplam_gelir
+            FROM projeler p WHERE p.id=$1
+        `, [projeId]);
+        if (baslik.rowCount === 0) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
+
+        // Teslimatlar (gelir kalemleri)
+        const teslimatlar = await pool.query(`
+            SELECT id, bina_adi, bina_turu, bina_tipi, buyukluk_m2, kdvsiz_tutar, durum
+            FROM proje_teslimatlari WHERE proje_id=$1
+            ORDER BY id
+        `, [projeId]);
+
+        // Siparişler ve kalemleri (maliyet kalemleri)
+        const siparisler = await pool.query(`
+            SELECT s.id, s.siparis_no, s.tedarikci_id, s.para_birimi, s.durum, s.siparis_tarihi,
+                   ted.firma_adi as tedarikci_adi,
+                   COUNT(sk.id)::int as kalem_sayisi,
+                   COALESCE(SUM(sk.birim_fiyat * sk.siparis_miktari),0)::numeric as toplam_tutar
+            FROM satinalma_siparisleri s
+            LEFT JOIN tedarikciler ted ON s.tedarikci_id=ted.id
+            JOIN siparis_kalemleri sk ON sk.siparis_id=s.id
+            JOIN talep_urunleri tu ON sk.talep_urun_id=tu.id
+            JOIN satinalma_talepleri t ON tu.talep_id=t.id
+            WHERE t.proje_id=$1 AND COALESCE(s.arsiv,false)=false AND s.durum <> 'İPTAL'
+            GROUP BY s.id, ted.firma_adi
+            ORDER BY s.siparis_tarihi DESC
+        `, [projeId]);
+
+        // Tedarikçi bazlı maliyet özeti
+        const tedarikciOzet = await pool.query(`
+            SELECT ted.firma_adi as tedarikci, s.para_birimi,
+                   COALESCE(SUM(sk.birim_fiyat * sk.siparis_miktari),0)::numeric as toplam,
+                   COUNT(DISTINCT s.id)::int as siparis_sayisi
+            FROM satinalma_siparisleri s
+            LEFT JOIN tedarikciler ted ON s.tedarikci_id=ted.id
+            JOIN siparis_kalemleri sk ON sk.siparis_id=s.id
+            JOIN talep_urunleri tu ON sk.talep_urun_id=tu.id
+            JOIN satinalma_talepleri t ON tu.talep_id=t.id
+            WHERE t.proje_id=$1 AND COALESCE(s.arsiv,false)=false AND s.durum <> 'İPTAL'
+            GROUP BY ted.firma_adi, s.para_birimi
+            ORDER BY toplam DESC
+        `, [projeId]);
+
+        res.json({
+            ok: true,
+            proje: baslik.rows[0],
+            teslimatlar: teslimatlar.rows,
+            siparisler: siparisler.rows,
+            tedarikciOzet: tedarikciOzet.rows
+        });
+    } catch (e) { next(e); }
+});
+
+// ============================================================================
 // İŞ AKIŞLARI / FORM TANIMLARI YÖNETİMİ (D-6)
 // ============================================================================
 app.get('/api/form-tanimlari', yetkiKontrol, async (req, res, next) => {

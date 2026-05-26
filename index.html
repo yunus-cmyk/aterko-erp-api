@@ -1607,21 +1607,142 @@
     </div>
 
     <div id="ozetArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-graph-up me-2 text-primary"></i>Genel Özet</h5>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-graph-up me-2 text-primary"></i>Genel Özet & Raporlar</h5>
+            <ul class="nav nav-pills nav-fill" id="ozetAltSekme" style="background:#f0f0f0; border-radius:6px;">
+                <li class="nav-item"><a class="nav-link active px-4 py-1" onclick="switchOzetSekme('genel')" id="ozTab-genel">
+                    <i class="bi bi-bar-chart me-1"></i>Genel Bakış
+                </a></li>
+                <li class="nav-item"><a class="nav-link px-4 py-1" onclick="switchOzetSekme('karlilik')" id="ozTab-karlilik">
+                    <i class="bi bi-cash-stack me-1"></i>Proje Karlılık
+                </a></li>
+            </ul>
         </div>
-        <div class="row g-4 mb-4" id="ozetStatCards"></div>
-        <div class="row g-4">
-            <div class="col-md-6">
-                <div class="card border-0 shadow-sm rounded-3">
-                    <div class="card-header bg-white fw-bold border-0 pt-3"><i class="bi bi-pie-chart me-2 text-primary"></i>Teslimat Durumları</div>
-                    <div class="card-body" id="ozetDurumBars"></div>
+
+        <!-- Genel Bakış sekmesi (eski içerik) -->
+        <div id="ozetGenelArea">
+            <div class="row g-4 mb-4" id="ozetStatCards"></div>
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm rounded-3">
+                        <div class="card-header bg-white fw-bold border-0 pt-3"><i class="bi bi-pie-chart me-2 text-primary"></i>Teslimat Durumları</div>
+                        <div class="card-body" id="ozetDurumBars"></div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm rounded-3">
+                        <div class="card-header bg-white fw-bold border-0 pt-3"><i class="bi bi-currency-exchange me-2 text-primary"></i>Sözleşme Tutarları</div>
+                        <div class="card-body" id="ozetTutarBars"></div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card border-0 shadow-sm rounded-3">
-                    <div class="card-header bg-white fw-bold border-0 pt-3"><i class="bi bi-currency-exchange me-2 text-primary"></i>Sözleşme Tutarları</div>
-                    <div class="card-body" id="ozetTutarBars"></div>
+        </div>
+
+        <!-- Karlılık sekmesi -->
+        <div id="ozetKarlilikArea" class="d-none">
+            <div class="alert alert-warning py-2 mb-3 small">
+                <i class="bi bi-info-circle me-1"></i>
+                <strong>Brüt Karlılık (Aşama 1):</strong> Bu rapor sözleşme bedeli (gelir) ile bağlı satınalma siparişlerinin tutarını (yaklaşık maliyet) karşılaştırır.
+                <strong>Stoktan kullanılan malzeme</strong> ve <strong>işçilik</strong> dahil DEĞİLDİR — gerçek kâr bu raporda görünenden daha düşük olabilir.
+            </div>
+
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-body py-2 px-3 d-flex gap-2 flex-wrap align-items-end">
+                    <input id="karArama" class="form-control form-control-sm" placeholder="🔍 Proje kodu, müşteri, ad..." style="max-width:300px;" oninput="renderKarlilik()">
+                    <select id="karSirala" class="form-select form-select-sm" style="max-width:200px;" onchange="renderKarlilik()">
+                        <option value="gelir-desc">Gelir (en yüksek)</option>
+                        <option value="kar-desc">Brüt Kâr (en yüksek)</option>
+                        <option value="kar-asc">Brüt Kâr (en düşük / zararda)</option>
+                        <option value="marj-desc">Marj % (en yüksek)</option>
+                        <option value="marj-asc">Marj % (en düşük)</option>
+                    </select>
+                    <span class="ms-auto small text-muted" id="karSayac"></span>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0" style="font-size:0.82rem;">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Proje</th>
+                                <th>Müşteri</th>
+                                <th class="text-center">Para</th>
+                                <th class="text-end">Gelir</th>
+                                <th class="text-end">Sipariş Toplamı</th>
+                                <th class="text-end">Brüt Kâr</th>
+                                <th class="text-end">Marj %</th>
+                                <th class="text-center">Diğer Para</th>
+                                <th class="text-center">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="karTabloBody">
+                            <tr><td colspan="9" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Karlılık Detay Modal -->
+    <div class="modal fade" id="modalKarDetay" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-3 bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-cash-stack me-2"></i>Proje Karlılık Detayı — <span id="kdBaslik"></span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="background:#f8f9fa;">
+                    <div id="kdOzet" class="mb-3"></div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-header bg-white fw-bold"><i class="bi bi-building me-2 text-primary"></i>Teslimatlar (Gelir)</div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm mb-0">
+                                        <thead class="bg-light">
+                                            <tr><th>Bina</th><th>Tür</th><th class="text-end">Tutar</th></tr>
+                                        </thead>
+                                        <tbody id="kdTeslimatlar"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-0 shadow-sm h-100">
+                                <div class="card-header bg-white fw-bold"><i class="bi bi-shop me-2 text-warning"></i>Tedarikçi Bazlı Maliyet</div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm mb-0">
+                                        <thead class="bg-light">
+                                            <tr><th>Tedarikçi</th><th class="text-center">Sip.</th><th class="text-end">Tutar</th></tr>
+                                        </thead>
+                                        <tbody id="kdTedarikciler"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-12">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-header bg-white fw-bold"><i class="bi bi-cart me-2 text-success"></i>Bağlı Siparişler</div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover mb-0">
+                                        <thead class="bg-light">
+                                            <tr>
+                                                <th>Sipariş No</th>
+                                                <th>Tedarikçi</th>
+                                                <th class="text-center">Tarih</th>
+                                                <th class="text-center">Kalem</th>
+                                                <th class="text-end">Tutar</th>
+                                                <th class="text-center">Durum</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="kdSiparisler"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -7437,6 +7558,157 @@ function fetchOzet() {
         if(res.ok) renderOzet(res);
         else showToast(res.hata, "error");
     }).catch(err => { hideLoading(); showToast("Özet yüklenemedi.", "error"); });
+}
+
+function switchOzetSekme(sekme) {
+    document.querySelectorAll('#ozetAltSekme .nav-link').forEach(a => a.classList.remove('active'));
+    document.getElementById('ozTab-' + sekme).classList.add('active');
+    document.getElementById('ozetGenelArea').classList.toggle('d-none', sekme !== 'genel');
+    document.getElementById('ozetKarlilikArea').classList.toggle('d-none', sekme !== 'karlilik');
+    if (sekme === 'genel') fetchOzet();
+    else if (sekme === 'karlilik') fetchKarlilik();
+}
+
+// ============================================================================
+// PROJE KARLILIK RAPORU (Aşama 1)
+// ============================================================================
+let karlilikCache = [];
+
+async function fetchKarlilik() {
+    showLoading();
+    const r = await secureFetch('/proje-karlilik').catch(()=>null);
+    hideLoading();
+    if (!r || !r.ok) return;
+    karlilikCache = r.data;
+    renderKarlilik();
+}
+
+function renderKarlilik() {
+    const arama = (document.getElementById('karArama')?.value || '').toLowerCase().trim();
+    const sirala = document.getElementById('karSirala')?.value || 'gelir-desc';
+
+    let liste = karlilikCache.slice();
+    if (arama) liste = liste.filter(p =>
+        (p.proje_kodu||'').toLowerCase().includes(arama) ||
+        (p.musteri_adi||'').toLowerCase().includes(arama) ||
+        (p.proje_adi||'').toLowerCase().includes(arama)
+    );
+
+    // Sıralama
+    const sortFn = {
+        'gelir-desc': (a,b) => (b.gelir||0) - (a.gelir||0),
+        'kar-desc':   (a,b) => (b.brutKar||0) - (a.brutKar||0),
+        'kar-asc':    (a,b) => (a.brutKar||0) - (b.brutKar||0),
+        'marj-desc':  (a,b) => (b.marjYuzde||0) - (a.marjYuzde||0),
+        'marj-asc':   (a,b) => (a.marjYuzde||0) - (b.marjYuzde||0)
+    }[sirala];
+    if (sortFn) liste.sort(sortFn);
+
+    // Toplam istatistik
+    const tplGelir = liste.reduce((s,p) => s + (p.gelir||0), 0);
+    const tplMaliyet = liste.reduce((s,p) => s + (p.ayni_pb_maliyet||0), 0);
+    const tplKar = tplGelir - tplMaliyet;
+    document.getElementById('karSayac').textContent =
+        `${liste.length} proje • Toplam Gelir: ${formatTR(tplGelir)} • Toplam Maliyet: ${formatTR(tplMaliyet)} • Net: ${formatTR(tplKar)}`;
+
+    const tbody = document.getElementById('karTabloBody');
+    if (liste.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Eşleşen proje yok.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = liste.map(p => {
+        const karCls = p.brutKar < 0 ? 'text-danger fw-bold' : (p.brutKar > 0 ? 'text-success fw-bold' : 'text-muted');
+        const marjCls = p.marjYuzde < 0 ? 'text-danger' : (p.marjYuzde >= 30 ? 'text-success' : (p.marjYuzde >= 10 ? 'text-warning' : 'text-muted'));
+        // Diğer para birimleri
+        const dpKeys = Object.keys(p.diger_para_maliyet || {});
+        const dpStr = dpKeys.length === 0 ? '<span class="text-muted small">—</span>'
+            : dpKeys.map(pb => `<small class="d-block text-muted">+ ${formatTR(p.diger_para_maliyet[pb])} ${pb}</small>`).join('');
+
+        return `<tr>
+            <td><strong class="text-primary">${esc(p.proje_kodu||'-')}</strong><br><small class="text-muted">${esc(p.proje_adi||'')}</small></td>
+            <td class="small">${esc(p.musteri_adi||'-')}</td>
+            <td class="text-center small"><span class="badge bg-light text-dark">${esc(p.proje_para_birimi)}</span></td>
+            <td class="text-end">${formatTR(p.gelir)}</td>
+            <td class="text-end">${formatTR(p.ayni_pb_maliyet)}<br><small class="text-muted">${p.siparis_sayisi} sip.</small></td>
+            <td class="text-end ${karCls}">${formatTR(p.brutKar)}</td>
+            <td class="text-end ${marjCls}">%${p.marjYuzde}</td>
+            <td class="text-center">${dpStr}</td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-dark py-0" onclick="openKarDetay(${p.id})" title="Detay"><i class="bi bi-eye"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function openKarDetay(projeId) {
+    showLoading();
+    const r = await secureFetch('/proje-karlilik/' + projeId).catch(()=>null);
+    hideLoading();
+    if (!r || !r.ok) return showToast(r?.hata || 'Detay yüklenemedi.', 'error');
+
+    const p = r.proje;
+    const pb = p.para_birimi || 'TL';
+
+    // Toplam maliyetler para birimi başına
+    const malToplam = {};
+    r.tedarikciOzet.forEach(t => {
+        malToplam[t.para_birimi] = (malToplam[t.para_birimi]||0) + parseFloat(t.toplam);
+    });
+    const ayniPbMal = malToplam[pb] || 0;
+    const gelir = parseFloat(p.toplam_gelir) || 0;
+    const kar = gelir - ayniPbMal;
+    const marj = gelir > 0 ? Math.round((kar/gelir)*100) : 0;
+
+    document.getElementById('kdBaslik').textContent =
+        `${p.proje_kodu || ''} — ${p.musteri_adi || ''}`;
+
+    const digerPb = Object.entries(malToplam)
+        .filter(([k]) => k !== pb)
+        .map(([k,v]) => `<span class="badge bg-secondary me-1">${formatTR(v)} ${k}</span>`).join('');
+
+    const karCls = kar < 0 ? 'danger' : (kar > 0 ? 'success' : 'secondary');
+    document.getElementById('kdOzet').innerHTML = `
+        <div class="row g-2">
+            <div class="col-md-3"><div class="p-3 bg-white rounded shadow-sm text-center"><div class="text-muted small">Gelir</div><div class="fw-bold" style="font-size:1.3rem;">${formatTR(gelir)} ${pb}</div></div></div>
+            <div class="col-md-3"><div class="p-3 bg-white rounded shadow-sm text-center"><div class="text-muted small">Sipariş (${pb})</div><div class="fw-bold" style="font-size:1.3rem;">${formatTR(ayniPbMal)} ${pb}</div></div></div>
+            <div class="col-md-3"><div class="p-3 bg-white rounded shadow-sm text-center"><div class="text-muted small">Brüt Kâr</div><div class="fw-bold text-${karCls}" style="font-size:1.3rem;">${formatTR(kar)} ${pb}</div></div></div>
+            <div class="col-md-3"><div class="p-3 bg-white rounded shadow-sm text-center"><div class="text-muted small">Marj</div><div class="fw-bold text-${karCls}" style="font-size:1.3rem;">%${marj}</div></div></div>
+        </div>
+        ${digerPb ? `<div class="mt-2 small text-muted">Diğer para birimlerinde maliyet: ${digerPb}</div>` : ''}
+    `;
+
+    // Teslimatlar
+    document.getElementById('kdTeslimatlar').innerHTML = r.teslimatlar.length === 0
+        ? '<tr><td colspan="3" class="text-center text-muted small p-3">Teslimat yok</td></tr>'
+        : r.teslimatlar.map(t => `<tr>
+            <td><strong class="small">${esc(t.bina_adi)}</strong>${t.bina_turu ? `<br><small class="text-muted">${esc(t.bina_turu)} ${t.buyukluk_m2 ? '• ' + t.buyukluk_m2 + ' m²' : ''}</small>` : ''}</td>
+            <td class="small">${esc(t.bina_tipi||'-')}</td>
+            <td class="text-end fw-bold">${formatTR(t.kdvsiz_tutar)}</td>
+          </tr>`).join('');
+
+    // Tedarikçi özeti
+    document.getElementById('kdTedarikciler').innerHTML = r.tedarikciOzet.length === 0
+        ? '<tr><td colspan="3" class="text-center text-muted small p-3">Sipariş yok</td></tr>'
+        : r.tedarikciOzet.map(t => `<tr>
+            <td class="small fw-bold">${esc(t.tedarikci||'-')}</td>
+            <td class="text-center small">${t.siparis_sayisi}</td>
+            <td class="text-end">${formatTR(t.toplam)} <small class="text-muted">${esc(t.para_birimi)}</small></td>
+          </tr>`).join('');
+
+    // Siparişler
+    document.getElementById('kdSiparisler').innerHTML = r.siparisler.length === 0
+        ? '<tr><td colspan="6" class="text-center text-muted small p-3">Sipariş yok</td></tr>'
+        : r.siparisler.map(s => `<tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalKarDetay')).hide(); setTimeout(()=>{setTab('satinalma'); setTimeout(()=>switchSatinalmaSubTab('siparisler'), 200);}, 200);">
+            <td class="fw-bold text-primary small">${esc(s.siparis_no)}</td>
+            <td class="small">${esc(s.tedarikci_adi||'-')}</td>
+            <td class="text-center small">${s.siparis_tarihi ? new Date(s.siparis_tarihi).toLocaleDateString('tr-TR') : '-'}</td>
+            <td class="text-center small">${s.kalem_sayisi}</td>
+            <td class="text-end">${formatTR(s.toplam_tutar)} <small class="text-muted">${esc(s.para_birimi)}</small></td>
+            <td class="text-center small">${getSatinalmaDurumBadge ? getSatinalmaDurumBadge(s.durum) : esc(s.durum)}</td>
+          </tr>`).join('');
+
+    new bootstrap.Modal(document.getElementById('modalKarDetay')).show();
 }
 
 function renderOzet(data) {
