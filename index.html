@@ -124,6 +124,17 @@
         <i class="bi bi-search"></i> <small class="d-none d-md-inline ms-1"><kbd style="font-size:0.7rem;">⌘K</kbd></small>
       </button>
 
+      <!-- Admin Menüsü (sadece ADMIN için görünür) -->
+      <div class="dropdown" id="adminMenuWrap" style="display:none;">
+        <button class="btn btn-sm btn-outline-light" data-bs-toggle="dropdown" aria-expanded="false" title="Yönetim">
+          <i class="bi bi-gear-fill"></i> <small class="d-none d-md-inline ms-1">Yönetim</small>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow">
+          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
+          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('formtanim')"><i class="bi bi-ui-checks me-2"></i>Form Tanımları</a></li>
+        </ul>
+      </div>
+
       <!-- Bildirim Merkezi -->
       <div class="dropdown">
         <button class="btn btn-sm btn-outline-light position-relative" id="bildirimBtn" onclick="bildirimleriYukle()" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Bildirimler">
@@ -146,21 +157,22 @@
   </div>
 
   <div class="tabs-box py-2 px-1">
-    <ul class="nav nav-pills me-auto">
+    <ul class="nav nav-pills">
+      <li class="nav-item"><a class="nav-link" id="nav-anasayfa" onclick="setTab('anasayfa')"><i class="bi bi-house-door-fill me-2"></i>Ana Sayfa</a></li>
       <li class="nav-item"><a class="nav-link active" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-2"></i>Projeler</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-2"></i>Sevkiyat Planı</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-anasayfa" onclick="setTab('anasayfa')"><i class="bi bi-house-door-fill me-2"></i>Anasayfa</a></li>
-      <li class="nav-item" id="nav-audit-wrap" style="display:none;"><a class="nav-link text-secondary" id="nav-audit" onclick="setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
-      <li class="nav-item" id="nav-formtanim-wrap" style="display:none;"><a class="nav-link text-secondary" id="nav-formtanim" onclick="setTab('formtanim')"><i class="bi bi-ui-checks me-2"></i>Form Tanımları</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Özet</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-stok" onclick="setTab('stok')"><i class="bi bi-box-seam me-2"></i>Stok / Katalog</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-tedarikci" onclick="setTab('tedarikci')"><i class="bi bi-shop me-2"></i>Tedarikçiler</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-2"></i>Ürün Listesi</a></li>
+      <li class="nav-item"><a class="nav-link text-success" id="nav-satinalma" onclick="setTab('satinalma')"><i class="bi bi-cart-check me-2"></i>Satınalma</a></li>
+      <li class="nav-item"><a class="nav-link" id="nav-stok" onclick="setTab('stok')"><i class="bi bi-box-seam me-2"></i>Stok</a></li>
+      <li class="nav-item"><a class="nav-link" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-2"></i>Bina Listeleri</a></li>
       <li class="nav-item"><a class="nav-link text-warning" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-2"></i>Üretim</a></li>
+      <li class="nav-item"><a class="nav-link" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-2"></i>Sevkiyat</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-montaj" onclick="setTab('montaj')" style="color:#6f42c1;"><i class="bi bi-wrench-adjustable me-2"></i>Montaj</a></li>
-      <li class="nav-item"><a class="nav-link text-success" id="nav-satinalma" onclick="setTab('satinalma')"><i class="bi bi-cart-check me-2"></i>Satınalma Talepleri</a></li>
+      <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Rapor</a></li>
+      <!-- Tedarikçi sekmesi Satınalma alt sekmesine taşındı, doğrudan link kaldırıldı -->
+      <li class="nav-item d-none"><a id="nav-tedarikci" onclick="setTab('tedarikci')"></a></li>
+      <!-- Audit ve Form Tanımları "Yönetim" dropdown'ına taşındı -->
+      <li class="nav-item d-none" id="nav-audit-wrap"><a id="nav-audit" onclick="setTab('audit')"></a></li>
+      <li class="nav-item d-none" id="nav-formtanim-wrap"><a id="nav-formtanim" onclick="setTab('formtanim')"></a></li>
     </ul>
-    <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" onclick="alert('Proje Ekleme (Daha Sonra Aktif Edilecek)')"><i class="bi bi-plus-lg me-1"></i> Yeni Proje Girişi</button>
   </div>
 
   <div class="content-area">
@@ -467,6 +479,9 @@
             </button>
             <button class="btn btn-outline-dark" id="btnSubSiparisler" onclick="switchSatinalmaSubTab('siparisler')">
                 <i class="bi bi-file-earmark-text-fill me-1"></i> Sipariş Listesi (PO)
+            </button>
+            <button class="btn btn-outline-dark" id="btnSubTedarikciler" onclick="switchSatinalmaSubTab('tedarikciler')">
+                <i class="bi bi-shop me-1"></i> Tedarikçiler
             </button>
             <button class="btn btn-outline-dark" id="btnSubArsiv" onclick="switchSatinalmaSubTab('arsiv')">
                 <i class="bi bi-archive me-1"></i> Arşiv
@@ -2670,12 +2685,10 @@ window.addEventListener("DOMContentLoaded", function() {
         document.getElementById("userNameDisplay").textContent = user.adSoyad || "...";
         kullaniciYetki = user.yetki || '';
         fetchStokKartlariForDropdown();
-        // ADMIN için Audit Log + Form Tanımları menülerini göster
+        // ADMIN için "Yönetim" dropdown menüsünü göster (Audit Log + Form Tanımları)
         if (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') {
-            const auditNav = document.getElementById('nav-audit-wrap');
-            if (auditNav) auditNav.style.display = '';
-            const ftNav = document.getElementById('nav-formtanim-wrap');
-            if (ftNav) ftNav.style.display = '';
+            const adminMenu = document.getElementById('adminMenuWrap');
+            if (adminMenu) adminMenu.style.display = '';
         }
         setTab('anasayfa');
         // Bildirim merkezini başlat (her 90 sn yenilenir)
@@ -3327,8 +3340,12 @@ function setTab(tab) {
             secureFetch('/satinalma-listesi').then(r => { if (r.ok) window.satinalmaProjeler = r.projeler; });
         }
     } else if (tab === 'tedarikci') {
-        document.getElementById("tedarikciArea").classList.remove("d-none");
-        fetchTedarikciler();
+        // Tedarikçiler artık Satınalma alt sekmesi — Satınalma'yı aç ve oraya geç
+        document.getElementById("satinalmaArea").classList.remove("d-none");
+        switchSatinalmaSubTab('tedarikciler');
+        // Aktif sekme rengi Satınalma'da kalsın
+        const sa = document.getElementById('nav-satinalma');
+        if (sa) sa.classList.add('active');
     } else if (tab === 'urun-listesi') {
         document.getElementById("urunListesiArea").classList.remove("d-none");
         fetchTeslimatSecenekleri();   // Proje + teslimat dropdown'larını doldur
@@ -6017,12 +6034,14 @@ function switchSatinalmaSubTab(target) {
         talepler: document.getElementById("satinalmaTaleplerDiv"),
         teklif:   document.getElementById("satinalmaTeklifDiv"),
         siparisler: document.getElementById("satinalmaSiparislerDiv"),
+        tedarikciler: document.getElementById("tedarikciArea"),
         arsiv:    document.getElementById("satinalmaArsivDiv")
     };
     const btns = {
         talepler: document.getElementById("btnSubTalepler"),
         teklif:   document.getElementById("btnSubTeklif"),
         siparisler: document.getElementById("btnSubSiparisler"),
+        tedarikciler: document.getElementById("btnSubTedarikciler"),
         arsiv:    document.getElementById("btnSubArsiv")
     };
     const btnYeni = document.getElementById("btnYeniTalepUst");
@@ -6042,6 +6061,8 @@ function switchSatinalmaSubTab(target) {
         fetchTeklifHavuzu();
     } else if (target === 'siparisler') {
         fetchSiparisListesi();
+    } else if (target === 'tedarikciler') {
+        if (typeof fetchTedarikciler === 'function') fetchTedarikciler();
     } else if (target === 'arsiv') {
         fetchArsiv();
     }
