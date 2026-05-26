@@ -2994,10 +2994,24 @@ function simulasyonBaslat() {
 }
 
 function simulasyonCikis() {
-    localStorage.removeItem('aterko_simulasyon_rol');
-    showToast('Simülasyon kapatıldı. Sayfa yenileniyor...', 'success');
-    setTimeout(() => location.reload(), 500);
+    // Güvenli temizlik — hata olsa bile reload'u garanti et
+    try {
+        localStorage.removeItem('aterko_simulasyon_rol');
+        if (typeof showToast === 'function') showToast('Simülasyon kapatıldı. Yenileniyor...', 'success');
+    } catch(e) { /* sessiz */ }
+    // Direkt reload — bekleme yok
+    location.reload();
 }
+
+// Global escape hatch: Sayfanın herhangi bir yerinde Alt+Shift+R basılınca simülasyondan çık
+document.addEventListener('keydown', function(e) {
+    if (e.altKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) {
+        if (localStorage.getItem('aterko_simulasyon_rol')) {
+            localStorage.removeItem('aterko_simulasyon_rol');
+            location.reload();
+        }
+    }
+});
 
 // data-izin-modul + data-izin-seviye attribute'lu tüm elementleri tara, izin yoksa gizle
 function izinAttributesUygula() {
