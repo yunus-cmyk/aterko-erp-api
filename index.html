@@ -6817,6 +6817,9 @@ function renderStokTable() {
         return true;
     });
 
+    // Mevcut stok miktarına göre azalan sıralama (en fazla olan üstte)
+    filtered.sort((a, b) => (parseFloat(b.guncel_stok_miktari) || 0) - (parseFloat(a.guncel_stok_miktari) || 0));
+
     document.getElementById("stokSayacLabel").textContent = `${filtered.length} / ${stoklarGlobal.length} stok`;
 
     if(filtered.length === 0) {
