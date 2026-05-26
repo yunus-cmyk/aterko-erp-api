@@ -119,6 +119,11 @@
       <div><h6 class="m-0 fw-bold">Aterko ERP Sistemi</h6><small class="opacity-75" id="userNameDisplay">...</small></div>
     </div>
     <div class="d-flex align-items-center gap-2">
+      <!-- Hızlı Arama -->
+      <button class="btn btn-sm btn-outline-light" onclick="openQuickSearch()" title="Hızlı Arama (⌘K / Ctrl+K)">
+        <i class="bi bi-search"></i> <small class="d-none d-md-inline ms-1"><kbd style="font-size:0.7rem;">⌘K</kbd></small>
+      </button>
+
       <!-- Bildirim Merkezi -->
       <div class="dropdown">
         <button class="btn btn-sm btn-outline-light position-relative" id="bildirimBtn" onclick="bildirimleriYukle()" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" title="Bildirimler">
@@ -986,6 +991,32 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- HIZLI ARAMA / KOMUT PALETİ (Cmd+K) -->
+    <div class="modal fade" id="modalQuickSearch" tabindex="-1">
+        <div class="modal-dialog modal-lg" style="margin-top: 10vh;">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-body p-0">
+                    <div class="d-flex align-items-center px-3 py-2 border-bottom">
+                        <i class="bi bi-search text-muted me-2" style="font-size:1.2rem;"></i>
+                        <input type="text" id="quickSearchInput" class="form-control border-0 shadow-none"
+                               placeholder="Proje, sipariş, talep, tedarikçi, stok, bina ile ara..." autocomplete="off">
+                        <kbd class="text-muted small ms-2">ESC</kbd>
+                    </div>
+                    <div id="quickSearchSonuclar" style="max-height: 60vh; overflow-y: auto;">
+                        <div class="text-center text-muted small p-4">
+                            <i class="bi bi-keyboard me-1"></i>En az 2 harf yazın.
+                            <div class="mt-2"><kbd>↑</kbd> <kbd>↓</kbd> ile gezin, <kbd>Enter</kbd> ile aç.</div>
+                        </div>
+                    </div>
+                    <div class="px-3 py-2 border-top bg-light text-muted small d-flex justify-content-between">
+                        <span><kbd>⌘K</kbd> veya <kbd>Ctrl+K</kbd> ile her yerden açılır</span>
+                        <span id="quickSearchSayac"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- AUDIT LOG (sadece ADMIN) -->
@@ -2558,6 +2589,157 @@ function auditFiltreTemizle() {
     document.getElementById('auditBitis').value = '';
     auditYukle();
 }
+
+// ============================================================================
+// HIZLI ARAMA / KOMUT PALETİ (D-5)
+// ============================================================================
+let quickSearchTimer = null;
+let quickSearchAktifIndex = -1;
+let quickSearchSonuclar = [];
+
+function openQuickSearch() {
+    const modal = new bootstrap.Modal(document.getElementById('modalQuickSearch'));
+    modal.show();
+    setTimeout(() => {
+        const inp = document.getElementById('quickSearchInput');
+        if (inp) { inp.value = ''; inp.focus(); }
+        quickSearchAktifIndex = -1;
+        document.getElementById('quickSearchSonuclar').innerHTML =
+            '<div class="text-center text-muted small p-4"><i class="bi bi-keyboard me-1"></i>En az 2 harf yazın.<div class="mt-2"><kbd>↑</kbd> <kbd>↓</kbd> ile gezin, <kbd>Enter</kbd> ile aç.</div></div>';
+        document.getElementById('quickSearchSayac').textContent = '';
+    }, 200);
+}
+
+function quickSearchTetikle() {
+    const q = document.getElementById('quickSearchInput').value.trim();
+    if (quickSearchTimer) clearTimeout(quickSearchTimer);
+    if (q.length < 2) {
+        document.getElementById('quickSearchSonuclar').innerHTML =
+            '<div class="text-center text-muted small p-4"><i class="bi bi-keyboard me-1"></i>En az 2 harf yazın.</div>';
+        document.getElementById('quickSearchSayac').textContent = '';
+        return;
+    }
+    // Debounce 200ms
+    quickSearchTimer = setTimeout(async () => {
+        const r = await secureFetch('/quick-search?q=' + encodeURIComponent(q)).catch(()=>null);
+        if (!r || !r.ok) return;
+        quickSearchRender(r.sonuclar);
+    }, 200);
+}
+
+function quickSearchRender(sonuclar) {
+    quickSearchSonuclar = sonuclar;
+    quickSearchAktifIndex = sonuclar.length > 0 ? 0 : -1;
+    document.getElementById('quickSearchSayac').textContent = sonuclar.length + ' sonuç';
+
+    const div = document.getElementById('quickSearchSonuclar');
+    if (sonuclar.length === 0) {
+        div.innerHTML = '<div class="text-center text-muted p-4"><i class="bi bi-emoji-frown"></i> Eşleşen kayıt yok.</div>';
+        return;
+    }
+
+    // Tipe göre grupla
+    const gruplar = {};
+    sonuclar.forEach((s, i) => {
+        if (!gruplar[s.tipAd]) gruplar[s.tipAd] = [];
+        gruplar[s.tipAd].push({ ...s, origIndex: i });
+    });
+
+    div.innerHTML = Object.entries(gruplar).map(([grupAd, items]) => `
+        <div class="px-3 py-1 bg-light small fw-bold text-muted border-bottom">${grupAd}</div>
+        ${items.map(s => `
+            <div class="quick-result px-3 py-2 border-bottom" data-index="${s.origIndex}" style="cursor:pointer;"
+                 onclick="quickSearchSec(${s.origIndex})"
+                 onmouseenter="quickSearchHover(${s.origIndex})">
+                <div class="fw-bold">${esc(s.baslik)}</div>
+                <div class="small text-muted">${esc(s.altMetin || '')}</div>
+            </div>
+        `).join('')}
+    `).join('');
+
+    quickSearchHighlight();
+}
+
+function quickSearchHighlight() {
+    document.querySelectorAll('.quick-result').forEach(el => {
+        const i = parseInt(el.dataset.index);
+        if (i === quickSearchAktifIndex) {
+            el.classList.add('bg-primary', 'bg-opacity-10');
+            el.scrollIntoView({ block: 'nearest' });
+        } else {
+            el.classList.remove('bg-primary', 'bg-opacity-10');
+        }
+    });
+}
+
+function quickSearchHover(i) {
+    quickSearchAktifIndex = i;
+    quickSearchHighlight();
+}
+
+function quickSearchSec(i) {
+    const s = quickSearchSonuclar[i];
+    if (!s) return;
+    bootstrap.Modal.getInstance(document.getElementById('modalQuickSearch'))?.hide();
+
+    // Tab + alt-tab geçişi
+    setTab(s.tab);
+    if (s.altTab && typeof switchSatinalmaSubTab === 'function') {
+        setTimeout(() => switchSatinalmaSubTab(s.altTab), 150);
+    }
+    // Detay açma — type'a göre
+    setTimeout(() => quickSearchDetayAc(s), 300);
+}
+
+function quickSearchDetayAc(s) {
+    try {
+        if (s.tip === 'talep' && typeof openTalepDetayModal === 'function') {
+            openTalepDetayModal(0, s.baslik);
+        } else if (s.tip === 'siparis' && typeof openSiparisDetayModal === 'function') {
+            openSiparisDetayModal(s.id);
+        } else if (s.tip === 'proje' && typeof openProjeDetay === 'function') {
+            openProjeDetay(s.id);
+        } else if (s.tip === 'teslimat') {
+            // Ürün Listesi sekmesinde teslimatı seçmeye yönelt
+            // (Proje seç + teslimat seç gerekir — şimdilik sadece sekmeye götürüyoruz)
+        }
+        // Tedarikçi/Stok için doğrudan tablo açılır, kullanıcı arar
+    } catch(e) { /* sessiz */ }
+}
+
+function quickSearchKlavye(e) {
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (quickSearchSonuclar.length === 0) return;
+        quickSearchAktifIndex = (quickSearchAktifIndex + 1) % quickSearchSonuclar.length;
+        quickSearchHighlight();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (quickSearchSonuclar.length === 0) return;
+        quickSearchAktifIndex = quickSearchAktifIndex <= 0 ? quickSearchSonuclar.length - 1 : quickSearchAktifIndex - 1;
+        quickSearchHighlight();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (quickSearchAktifIndex >= 0) quickSearchSec(quickSearchAktifIndex);
+    }
+}
+
+// Global Cmd+K / Ctrl+K kısayolu
+document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        openQuickSearch();
+    }
+});
+
+// Input listener'ı modal hazır olduğunda kur (DOMContentLoaded'de)
+window.addEventListener('DOMContentLoaded', () => {
+    const inp = document.getElementById('quickSearchInput');
+    if (inp) {
+        inp.addEventListener('input', quickSearchTetikle);
+        inp.addEventListener('keydown', quickSearchKlavye);
+    }
+});
 
 async function auditOzetYukle() {
     const r = await secureFetch('/audit-log-ozet').catch(()=>null);

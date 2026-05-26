@@ -2490,6 +2490,106 @@ app.get('/api/audit-log', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// ============================================================================
+// HIZLI ARAMA (D-5) — Cmd+K
+// ============================================================================
+app.get('/api/quick-search', yetkiKontrol, async (req, res, next) => {
+    try {
+        const q = (req.query.q || '').trim();
+        if (q.length < 2) return res.json({ ok: true, sonuclar: [] });
+        const like = '%' + q + '%';
+
+        const [projeler, talepler, siparisler, tedarikciler, stoklar, teslimatlar] = await Promise.all([
+            // Projeler (proje_kodu, müşteri, ad)
+            pool.query(`
+                SELECT id, proje_kodu, musteri_adi, proje_adi
+                FROM projeler
+                WHERE proje_kodu ILIKE $1 OR musteri_adi ILIKE $1 OR proje_adi ILIKE $1
+                ORDER BY id DESC LIMIT 8
+            `, [like]),
+            // Satınalma talepleri
+            pool.query(`
+                SELECT t.id, t.talep_no, t.talep_eden, t.durum, p.proje_kodu, p.musteri_adi
+                FROM satinalma_talepleri t
+                LEFT JOIN projeler p ON t.proje_id=p.id
+                WHERE t.talep_no ILIKE $1 OR t.talep_eden ILIKE $1
+                ORDER BY t.id DESC LIMIT 8
+            `, [like]),
+            // Siparişler
+            pool.query(`
+                SELECT s.id, s.siparis_no, s.durum, t.firma_adi as tedarikci
+                FROM satinalma_siparisleri s
+                LEFT JOIN tedarikciler t ON s.tedarikci_id=t.id
+                WHERE s.siparis_no ILIKE $1 OR t.firma_adi ILIKE $1
+                ORDER BY s.id DESC LIMIT 8
+            `, [like]),
+            // Tedarikçiler
+            pool.query(`
+                SELECT id, firma_adi, email, yetkili_kisi
+                FROM tedarikciler
+                WHERE firma_adi ILIKE $1 OR yetkili_kisi ILIKE $1 OR email ILIKE $1
+                ORDER BY firma_adi ASC LIMIT 8
+            `, [like]),
+            // Stok kartları
+            pool.query(`
+                SELECT id, stok_kodu, stok_adi, stok_tipi, guncel_stok_miktari, birim
+                FROM stok_kartlari
+                WHERE stok_kodu ILIKE $1 OR stok_adi ILIKE $1 OR kategori ILIKE $1
+                ORDER BY stok_kodu ASC LIMIT 8
+            `, [like]),
+            // Teslimatlar (bina)
+            pool.query(`
+                SELECT pt.id, pt.bina_adi, pt.bina_turu, pt.urun_listesi_yayin_durumu,
+                       p.proje_kodu, p.musteri_adi
+                FROM proje_teslimatlari pt
+                JOIN projeler p ON pt.proje_id=p.id
+                WHERE pt.bina_adi ILIKE $1
+                ORDER BY pt.id DESC LIMIT 8
+            `, [like])
+        ]);
+
+        const sonuclar = [];
+        projeler.rows.forEach(p => sonuclar.push({
+            tip: 'proje', tipAd: '🏗️ Proje', tab: 'projeler',
+            baslik: `${p.proje_kodu} — ${p.musteri_adi || ''}`,
+            altMetin: p.proje_adi,
+            id: p.id
+        }));
+        talepler.rows.forEach(t => sonuclar.push({
+            tip: 'talep', tipAd: '🛒 Talep', tab: 'satinalma', altTab: 'talepler',
+            baslik: t.talep_no,
+            altMetin: `${t.proje_kodu || '-'} • ${t.talep_eden || ''} • ${t.durum}`,
+            id: t.id
+        }));
+        siparisler.rows.forEach(s => sonuclar.push({
+            tip: 'siparis', tipAd: '📦 Sipariş', tab: 'satinalma', altTab: 'siparisler',
+            baslik: s.siparis_no,
+            altMetin: `${s.tedarikci || '-'} • ${s.durum}`,
+            id: s.id
+        }));
+        tedarikciler.rows.forEach(t => sonuclar.push({
+            tip: 'tedarikci', tipAd: '🏢 Tedarikçi', tab: 'tedarikci',
+            baslik: t.firma_adi,
+            altMetin: `${t.yetkili_kisi || ''} ${t.email ? '• ' + t.email : ''}`,
+            id: t.id
+        }));
+        stoklar.rows.forEach(s => sonuclar.push({
+            tip: 'stok', tipAd: '📦 Stok', tab: 'stok',
+            baslik: `${s.stok_kodu} — ${s.stok_adi}`,
+            altMetin: `${s.stok_tipi || ''} • Mevcut: ${s.guncel_stok_miktari || 0} ${s.birim || ''}`,
+            id: s.id
+        }));
+        teslimatlar.rows.forEach(t => sonuclar.push({
+            tip: 'teslimat', tipAd: '🏗️ Teslimat', tab: 'urun-listesi',
+            baslik: t.bina_adi,
+            altMetin: `${t.proje_kodu} / ${t.musteri_adi || ''} • ${t.bina_turu || ''} • Liste: ${t.urun_listesi_yayin_durumu || 'TASLAK'}`,
+            id: t.id
+        }));
+
+        res.json({ ok: true, sonuclar, toplam: sonuclar.length });
+    } catch (e) { next(e); }
+});
+
 // Audit log özet (admin için)
 app.get('/api/audit-log-ozet', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Yetki yok.' });
