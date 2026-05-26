@@ -292,14 +292,8 @@
     </div>
 
     <!-- TEDARİKÇİLER SEKMESI -->
-    <div id="tedarikciArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-shop me-2 text-primary"></i>Tedarikçi Yönetimi</h5>
-            <button class="btn btn-primary btn-sm fw-bold" onclick="openTedarikciModal()">
-                <i class="bi bi-plus-lg me-1"></i> Yeni Tedarikçi
-            </button>
-        </div>
-
+    <div id="tedarikciArea" class="d-none">
+        <!-- Başlık + ana buton Satınalma üst bar'ı tarafından sağlanır (alt sekme) -->
         <div class="card border-0 shadow-sm rounded-3 mb-3">
             <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
                 <div class="input-group input-group-sm" style="max-width:280px;">
@@ -487,9 +481,14 @@
                 <i class="bi bi-archive me-1"></i> Arşiv
             </button>
         </div>
-        <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnYeniTalepUst" onclick="openYeniTalepModal()">
-            <i class="bi bi-plus-lg me-1"></i> Yeni Talep Oluştur
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnYeniTalepUst" onclick="openYeniTalepModal()">
+                <i class="bi bi-plus-lg me-1"></i> Yeni Talep Oluştur
+            </button>
+            <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniTedarikciUst" onclick="openTedarikciModal()">
+                <i class="bi bi-plus-lg me-1"></i> Yeni Tedarikçi
+            </button>
+        </div>
     </div>
 
     <div id="satinalmaTaleplerDiv">
@@ -731,19 +730,19 @@
     </div>
 
     <div id="sevkiyatArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-truck me-2 text-primary"></i>Sevkiyat Modülü</h5>
-            <ul class="nav nav-pills nav-fill" id="sevkiyatAltSekme" style="background:#f0f0f0; border-radius:6px;">
-                <li class="nav-item"><a class="nav-link active px-4 py-1" onclick="switchSevkiyatSekme('hazir')" id="svkTab-hazir">
-                    <i class="bi bi-truck-flatbed me-1"></i>Sevkiyata Hazır
-                </a></li>
-                <li class="nav-item"><a class="nav-link px-4 py-1" onclick="switchSevkiyatSekme('belgeler')" id="svkTab-belgeler">
-                    <i class="bi bi-file-earmark-text me-1"></i>Sevkiyat Belgeleri
-                </a></li>
-                <li class="nav-item"><a class="nav-link px-4 py-1" onclick="switchSevkiyatSekme('plan')" id="svkTab-plan">
-                    <i class="bi bi-calendar-range me-1"></i>Plan / Takvim
-                </a></li>
-            </ul>
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div class="btn-group btn-group-sm shadow-sm">
+                <button class="btn btn-dark active" id="svkTab-hazir" onclick="switchSevkiyatSekme('hazir')">
+                    <i class="bi bi-truck-flatbed me-1"></i> Sevkiyata Hazır
+                </button>
+                <button class="btn btn-outline-dark" id="svkTab-belgeler" onclick="switchSevkiyatSekme('belgeler')">
+                    <i class="bi bi-file-earmark-text me-1"></i> Sevkiyat Belgeleri
+                </button>
+                <button class="btn btn-outline-dark" id="svkTab-plan" onclick="switchSevkiyatSekme('plan')">
+                    <i class="bi bi-calendar-range me-1"></i> Plan / Takvim
+                </button>
+            </div>
+            <div class="d-flex gap-2"><!-- Aksiyon butonları --></div>
         </div>
 
         <!-- Sevkiyata Hazır sekmesi -->
@@ -1333,16 +1332,16 @@
 
     <!-- ÜRETİM MODÜLÜ -->
     <div id="uretimArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-tools me-2 text-warning"></i>Üretim Modülü</h5>
-            <ul class="nav nav-pills nav-fill" id="uretimAltSekme" style="background:#f0f0f0; border-radius:6px;">
-                <li class="nav-item"><a class="nav-link active px-4 py-1" onclick="switchUretimSekme('plan')" id="urtTab-plan">
-                    <i class="bi bi-card-checklist me-1"></i>Üretim Planı (Yayında Ürünler)
-                </a></li>
-                <li class="nav-item"><a class="nav-link px-4 py-1" onclick="switchUretimSekme('emirler')" id="urtTab-emirler">
-                    <i class="bi bi-clipboard-data me-1"></i>İş Emirleri
-                </a></li>
-            </ul>
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div class="btn-group btn-group-sm shadow-sm">
+                <button class="btn btn-dark active" id="urtTab-plan" onclick="switchUretimSekme('plan')">
+                    <i class="bi bi-card-checklist me-1"></i> Üretim Planı
+                </button>
+                <button class="btn btn-outline-dark" id="urtTab-emirler" onclick="switchUretimSekme('emirler')">
+                    <i class="bi bi-clipboard-data me-1"></i> İş Emirleri
+                </button>
+            </div>
+            <div class="d-flex gap-2"><!-- Sağa hizalı aksiyon butonları için placeholder --></div>
         </div>
 
         <!-- Üretim Planı sekmesi: Tüm yayında ürünler (cross-teslimat) -->
@@ -1622,16 +1621,16 @@
     </div>
 
     <div id="ozetArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-graph-up me-2 text-primary"></i>Genel Özet & Raporlar</h5>
-            <ul class="nav nav-pills nav-fill" id="ozetAltSekme" style="background:#f0f0f0; border-radius:6px;">
-                <li class="nav-item"><a class="nav-link active px-4 py-1" onclick="switchOzetSekme('genel')" id="ozTab-genel">
-                    <i class="bi bi-bar-chart me-1"></i>Genel Bakış
-                </a></li>
-                <li class="nav-item"><a class="nav-link px-4 py-1" onclick="switchOzetSekme('karlilik')" id="ozTab-karlilik">
-                    <i class="bi bi-cash-stack me-1"></i>Proje Karlılık
-                </a></li>
-            </ul>
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div class="btn-group btn-group-sm shadow-sm">
+                <button class="btn btn-dark active" id="ozTab-genel" onclick="switchOzetSekme('genel')">
+                    <i class="bi bi-bar-chart me-1"></i> Genel Bakış
+                </button>
+                <button class="btn btn-outline-dark" id="ozTab-karlilik" onclick="switchOzetSekme('karlilik')">
+                    <i class="bi bi-cash-stack me-1"></i> Proje Karlılık
+                </button>
+            </div>
+            <div class="d-flex gap-2"><!-- Aksiyon butonları --></div>
         </div>
 
         <!-- Genel Bakış sekmesi (eski içerik) -->
@@ -2676,6 +2675,18 @@ async function secureFetch(endpoint, options = {}) {
 
 // Aktif kullanıcının yetkisi — yayın akışı vb. yerlerde kullanılır
 let kullaniciYetki = '';
+
+// Tedarikçi alanını fiziksel olarak Satınalma'nın içine taşı (alt sekme olarak çalışsın)
+// Burada erken bir taşıma — sayfa yüklendiğinde daha DOMContentLoaded öncesi çalışır
+(function tedarikciAreaSatınalmaIciTasi() {
+    const f = () => {
+        const t = document.getElementById('tedarikciArea');
+        const s = document.getElementById('satinalmaArea');
+        if (t && s && t.parentElement !== s) s.appendChild(t);
+    };
+    if (document.readyState !== 'loading') f();
+    else document.addEventListener('DOMContentLoaded', f);
+})();
 
 window.addEventListener("DOMContentLoaded", function() {
     const token = localStorage.getItem('aterko_token');
@@ -4195,8 +4206,9 @@ let uretimPlanCache = [];
 let uretimEmirlerCache = [];
 
 function switchUretimSekme(sekme) {
-    document.querySelectorAll('#uretimAltSekme .nav-link').forEach(a => a.classList.remove('active'));
-    document.getElementById('urtTab-' + sekme).classList.add('active');
+    const btns = { plan: document.getElementById('urtTab-plan'), emirler: document.getElementById('urtTab-emirler') };
+    Object.values(btns).forEach(b => b && (b.className = 'btn btn-outline-dark'));
+    if (btns[sekme]) btns[sekme].className = 'btn btn-dark active';
     document.getElementById('uretimPlanArea').classList.toggle('d-none', sekme !== 'plan');
     document.getElementById('uretimEmirlerArea').classList.toggle('d-none', sekme !== 'emirler');
     if (sekme === 'plan') fetchUretimPlan();
@@ -4628,8 +4640,9 @@ let sevkiyatHazirCache = [];
 let sevkiyatBelgelerCache = [];
 
 function switchSevkiyatSekme(sekme) {
-    document.querySelectorAll('#sevkiyatAltSekme .nav-link').forEach(a => a.classList.remove('active'));
-    document.getElementById('svkTab-' + sekme).classList.add('active');
+    const btns = ['hazir','belgeler','plan'].reduce((a,k) => (a[k]=document.getElementById('svkTab-'+k), a), {});
+    Object.values(btns).forEach(b => b && (b.className = 'btn btn-outline-dark'));
+    if (btns[sekme]) btns[sekme].className = 'btn btn-dark active';
     document.getElementById('sevkiyatHazirArea').classList.toggle('d-none', sekme !== 'hazir');
     document.getElementById('sevkiyatBelgelerArea').classList.toggle('d-none', sekme !== 'belgeler');
     document.getElementById('sevkiyatPlanArea').classList.toggle('d-none', sekme !== 'plan');
@@ -6044,24 +6057,27 @@ function switchSatinalmaSubTab(target) {
         tedarikciler: document.getElementById("btnSubTedarikciler"),
         arsiv:    document.getElementById("btnSubArsiv")
     };
-    const btnYeni = document.getElementById("btnYeniTalepUst");
+    const btnYeniTalep = document.getElementById("btnYeniTalepUst");
+    const btnYeniTedarikci = document.getElementById("btnYeniTedarikciUst");
 
     // Tümünü sıfırla
     Object.values(divs).forEach(d => d && d.classList.add("d-none"));
     Object.values(btns).forEach(b => b && (b.className = "btn btn-outline-dark"));
-    btnYeni.classList.add("d-none");
+    btnYeniTalep.classList.add("d-none");
+    btnYeniTedarikci.classList.add("d-none");
 
     if (divs[target]) divs[target].classList.remove("d-none");
     if (btns[target]) btns[target].className = "btn btn-dark active";
 
     if (target === 'talepler') {
-        btnYeni.classList.remove("d-none");
+        btnYeniTalep.classList.remove("d-none");
         fetchSatinalmaListesi();
     } else if (target === 'teklif') {
         fetchTeklifHavuzu();
     } else if (target === 'siparisler') {
         fetchSiparisListesi();
     } else if (target === 'tedarikciler') {
+        btnYeniTedarikci.classList.remove("d-none");
         if (typeof fetchTedarikciler === 'function') fetchTedarikciler();
     } else if (target === 'arsiv') {
         fetchArsiv();
@@ -7992,8 +8008,9 @@ function fetchOzet() {
 }
 
 function switchOzetSekme(sekme) {
-    document.querySelectorAll('#ozetAltSekme .nav-link').forEach(a => a.classList.remove('active'));
-    document.getElementById('ozTab-' + sekme).classList.add('active');
+    const btns = { genel: document.getElementById('ozTab-genel'), karlilik: document.getElementById('ozTab-karlilik') };
+    Object.values(btns).forEach(b => b && (b.className = 'btn btn-outline-dark'));
+    if (btns[sekme]) btns[sekme].className = 'btn btn-dark active';
     document.getElementById('ozetGenelArea').classList.toggle('d-none', sekme !== 'genel');
     document.getElementById('ozetKarlilikArea').classList.toggle('d-none', sekme !== 'karlilik');
     if (sekme === 'genel') fetchOzet();
