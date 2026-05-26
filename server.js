@@ -2567,6 +2567,118 @@ app.post('/api/bildirim-otomatik-tetikle', yetkiKontrol, async (req, res, next) 
     } catch (e) { next(e); }
 });
 
+// ============================================================================
+// DASHBOARD (D-3) — Tek endpoint, tüm KPI'lar
+// ============================================================================
+app.get('/api/dashboard', yetkiKontrol, async (req, res, next) => {
+    try {
+        const [
+            acikTalep, bekleyenSiparis, terminYaklasan, kritikStok,
+            acikIsEmri, yayindaTeslimat, sahaBekleyen, son7gunHareket,
+            okunmamisBildirim, acikSevkiyat
+        ] = await Promise.all([
+            // Açık talepler (aktif, arşivlenmemiş, henüz tamamlanmamış)
+            pool.query(`SELECT COUNT(*)::int as n FROM satinalma_talepleri
+                WHERE durum NOT IN ('TAMAMLANDI','REDDEDİLDİ','İPTAL','TAMAMLANDI ARŞİV')
+                AND COALESCE(arsiv,false)=false`),
+            // Bekleyen sipariş onayları
+            pool.query(`SELECT COUNT(*)::int as n FROM satinalma_siparisleri
+                WHERE durum = 'ONAY BEKLİYOR' AND COALESCE(arsiv,false)=false`),
+            // Termini yaklaşan (7 gün içi) siparişler
+            pool.query(`SELECT COUNT(*)::int as n FROM satinalma_siparisleri
+                WHERE termin_tarihi BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+                AND durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV')
+                AND COALESCE(arsiv,false)=false`),
+            // Kritik stok altı
+            pool.query(`SELECT COUNT(*)::int as n FROM stok_kartlari
+                WHERE kritik_stok_miktari IS NOT NULL AND kritik_stok_miktari > 0
+                AND guncel_stok_miktari < kritik_stok_miktari`),
+            // Açık iş emirleri
+            pool.query(`SELECT COUNT(*)::int as n FROM uretim_is_emirleri
+                WHERE durum IN ('HAZIR','UYGULANIYOR')`),
+            // Yayında teslimatlar
+            pool.query(`SELECT COUNT(*)::int as n FROM proje_teslimatlari
+                WHERE urun_listesi_yayin_durumu = 'YAYINDA'`),
+            // Sahaya gelmiş ama henüz uygulanmamış (montaj bekleyen)
+            pool.query(`SELECT COUNT(*)::int as n FROM teslimat_urunleri
+                WHERE saha_teslim_miktar > COALESCE(uygulanan_miktar,0)`),
+            // Son 7 gündeki stok hareketleri
+            pool.query(`SELECT COUNT(*)::int as n FROM stok_hareketleri
+                WHERE tarih >= NOW() - INTERVAL '7 days'`),
+            // Okunmamış bildirim
+            pool.query(`SELECT COUNT(*)::int as n FROM bildirimler
+                WHERE (kullanici_email = $1 OR kullanici_email IS NULL) AND okundu = FALSE`,
+                [req.user.email]),
+            // Açık sevkiyat belgesi (Hazırlanıyor + Yolda)
+            pool.query(`SELECT COUNT(*)::int as n FROM sevkiyat_belgeleri
+                WHERE durum IN ('HAZIRLANIYOR','YOLDA')`)
+        ]);
+
+        // Son hareketler özeti (son 10 stok hareketi + son 5 bildirim karışık)
+        const sonHareketler = await pool.query(`
+            (SELECT 'stok' as kaynak, sh.id, sh.tip as durum,
+                    COALESCE(sk.stok_adi, 'Stok') as baslik,
+                    CONCAT(sh.tip, ': ', sh.miktar, ' ', COALESCE(sk.birim,''), ' — ', COALESCE(sh.aciklama,'')) as ozet,
+                    sh.tarih as tarih, sh.kullanici_adsoyad as kim
+             FROM stok_hareketleri sh
+             LEFT JOIN stok_kartlari sk ON sh.stok_kart_id = sk.id
+             ORDER BY sh.tarih DESC LIMIT 6)
+            UNION ALL
+            (SELECT 'talep' as kaynak, t.id, t.durum,
+                    CONCAT('Talep: ', t.talep_no) as baslik,
+                    CONCAT('Talep eden: ', COALESCE(t.talep_eden,'-')) as ozet,
+                    t.kayit_tarihi as tarih, t.talep_eden as kim
+             FROM satinalma_talepleri t
+             WHERE COALESCE(t.arsiv,false)=false
+             ORDER BY t.kayit_tarihi DESC LIMIT 4)
+            ORDER BY tarih DESC LIMIT 10
+        `);
+
+        // Termin yaklaşan ilk 5 sipariş (detay)
+        const terminDetay = await pool.query(`
+            SELECT s.id, s.siparis_no, s.termin_tarihi, s.durum,
+                   t.firma_adi as tedarikci,
+                   (s.termin_tarihi - CURRENT_DATE)::int as kalan_gun
+            FROM satinalma_siparisleri s
+            LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
+            WHERE s.termin_tarihi IS NOT NULL
+              AND s.termin_tarihi <= CURRENT_DATE + INTERVAL '14 days'
+              AND s.durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV')
+              AND COALESCE(s.arsiv,false)=false
+            ORDER BY s.termin_tarihi ASC LIMIT 5
+        `);
+
+        // Kritik stok ilk 5
+        const kritikStokDetay = await pool.query(`
+            SELECT id, stok_kodu, stok_adi, guncel_stok_miktari, kritik_stok_miktari, birim
+            FROM stok_kartlari
+            WHERE kritik_stok_miktari IS NOT NULL AND kritik_stok_miktari > 0
+              AND guncel_stok_miktari < kritik_stok_miktari
+            ORDER BY (guncel_stok_miktari::numeric / NULLIF(kritik_stok_miktari,0)) ASC
+            LIMIT 5
+        `);
+
+        res.json({
+            ok: true,
+            kpi: {
+                acikTalep:        acikTalep.rows[0].n,
+                bekleyenSiparis:  bekleyenSiparis.rows[0].n,
+                terminYaklasan:   terminYaklasan.rows[0].n,
+                kritikStok:       kritikStok.rows[0].n,
+                acikIsEmri:       acikIsEmri.rows[0].n,
+                yayindaTeslimat:  yayindaTeslimat.rows[0].n,
+                sahaBekleyen:     sahaBekleyen.rows[0].n,
+                son7gunHareket:   son7gunHareket.rows[0].n,
+                okunmamisBildirim: okunmamisBildirim.rows[0].n,
+                acikSevkiyat:     acikSevkiyat.rows[0].n
+            },
+            sonHareketler:    sonHareketler.rows,
+            terminDetay:      terminDetay.rows,
+            kritikStokDetay:  kritikStokDetay.rows
+        });
+    } catch (e) { next(e); }
+});
+
 // Bildirim sil (kullanıcının kendi bildirimi)
 app.delete('/api/bildirim-sil/:id', yetkiKontrol, async (req, res, next) => {
     try {
