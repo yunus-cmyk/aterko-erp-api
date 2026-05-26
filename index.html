@@ -131,6 +131,7 @@
         </button>
         <ul class="dropdown-menu dropdown-menu-end shadow">
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('kullanicilar')"><i class="bi bi-people me-2"></i>Kullanıcılar</a></li>
+          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('roller')"><i class="bi bi-person-badge me-2"></i>Roller &amp; İzinler</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('formtanim')"><i class="bi bi-ui-checks me-2"></i>Form Tanımları</a></li>
           <li><hr class="dropdown-divider"></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
@@ -1095,6 +1096,108 @@
                     <button id="kulSilBtn" type="button" class="btn btn-outline-danger me-auto d-none" onclick="kullaniciSil()"><i class="bi bi-trash me-1"></i>Sil</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
                     <button type="button" class="btn btn-dark fw-bold px-4" onclick="kullaniciKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ROLLER & İZİN MATRİSİ (sadece ADMIN) -->
+    <div id="rollerArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div class="btn-group btn-group-sm shadow-sm">
+                <button class="btn btn-dark active" id="rolTab-liste" onclick="switchRolSekme('liste')">
+                    <i class="bi bi-person-badge me-1"></i> Rol Listesi
+                </button>
+                <button class="btn btn-outline-dark" id="rolTab-matris" onclick="switchRolSekme('matris')">
+                    <i class="bi bi-grid-3x3-gap me-1"></i> İzin Matrisi
+                </button>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" id="btnYeniRol" onclick="openRolModal()">
+                    <i class="bi bi-plus-lg me-1"></i> Yeni Rol
+                </button>
+                <button class="btn btn-success btn-sm fw-bold shadow-sm px-3 d-none" id="btnMatrisKaydet" onclick="izinMatrisiKaydet()">
+                    <i class="bi bi-save me-1"></i> Matrisi Kaydet
+                </button>
+            </div>
+        </div>
+
+        <!-- Rol Listesi Sekmesi -->
+        <div id="rolListeArea">
+            <div class="alert alert-info py-2 mb-3 small">
+                <i class="bi bi-info-circle me-1"></i>
+                <strong>Sistem rolleri</strong> (ADMIN, SATIS, SATINALMA, URETIM, MUHASEBE, KULLANICI) silinemez — sadece açıklama değiştirilir.
+                İhtiyacın varsa yeni roller tanımla (örn. <code>SATIS_PLUS</code>, <code>URETIM_SAHA</code>).
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0" style="font-size:0.85rem;">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Rol Adı</th>
+                                <th>Açıklama</th>
+                                <th class="text-center">Tip</th>
+                                <th class="text-center">Kullanıcı</th>
+                                <th class="text-center">Kayıt</th>
+                                <th class="text-center">İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rolTabloBody"><tr><td colspan="6" class="text-center text-muted p-4">Yükleniyor...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- İzin Matrisi Sekmesi -->
+        <div id="rolMatrisArea" class="d-none">
+            <div class="alert alert-warning py-2 mb-3 small">
+                <i class="bi bi-info-circle me-1"></i>
+                Her hücredeki dropdown'dan seviyeyi seç:
+                <span class="badge bg-secondary">YOK</span> hiç görünmez,
+                <span class="badge bg-info text-dark">OKUMA</span> görür-dokunamaz,
+                <span class="badge bg-primary">YAZMA</span> ekleyebilir/düzenler,
+                <span class="badge bg-danger">TAM</span> tüm yetkiler (onay/sil/arşiv).
+                Değişiklik yaptıktan sonra <strong>Matrisi Kaydet</strong> butonuna bas.
+            </div>
+
+            <div class="card shadow-sm border-0">
+                <div class="table-responsive" style="max-height: 70vh;">
+                    <table class="table table-sm table-bordered mb-0" style="font-size:0.8rem;">
+                        <thead class="bg-dark text-white" style="position:sticky; top:0;">
+                            <tr id="matrisHeader"></tr>
+                        </thead>
+                        <tbody id="matrisBody"><tr><td class="text-center text-muted p-4">Yükleniyor...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rol Ekle/Düzenle Modal -->
+    <div class="modal fade" id="modalRol" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-md modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-3 bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-person-badge me-2"></i><span id="rolModalBaslik">Yeni Rol</span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="background:#f8f9fa;">
+                    <input type="hidden" id="rolId">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted mb-1">Rol Adı <span class="text-danger">*</span></label>
+                        <input id="rolAd" class="form-control form-control-sm" placeholder="ÖRN: SATIS_PLUS, URETIM_SAHA">
+                        <small class="text-muted">Büyük harf, rakam ve alt çizgi (_). Otomatik formatlanır.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted mb-1">Açıklama</label>
+                        <textarea id="rolAciklama" class="form-control form-control-sm" rows="3" placeholder="Bu rolün ne yaptığını kısaca açıkla..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer bg-white">
+                    <button id="rolSilBtn" type="button" class="btn btn-outline-danger me-auto d-none" onclick="rolSil()"><i class="bi bi-trash me-1"></i>Sil</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-dark fw-bold px-4" onclick="rolKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                 </div>
             </div>
         </div>
@@ -3521,6 +3624,197 @@ async function kullaniciSil() {
     } else showToast(r.hata, 'error');
 }
 
+// ============================================================================
+// ROLLER & İZİN MATRİSİ
+// ============================================================================
+let rollerCache = [];
+let modulKatalogCache = [];
+let izinSeviyeleriCache = ['YOK', 'OKUMA', 'YAZMA', 'TAM'];
+let izinMatrisiCache = {};   // {rol_id: {modul_kod: seviye}}
+let izinMatrisiDirty = false;
+
+function switchRolSekme(sekme) {
+    const btnL = document.getElementById('rolTab-liste');
+    const btnM = document.getElementById('rolTab-matris');
+    btnL.className = sekme === 'liste' ? 'btn btn-dark active' : 'btn btn-outline-dark';
+    btnM.className = sekme === 'matris' ? 'btn btn-dark active' : 'btn btn-outline-dark';
+    document.getElementById('rolListeArea').classList.toggle('d-none', sekme !== 'liste');
+    document.getElementById('rolMatrisArea').classList.toggle('d-none', sekme !== 'matris');
+    document.getElementById('btnYeniRol').classList.toggle('d-none', sekme !== 'liste');
+    document.getElementById('btnMatrisKaydet').classList.toggle('d-none', sekme !== 'matris');
+
+    if (sekme === 'liste') rollerYukle();
+    else izinMatrisiYukle();
+}
+
+async function rollerYukle() {
+    const r = await secureFetch('/roller').catch(()=>null);
+    if (!r || !r.ok) return;
+    rollerCache = r.data;
+    renderRolListesi();
+}
+
+function renderRolListesi() {
+    const tbody = document.getElementById('rolTabloBody');
+    if (rollerCache.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4">Rol yok.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rollerCache.map(r => {
+        const tip = r.sistem_rol
+            ? '<span class="badge bg-dark">SİSTEM</span>'
+            : '<span class="badge bg-info text-dark">ÖZEL</span>';
+        const kayit = r.kayit_tarihi ? new Date(r.kayit_tarihi).toLocaleDateString('tr-TR') : '-';
+        const silBtn = r.sistem_rol
+            ? ''
+            : `<button class="btn btn-sm btn-outline-danger py-0" onclick="rolDuzenle(${r.id}, true)" title="Sil"><i class="bi bi-trash"></i></button>`;
+        return `<tr>
+            <td><strong>${esc(r.ad)}</strong></td>
+            <td class="small">${esc(r.aciklama || '-')}</td>
+            <td class="text-center">${tip}</td>
+            <td class="text-center"><span class="badge bg-primary">${r.kullanici_sayisi || 0}</span></td>
+            <td class="text-center small text-muted">${kayit}</td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-primary py-0 me-1" onclick="rolDuzenle(${r.id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
+                ${silBtn}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function openRolModal(data) {
+    const d = data || {};
+    document.getElementById('rolModalBaslik').textContent = d.id ? 'Rol Düzenle' : 'Yeni Rol';
+    document.getElementById('rolId').value = d.id || '';
+    document.getElementById('rolAd').value = d.ad || '';
+    document.getElementById('rolAd').readOnly = !!d.sistem_rol; // Sistem rolünün adı kilitli
+    document.getElementById('rolAciklama').value = d.aciklama || '';
+    const silBtn = document.getElementById('rolSilBtn');
+    silBtn.classList.toggle('d-none', !d.id || d.sistem_rol);
+    new bootstrap.Modal(document.getElementById('modalRol')).show();
+}
+
+function rolDuzenle(id, silmeMi) {
+    const r = rollerCache.find(x => x.id === id);
+    if (!r) return;
+    if (silmeMi) {
+        if (!confirm(`'${r.ad}' rolü silinecek. Devam?`)) return;
+        rolSilHardId(id);
+        return;
+    }
+    openRolModal(r);
+}
+
+async function rolKaydet() {
+    const payload = {
+        id: parseInt(document.getElementById('rolId').value) || null,
+        ad: document.getElementById('rolAd').value.trim(),
+        aciklama: document.getElementById('rolAciklama').value.trim()
+    };
+    if (!payload.ad) return showToast('Rol adı zorunlu.', 'error');
+    const r = await secureFetch('/rol-kaydet', { method:'POST', body: JSON.stringify(payload) });
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalRol')).hide();
+        showToast(r.mesaj, 'success');
+        rollerYukle();
+    } else showToast(r.hata, 'error');
+}
+
+async function rolSil() {
+    const id = parseInt(document.getElementById('rolId').value);
+    if (!id) return;
+    const r = rollerCache.find(x => x.id === id);
+    if (!confirm(`'${r?.ad}' rolü silinecek. Devam?`)) return;
+    await rolSilHardId(id);
+    bootstrap.Modal.getInstance(document.getElementById('modalRol'))?.hide();
+}
+async function rolSilHardId(id) {
+    const r = await secureFetch('/rol-sil/' + id, { method:'DELETE' });
+    if (r.ok) { showToast(r.mesaj, 'success'); rollerYukle(); }
+    else showToast(r.hata, 'error');
+}
+
+// İzin matrisi
+async function izinMatrisiYukle() {
+    // Önce modül kataloğu + roller + matris üçünü al
+    if (modulKatalogCache.length === 0) {
+        const m = await secureFetch('/modul-katalog');
+        if (m && m.ok) {
+            modulKatalogCache = m.modul_katalog;
+            izinSeviyeleriCache = m.izin_seviyeleri;
+        }
+    }
+    if (rollerCache.length === 0) {
+        const r = await secureFetch('/roller');
+        if (r && r.ok) rollerCache = r.data;
+    }
+    const mat = await secureFetch('/rol-izinleri');
+    izinMatrisiCache = (mat && mat.ok) ? mat.matris : {};
+    izinMatrisiDirty = false;
+    renderIzinMatrisi();
+}
+
+function renderIzinMatrisi() {
+    const header = document.getElementById('matrisHeader');
+    const body = document.getElementById('matrisBody');
+
+    // Header: Modül + her rol için sütun
+    header.innerHTML = '<th style="min-width:220px;">Modül</th>' +
+        rollerCache.map(r => `<th class="text-center" style="min-width:120px;">${esc(r.ad)}${r.sistem_rol ? '' : ' <i class=\"bi bi-pencil-square small text-warning\" title=\"Özel rol\"></i>'}</th>`).join('');
+
+    // Body: Modül başına satır. Gruplara göre alt başlık satırı
+    const grupSiralama = ['Genel','İş Akışı','Satınalma','Operasyon','Rapor','Yönetim'];
+    const gruplandirilmis = {};
+    modulKatalogCache.forEach(m => {
+        if (!gruplandirilmis[m.grup]) gruplandirilmis[m.grup] = [];
+        gruplandirilmis[m.grup].push(m);
+    });
+
+    let html = '';
+    for (const grup of grupSiralama) {
+        const ml = gruplandirilmis[grup] || [];
+        if (ml.length === 0) continue;
+        html += `<tr class="table-secondary"><td colspan="${1 + rollerCache.length}" class="fw-bold small">${esc(grup)}</td></tr>`;
+        ml.forEach(m => {
+            html += `<tr><td class="small">${esc(m.ad)}<br><code class="text-muted">${esc(m.kod)}</code></td>`;
+            rollerCache.forEach(r => {
+                const sev = izinMatrisiCache[r.id]?.[m.kod] || 'YOK';
+                const cls = r.sistem_rol && r.ad === 'ADMIN' ? 'opacity-50' : ''; // ADMIN her zaman TAM
+                html += `<td class="text-center p-1">
+                    <select class="form-select form-select-sm matris-hucre ${cls}"
+                            data-rol-id="${r.id}" data-modul="${esc(m.kod)}"
+                            ${r.ad === 'ADMIN' ? 'disabled' : ''}
+                            onchange="izinMatrisiDirty=true; this.classList.add('border-warning')">
+                        ${izinSeviyeleriCache.map(s => `<option value="${s}" ${(r.ad === 'ADMIN' ? 'TAM' : sev) === s ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                </td>`;
+            });
+            html += '</tr>';
+        });
+    }
+    body.innerHTML = html;
+}
+
+async function izinMatrisiKaydet() {
+    if (!izinMatrisiDirty) return showToast('Değişiklik yok.', 'info');
+    const hucreler = document.querySelectorAll('.matris-hucre');
+    const izinler = [];
+    hucreler.forEach(h => {
+        if (h.disabled) return;  // ADMIN sabit, kaydetme
+        izinler.push({
+            rol_id: parseInt(h.dataset.rolId),
+            modul_kod: h.dataset.modul,
+            seviye: h.value
+        });
+    });
+    const r = await secureFetch('/rol-izinleri-kaydet', { method:'POST', body: JSON.stringify({ izinler }) });
+    if (r.ok) {
+        showToast(r.mesaj, 'success');
+        izinMatrisiDirty = false;
+        document.querySelectorAll('.matris-hucre.border-warning').forEach(h => h.classList.remove('border-warning'));
+    } else showToast(r.hata, 'error');
+}
+
 async function auditOzetYukle() {
     const r = await secureFetch('/audit-log-ozet').catch(()=>null);
     if (!r || !r.ok) return;
@@ -3554,7 +3848,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','kullanicilarArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','kullanicilarArea','rollerArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -3573,6 +3867,9 @@ function setTab(tab) {
     } else if (tab === 'kullanicilar') {
         document.getElementById("kullanicilarArea").classList.remove("d-none");
         kullanicilariYukle();
+    } else if (tab === 'roller') {
+        document.getElementById("rollerArea").classList.remove("d-none");
+        switchRolSekme('liste');
     } else if (tab === 'projeler') {
         document.getElementById("projeArea").classList.remove("d-none");
         fetchProjeler();

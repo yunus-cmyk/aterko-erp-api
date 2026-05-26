@@ -3055,9 +3055,178 @@ app.get('/api/proje-karlilik/:projeId', yetkiKontrol, async (req, res, next) => 
 });
 
 // ============================================================================
+// ROL & İZİN YÖNETİMİ (sadece ADMIN)
+// ============================================================================
+// Modül kataloğu — UI ile sıkı bağlı, kod tarafında tanımlanır
+// İleride permission middleware bu listeyi referans alır
+const MODUL_KATALOG = [
+    { kod: 'anasayfa',            ad: 'Ana Sayfa',           grup: 'Genel' },
+    { kod: 'projeler',            ad: 'Projeler',            grup: 'İş Akışı' },
+    { kod: 'bina_listeleri',      ad: 'Bina Listeleri',      grup: 'İş Akışı' },
+    { kod: 'satinalma.talepler',  ad: 'Satınalma — Talepler', grup: 'Satınalma' },
+    { kod: 'satinalma.siparisler',ad: 'Satınalma — Siparişler', grup: 'Satınalma' },
+    { kod: 'satinalma.tedarikci', ad: 'Satınalma — Tedarikçi', grup: 'Satınalma' },
+    { kod: 'satinalma.mal_kabul', ad: 'Satınalma — Mal Kabul', grup: 'Satınalma' },
+    { kod: 'stok',                ad: 'Stok',                grup: 'Operasyon' },
+    { kod: 'uretim',              ad: 'Üretim',              grup: 'Operasyon' },
+    { kod: 'sevkiyat',            ad: 'Sevkiyat',            grup: 'Operasyon' },
+    { kod: 'montaj',              ad: 'Montaj',              grup: 'Operasyon' },
+    { kod: 'rapor.ozet',          ad: 'Rapor — Genel Bakış', grup: 'Rapor' },
+    { kod: 'rapor.karlilik',      ad: 'Rapor — Karlılık',    grup: 'Rapor' },
+    { kod: 'yonetim.kullanicilar',ad: 'Kullanıcılar',        grup: 'Yönetim' },
+    { kod: 'yonetim.roller',      ad: 'Roller',              grup: 'Yönetim' },
+    { kod: 'yonetim.form_tanimi', ad: 'Form Tanımları',      grup: 'Yönetim' },
+    { kod: 'yonetim.audit_log',   ad: 'Audit Log',           grup: 'Yönetim' }
+];
+const IZIN_SEVIYELERI = ['YOK', 'OKUMA', 'YAZMA', 'TAM'];
+
+// Modül kataloğunu döndüren endpoint (frontend matris UI'si için)
+app.get('/api/modul-katalog', yetkiKontrol, (req, res) => {
+    res.json({ ok: true, modul_katalog: MODUL_KATALOG, izin_seviyeleri: IZIN_SEVIYELERI });
+});
+
+// Tüm roller (sistem + özel)
+app.get('/api/roller', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.status(403).json({ ok: false, hata: 'Sadece ADMIN.' });
+    }
+    try {
+        const r = await pool.query(`
+            SELECT r.id, r.ad, r.aciklama, r.sistem_rol, r.kayit_tarihi,
+                   (SELECT COUNT(*)::int FROM kullanicilar WHERE rol = r.ad AND durum='AKTIF') as kullanici_sayisi
+            FROM roller r
+            ORDER BY r.sistem_rol DESC, r.id ASC
+        `);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Rol kaydet (ekle/güncelle)
+app.post('/api/rol-kaydet', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN.' });
+    }
+    try {
+        const { id, ad, aciklama } = req.body;
+        const adNorm = (ad || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+        if (!adNorm) return res.json({ ok: false, hata: 'Rol adı zorunlu.' });
+        if (adNorm.length < 2) return res.json({ ok: false, hata: 'Rol adı en az 2 karakter olmalı.' });
+
+        if (id) {
+            const eR = await pool.query('SELECT sistem_rol, ad FROM roller WHERE id=$1', [id]);
+            if (eR.rowCount === 0) return res.json({ ok: false, hata: 'Rol bulunamadı.' });
+            if (eR.rows[0].sistem_rol && eR.rows[0].ad !== adNorm) {
+                return res.json({ ok: false, hata: 'Sistem rolünün adı değiştirilemez (sadece açıklaması).' });
+            }
+            await pool.query(`UPDATE roller SET ad=$1, aciklama=$2 WHERE id=$3`, [adNorm, aciklama || null, id]);
+            rolCacheTemizle();
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'roller', kayit_id: id, ozet: `Rol güncellendi: ${adNorm}` });
+            return res.json({ ok: true, mesaj: 'Rol güncellendi.' });
+        } else {
+            // Aynı isimde rol var mı?
+            const x = await pool.query('SELECT id FROM roller WHERE ad=$1', [adNorm]);
+            if (x.rowCount > 0) return res.json({ ok: false, hata: 'Bu adda bir rol zaten var.' });
+            const ins = await pool.query(`
+                INSERT INTO roller (ad, aciklama, sistem_rol) VALUES ($1, $2, FALSE) RETURNING id
+            `, [adNorm, aciklama || null]);
+            rolCacheTemizle();
+            await auditLogla(req, { eylem: 'CREATE', tablo: 'roller', kayit_id: ins.rows[0].id, ozet: `Yeni rol: ${adNorm}` });
+            return res.json({ ok: true, mesaj: 'Rol oluşturuldu.', id: ins.rows[0].id });
+        }
+    } catch (e) { next(e); }
+});
+
+// Rol sil — sistem rolleri silinemez, kullanıcı atanmış roller silinemez
+app.delete('/api/rol-sil/:id', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN.' });
+    }
+    try {
+        const id = parseInt(req.params.id);
+        const r = await pool.query('SELECT ad, sistem_rol FROM roller WHERE id=$1', [id]);
+        if (r.rowCount === 0) return res.json({ ok: false, hata: 'Rol bulunamadı.' });
+        if (r.rows[0].sistem_rol) return res.json({ ok: false, hata: 'Sistem rolü silinemez.' });
+        // Atanmış kullanıcı kontrolü
+        const k = await pool.query(`SELECT COUNT(*)::int as n FROM kullanicilar WHERE rol=$1`, [r.rows[0].ad]);
+        if (k.rows[0].n > 0) return res.json({ ok: false, hata: `Bu role atanmış ${k.rows[0].n} kullanıcı var. Önce onları başka role taşıyın.` });
+
+        await pool.query('DELETE FROM roller WHERE id=$1', [id]);
+        rolCacheTemizle();
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'roller', kayit_id: id, ozet: `Rol silindi: ${r.rows[0].ad}` });
+        res.json({ ok: true, mesaj: 'Rol silindi.' });
+    } catch (e) { next(e); }
+});
+
+// İzin matrisi: tüm rollerin tüm modüllerdeki seviyeleri
+app.get('/api/rol-izinleri', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.status(403).json({ ok: false, hata: 'Sadece ADMIN.' });
+    }
+    try {
+        const r = await pool.query(`
+            SELECT ri.rol_id, r.ad as rol_ad, ri.modul_kod, ri.seviye
+            FROM rol_izinleri ri
+            JOIN roller r ON r.id = ri.rol_id
+        `);
+        // {rol_id: {modul_kod: seviye}}
+        const matris = {};
+        r.rows.forEach(row => {
+            if (!matris[row.rol_id]) matris[row.rol_id] = {};
+            matris[row.rol_id][row.modul_kod] = row.seviye;
+        });
+        res.json({ ok: true, matris });
+    } catch (e) { next(e); }
+});
+
+// İzin matrisini toplu güncelle
+// Body: { izinler: [{rol_id, modul_kod, seviye}] }
+app.post('/api/rol-izinleri-kaydet', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN.' });
+    }
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { izinler } = req.body;
+        if (!Array.isArray(izinler)) return res.json({ ok: false, hata: 'izinler dizisi gerekli.' });
+
+        let n = 0;
+        for (const i of izinler) {
+            if (!i.rol_id || !i.modul_kod) continue;
+            const sev = (i.seviye || 'YOK').toUpperCase();
+            if (!IZIN_SEVIYELERI.includes(sev)) continue;
+            await client.query(`
+                INSERT INTO rol_izinleri (rol_id, modul_kod, seviye) VALUES ($1, $2, $3)
+                ON CONFLICT (rol_id, modul_kod) DO UPDATE SET seviye = EXCLUDED.seviye
+            `, [i.rol_id, i.modul_kod, sev]);
+            n++;
+        }
+        await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'rol_izinleri', ozet: `İzin matrisi güncellendi: ${n} hücre` });
+        res.json({ ok: true, mesaj: `${n} izin kaydı güncellendi.` });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Kullanıcı modülü için rol listesi (DB'den)
+async function rolListesiniGetir() {
+    const r = await pool.query('SELECT ad FROM roller ORDER BY sistem_rol DESC, ad');
+    return r.rows.map(x => x.ad);
+}
+
+// ============================================================================
 // KULLANICI YÖNETİMİ (sadece ADMIN)
 // ============================================================================
-const KULLANICI_ROLLERI = ['ADMIN', 'SATIS', 'SATINALMA', 'URETIM', 'MUHASEBE', 'KULLANICI'];
+// Eski sabit liste yerine DB'den çekilir
+let KULLANICI_ROLLERI_CACHE = null;
+async function getKullaniciRolleri() {
+    if (!KULLANICI_ROLLERI_CACHE) {
+        KULLANICI_ROLLERI_CACHE = await rolListesiniGetir();
+    }
+    return KULLANICI_ROLLERI_CACHE;
+}
+// Rol değişimlerinden sonra cache'i invalidate
+function rolCacheTemizle() { KULLANICI_ROLLERI_CACHE = null; }
 
 app.get('/api/kullanicilar', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
@@ -3068,7 +3237,8 @@ app.get('/api/kullanicilar', yetkiKontrol, async (req, res, next) => {
             SELECT id, email, ad_soyad, rol, durum, son_giris, kayit_tarihi
             FROM kullanicilar ORDER BY id ASC
         `);
-        res.json({ ok: true, data: r.rows, roller: KULLANICI_ROLLERI });
+        const roller = await getKullaniciRolleri();
+        res.json({ ok: true, data: r.rows, roller });
     } catch (e) { next(e); }
 });
 
@@ -3087,7 +3257,8 @@ app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
         if (!emailNorm) return res.json({ ok: false, hata: 'E-posta zorunlu.' });
         if (!emailNorm.endsWith('@aterko.com')) return res.json({ ok: false, hata: 'Sadece @aterko.com e-postaları kabul edilir.' });
         if (!adSoyadNorm) return res.json({ ok: false, hata: 'Ad Soyad zorunlu.' });
-        if (!KULLANICI_ROLLERI.includes(rolNorm)) return res.json({ ok: false, hata: 'Geçersiz rol: ' + rolNorm });
+        const gecerliRoller = await getKullaniciRolleri();
+        if (!gecerliRoller.includes(rolNorm)) return res.json({ ok: false, hata: 'Geçersiz rol: ' + rolNorm });
         if (!['AKTIF','PASIF'].includes(durumNorm)) return res.json({ ok: false, hata: 'Geçersiz durum.' });
 
         let eski = null;
