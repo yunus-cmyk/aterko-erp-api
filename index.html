@@ -2751,8 +2751,12 @@ function renderUretimPlan() {
         const kalan = parseFloat(u.uretilmesi_kalan) || 0;
         const durumMap = { 'BEKLEMEDE': ['secondary','Beklemede'], 'KISMI': ['warning','Kısmi'], 'HAZIR': ['success','Hazır'] };
         const [cls, txt] = durumMap[u.kalem_durumu] || ['secondary', '-'];
-        // Sevke hazır = gerekli ise checkbox disabled (üretim ihtiyacı yok)
-        const chkDisabled = kalan <= 0 ? 'disabled title="Üretim ihtiyacı yok (zaten hazır)"' : '';
+        // Üretim ihtiyacı bittiyse checkbox aktif kalır ama görsel ipucu verilir
+        // (kullanıcı yedek iş emri, iptal sonrası yeniden işlem, stoktan değiştirme yapabilmeli)
+        const chkDisabled = '';
+        const chkTitle = kalan <= 0
+            ? 'title="Üretim ihtiyacı zaten karşılandı — yine de seçip yedek/düzeltici aksiyon alabilirsin"'
+            : '';
         // Stok renkli ipucu: stokta olan ≥ gerekli → yeşil; > 0 → sarı (yetersiz); 0 → kırmızı; özel ürün → gri
         const stokta = parseFloat(u.guncel_stok_miktari) || 0;
         const gerekli = parseFloat(u.gerekli_miktar) || 0;
@@ -2783,7 +2787,7 @@ function renderUretimPlan() {
                 </a>`;
         }
         return `<tr>
-            <td><input type="checkbox" class="urt-chk form-check-input" value="${u.id}" data-kalan="${kalan}" data-ad="${esc(urunAdi)}" data-birim="${esc(birim)}" data-gerekli="${u.gerekli_miktar}" data-uretilen="${u.uretilen_miktar}" data-proje="${esc(u.proje_kodu + ' / ' + (u.musteri_adi||''))}" data-bina="${esc(u.bina_adi)}" onchange="urtSeciliGuncelle()" ${chkDisabled}></td>
+            <td><input type="checkbox" class="urt-chk form-check-input" value="${u.id}" data-kalan="${kalan}" data-ad="${esc(urunAdi)}" data-birim="${esc(birim)}" data-gerekli="${u.gerekli_miktar}" data-uretilen="${u.uretilen_miktar}" data-proje="${esc(u.proje_kodu + ' / ' + (u.musteri_adi||''))}" data-bina="${esc(u.bina_adi)}" onchange="urtSeciliGuncelle()" ${chkTitle}></td>
             <td>${projeBina}</td>
             <td>${kod}<br><span class="fw-bold">${urunAdi}</span></td>
             <td class="text-end ${stokCls}">${stokIcerik}</td>
@@ -2824,14 +2828,16 @@ function openIsEmriOlusturModal() {
         const kalan = parseFloat(c.dataset.kalan) || 0;
         const gerekli = parseFloat(c.dataset.gerekli) || 0;
         const uretilen = parseFloat(c.dataset.uretilen) || 0;
+        // Varsayılan miktar: kalan>0 ise kalan, yoksa 1 (kullanıcı yedek/düzeltici aksiyon için)
+        const varsayilan = kalan > 0 ? kalan : 1;
         return `<tr data-kalem-id="${c.value}">
             <td><small class="text-muted">${esc(c.dataset.proje)}</small><br><strong>${esc(c.dataset.bina)}</strong></td>
             <td class="fw-bold">${esc(c.dataset.ad)}</td>
             <td class="text-end">${formatTR(gerekli)}</td>
             <td class="text-end">${formatTR(uretilen)}</td>
-            <td class="text-end fw-bold text-danger">${formatTR(kalan)}</td>
+            <td class="text-end ${kalan > 0 ? 'fw-bold text-danger' : 'text-muted'}">${formatTR(kalan)}</td>
             <td class="text-center">
-                <input type="number" class="form-control form-control-sm text-center ie-atanan fw-bold" step="0.01" min="0.01" max="${kalan}" value="${kalan}">
+                <input type="number" class="form-control form-control-sm text-center ie-atanan fw-bold" step="0.01" min="0.01" value="${varsayilan}">
             </td>
             <td>${esc(c.dataset.birim)}</td>
         </tr>`;
@@ -3006,20 +3012,21 @@ function openStoktanKarsilaModal() {
         if (!kalem) return '';
         const stokta = parseFloat(kalem.guncel_stok_miktari) || 0;
         const kalan = parseFloat(kalem.uretilmesi_kalan) || 0;
-        const onerilen = Math.min(stokta, kalan);
+        // Öneri: stoktan kalan ihtiyaç kadar (yoksa 1, kullanıcı düzelteyici aksiyon yapıyor olabilir)
+        const onerilen = kalan > 0 ? Math.min(stokta, kalan) : (stokta > 0 ? 1 : 0);
         const isOzel = !kalem.stok_kart_id;
         const ad = isOzel ? (kalem.ozel_urun_adi || '-') : (kalem.stok_adi || '-');
         const birim = isOzel ? (kalem.ozel_urun_birim || '') : (kalem.stok_birim || '');
         const uyari = isOzel
             ? '<div class="small text-danger"><i class="bi bi-x-circle"></i> Özel ürün — stoktan karşılanamaz</div>'
-            : (stokta < kalan ? `<div class="small text-warning"><i class="bi bi-exclamation-triangle"></i> Stok yetersiz, en fazla ${stokta} ${birim} ayrılabilir</div>` : '');
+            : (kalan > 0 && stokta < kalan ? `<div class="small text-warning"><i class="bi bi-exclamation-triangle"></i> Stok yetersiz, en fazla ${stokta} ${birim} ayrılabilir</div>` : (kalan <= 0 ? '<div class="small text-info"><i class="bi bi-info-circle"></i> Üretim ihtiyacı zaten karşılanmış — yedek ayırıyorsun</div>' : ''));
         const disabled = isOzel || stokta <= 0 ? 'disabled' : '';
         return `<tr data-kalem-id="${kalem.id}" data-stok="${stokta}" data-ozel="${isOzel ? 1 : 0}">
             <td><small class="text-muted">${esc(kalem.proje_kodu)} / ${esc(kalem.bina_adi)}</small><br><strong>${esc(ad)}</strong>${uyari}</td>
             <td class="text-end fw-bold ${stokta > 0 ? 'text-success' : 'text-danger'}">${formatTR(stokta)}</td>
             <td class="text-end">${formatTR(kalan)}</td>
             <td class="text-center">
-                <input type="number" class="form-control form-control-sm text-center stk-miktar fw-bold" step="0.01" min="0" max="${Math.min(stokta, kalan)}" value="${onerilen}" ${disabled}>
+                <input type="number" class="form-control form-control-sm text-center stk-miktar fw-bold" step="0.01" min="0" max="${stokta}" value="${onerilen}" ${disabled}>
             </td>
             <td>${esc(birim)}</td>
         </tr>`;
@@ -3066,15 +3073,16 @@ function openUretimSatinalmaModal() {
         const isOzel = !kalem.stok_kart_id;
         const ad = isOzel ? (kalem.ozel_urun_adi || '-') : (kalem.stok_adi || '-');
         const birim = isOzel ? (kalem.ozel_urun_birim || '') : (kalem.stok_birim || '');
-        // Varsayılan: stoktan düşülmüş eksik miktar (yoksa kalan miktar)
-        const onerilen = isOzel ? kalan : Math.max(0, kalan - stokta);
+        // Varsayılan: stoktan düşülmüş eksik miktar (yoksa kalan miktar). Kalan=0 ise 1 (yedek talep).
+        const onerilenHesap = isOzel ? kalan : Math.max(0, kalan - stokta);
+        const onerilen = onerilenHesap > 0 ? onerilenHesap : (kalan > 0 ? kalan : 1);
         return `<tr data-kalem-id="${kalem.id}">
             <td><small class="text-muted">${esc(kalem.proje_kodu)}</small><br><strong>${esc(kalem.bina_adi)}</strong></td>
             <td>${isOzel ? '<span class="text-warning small">Özel</span>' : `<small class="text-primary fw-bold">${esc(kalem.stok_kodu)}</small>`}<br><span class="fw-bold">${esc(ad)}</span></td>
             <td class="text-end">${isOzel ? '-' : formatTR(stokta)}</td>
-            <td class="text-end fw-bold text-danger">${formatTR(kalan)}</td>
+            <td class="text-end ${kalan > 0 ? 'fw-bold text-danger' : 'text-muted'}">${formatTR(kalan)}</td>
             <td class="text-center">
-                <input type="number" class="form-control form-control-sm text-center us-miktar fw-bold" step="0.01" min="0.01" value="${onerilen || kalan}">
+                <input type="number" class="form-control form-control-sm text-center us-miktar fw-bold" step="0.01" min="0.01" value="${onerilen}">
             </td>
             <td>${esc(birim)}</td>
         </tr>`;
