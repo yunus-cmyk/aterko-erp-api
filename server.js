@@ -206,23 +206,30 @@ app.post('/api/stok-hareket-kaydet', yetkiKontrol, async (req, res, next) => {
             return res.json({ ok: false, hata: 'Miktar 0\'dan büyük olmalıdır.' });
         }
 
+        // Stok kart bilgisini al (kontrol + birim_maliyet snapshot için)
+        const stokR = await client.query('SELECT guncel_stok_miktari, stok_adi, ortalama_alis_fiyati FROM stok_kartlari WHERE id=$1', [stok_kart_id]);
+        if (stokR.rowCount === 0) return res.json({ ok: false, hata: 'Stok kartı bulunamadı.' });
+        const stokRow = stokR.rows[0];
+
         // Çıkışta stok yeterli mi kontrol et
         if (tip === 'Çıkış') {
-            const stokR = await client.query('SELECT guncel_stok_miktari, stok_adi FROM stok_kartlari WHERE id=$1', [stok_kart_id]);
-            if (stokR.rowCount === 0) return res.json({ ok: false, hata: 'Stok kartı bulunamadı.' });
-            const mevcut = parseFloat(stokR.rows[0].guncel_stok_miktari) || 0;
+            const mevcut = parseFloat(stokRow.guncel_stok_miktari) || 0;
             if (miktarF > mevcut) {
-                return res.json({ ok: false, hata: `Yetersiz stok! Mevcut: ${mevcut} (${stokR.rows[0].stok_adi})` });
+                return res.json({ ok: false, hata: `Yetersiz stok! Mevcut: ${mevcut} (${stokRow.stok_adi})` });
             }
         }
+
+        // Birim maliyet snapshot — çıkışta o anki ortalama alış fiyatı kaydedilir
+        // (sonradan stok kartının fiyatı değişse bile bu kayıt doğru kalır → karlılık raporu için kritik)
+        const birimMaliyet = parseFloat(stokRow.ortalama_alis_fiyati) || 0;
 
         // Hareketi ekle
         await client.query(`
             INSERT INTO stok_hareketleri
-            (stok_kart_id, tip, miktar, proje_id, depo_id, aciklama, kullanici_email, kullanici_adsoyad)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+            (stok_kart_id, tip, miktar, proje_id, depo_id, aciklama, kullanici_email, kullanici_adsoyad, birim_maliyet)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
         `, [stok_kart_id, tip, miktarF, proje_id || null, depo_id || null, aciklama || null,
-            req.user.email, req.user.adSoyad]);
+            req.user.email, req.user.adSoyad, birimMaliyet]);
 
         // Stok kartının güncel miktarını güncelle
         const delta = tip === 'Giriş' ? miktarF : -miktarF;
@@ -1988,17 +1995,53 @@ app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
             // 4. STOK HAREKETİ KAYDET — sadece STOĞA yönlendirilenler
             if (kalem.stok_kart_id && stogaIslendi) {
                 const aciklama = `Sipariş ${siparisBilgi.siparis_no}${siparisBilgi.tedarikci_adi ? ' / ' + siparisBilgi.tedarikci_adi : ''}${kalem.aciklama ? ' - ' + kalem.aciklama : ''}`;
+
+                // Sipariş kaleminin birim fiyatını al (maliyet hesabı için)
+                const fr = await client.query(`
+                    SELECT sk2.birim_fiyat, COALESCE(s2.para_birimi,'TL') as para_birimi
+                    FROM siparis_kalemleri sk2
+                    JOIN satinalma_siparisleri s2 ON sk2.siparis_id=s2.id
+                    WHERE sk2.id=$1
+                `, [kalem.siparis_kalem_id]);
+                const birimFiyat = parseFloat(fr.rows[0]?.birim_fiyat) || 0;
+                const paraBirimi = fr.rows[0]?.para_birimi || 'TL';
+
+                // Stok hareketine snapshot olarak birim_maliyet yaz
                 await client.query(`
                     INSERT INTO stok_hareketleri
-                    (stok_kart_id, tip, miktar, proje_id, depo_id, aciklama, kullanici_email, kullanici_adsoyad)
-                    VALUES ($1, 'Giriş', $2, $3, $4, $5, $6, $7)
+                    (stok_kart_id, tip, miktar, proje_id, depo_id, aciklama, kullanici_email, kullanici_adsoyad, birim_maliyet)
+                    VALUES ($1, 'Giriş', $2, $3, $4, $5, $6, $7, $8)
                 `, [kalem.stok_kart_id, teslimMiktar, projeId, depo_id || null, aciklama,
-                    req.user.email, req.user.adSoyad]);
+                    req.user.email, req.user.adSoyad, birimFiyat]);
 
+                // Mevcut stok kartı bilgilerini al
+                const sk = await client.query('SELECT guncel_stok_miktari, ortalama_alis_fiyati, maliyet_para_birimi FROM stok_kartlari WHERE id=$1', [kalem.stok_kart_id]);
+                const eski = sk.rows[0] || { guncel_stok_miktari: 0, ortalama_alis_fiyati: 0, maliyet_para_birimi: 'TL' };
+                const eskiStok = parseFloat(eski.guncel_stok_miktari) || 0;
+                const eskiFiyat = parseFloat(eski.ortalama_alis_fiyati) || 0;
+                const eskiPB = eski.maliyet_para_birimi || 'TL';
+
+                // AĞIRLIKLI ORTALAMA: sadece aynı para biriminde anlamlı
+                // Para birimi farklıysa son alış fiyatını kullan (basit yaklaşım)
+                let yeniFiyat = eskiFiyat;
+                if (birimFiyat > 0) {
+                    if (eskiStok <= 0 || eskiFiyat <= 0 || eskiPB !== paraBirimi) {
+                        // İlk alış veya para birimi değişti → yeni fiyat
+                        yeniFiyat = birimFiyat;
+                    } else {
+                        // Ağırlıklı ortalama
+                        yeniFiyat = ((eskiStok * eskiFiyat) + (teslimMiktar * birimFiyat)) / (eskiStok + teslimMiktar);
+                    }
+                }
+
+                // Stok + maliyet güncelle
                 await client.query(`
-                    UPDATE stok_kartlari SET guncel_stok_miktari = COALESCE(guncel_stok_miktari,0) + $1
-                    WHERE id = $2
-                `, [teslimMiktar, kalem.stok_kart_id]);
+                    UPDATE stok_kartlari SET
+                        guncel_stok_miktari = COALESCE(guncel_stok_miktari,0) + $1,
+                        ortalama_alis_fiyati = $2,
+                        maliyet_para_birimi = $3
+                    WHERE id = $4
+                `, [teslimMiktar, yeniFiyat, paraBirimi, kalem.stok_kart_id]);
             }
         }
 
@@ -2608,7 +2651,8 @@ app.get('/api/proje-karlilik', yetkiKontrol, async (req, res, next) => {
                 WHERE COALESCE(durum,'') <> 'İPTAL'
                 GROUP BY proje_id
             ),
-            maliyet AS (
+            -- Satınalma maliyeti (sipariş kalemlerinden, sipariş para birimi bazında)
+            siparis_maliyet AS (
                 SELECT t.proje_id,
                        s.para_birimi,
                        SUM(COALESCE(sk.birim_fiyat,0) * COALESCE(sk.siparis_miktari,0))::numeric as toplam,
@@ -2622,11 +2666,52 @@ app.get('/api/proje-karlilik', yetkiKontrol, async (req, res, next) => {
                   AND t.proje_id IS NOT NULL
                 GROUP BY t.proje_id, s.para_birimi
             ),
+            -- Stok kullanım maliyeti (stok hareketlerinden — Çıkış, proje_id atanmış)
+            -- Para birimi: stok kartının maliyet_para_birimi (TL varsayılan)
+            stok_maliyet AS (
+                SELECT sh.proje_id,
+                       COALESCE(sk.maliyet_para_birimi, 'TL') as para_birimi,
+                       SUM(COALESCE(sh.miktar, 0) * COALESCE(sh.birim_maliyet, 0))::numeric as toplam,
+                       COUNT(*)::int as hareket_sayisi
+                FROM stok_hareketleri sh
+                JOIN stok_kartlari sk ON sh.stok_kart_id = sk.id
+                WHERE sh.tip = 'Çıkış'
+                  AND sh.proje_id IS NOT NULL
+                  AND COALESCE(sh.birim_maliyet, 0) > 0
+                GROUP BY sh.proje_id, sk.maliyet_para_birimi
+            ),
+            -- Para birimi bazında toplam: sipariş + stok kullanımı
+            maliyet_birlesik AS (
+                SELECT proje_id, para_birimi, SUM(toplam) as toplam,
+                       MAX(siparis_sayisi) as siparis_sayisi,
+                       MAX(hareket_sayisi) as stok_hareket_sayisi,
+                       MAX(siparis_toplam) as siparis_toplam,
+                       MAX(stok_toplam) as stok_toplam
+                FROM (
+                    SELECT proje_id, para_birimi, toplam, siparis_sayisi,
+                           0::int as hareket_sayisi,
+                           toplam as siparis_toplam, 0::numeric as stok_toplam
+                    FROM siparis_maliyet
+                    UNION ALL
+                    SELECT proje_id, para_birimi, toplam, 0::int as siparis_sayisi,
+                           hareket_sayisi,
+                           0::numeric as siparis_toplam, toplam as stok_toplam
+                    FROM stok_maliyet
+                ) u
+                GROUP BY proje_id, para_birimi
+            ),
             maliyet_grup AS (
                 SELECT proje_id,
-                       json_object_agg(para_birimi, json_build_object('toplam', toplam, 'siparis_sayisi', siparis_sayisi)) as breakdown,
-                       SUM(siparis_sayisi)::int as toplam_siparis
-                FROM maliyet
+                       json_object_agg(para_birimi, json_build_object(
+                           'toplam', toplam,
+                           'siparis_sayisi', siparis_sayisi,
+                           'stok_hareket_sayisi', stok_hareket_sayisi,
+                           'siparis_toplam', siparis_toplam,
+                           'stok_toplam', stok_toplam
+                       )) as breakdown,
+                       SUM(siparis_sayisi)::int as toplam_siparis,
+                       SUM(stok_hareket_sayisi)::int as toplam_stok_hareket
+                FROM maliyet_birlesik
                 GROUP BY proje_id
             )
             SELECT p.id, p.proje_kodu, p.musteri_adi, p.proje_adi, p.durum,
@@ -2634,7 +2719,8 @@ app.get('/api/proje-karlilik', yetkiKontrol, async (req, res, next) => {
                    COALESCE(g.toplam_gelir, 0)::numeric as gelir,
                    COALESCE(g.teslimat_sayisi, 0) as teslimat_sayisi,
                    COALESCE(mg.breakdown, '{}'::json) as maliyet_breakdown,
-                   COALESCE(mg.toplam_siparis, 0) as siparis_sayisi
+                   COALESCE(mg.toplam_siparis, 0) as siparis_sayisi,
+                   COALESCE(mg.toplam_stok_hareket, 0) as stok_hareket_sayisi
             FROM projeler p
             LEFT JOIN gelir g ON g.proje_id = p.id
             LEFT JOIN maliyet_grup mg ON mg.proje_id = p.id
@@ -2642,20 +2728,23 @@ app.get('/api/proje-karlilik', yetkiKontrol, async (req, res, next) => {
             ORDER BY g.toplam_gelir DESC NULLS LAST
         `;
         const r = await pool.query(q);
-        // Aynı para biriminde olanları hesapla
         const data = r.rows.map(p => {
             const breakdown = p.maliyet_breakdown || {};
             const pbm = breakdown[p.proje_para_birimi];
             const ayni_pb_maliyet = pbm ? parseFloat(pbm.toplam) : 0;
+            const ayni_pb_siparis = pbm ? parseFloat(pbm.siparis_toplam || 0) : 0;
+            const ayni_pb_stok = pbm ? parseFloat(pbm.stok_toplam || 0) : 0;
             const gelir = parseFloat(p.gelir);
             const brutKar = gelir - ayni_pb_maliyet;
             const marjYuzde = gelir > 0 ? Math.round((brutKar / gelir) * 100) : 0;
-            // Diğer para birimlerinde maliyetler
             const diger = {};
             for (const [pb, v] of Object.entries(breakdown)) {
                 if (pb !== p.proje_para_birimi) diger[pb] = parseFloat(v.toplam);
             }
-            return { ...p, gelir, ayni_pb_maliyet, brutKar, marjYuzde, diger_para_maliyet: diger };
+            return {
+                ...p, gelir, ayni_pb_maliyet, ayni_pb_siparis, ayni_pb_stok,
+                brutKar, marjYuzde, diger_para_maliyet: diger
+            };
         });
         res.json({ ok: true, data });
     } catch (e) { next(e); }

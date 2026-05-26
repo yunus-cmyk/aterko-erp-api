@@ -1640,10 +1640,11 @@
 
         <!-- Karlılık sekmesi -->
         <div id="ozetKarlilikArea" class="d-none">
-            <div class="alert alert-warning py-2 mb-3 small">
+            <div class="alert alert-info py-2 mb-3 small">
                 <i class="bi bi-info-circle me-1"></i>
-                <strong>Brüt Karlılık (Aşama 1):</strong> Bu rapor sözleşme bedeli (gelir) ile bağlı satınalma siparişlerinin tutarını (yaklaşık maliyet) karşılaştırır.
-                <strong>Stoktan kullanılan malzeme</strong> ve <strong>işçilik</strong> dahil DEĞİLDİR — gerçek kâr bu raporda görünenden daha düşük olabilir.
+                <strong>Karlılık Raporu (Aşama 2):</strong> Bu rapor sözleşme bedeli (gelir) ile <strong>satınalma siparişleri + stoktan kullanılan malzeme</strong> toplamını karşılaştırır.
+                Stok maliyeti, mal kabul anındaki sipariş fiyatlarının <strong>ağırlıklı ortalaması</strong> üzerinden hesaplanır.
+                <br><small class="text-muted">⚠️ <strong>İşçilik</strong>, nakliye, elektrik vb. dolaylı giderler hâlâ dahil değildir.</small>
             </div>
 
             <div class="card shadow-sm border-0 mb-3">
@@ -1669,7 +1670,9 @@
                                 <th>Müşteri</th>
                                 <th class="text-center">Para</th>
                                 <th class="text-end">Gelir</th>
-                                <th class="text-end">Sipariş Toplamı</th>
+                                <th class="text-end">Sipariş</th>
+                                <th class="text-end">Stoktan</th>
+                                <th class="text-end">Toplam Maliyet</th>
                                 <th class="text-end">Brüt Kâr</th>
                                 <th class="text-end">Marj %</th>
                                 <th class="text-center">Diğer Para</th>
@@ -1677,7 +1680,7 @@
                             </tr>
                         </thead>
                         <tbody id="karTabloBody">
-                            <tr><td colspan="9" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                            <tr><td colspan="11" class="text-center text-muted p-4">Yükleniyor...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -7613,24 +7616,27 @@ function renderKarlilik() {
 
     const tbody = document.getElementById('karTabloBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Eşleşen proje yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted p-4">Eşleşen proje yok.</td></tr>';
         return;
     }
 
     tbody.innerHTML = liste.map(p => {
         const karCls = p.brutKar < 0 ? 'text-danger fw-bold' : (p.brutKar > 0 ? 'text-success fw-bold' : 'text-muted');
         const marjCls = p.marjYuzde < 0 ? 'text-danger' : (p.marjYuzde >= 30 ? 'text-success' : (p.marjYuzde >= 10 ? 'text-warning' : 'text-muted'));
-        // Diğer para birimleri
         const dpKeys = Object.keys(p.diger_para_maliyet || {});
         const dpStr = dpKeys.length === 0 ? '<span class="text-muted small">—</span>'
             : dpKeys.map(pb => `<small class="d-block text-muted">+ ${formatTR(p.diger_para_maliyet[pb])} ${pb}</small>`).join('');
+        const sipariSayisi = p.siparis_sayisi || 0;
+        const stokSayisi = p.stok_hareket_sayisi || 0;
 
         return `<tr>
             <td><strong class="text-primary">${esc(p.proje_kodu||'-')}</strong><br><small class="text-muted">${esc(p.proje_adi||'')}</small></td>
             <td class="small">${esc(p.musteri_adi||'-')}</td>
             <td class="text-center small"><span class="badge bg-light text-dark">${esc(p.proje_para_birimi)}</span></td>
             <td class="text-end">${formatTR(p.gelir)}</td>
-            <td class="text-end">${formatTR(p.ayni_pb_maliyet)}<br><small class="text-muted">${p.siparis_sayisi} sip.</small></td>
+            <td class="text-end">${formatTR(p.ayni_pb_siparis||0)}<br><small class="text-muted">${sipariSayisi} sip.</small></td>
+            <td class="text-end">${formatTR(p.ayni_pb_stok||0)}<br><small class="text-muted">${stokSayisi} hrk.</small></td>
+            <td class="text-end fw-bold">${formatTR(p.ayni_pb_maliyet)}</td>
             <td class="text-end ${karCls}">${formatTR(p.brutKar)}</td>
             <td class="text-end ${marjCls}">%${p.marjYuzde}</td>
             <td class="text-center">${dpStr}</td>
