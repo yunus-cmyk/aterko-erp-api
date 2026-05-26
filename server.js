@@ -566,6 +566,10 @@ app.post('/api/urun-listesi-onaya-gonder', yetkiKontrol, async (req, res, next) 
             WHERE id=$2
         `, [req.user.email, teslimat_id]);
 
+        await auditLogla(req, {
+            eylem: 'SUBMIT', tablo: 'proje_teslimatlari', kayit_id: teslimat_id,
+            ozet: 'Ürün Listesi onaya gönderildi'
+        });
         res.json({ ok: true, mesaj: 'Liste ADMIN onayına gönderildi.' });
     } catch (error) { next(error); }
 });
@@ -590,6 +594,10 @@ app.post('/api/urun-listesi-onayla', yetkiKontrol, async (req, res, next) => {
             WHERE id=$2
         `, [req.user.email, teslimat_id]);
 
+        await auditLogla(req, {
+            eylem: 'PUBLISH', tablo: 'proje_teslimatlari', kayit_id: teslimat_id,
+            ozet: 'Ürün Listesi YAYINLANDI'
+        });
         res.json({ ok: true, mesaj: 'Liste YAYINLANDI — üretim, sevkiyat ve montaj modüllerinde görünür.' });
     } catch (error) { next(error); }
 });
@@ -615,6 +623,10 @@ app.post('/api/urun-listesi-reddet', yetkiKontrol, async (req, res, next) => {
             WHERE id=$2
         `, [red_notu.trim(), teslimat_id]);
 
+        await auditLogla(req, {
+            eylem: 'REJECT', tablo: 'proje_teslimatlari', kayit_id: teslimat_id,
+            ozet: `Ürün Listesi reddedildi: ${red_notu.trim().substring(0,200)}`
+        });
         res.json({ ok: true, mesaj: 'Liste reddedildi, taslak durumuna alındı.' });
     } catch (error) { next(error); }
 });
@@ -1404,6 +1416,10 @@ app.post('/api/talep-onayla', yetkiKontrol, async (req, res, next) => {
                 [req.user.adSoyad, talep_id]);
         }
         await client.query('COMMIT');
+        await auditLogla(req, {
+            eylem: 'APPROVE', tablo: 'satinalma_talepleri', kayit_id: talep_id,
+            ozet: 'Talep onaylandı'
+        });
         res.json({ ok: true, mesaj: 'Talep onaylandı.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
@@ -1428,6 +1444,10 @@ app.post('/api/talep-iptal', yetkiKontrol, async (req, res, next) => {
         }
         await pool.query("UPDATE satinalma_talepleri SET durum='İPTAL', red_gerekce=$1 WHERE id=$2",
             [gerekce || null, talep_id]);
+        await auditLogla(req, {
+            eylem: 'CANCEL', tablo: 'satinalma_talepleri', kayit_id: talep_id,
+            ozet: gerekce ? `Talep iptal: ${gerekce.substring(0,200)}` : 'Talep iptal edildi'
+        });
         res.json({ ok: true, mesaj: 'Talep iptal edildi.' });
     } catch (e) { next(e); }
 });
@@ -1624,6 +1644,10 @@ app.post('/api/siparis-onayla', yetkiKontrol, async (req, res, next) => {
     try {
         await pool.query("UPDATE satinalma_siparisleri SET durum='SİPARİŞ ONAYLANDI', onaylanma_tarihi=NOW() WHERE id=$1",
             [req.body.siparis_id]);
+        await auditLogla(req, {
+            eylem: 'APPROVE', tablo: 'satinalma_siparisleri', kayit_id: req.body.siparis_id,
+            ozet: 'Sipariş onaylandı'
+        });
         res.json({ ok: true, mesaj: 'Sipariş onaylandı.' });
     } catch (e) { next(e); }
 });
@@ -1784,6 +1808,10 @@ app.post('/api/siparis-iptal', yetkiKontrol, async (req, res, next) => {
         `, [siparis_id]);
         await client.query("UPDATE satinalma_siparisleri SET durum='İPTAL' WHERE id=$1", [siparis_id]);
         await client.query('COMMIT');
+        await auditLogla(req, {
+            eylem: 'CANCEL', tablo: 'satinalma_siparisleri', kayit_id: siparis_id,
+            ozet: 'Sipariş iptal edildi'
+        });
         res.json({ ok: true, mesaj: 'Sipariş iptal edildi, talepler geri alındı.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
@@ -1792,6 +1820,10 @@ app.post('/api/siparis-iptal', yetkiKontrol, async (req, res, next) => {
 app.post('/api/siparis-arsivle', yetkiKontrol, async (req, res, next) => {
     try {
         await pool.query("UPDATE satinalma_siparisleri SET arsiv=true WHERE id=$1", [req.body.siparis_id]);
+        await auditLogla(req, {
+            eylem: 'ARCHIVE', tablo: 'satinalma_siparisleri', kayit_id: req.body.siparis_id,
+            ozet: 'Sipariş arşivlendi'
+        });
         res.json({ ok: true, mesaj: 'Sipariş arşivlendi.' });
     } catch (e) { next(e); }
 });
@@ -2402,6 +2434,87 @@ async function bildirimOlusturToplu(emailler, baslik, mesaj, opts = {}) {
     }
 }
 
+// ============================================================================
+// AUDIT LOG HELPER (D-4)
+// opts: { eylem, tablo, kayit_id, kayit_no, ozet, eski_veri, yeni_veri }
+// ============================================================================
+async function auditLogla(req, opts) {
+    try {
+        await pool.query(`
+            INSERT INTO audit_log
+              (kullanici_email, kullanici_adsoyad, eylem, tablo, kayit_id, kayit_no, ozet, eski_veri, yeni_veri, ip_adres)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        `, [
+            req?.user?.email || null,
+            req?.user?.adSoyad || null,
+            opts.eylem,
+            opts.tablo,
+            opts.kayit_id || null,
+            opts.kayit_no || null,
+            opts.ozet || null,
+            opts.eski_veri ? JSON.stringify(opts.eski_veri) : null,
+            opts.yeni_veri ? JSON.stringify(opts.yeni_veri) : null,
+            req?.ip || req?.headers?.['x-forwarded-for'] || null
+        ]);
+    } catch (e) {
+        console.warn('Audit log hatası:', e.message);
+    }
+}
+
+// Audit log listesi (sadece ADMIN)
+app.get('/api/audit-log', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.status(403).json({ ok: false, hata: 'Sadece ADMIN erişebilir.' });
+    }
+    try {
+        const { tablo, kullanici, eylem, baslangic, bitis, kayit_id, limit } = req.query;
+        const sart = []; const params = [];
+        if (tablo) { params.push(tablo); sart.push(`tablo = $${params.length}`); }
+        if (kullanici) { params.push('%' + kullanici + '%'); sart.push(`(kullanici_email ILIKE $${params.length} OR kullanici_adsoyad ILIKE $${params.length})`); }
+        if (eylem) { params.push(eylem); sart.push(`eylem = $${params.length}`); }
+        if (kayit_id) { params.push(parseInt(kayit_id)); sart.push(`kayit_id = $${params.length}`); }
+        if (baslangic) { params.push(baslangic); sart.push(`kayit_tarihi >= $${params.length}::date`); }
+        if (bitis) { params.push(bitis); sart.push(`kayit_tarihi < ($${params.length}::date + INTERVAL '1 day')`); }
+
+        const lim = Math.min(parseInt(limit) || 200, 1000);
+        const sartSQL = sart.length > 0 ? 'WHERE ' + sart.join(' AND ') : '';
+        const r = await pool.query(`
+            SELECT id, kullanici_email, kullanici_adsoyad, eylem, tablo, kayit_id, kayit_no,
+                   ozet, eski_veri, yeni_veri, ip_adres, kayit_tarihi
+            FROM audit_log
+            ${sartSQL}
+            ORDER BY kayit_tarihi DESC, id DESC
+            LIMIT ${lim}
+        `, params);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Audit log özet (admin için)
+app.get('/api/audit-log-ozet', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Yetki yok.' });
+    try {
+        const son24 = await pool.query(`SELECT COUNT(*)::int as n FROM audit_log WHERE kayit_tarihi > NOW() - INTERVAL '24 hours'`);
+        const eylemler = await pool.query(`
+            SELECT eylem, COUNT(*)::int as n FROM audit_log
+            WHERE kayit_tarihi > NOW() - INTERVAL '30 days'
+            GROUP BY eylem ORDER BY n DESC LIMIT 10
+        `);
+        const kullanicilar = await pool.query(`
+            SELECT kullanici_email, COUNT(*)::int as n FROM audit_log
+            WHERE kayit_tarihi > NOW() - INTERVAL '30 days'
+              AND kullanici_email IS NOT NULL
+            GROUP BY kullanici_email ORDER BY n DESC LIMIT 10
+        `);
+        res.json({
+            ok: true,
+            son24saat: son24.rows[0].n,
+            eylemDagilimi: eylemler.rows,
+            kullaniciAktivite: kullanicilar.rows
+        });
+    } catch (e) { next(e); }
+});
+
 // Aktif kullanıcı için bildirim listesi (son N adet)
 app.get('/api/bildirimler', yetkiKontrol, async (req, res, next) => {
     try {
@@ -2782,6 +2895,10 @@ app.post('/api/uretim-is-emri-olustur', yetkiKontrol, async (req, res, next) => 
         }
 
         await client.query('COMMIT');
+        await auditLogla(req, {
+            eylem: 'CREATE', tablo: 'uretim_is_emirleri', kayit_id: ieId, kayit_no: emir_no,
+            ozet: `Üretim iş emri oluşturuldu (${gecerli.length} kalem) — Ustabaşı: ${ustabasi_adi || '-'}`
+        });
         res.json({ ok: true, mesaj: `${emir_no} oluşturuldu, ${gecerli.length} kalem atandı.`, emir_no, is_emri_id: ieId });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
@@ -3219,6 +3336,10 @@ app.post('/api/montaj-musteri-teslim', yetkiKontrol, async (req, res, next) => {
         }
 
         await client.query('COMMIT');
+        await auditLogla(req, {
+            eylem: 'DELIVER', tablo: 'proje_teslimatlari', kayit_id: teslimat_id,
+            ozet: `Müşteriye teslim: ${kayit} kalem`
+        });
         res.json({ ok: true, mesaj: `${kayit} kalem müşteriye teslim edildi.` });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
@@ -3345,6 +3466,10 @@ app.post('/api/sevkiyat-belgesi-olustur', yetkiKontrol, async (req, res, next) =
         }
 
         await client.query('COMMIT');
+        await auditLogla(req, {
+            eylem: 'CREATE', tablo: 'sevkiyat_belgeleri', kayit_id: sbId, kayit_no: sevkiyat_no,
+            ozet: `Sevkiyat belgesi oluşturuldu — Plaka: ${plaka}, ${kayit} kalem`
+        });
         res.json({
             ok: true, sevkiyat_no, sevkiyat_id: sbId,
             mesaj: `${sevkiyat_no} oluşturuldu, ${kayit} kalem sevk edildi.` + (hatalar.length ? ` Uyarı: ${hatalar.length}` : ''),
@@ -3456,6 +3581,11 @@ app.post('/api/sevkiyat-durum-guncelle', yetkiKontrol, async (req, res, next) =>
             if (montajsizSayisi > 0) mesaj += ` ${montajsizSayisi} kalem doğrudan müşteriye teslim edildi.`;
             if (montajliSayisi > 0) mesaj += ` ${montajliSayisi} kalem montaj sürecine aktarıldı.`;
         }
+        await auditLogla(req, {
+            eylem: yeni_durum === 'TESLIM' ? 'DELIVER' : 'UPDATE',
+            tablo: 'sevkiyat_belgeleri', kayit_id: sevkiyat_id,
+            ozet: `Sevkiyat durumu: ${yeni_durum}`
+        });
         res.json({ ok: true, mesaj });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }

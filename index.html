@@ -145,6 +145,7 @@
       <li class="nav-item"><a class="nav-link active" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-2"></i>Projeler</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-2"></i>Sevkiyat Planı</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-anasayfa" onclick="setTab('anasayfa')"><i class="bi bi-house-door-fill me-2"></i>Anasayfa</a></li>
+      <li class="nav-item" id="nav-audit-wrap" style="display:none;"><a class="nav-link text-secondary" id="nav-audit" onclick="setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Özet</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-stok" onclick="setTab('stok')"><i class="bi bi-box-seam me-2"></i>Stok / Katalog</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-tedarikci" onclick="setTab('tedarikci')"><i class="bi bi-shop me-2"></i>Tedarikçiler</a></li>
@@ -985,6 +986,91 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- AUDIT LOG (sadece ADMIN) -->
+    <div id="auditArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-shield-check me-2 text-secondary"></i>Audit Log — Sistem Aktivitesi</h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="auditYukle()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+
+        <!-- Özet kartları -->
+        <div class="row g-3 mb-3" id="auditOzetKartlari"></div>
+
+        <!-- Filtreler -->
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body py-2 px-3 d-flex gap-2 flex-wrap align-items-end">
+                <div style="min-width:160px;">
+                    <label class="form-label small mb-0">Tablo</label>
+                    <select id="auditTablo" class="form-select form-select-sm">
+                        <option value="">Tümü</option>
+                        <option value="satinalma_talepleri">satinalma_talepleri</option>
+                        <option value="satinalma_siparisleri">satinalma_siparisleri</option>
+                        <option value="proje_teslimatlari">proje_teslimatlari</option>
+                        <option value="uretim_is_emirleri">uretim_is_emirleri</option>
+                        <option value="sevkiyat_belgeleri">sevkiyat_belgeleri</option>
+                        <option value="stok_hareketleri">stok_hareketleri</option>
+                    </select>
+                </div>
+                <div style="min-width:120px;">
+                    <label class="form-label small mb-0">Eylem</label>
+                    <select id="auditEylem" class="form-select form-select-sm">
+                        <option value="">Tümü</option>
+                        <option value="CREATE">Oluşturma</option>
+                        <option value="UPDATE">Güncelleme</option>
+                        <option value="DELETE">Silme</option>
+                        <option value="APPROVE">Onay</option>
+                        <option value="REJECT">Red</option>
+                        <option value="CANCEL">İptal</option>
+                        <option value="PUBLISH">Yayınla</option>
+                        <option value="SUBMIT">Onaya gönder</option>
+                        <option value="DELIVER">Teslim</option>
+                        <option value="ARCHIVE">Arşivleme</option>
+                    </select>
+                </div>
+                <div style="min-width:180px;">
+                    <label class="form-label small mb-0">Kullanıcı</label>
+                    <input id="auditKullanici" class="form-control form-control-sm" placeholder="ad veya e-posta">
+                </div>
+                <div>
+                    <label class="form-label small mb-0">Başlangıç</label>
+                    <input id="auditBaslangic" type="date" class="form-control form-control-sm">
+                </div>
+                <div>
+                    <label class="form-label small mb-0">Bitiş</label>
+                    <input id="auditBitis" type="date" class="form-control form-control-sm">
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="auditYukle()"><i class="bi bi-search"></i> Filtrele</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="auditFiltreTemizle()">Temizle</button>
+            </div>
+        </div>
+
+        <!-- Sonuçlar -->
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold"><i class="bi bi-list-ul me-2"></i>Kayıtlar</span>
+                <span class="small text-muted" id="auditSayac">0 kayıt</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0" style="font-size:0.82rem;">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="text-center" style="width:130px;">Zaman</th>
+                            <th>Kullanıcı</th>
+                            <th class="text-center">Eylem</th>
+                            <th>Tablo</th>
+                            <th>Kayıt</th>
+                            <th>Özet</th>
+                            <th class="text-center">IP</th>
+                        </tr>
+                    </thead>
+                    <tbody id="auditTabloBody">
+                        <tr><td colspan="7" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <!-- ANASAYFA / DASHBOARD -->
@@ -2159,6 +2245,11 @@ window.addEventListener("DOMContentLoaded", function() {
         document.getElementById("userNameDisplay").textContent = user.adSoyad || "...";
         kullaniciYetki = user.yetki || '';
         fetchStokKartlariForDropdown();
+        // ADMIN için Audit Log menüsünü göster
+        if (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') {
+            const auditNav = document.getElementById('nav-audit-wrap');
+            if (auditNav) auditNav.style.display = '';
+        }
         setTab('anasayfa');
         // Bildirim merkezini başlat (her 90 sn yenilenir)
         bildirimOtoYenile();
@@ -2403,6 +2494,96 @@ function dashboardSonHareketRender(liste) {
     }).join('');
 }
 
+// ============================================================================
+// AUDIT LOG (D-4)
+// ============================================================================
+const auditEylemMap = {
+    'CREATE':  { cls:'success',   txt:'Oluştur', ikon:'bi-plus-circle' },
+    'UPDATE':  { cls:'info',      txt:'Güncelle', ikon:'bi-pencil' },
+    'DELETE':  { cls:'danger',    txt:'Sil', ikon:'bi-trash' },
+    'APPROVE': { cls:'success',   txt:'Onayla', ikon:'bi-check-circle' },
+    'REJECT':  { cls:'danger',    txt:'Reddet', ikon:'bi-x-circle' },
+    'CANCEL':  { cls:'warning',   txt:'İptal', ikon:'bi-slash-circle' },
+    'PUBLISH': { cls:'primary',   txt:'Yayınla', ikon:'bi-megaphone' },
+    'SUBMIT':  { cls:'warning',   txt:'Onaya gönder', ikon:'bi-send' },
+    'DELIVER': { cls:'success',   txt:'Teslim', ikon:'bi-flag' },
+    'ARCHIVE': { cls:'secondary', txt:'Arşivle', ikon:'bi-archive' }
+};
+
+async function auditYukle() {
+    const params = new URLSearchParams();
+    const tablo = document.getElementById('auditTablo')?.value;
+    const eylem = document.getElementById('auditEylem')?.value;
+    const kul = document.getElementById('auditKullanici')?.value.trim();
+    const bas = document.getElementById('auditBaslangic')?.value;
+    const bit = document.getElementById('auditBitis')?.value;
+    if (tablo) params.set('tablo', tablo);
+    if (eylem) params.set('eylem', eylem);
+    if (kul) params.set('kullanici', kul);
+    if (bas) params.set('baslangic', bas);
+    if (bit) params.set('bitis', bit);
+
+    const r = await secureFetch('/audit-log?' + params.toString()).catch(()=>null);
+    if (!r || !r.ok) return;
+    auditRender(r.data);
+}
+
+function auditRender(liste) {
+    const tbody = document.getElementById('auditTabloBody');
+    document.getElementById('auditSayac').textContent = `${liste.length} kayıt`;
+    if (liste.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">Eşleşen kayıt yok.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = liste.map(a => {
+        const e = auditEylemMap[a.eylem] || { cls:'secondary', txt:a.eylem, ikon:'bi-circle' };
+        const tarih = a.kayit_tarihi ? new Date(a.kayit_tarihi).toLocaleString('tr-TR') : '-';
+        return `<tr>
+            <td class="text-center small">${tarih}</td>
+            <td><strong class="small">${esc(a.kullanici_adsoyad || '-')}</strong><br><small class="text-muted">${esc(a.kullanici_email || '')}</small></td>
+            <td class="text-center"><span class="badge bg-${e.cls}"><i class="bi ${e.ikon} me-1"></i>${e.txt}</span></td>
+            <td class="small"><code>${esc(a.tablo)}</code></td>
+            <td class="small">${a.kayit_no ? `<strong>${esc(a.kayit_no)}</strong>` : ''} ${a.kayit_id ? `<span class="text-muted">#${a.kayit_id}</span>` : ''}</td>
+            <td class="small">${esc(a.ozet || '-')}</td>
+            <td class="text-center small text-muted">${esc(a.ip_adres || '-')}</td>
+        </tr>`;
+    }).join('');
+}
+
+function auditFiltreTemizle() {
+    document.getElementById('auditTablo').value = '';
+    document.getElementById('auditEylem').value = '';
+    document.getElementById('auditKullanici').value = '';
+    document.getElementById('auditBaslangic').value = '';
+    document.getElementById('auditBitis').value = '';
+    auditYukle();
+}
+
+async function auditOzetYukle() {
+    const r = await secureFetch('/audit-log-ozet').catch(()=>null);
+    if (!r || !r.ok) return;
+    const kartlar = [
+        { ad: 'Son 24 Saat', say: r.son24saat || 0, ikon: 'bi-clock', renk: 'primary' },
+        { ad: 'Aktif Eylem (30g)', say: (r.eylemDagilimi||[]).length, ikon: 'bi-bar-chart', renk: 'info' },
+        { ad: 'Aktif Kullanıcı (30g)', say: (r.kullaniciAktivite||[]).length, ikon: 'bi-people', renk: 'success' }
+    ];
+    document.getElementById('auditOzetKartlari').innerHTML = kartlar.map(c => `
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center bg-${c.renk} bg-opacity-10 me-3" style="width:48px; height:48px;">
+                        <i class="bi ${c.ikon} text-${c.renk}" style="font-size:1.5rem;"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">${c.ad}</div>
+                        <div class="fw-bold" style="font-size:1.4rem;">${c.say}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
 function setTab(tab) {
     // 1. Menüdeki aktif sekme rengini ayarla
     document.querySelectorAll(".nav-pills .nav-link").forEach(el => el.classList.remove("active"));
@@ -2411,7 +2592,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -2420,6 +2601,10 @@ function setTab(tab) {
     if (tab === 'anasayfa') {
         document.getElementById("anasayfaArea").classList.remove("d-none");
         dashboardYukle();
+    } else if (tab === 'audit') {
+        document.getElementById("auditArea").classList.remove("d-none");
+        auditYukle();
+        auditOzetYukle();
     } else if (tab === 'projeler') {
         document.getElementById("projeArea").classList.remove("d-none");
         fetchProjeler();
