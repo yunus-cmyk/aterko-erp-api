@@ -2590,6 +2590,83 @@ app.get('/api/quick-search', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// ============================================================================
+// İŞ AKIŞLARI / FORM TANIMLARI YÖNETİMİ (D-6)
+// ============================================================================
+app.get('/api/form-tanimlari', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { bina_turu } = req.query;
+        let sql = `SELECT * FROM form_tanimlari`;
+        const params = [];
+        if (bina_turu) { params.push(bina_turu); sql += ` WHERE bina_turu = $1`; }
+        sql += ` ORDER BY bina_turu, bolum_sirasi, soru_sirasi`;
+        const r = await pool.query(sql, params);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
+    }
+    try {
+        const {
+            id, bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
+            giris_tipi, secenekler, zorunlu, kurallar, kosullar
+        } = req.body;
+        if (!bina_turu || !bolum_adi || !soru) {
+            return res.json({ ok: false, hata: 'Bina türü, bölüm adı ve soru metni zorunlu.' });
+        }
+
+        let eski = null;
+        if (id) {
+            const r = await pool.query('SELECT * FROM form_tanimlari WHERE id=$1', [id]);
+            if (r.rowCount > 0) eski = r.rows[0];
+            await pool.query(`
+                UPDATE form_tanimlari
+                SET bina_turu=$1, bolum_sirasi=$2, bolum_adi=$3, soru_sirasi=$4, soru=$5,
+                    giris_tipi=$6, secenekler=$7, zorunlu=$8, kurallar=$9, kosullar=$10
+                WHERE id=$11
+            `, [bina_turu, bolum_sirasi || 1, bolum_adi, soru_sirasi || 1, soru,
+                giris_tipi || 'TEXT', secenekler ? JSON.stringify(secenekler) : null,
+                !!zorunlu, kurallar || null, kosullar || null, id]);
+            await auditLogla(req, {
+                eylem: 'UPDATE', tablo: 'form_tanimlari', kayit_id: id,
+                ozet: `Form sorusu güncellendi: ${soru.substring(0,60)}`,
+                eski_veri: eski, yeni_veri: req.body
+            });
+        } else {
+            const r = await pool.query(`
+                INSERT INTO form_tanimlari (bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
+                                            giris_tipi, secenekler, zorunlu, kurallar, kosullar)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id
+            `, [bina_turu, bolum_sirasi || 1, bolum_adi, soru_sirasi || 1, soru,
+                giris_tipi || 'TEXT', secenekler ? JSON.stringify(secenekler) : null,
+                !!zorunlu, kurallar || null, kosullar || null]);
+            await auditLogla(req, {
+                eylem: 'CREATE', tablo: 'form_tanimlari', kayit_id: r.rows[0].id,
+                ozet: `Form sorusu eklendi: ${soru.substring(0,60)}`, yeni_veri: req.body
+            });
+        }
+        res.json({ ok: true, mesaj: 'Form tanımı kaydedildi.' });
+    } catch (e) { next(e); }
+});
+
+app.delete('/api/form-tanimi-sil/:id', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
+    }
+    try {
+        const r = await pool.query('SELECT soru FROM form_tanimlari WHERE id=$1', [req.params.id]);
+        await pool.query('DELETE FROM form_tanimlari WHERE id=$1', [req.params.id]);
+        await auditLogla(req, {
+            eylem: 'DELETE', tablo: 'form_tanimlari', kayit_id: parseInt(req.params.id),
+            ozet: `Form sorusu silindi: ${r.rows[0]?.soru?.substring(0,60) || ''}`
+        });
+        res.json({ ok: true, mesaj: 'Soru silindi.' });
+    } catch (e) { next(e); }
+});
+
 // Audit log özet (admin için)
 app.get('/api/audit-log-ozet', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Yetki yok.' });

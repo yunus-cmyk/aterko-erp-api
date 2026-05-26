@@ -151,6 +151,7 @@
       <li class="nav-item"><a class="nav-link" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-2"></i>Sevkiyat Planı</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-anasayfa" onclick="setTab('anasayfa')"><i class="bi bi-house-door-fill me-2"></i>Anasayfa</a></li>
       <li class="nav-item" id="nav-audit-wrap" style="display:none;"><a class="nav-link text-secondary" id="nav-audit" onclick="setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
+      <li class="nav-item" id="nav-formtanim-wrap" style="display:none;"><a class="nav-link text-secondary" id="nav-formtanim" onclick="setTab('formtanim')"><i class="bi bi-ui-checks me-2"></i>Form Tanımları</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Özet</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-stok" onclick="setTab('stok')"><i class="bi bi-box-seam me-2"></i>Stok / Katalog</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-tedarikci" onclick="setTab('tedarikci')"><i class="bi bi-shop me-2"></i>Tedarikçiler</a></li>
@@ -991,6 +992,138 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- FORM TANIMLARI YÖNETİMİ (sadece ADMIN) -->
+    <div id="formtanimArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h5 class="fw-bold text-dark mb-0"><i class="bi bi-ui-checks me-2 text-secondary"></i>Form Tanımları (Teknik Şartname Soruları)</h5>
+                <small class="text-muted">Teknik şartname modalında görünen formları buradan düzenlersin. Bina türü bazında bölümler ve sorular tanımlanır.</small>
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="openFormTanimiModal()"><i class="bi bi-plus-circle me-1"></i> Yeni Soru</button>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body py-2 px-3 d-flex gap-2 flex-wrap align-items-end">
+                <div style="min-width:200px;">
+                    <label class="form-label small mb-0">Bina Türü Filtresi</label>
+                    <select id="ftBinaTurFiltre" class="form-select form-select-sm" onchange="formTanimlariYukle()">
+                        <option value="">Tüm Türler</option>
+                        <option value="Prefabrik">Prefabrik</option>
+                        <option value="Konteyner">Konteyner</option>
+                        <option value="Hafif Çelik">Hafif Çelik</option>
+                    </select>
+                </div>
+                <div style="min-width:240px;">
+                    <label class="form-label small mb-0">Arama</label>
+                    <input id="ftArama" class="form-control form-control-sm" placeholder="Bölüm veya soru metninde ara..." oninput="formTanimlariRender()">
+                </div>
+                <span class="ms-auto small text-muted" id="ftSayac">0 soru</span>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0" style="font-size:0.82rem;">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>Bina Türü</th>
+                            <th class="text-center" style="width:50px;">Sıra</th>
+                            <th>Bölüm</th>
+                            <th class="text-center" style="width:50px;">Sıra</th>
+                            <th>Soru</th>
+                            <th class="text-center">Tip</th>
+                            <th class="text-center">Zorunlu</th>
+                            <th>Seçenekler</th>
+                            <th class="text-center">İşlem</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ftTabloBody">
+                        <tr><td colspan="9" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Form Tanımı Ekle/Düzenle Modal -->
+    <div class="modal fade" id="modalFormTanimi" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-3 bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-ui-checks me-2"></i><span id="ftModalBaslik">Yeni Soru</span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="background:#f8f9fa;">
+                    <input type="hidden" id="ftId">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted mb-1">Bina Türü <span class="text-danger">*</span></label>
+                            <select id="ftBinaTuru" class="form-select form-select-sm">
+                                <option value="Prefabrik">Prefabrik</option>
+                                <option value="Konteyner">Konteyner</option>
+                                <option value="Hafif Çelik">Hafif Çelik</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold text-muted mb-1">Bölüm Sırası</label>
+                            <input id="ftBolumSira" type="number" min="1" value="1" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold text-muted mb-1">Soru Sırası</label>
+                            <input id="ftSoruSira" type="number" min="1" value="1" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold text-muted mb-1">Bölüm Adı <span class="text-danger">*</span></label>
+                            <input id="ftBolumAdi" class="form-control form-control-sm" placeholder="Örn: Bina Bilgileri, Yalıtım, Elektrik...">
+                            <small class="text-muted">Aynı bölüm adı kullanılırsa o bölümün altına eklenir.</small>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold text-muted mb-1">Soru Metni <span class="text-danger">*</span></label>
+                            <input id="ftSoru" class="form-control form-control-sm" placeholder="Müşteriye sorulacak soru...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted mb-1">Giriş Tipi <span class="text-danger">*</span></label>
+                            <select id="ftGirisTipi" class="form-select form-select-sm" onchange="ftSecenekAlaniGoster()">
+                                <option value="TEXT">Kısa Metin</option>
+                                <option value="METIN">Uzun Metin (Paragraf)</option>
+                                <option value="SAYI">Sayı</option>
+                                <option value="TARIH">Tarih</option>
+                                <option value="TEK">Tek Seçim (Radio)</option>
+                                <option value="ÇOK">Çoklu Seçim (Checkbox)</option>
+                                <option value="DROPDOWN">Dropdown</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-muted mb-1">Zorunlu mu?</label>
+                            <div class="form-check form-switch mt-2">
+                                <input id="ftZorunlu" type="checkbox" class="form-check-input">
+                                <label class="form-check-label small" for="ftZorunlu">Bu soru zorunlu olarak doldurulsun</label>
+                            </div>
+                        </div>
+                        <div class="col-md-12" id="ftSecenekAlani" style="display:none;">
+                            <label class="form-label small fw-bold text-muted mb-1">Seçenekler</label>
+                            <textarea id="ftSecenekler" class="form-control form-control-sm" rows="4" placeholder="Her satıra bir seçenek yaz..."></textarea>
+                            <small class="text-muted">Her satıra bir seçenek (Radio / Checkbox / Dropdown için).</small>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold text-muted mb-1">Kurallar (opsiyonel)</label>
+                            <input id="ftKurallar" class="form-control form-control-sm" placeholder="Örn: min=10, max=100">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold text-muted mb-1">Koşullar (opsiyonel)</label>
+                            <input id="ftKosullar" class="form-control form-control-sm" placeholder="Örn: 'Bina Tipi = Çift Katlı' ise göster">
+                            <small class="text-muted">Bu soru sadece belirli bir koşul sağlanırsa görünür (gelişmiş — şimdilik el ile yazılır).</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-white">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button class="btn btn-dark fw-bold px-4" onclick="formTanimiKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- HIZLI ARAMA / KOMUT PALETİ (Cmd+K) -->
@@ -2276,10 +2409,12 @@ window.addEventListener("DOMContentLoaded", function() {
         document.getElementById("userNameDisplay").textContent = user.adSoyad || "...";
         kullaniciYetki = user.yetki || '';
         fetchStokKartlariForDropdown();
-        // ADMIN için Audit Log menüsünü göster
+        // ADMIN için Audit Log + Form Tanımları menülerini göster
         if (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') {
             const auditNav = document.getElementById('nav-audit-wrap');
             if (auditNav) auditNav.style.display = '';
+            const ftNav = document.getElementById('nav-formtanim-wrap');
+            if (ftNav) ftNav.style.display = '';
         }
         setTab('anasayfa');
         // Bildirim merkezini başlat (her 90 sn yenilenir)
@@ -2741,6 +2876,129 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// ============================================================================
+// FORM TANIMLARI YÖNETİMİ (D-6)
+// ============================================================================
+let formTanimlariCache = [];
+
+async function formTanimlariYukle() {
+    const filtre = document.getElementById('ftBinaTurFiltre')?.value || '';
+    const url = '/form-tanimlari' + (filtre ? '?bina_turu=' + encodeURIComponent(filtre) : '');
+    const r = await secureFetch(url).catch(()=>null);
+    if (!r || !r.ok) return;
+    formTanimlariCache = r.data;
+    formTanimlariRender();
+}
+
+function formTanimlariRender() {
+    const arama = (document.getElementById('ftArama')?.value || '').toLowerCase().trim();
+    let liste = formTanimlariCache;
+    if (arama) liste = liste.filter(f =>
+        (f.bolum_adi || '').toLowerCase().includes(arama) ||
+        (f.soru || '').toLowerCase().includes(arama)
+    );
+
+    document.getElementById('ftSayac').textContent = `${liste.length} soru`;
+    const tbody = document.getElementById('ftTabloBody');
+    if (liste.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Eşleşen kayıt yok.</td></tr>';
+        return;
+    }
+
+    const tipMap = {
+        'TEK':'Tek seçim','ÇOK':'Çoklu','TEXT':'Metin','METIN':'Paragraf',
+        'SAYI':'Sayı','TARIH':'Tarih','DROPDOWN':'Dropdown'
+    };
+    const turRenk = { 'Prefabrik':'primary', 'Konteyner':'info', 'Hafif Çelik':'warning' };
+
+    tbody.innerHTML = liste.map(f => {
+        const sec = Array.isArray(f.secenekler) ? f.secenekler : (f.secenekler ? Object.values(f.secenekler) : []);
+        const secStr = sec.length > 0 ? sec.slice(0,4).join(', ') + (sec.length > 4 ? '...' : '') : '—';
+        return `<tr>
+            <td><span class="badge bg-${turRenk[f.bina_turu] || 'secondary'}">${esc(f.bina_turu)}</span></td>
+            <td class="text-center text-muted small">${f.bolum_sirasi || '-'}</td>
+            <td class="fw-bold small">${esc(f.bolum_adi || '-')}</td>
+            <td class="text-center text-muted small">${f.soru_sirasi || '-'}</td>
+            <td class="small">${esc(f.soru)}</td>
+            <td class="text-center small"><span class="badge bg-light text-dark">${tipMap[f.giris_tipi] || f.giris_tipi || '-'}</span></td>
+            <td class="text-center">${f.zorunlu ? '<i class="bi bi-check-circle-fill text-danger" title="Zorunlu"></i>' : '<span class="text-muted">—</span>'}</td>
+            <td class="small text-muted" title="${esc(sec.join(', '))}">${esc(secStr)}</td>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-primary py-0" onclick="formTanimiDuzenle(${f.id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-sm btn-outline-danger py-0" onclick="formTanimiSil(${f.id})" title="Sil"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function openFormTanimiModal(data) {
+    const d = data || {};
+    document.getElementById('ftModalBaslik').textContent = d.id ? 'Soru Düzenle' : 'Yeni Soru';
+    document.getElementById('ftId').value = d.id || '';
+    document.getElementById('ftBinaTuru').value = d.bina_turu || 'Prefabrik';
+    document.getElementById('ftBolumSira').value = d.bolum_sirasi || 1;
+    document.getElementById('ftSoruSira').value = d.soru_sirasi || 1;
+    document.getElementById('ftBolumAdi').value = d.bolum_adi || '';
+    document.getElementById('ftSoru').value = d.soru || '';
+    document.getElementById('ftGirisTipi').value = d.giris_tipi || 'TEXT';
+    document.getElementById('ftZorunlu').checked = !!d.zorunlu;
+    const sec = Array.isArray(d.secenekler) ? d.secenekler : (d.secenekler ? Object.values(d.secenekler) : []);
+    document.getElementById('ftSecenekler').value = sec.join('\n');
+    document.getElementById('ftKurallar').value = d.kurallar || '';
+    document.getElementById('ftKosullar').value = d.kosullar || '';
+    ftSecenekAlaniGoster();
+    new bootstrap.Modal(document.getElementById('modalFormTanimi')).show();
+}
+
+function ftSecenekAlaniGoster() {
+    const tip = document.getElementById('ftGirisTipi').value;
+    const goster = ['TEK','ÇOK','DROPDOWN'].includes(tip);
+    document.getElementById('ftSecenekAlani').style.display = goster ? '' : 'none';
+}
+
+function formTanimiDuzenle(id) {
+    const f = formTanimlariCache.find(x => x.id === id);
+    if (!f) return;
+    openFormTanimiModal(f);
+}
+
+async function formTanimiKaydet() {
+    const id = parseInt(document.getElementById('ftId').value) || null;
+    const bina_turu = document.getElementById('ftBinaTuru').value;
+    const bolum_sirasi = parseInt(document.getElementById('ftBolumSira').value) || 1;
+    const soru_sirasi = parseInt(document.getElementById('ftSoruSira').value) || 1;
+    const bolum_adi = document.getElementById('ftBolumAdi').value.trim();
+    const soru = document.getElementById('ftSoru').value.trim();
+    const giris_tipi = document.getElementById('ftGirisTipi').value;
+    const zorunlu = document.getElementById('ftZorunlu').checked;
+    const secekenler = document.getElementById('ftSecenekler').value;
+    const kurallar = document.getElementById('ftKurallar').value.trim();
+    const kosullar = document.getElementById('ftKosullar').value.trim();
+
+    if (!bolum_adi || !soru) return showToast('Bölüm adı ve soru metni zorunlu.', 'error');
+
+    const secenekler = ['TEK','ÇOK','DROPDOWN'].includes(giris_tipi)
+        ? secekenler.split('\n').map(s => s.trim()).filter(Boolean)
+        : null;
+
+    const r = await secureFetch('/form-tanimi-kaydet', { method:'POST', body: JSON.stringify({
+        id, bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
+        giris_tipi, secenekler, zorunlu, kurallar, kosullar
+    }) });
+    if (r.ok) {
+        bootstrap.Modal.getInstance(document.getElementById('modalFormTanimi'))?.hide();
+        showToast(r.mesaj, 'success');
+        formTanimlariYukle();
+    } else showToast(r.hata, 'error');
+}
+
+async function formTanimiSil(id) {
+    if (!confirm('Bu soru silinecek. Devam?')) return;
+    const r = await secureFetch('/form-tanimi-sil/' + id, { method:'DELETE' });
+    if (r.ok) { showToast(r.mesaj, 'success'); formTanimlariYukle(); }
+    else showToast(r.hata, 'error');
+}
+
 async function auditOzetYukle() {
     const r = await secureFetch('/audit-log-ozet').catch(()=>null);
     if (!r || !r.ok) return;
@@ -2774,7 +3032,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -2787,6 +3045,9 @@ function setTab(tab) {
         document.getElementById("auditArea").classList.remove("d-none");
         auditYukle();
         auditOzetYukle();
+    } else if (tab === 'formtanim') {
+        document.getElementById("formtanimArea").classList.remove("d-none");
+        formTanimlariYukle();
     } else if (tab === 'projeler') {
         document.getElementById("projeArea").classList.remove("d-none");
         fetchProjeler();
