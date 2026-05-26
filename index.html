@@ -1019,9 +1019,10 @@
                                 <th width="36"><input type="checkbox" id="urtHepsiChk" onchange="urtHepsiToggle(this)"></th>
                                 <th>Proje / Bina</th>
                                 <th>Ürün</th>
+                                <th class="text-end" title="Şu anki katalog stoğu">Stokta</th>
                                 <th class="text-end">Gerekli</th>
                                 <th class="text-end">Üretilen</th>
-                                <th class="text-end">Stoktan</th>
+                                <th class="text-end">Stoktan Ayrılan</th>
                                 <th class="text-end">İş Emrinde</th>
                                 <th class="text-end">Sevke Hazır</th>
                                 <th class="text-end">Sevk Edilen</th>
@@ -1031,7 +1032,7 @@
                             </tr>
                         </thead>
                         <tbody id="urtPlanBody">
-                            <tr><td colspan="12" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
+                            <tr><td colspan="13" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2735,7 +2736,7 @@ function renderUretimPlan() {
 
     const tbody = document.getElementById('urtPlanBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
         return;
     }
 
@@ -2751,10 +2752,24 @@ function renderUretimPlan() {
         const [cls, txt] = durumMap[u.kalem_durumu] || ['secondary', '-'];
         // Sevke hazır = gerekli ise checkbox disabled (üretim ihtiyacı yok)
         const chkDisabled = kalan <= 0 ? 'disabled title="Üretim ihtiyacı yok (zaten hazır)"' : '';
+        // Stok renkli ipucu: stokta olan ≥ gerekli → yeşil; > 0 → sarı (yetersiz); 0 → kırmızı; özel ürün → gri
+        const stokta = parseFloat(u.guncel_stok_miktari) || 0;
+        const gerekli = parseFloat(u.gerekli_miktar) || 0;
+        let stokCls, stokIcerik;
+        if (isOzel) {
+            stokCls = 'text-muted'; stokIcerik = '<small>—</small>';
+        } else if (stokta >= gerekli) {
+            stokCls = 'text-success fw-bold'; stokIcerik = `${formatTR(stokta)} <i class="bi bi-check-circle"></i>`;
+        } else if (stokta > 0) {
+            stokCls = 'text-warning fw-bold'; stokIcerik = `${formatTR(stokta)} <i class="bi bi-exclamation-triangle" title="Yetersiz — gerekli ${formatTR(gerekli)}"></i>`;
+        } else {
+            stokCls = 'text-danger fw-bold'; stokIcerik = `0 <i class="bi bi-x-circle"></i>`;
+        }
         return `<tr>
             <td><input type="checkbox" class="urt-chk form-check-input" value="${u.id}" data-kalan="${kalan}" data-ad="${esc(urunAdi)}" data-birim="${esc(birim)}" data-gerekli="${u.gerekli_miktar}" data-uretilen="${u.uretilen_miktar}" data-proje="${esc(u.proje_kodu + ' / ' + (u.musteri_adi||''))}" data-bina="${esc(u.bina_adi)}" onchange="urtSeciliGuncelle()" ${chkDisabled}></td>
             <td>${projeBina}</td>
             <td>${kod}<br><span class="fw-bold">${urunAdi}</span></td>
+            <td class="text-end ${stokCls}">${stokIcerik}</td>
             <td class="text-end fw-bold">${formatTR(u.gerekli_miktar)}</td>
             <td class="text-end">${formatTR(u.uretilen_miktar)}</td>
             <td class="text-end">${formatTR(u.stoktan_ayrilan_miktar)}</td>
