@@ -985,6 +985,7 @@ app.get('/api/satinalma-listesi', yetkiKontrol, async (req, res, next) => {
         // Esnek sorgu: Proje tablosu boş olsa veya eşleşme olmasa bile talepleri listeler (COALESCE korumalı)
         const taleplerRes = await pool.query(`
             SELECT t.id, t.talep_no, t.talep_eden, t.istenen_tarih, t.durum, t.kayit_tarihi,
+                   t.parent_talep_id, t.alt_sira, t.bolunme_tarihi,
                    COALESCE(p.proje_adi, 'Genel / Belirsiz') as proje_adi,
                    COALESCE(p.proje_kodu, 'GENEL') as proje_kodu,
                    COALESCE(p.musteri_adi, '') as musteri_adi,
@@ -1191,6 +1192,69 @@ app.delete('/api/tedarikci-sil/:id', yetkiKontrol, async (req, res, next) => {
 });
 
 // YENİ: Sipariş Kaydet ve Kısmi Sipariş (Split-Order) Bölünme Motoru
+// ============================================================================
+// TALEP BÖLME HELPER (Madde 6)
+// Bir talepteki bazı kalemler kısmi sipariş alınca, kalan miktarlar yeni bir
+// alt-talebe taşınır. Orijinal talep, sipariş edilen miktarları (durum=SİPARİŞ
+// OLUŞTURULDU) tutar. Yeni alt-talep, kalan miktarları (durum=İŞLEME ALINDI)
+// tutar ve talep_no'su ProjeNo-T-NNNN-(MAX+1) şeklinde olur.
+//
+// Örnek: T-1084'ten kısmi sipariş → T-1084 (sipariş) + T-1084-2 (kalan)
+//        T-1084-2'den tekrar kısmi sipariş → T-1084-2 (sipariş) + T-1084-3 (kalan)
+// ============================================================================
+async function talepBol(client, orijinalTalepId, kalanKalemler) {
+    if (!Array.isArray(kalanKalemler) || kalanKalemler.length === 0) return null;
+
+    // 1) Orijinal talep bilgilerini al
+    const oR = await client.query('SELECT * FROM satinalma_talepleri WHERE id=$1', [orijinalTalepId]);
+    if (oR.rowCount === 0) throw new Error('Bölünecek orijinal talep bulunamadı.');
+    const orig = oR.rows[0];
+
+    // 2) Root talep id (parent yoksa kendisi)
+    const rootId = orig.parent_talep_id || orig.id;
+    const rootR = await client.query('SELECT talep_no FROM satinalma_talepleri WHERE id=$1', [rootId]);
+    const rootTalepNo = rootR.rows[0].talep_no || orig.talep_no;
+    // ProjeNo-T-NNNN şeklinde base (root'ta -N olmamalı ama güvenli olsun)
+    const baseTalepNo = rootTalepNo.replace(/-\d+$/, '');
+
+    // 3) Sıradaki alt_sira (artan numara)
+    const mxR = await client.query(`
+        SELECT COALESCE(MAX(alt_sira), 1) as mx
+        FROM satinalma_talepleri
+        WHERE id=$1 OR parent_talep_id=$1
+    `, [rootId]);
+    const yeniAltSira = parseInt(mxR.rows[0].mx) + 1;
+    const yeniTalepNo = `${baseTalepNo}-${yeniAltSira}`;
+
+    // 4) Yeni alt-talep oluştur (orijinal başlık verilerini kopyala)
+    const ins = await client.query(`
+        INSERT INTO satinalma_talepleri
+            (talep_no, proje_id, talep_eden, istenen_tarih, teslim_yeri, genel_aciklama, durum,
+             parent_talep_id, alt_sira, bolunme_tarihi)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ONAYLANDI', $7, $8, NOW())
+        RETURNING id
+    `, [
+        yeniTalepNo, orig.proje_id, orig.talep_eden, orig.istenen_tarih, orig.teslim_yeri,
+        `[BÖLÜNDÜ — ${orig.talep_no}'den ayrıldı] ${orig.genel_aciklama || ''}`.trim(),
+        rootId, yeniAltSira
+    ]);
+    const yeniTalepId = ins.rows[0].id;
+
+    // 5) Kalan kalemleri yeni talebe ekle
+    for (const k of kalanKalemler) {
+        await client.query(`
+            INSERT INTO talep_urunleri
+                (talep_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama, durum)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
+            yeniTalepId, k.stok_kart_id, k.ozel_urun_adi, k.ozel_urun_birim,
+            k.miktar, k.aciklama, k.durum || 'İŞLEME ALINDI'
+        ]);
+    }
+
+    return { yeniTalepId, yeniTalepNo, altSira: yeniAltSira };
+}
+
 app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
     const client = await pool.connect();
     try {
@@ -1241,54 +1305,75 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
 
         const yeniSiparisId = siparisInsert.rows[0].id;
 
-        // 3. Kalemleri Tek Tek İncele ve Kısmi Bölünme Algoritmasını Çalıştır
+        // 3. Önce kalemleri doğrula + sipariş_kalemleri kaydı oluştur + kalan listesini topla
+        //    (Kalan miktarlar tek bir alt-talebe taşınacak — Madde 6: Talep Bölme)
+        const kalanlar = []; // { stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama, durum }
         for (const kalem of kalemler) {
-            // Mevcut talep kaleminin orijinal bilgilerini çek
-            const origRes = await client.query('SELECT miktar, talep_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, aciklama, durum FROM talep_urunleri WHERE id = $1', [kalem.talep_urun_id]);
+            const origRes = await client.query(
+                'SELECT miktar, talep_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, aciklama, durum FROM talep_urunleri WHERE id = $1',
+                [kalem.talep_urun_id]
+            );
             if (origRes.rowCount === 0) continue;
+            const orig = origRes.rows[0];
 
             // KURAL: Sipariş açılabilmesi için kalem 'İŞLEME ALINDI' veya 'TEKLİF İSTENDİ' olmalı
-            const kalemDurum = (origRes.rows[0].durum || '').trim();
+            const kalemDurum = (orig.durum || '').trim();
             if (kalemDurum !== 'İŞLEME ALINDI' && kalemDurum !== 'TEKLİF İSTENDİ') {
                 throw new Error(`Bu kalem siparişe alınamaz. Mevcut durum: "${kalemDurum}". Önce talebi "İŞLEME ALINDI" durumuna getirmelisiniz.`);
             }
 
-            const origMiktar = parseFloat(origRes.rows[0].miktar);
+            const origMiktar = parseFloat(orig.miktar);
             const sipMiktar = parseFloat(kalem.siparis_miktari);
+            if (!(sipMiktar > 0)) throw new Error('Sipariş miktarı 0 olamaz.');
+            if (sipMiktar > origMiktar) throw new Error(`Sipariş miktarı (${sipMiktar}) talep miktarından (${origMiktar}) büyük olamaz.`);
 
-            if (sipMiktar > 0 && sipMiktar < origMiktar) {
-                // --- APPS SCRIPT BÖLÜNME ZEKASI BAŞLADI ---
-                // İstetilen miktar: 100, Sipariş verilen: 40. Kalan 60 için YENİ satır kopyala
-                const kalanMiktar = origMiktar - sipMiktar;
-                
-                await client.query(`
-                    INSERT INTO talep_urunleri (talep_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama, durum)
-                    VALUES ($1, $2, $3, $4, $5, $6, 'İŞLEME ALINDI')
-                `, [origRes.rows[0].talep_id, origRes.rows[0].stok_kart_id, origRes.rows[0].ozel_urun_adi, origRes.rows[0].ozel_urun_birim, kalanMiktar, origRes.rows[0].aciklama]);
-
-                // Mevcut satırı sipariş verilen miktara (40) çek ve durumunu güncelle
-                await client.query(`
-                    UPDATE talep_urunleri 
-                    SET miktar = $1, durum = 'SİPARİŞ OLUŞTURULDU' 
-                    WHERE id = $2
-                `, [sipMiktar, kalem.talep_urun_id]);
-
+            if (sipMiktar < origMiktar) {
+                // Kısmi sipariş: kalan miktarı yeni alt-talebe taşımak üzere listele
+                kalanlar.push({
+                    stok_kart_id: orig.stok_kart_id,
+                    ozel_urun_adi: orig.ozel_urun_adi,
+                    ozel_urun_birim: orig.ozel_urun_birim,
+                    miktar: origMiktar - sipMiktar,
+                    aciklama: orig.aciklama,
+                    durum: 'İŞLEME ALINDI'
+                });
+                // Orijinal kalemi sipariş miktarına indir + durum güncelle
+                await client.query(
+                    `UPDATE talep_urunleri SET miktar=$1, durum='SİPARİŞ OLUŞTURULDU' WHERE id=$2`,
+                    [sipMiktar, kalem.talep_urun_id]
+                );
             } else {
-                // Tam sipariş verildiyse miktar değiştirme, sadece durumu 'SİPARİŞ OLUŞTURULDU' yap
-                await client.query(`
-                    UPDATE talep_urunleri SET durum = 'SİPARİŞ OLUŞTURULDU' WHERE id = $1
-                `, [kalem.talep_urun_id]);
+                // Tam sipariş: sadece durum güncelle
+                await client.query(
+                    `UPDATE talep_urunleri SET durum='SİPARİŞ OLUŞTURULDU' WHERE id=$1`,
+                    [kalem.talep_urun_id]
+                );
             }
 
-            // 4. Sipariş Edilen Ürünü Fiyatıyla Sipariş Kalemlerine Ekle
+            // Sipariş kalem kaydı
             await client.query(`
                 INSERT INTO siparis_kalemleri (siparis_id, talep_urun_id, birim_fiyat, siparis_miktari)
                 VALUES ($1, $2, $3, $4)
             `, [yeniSiparisId, kalem.talep_urun_id, kalem.birim_fiyat, sipMiktar]);
         }
 
+        // 3b. Kalan miktarlar varsa talebi böl → yeni alt-talep oluştur
+        let bolunmeBilgisi = null;
+        if (kalanlar.length > 0 && kaynakTalepId) {
+            bolunmeBilgisi = await talepBol(client, kaynakTalepId, kalanlar);
+        }
+
         await client.query('COMMIT'); // Tüm işlemleri tek seferde veritabanına mühürle
-        res.json({ ok: true, mesaj: `Sipariş başarıyla oluşturuldu: ${siparis_no}` });
+        const ekMesaj = bolunmeBilgisi
+            ? ` Kısmi sipariş — kalan miktarlar yeni alt-talebe taşındı: ${bolunmeBilgisi.yeniTalepNo}.`
+            : '';
+        try {
+            await auditLogla(req, {
+                eylem: 'CREATE', tablo: 'satinalma_siparisleri', kayit_id: yeniSiparisId, kayit_no: siparis_no,
+                ozet: `Sipariş oluşturuldu${bolunmeBilgisi ? ` + talep bölündü → ${bolunmeBilgisi.yeniTalepNo}` : ''}`
+            });
+        } catch(_) {}
+        res.json({ ok: true, mesaj: `Sipariş başarıyla oluşturuldu: ${siparis_no}.${ekMesaj}`, bolunme: bolunmeBilgisi });
     } catch (error) {
         await client.query('ROLLBACK'); // En ufak hatada şantiyeyi ve talepleri eski haline döndür
         next(error);
@@ -4976,9 +5061,45 @@ app.use((err, req, res, next) => {
     res.status(500).json({ ok: false, hata: err.message });
 });
 
+// ============================================================================
+// ŞEMA GÜVENCE: server başlarken eksik sütunları/sequence'i ekle (idempotent)
+// ============================================================================
+async function semaGuvence() {
+    try {
+        // Talep numarası sequence (1084'ten başlat)
+        await pool.query(`CREATE SEQUENCE IF NOT EXISTS talep_no_seq START 1084`);
+        // Talep bölme sütunları (Madde 6)
+        await pool.query(`
+            ALTER TABLE satinalma_talepleri
+                ADD COLUMN IF NOT EXISTS parent_talep_id INTEGER REFERENCES satinalma_talepleri(id),
+                ADD COLUMN IF NOT EXISTS alt_sira INTEGER DEFAULT 1,
+                ADD COLUMN IF NOT EXISTS bolunme_tarihi TIMESTAMP
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_satinalma_talepleri_parent ON satinalma_talepleri(parent_talep_id)`);
+
+        // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
+        // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için
+        // FORCE yok — service_role/owner normal çalışır, sadece anon/authenticated
+        // PostgREST istekleri politikasız kaldığı için bloklanır.
+        await pool.query(`
+            DO $$
+            DECLARE t RECORD;
+            BEGIN
+                FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='public' LOOP
+                    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
+                END LOOP;
+            END $$;
+        `);
+        console.log('✅ Şema güvencesi tamam (talep bölme alanları + sequence + RLS).');
+    } catch (e) {
+        console.error('⚠️ Şema güvencesi hatası:', e.message);
+    }
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🚀 API Sunucusu ${PORT} portunda Korumalı modda çalışıyor!`);
+    await semaGuvence();
     // Bildirim otomasyonu: server'ın 10 saniye sonra ilk kontrolü, sonra her saat
     setTimeout(() => bildirimleriOtomatikUret().catch(()=>{}), 10 * 1000);
     setInterval(() => bildirimleriOtomatikUret().catch(()=>{}), 60 * 60 * 1000);

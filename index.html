@@ -6197,8 +6197,12 @@ function renderTalepTable(talepler) {
 
     let html = '';
     talepler.forEach(t => {
+        // Alt-talep göstergesi (parent_talep_id varsa bölünmüş demektir)
+        const altTalepRozeti = t.parent_talep_id
+            ? `<span class="badge bg-warning text-dark ms-1" title="Bu talep, başka bir talepten bölünerek oluşturuldu (${t.bolunme_tarihi ? new Date(t.bolunme_tarihi).toLocaleDateString('tr-TR') : ''})"><i class="bi bi-diagram-3"></i> Alt-Talep</span>`
+            : '';
         html += `<tr>
-            <td class="fw-bold text-primary">${esc(t.talep_no)}</td>
+            <td class="fw-bold text-primary">${esc(t.talep_no)} ${altTalepRozeti}</td>
             <td class="fw-bold">${esc(t.proje_kodu)}${t.musteri_adi ? ' / ' + esc(t.musteri_adi) : ''} - ${esc(t.proje_adi)}</td>
             <td class="small">${esc(t.talep_eden || '-')}</td>
             <td class="small">${renderTerminTarihi(t.istenen_tarih)}</td>
