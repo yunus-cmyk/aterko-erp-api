@@ -10224,7 +10224,6 @@ function renderGenelBakisOzetKartlari(ozet, tlToplam, kurlar, container) {
         return;
     }
 
-    // Birden fazla para birimi varsa TL eşdeğer toplam kartı göster
     const cokParaBirimi = ozet.length > 1;
     const renkBarTl = tlToplam.teslim_yuzdesi >= 100 ? 'bg-success' : (tlToplam.teslim_yuzdesi >= 50 ? 'bg-info' : (tlToplam.teslim_yuzdesi > 0 ? 'bg-warning' : 'bg-secondary'));
 
@@ -10232,65 +10231,63 @@ function renderGenelBakisOzetKartlari(ozet, tlToplam, kurlar, container) {
         .filter(k => k !== 'TL' && k !== 'TRY' && kurlar[k] && kurlar[k] !== 1)
         .map(k => `${k}: ${formatTR(kurlar[k])}`).join(' • ') : '';
 
-    let html = '';
-
-    if (cokParaBirimi) {
-        // Büyük TL eşdeğer toplam kartı
-        html += `<div class="col-12">
-            <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #fff8e1, #ffe082);">
-                <div class="card-body py-3">
-                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-                        <div>
-                            <div class="small fw-bold text-secondary"><i class="bi bi-calculator me-1"></i>TOPLAM (TL Eşdeğer)</div>
-                            <div class="fw-bold text-primary" style="font-size:1.8rem;">${formatTR(tlToplam.siparis)} <small class="fs-6">TL</small></div>
-                            <div class="d-flex gap-3 small mt-1">
-                                <span class="text-success">✓ Teslim: <strong>${formatTR(tlToplam.teslim)} TL</strong></span>
-                                <span class="text-warning">⏳ Kalan: <strong>${formatTR(tlToplam.bekleyen)} TL</strong></span>
-                                <span class="text-muted">${tlToplam.siparis_sayisi} sipariş</span>
-                            </div>
-                        </div>
-                        <div style="min-width: 200px;">
-                            <div class="progress" style="height:22px;">
-                                <div class="progress-bar ${renkBarTl} fw-bold" style="width:${tlToplam.teslim_yuzdesi}%; font-size:0.85rem;">${tlToplam.teslim_yuzdesi}% Teslim</div>
-                            </div>
-                            ${kurBilgisi ? `<small class="text-muted d-block mt-1 text-end" title="TCMB Forex Selling"><i class="bi bi-info-circle me-1"></i>Kur: ${kurBilgisi}</small>` : ''}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-    }
-
-    // Para birimi başına detay kartlar
-    html += ozet.map(p => {
+    // Para birimi başına alt satır (tek kutu içinde)
+    const paraBirimiSatirlar = ozet.map(p => {
         const renkBar = p.teslim_yuzdesi >= 100 ? 'bg-success' : (p.teslim_yuzdesi >= 50 ? 'bg-info' : (p.teslim_yuzdesi > 0 ? 'bg-warning' : 'bg-secondary'));
         const tlEsdeg = cokParaBirimi && p.para_birimi !== 'TL' && p.para_birimi !== 'TRY'
-            ? `<div class="small text-muted">≈ ${formatTR(p.tl_siparis)} TL (kur: ${formatTR(p.kur_tl)})</div>`
+            ? `<small class="text-muted ms-2">≈ ${formatTR(p.tl_siparis)} TL</small>`
             : '';
-        const colSize = cokParaBirimi ? Math.max(3, Math.floor(12 / Math.max(2, ozet.length))) : 12;
-        return `<div class="col-md-${colSize}">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body py-2">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span class="fw-bold text-dark">${esc(p.para_birimi)}</span>
-                        <span class="badge bg-secondary">${p.siparis_sayisi} sipariş</span>
-                    </div>
-                    <div class="small text-muted">Sipariş Tutarı</div>
-                    <div class="fw-bold text-primary fs-5">${formatTR(p.siparis_tutari)} ${esc(p.para_birimi)}</div>
-                    ${tlEsdeg}
-                    <div class="d-flex justify-content-between small mt-1">
-                        <span class="text-success">Teslim: <strong>${formatTR(p.teslim_tutari)}</strong></span>
-                        <span class="text-warning">Kalan: <strong>${formatTR(p.bekleyen_tutari)}</strong></span>
-                    </div>
-                    <div class="progress mt-1" style="height:14px;">
-                        <div class="progress-bar ${renkBar}" style="width:${p.teslim_yuzdesi}%">${p.teslim_yuzdesi}%</div>
-                    </div>
+        return `<tr>
+            <td class="fw-bold text-dark">${esc(p.para_birimi)} <span class="badge bg-secondary ms-1" style="font-size:0.65rem;">${p.siparis_sayisi}</span></td>
+            <td class="text-end fw-bold text-primary">${formatTR(p.siparis_tutari)} ${esc(p.para_birimi)}${tlEsdeg}</td>
+            <td class="text-end text-success">${formatTR(p.teslim_tutari)}</td>
+            <td class="text-end ${p.bekleyen_tutari > 0 ? 'text-warning fw-bold' : 'text-muted'}">${formatTR(p.bekleyen_tutari)}</td>
+            <td style="min-width:120px;">
+                <div class="progress" style="height:14px;">
+                    <div class="progress-bar ${renkBar}" style="width:${p.teslim_yuzdesi}%">${p.teslim_yuzdesi}%</div>
                 </div>
-            </div>
-        </div>`;
+            </td>
+        </tr>`;
     }).join('');
 
-    container.innerHTML = html;
+    // Tek konsolide kutu
+    container.innerHTML = `<div class="col-12">
+        <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #fff8e1, #ffe082);">
+            <div class="card-body py-3">
+                ${cokParaBirimi ? `
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 pb-2 border-bottom border-warning">
+                    <div>
+                        <div class="small fw-bold text-secondary"><i class="bi bi-calculator me-1"></i>TOPLAM (TL Eşdeğer)</div>
+                        <div class="fw-bold text-primary" style="font-size:1.8rem;">${formatTR(tlToplam.siparis)} <small class="fs-6">TL</small></div>
+                        <div class="d-flex gap-3 small mt-1">
+                            <span class="text-success">✓ Teslim: <strong>${formatTR(tlToplam.teslim)} TL</strong></span>
+                            <span class="text-warning">⏳ Kalan: <strong>${formatTR(tlToplam.bekleyen)} TL</strong></span>
+                            <span class="text-muted">${tlToplam.siparis_sayisi} sipariş</span>
+                        </div>
+                    </div>
+                    <div style="min-width: 220px;">
+                        <div class="progress" style="height:22px;">
+                            <div class="progress-bar ${renkBarTl} fw-bold" style="width:${tlToplam.teslim_yuzdesi}%; font-size:0.85rem;">${tlToplam.teslim_yuzdesi}% Teslim</div>
+                        </div>
+                        ${kurBilgisi ? `<small class="text-muted d-block mt-1 text-end" title="TCMB Forex Selling"><i class="bi bi-info-circle me-1"></i>Kur: ${kurBilgisi}</small>` : ''}
+                    </div>
+                </div>
+                ` : ''}
+                <table class="table table-sm mb-0 align-middle" style="font-size:0.82rem; background:transparent;">
+                    <thead>
+                        <tr class="small text-muted">
+                            <th width="100">Para Birimi</th>
+                            <th class="text-end">Sipariş Tutarı</th>
+                            <th class="text-end">Teslim</th>
+                            <th class="text-end">Kalan</th>
+                            <th>Teslim Oranı</th>
+                        </tr>
+                    </thead>
+                    <tbody>${paraBirimiSatirlar}</tbody>
+                </table>
+            </div>
+        </div>
+    </div>`;
 }
 
 function renderGenelBakisAcikTalep(bilgi, container) {
