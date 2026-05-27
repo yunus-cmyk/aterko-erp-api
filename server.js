@@ -1319,6 +1319,130 @@ app.delete('/api/siparis-not-sil/:id', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// Satınalma Genel Bakış — filtreli özet (proje, durum, tedarikçi, tarih, arama)
+// Query: ?arama=...&proje_id=...&durum=...&tedarikci_id=...&tarih_bas=...&tarih_bit=...
+app.get('/api/satinalma-genel-ozet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { arama, proje_id, durum, tedarikci_id, tarih_bas, tarih_bit } = req.query;
+        const params = [];
+        const kosul = [`COALESCE(s.durum, '') <> 'İPTAL'`];
+
+        if (proje_id) { params.push(parseInt(proje_id)); kosul.push(`t.proje_id = $${params.length}`); }
+        if (durum) { params.push(durum); kosul.push(`s.durum = $${params.length}`); }
+        if (tedarikci_id) { params.push(parseInt(tedarikci_id)); kosul.push(`s.tedarikci_id = $${params.length}`); }
+        if (tarih_bas) { params.push(tarih_bas); kosul.push(`s.siparis_tarihi >= $${params.length}`); }
+        if (tarih_bit) { params.push(tarih_bit); kosul.push(`s.siparis_tarihi <= $${params.length}`); }
+        if (arama && arama.trim()) {
+            params.push('%' + arama.trim().toLowerCase() + '%');
+            kosul.push(`(
+                LOWER(s.siparis_no) LIKE $${params.length}
+                OR LOWER(COALESCE(p.proje_kodu, '')) LIKE $${params.length}
+                OR LOWER(COALESCE(p.proje_adi, '')) LIKE $${params.length}
+                OR LOWER(COALESCE(p.musteri_adi, '')) LIKE $${params.length}
+            )`);
+        }
+
+        const where = kosul.join(' AND ');
+
+        // Sipariş bazlı liste
+        const siparislerR = await pool.query(`
+            SELECT
+                s.id, s.siparis_no, s.durum, s.termin_tarihi, s.para_birimi, s.siparis_tarihi,
+                COALESCE(s.arsiv, false) as arsiv,
+                COALESCE(tdr.firma_adi, '-') as tedarikci_adi,
+                COALESCE(p.proje_kodu, '-') as proje_kodu,
+                COALESCE(p.proje_adi, '-') as proje_adi,
+                COALESCE(p.musteri_adi, '') as musteri_adi,
+                p.id as proje_id,
+                SUM(COALESCE(sk.siparis_miktari,0) * COALESCE(sk.birim_fiyat,0))::numeric as siparis_tutari,
+                SUM(COALESCE(sk.teslim_alinan_miktar,0) * COALESCE(sk.birim_fiyat,0))::numeric as teslim_tutari,
+                COUNT(sk.id)::int as kalem_sayisi
+            FROM satinalma_siparisleri s
+            JOIN siparis_kalemleri sk ON sk.siparis_id = s.id
+            JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            JOIN satinalma_talepleri t ON tu.talep_id = t.id
+            LEFT JOIN projeler p ON t.proje_id = p.id
+            LEFT JOIN tedarikciler tdr ON s.tedarikci_id = tdr.id
+            WHERE ${where}
+            GROUP BY s.id, tdr.firma_adi, p.id, p.proje_kodu, p.proje_adi, p.musteri_adi
+            ORDER BY COALESCE(s.arsiv, false) ASC, s.siparis_tarihi DESC NULLS LAST, s.id DESC
+            LIMIT 500
+        `, params);
+
+        // Para birimi bazlı özet (aynı filtre ile)
+        const ozetR = await pool.query(`
+            WITH filtered_orders AS (
+                SELECT DISTINCT s.id, s.para_birimi
+                FROM satinalma_siparisleri s
+                JOIN siparis_kalemleri sk ON sk.siparis_id = s.id
+                JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+                JOIN satinalma_talepleri t ON tu.talep_id = t.id
+                LEFT JOIN projeler p ON t.proje_id = p.id
+                LEFT JOIN tedarikciler tdr ON s.tedarikci_id = tdr.id
+                WHERE ${where}
+            )
+            SELECT
+                COALESCE(fo.para_birimi, 'TL') as para_birimi,
+                COUNT(DISTINCT fo.id)::int as siparis_sayisi,
+                SUM(COALESCE(sk.siparis_miktari,0) * COALESCE(sk.birim_fiyat,0))::numeric as siparis_tutari,
+                SUM(COALESCE(sk.teslim_alinan_miktar,0) * COALESCE(sk.birim_fiyat,0))::numeric as teslim_tutari
+            FROM filtered_orders fo
+            JOIN siparis_kalemleri sk ON sk.siparis_id = fo.id
+            GROUP BY fo.para_birimi
+            ORDER BY siparis_tutari DESC NULLS LAST
+        `, params);
+
+        const siparisler = siparislerR.rows.map(s => {
+            const sip = parseFloat(s.siparis_tutari || 0);
+            const tes = parseFloat(s.teslim_tutari || 0);
+            return {
+                ...s,
+                siparis_tutari: sip,
+                teslim_tutari: tes,
+                bekleyen_tutari: sip - tes,
+                teslim_yuzdesi: sip > 0 ? Math.round((tes / sip) * 100) : 0
+            };
+        });
+
+        const para_birimi_ozet = ozetR.rows.map(r => {
+            const sip = parseFloat(r.siparis_tutari || 0);
+            const tes = parseFloat(r.teslim_tutari || 0);
+            return {
+                para_birimi: r.para_birimi,
+                siparis_sayisi: r.siparis_sayisi,
+                siparis_tutari: sip,
+                teslim_tutari: tes,
+                bekleyen_tutari: sip - tes,
+                teslim_yuzdesi: sip > 0 ? Math.round((tes / sip) * 100) : 0
+            };
+        });
+
+        // Eğer proje filtresi varsa: o projedeki açık talepleri de dön
+        let acik_talep_bilgisi = null;
+        if (proje_id) {
+            const acikR = await pool.query(`
+                SELECT
+                    t.id as talep_id, t.talep_no, t.durum as talep_durum, t.istenen_tarih,
+                    COUNT(tu.id)::int as kalem_sayisi
+                FROM satinalma_talepleri t
+                JOIN talep_urunleri tu ON tu.talep_id = t.id
+                WHERE t.proje_id = $1
+                  AND COALESCE(t.arsiv, false) = false
+                  AND tu.durum IN ('ONAY BEKLİYOR','ONAYLANDI','İŞLEME ALINDI','TEKLİF İSTENDİ')
+                GROUP BY t.id
+                ORDER BY t.kayit_tarihi DESC
+            `, [parseInt(proje_id)]);
+            acik_talep_bilgisi = {
+                talep_sayisi: acikR.rowCount,
+                toplam_kalem: acikR.rows.reduce((sum, r) => sum + r.kalem_sayisi, 0),
+                talepler: acikR.rows
+            };
+        }
+
+        res.json({ ok: true, siparisler, para_birimi_ozet, acik_talep_bilgisi });
+    } catch (e) { next(e); }
+});
+
 // Proje Satınalma Özeti: bir projenin tüm sipariş/teslim durumunu özetler
 // Para birimi bazında ayrı satırlar döner.
 app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, next) => {
