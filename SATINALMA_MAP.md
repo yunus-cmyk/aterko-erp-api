@@ -146,6 +146,8 @@
 | `renderSiparisTableFiltered()` | 7640 |
 | `getSiparisAksiyonlari(s)` | 7686 |
 | `renderSiparisTable(siparisler)` | 8124 |
+| `toggleSiparisKalemSatiri(siparisId, btn)` (expand row) | ~8230 |
+| `renderSiparisKalemMini(kalemler)` | ~8255 |
 | `siparisOnayla(id)` | 8166 |
 | `siparisGonder(id)` | 8174 |
 | `siparisTamamenGerial(id)` | 8182 |

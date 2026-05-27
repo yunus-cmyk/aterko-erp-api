@@ -646,6 +646,7 @@
             <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
                 <thead class="table-dark fw-bold">
                     <tr>
+                        <th width="35"></th>
                         <th>Sipariş No</th>
                         <th>Tedarikçi Firma</th>
                         <th class="text-center">Sipariş Tarihi</th>
@@ -8191,7 +8192,7 @@ function renderSiparisTable(siparisler) {
     window.siparislerCache = siparisler; // Detay modal için
     const tbody = document.getElementById("siparisTableBody");
     if(siparisler.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted p-4">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</td></tr>';
         return;
     }
 
@@ -8202,7 +8203,7 @@ function renderSiparisTable(siparisler) {
         const kdvTutari = araToplam * (kdvOrani / 100);
         const genelToplam = araToplam + kdvTutari;
 
-        // Fatura durumu (sadece TAM/KISMI/TAMAMLANDI için anlamlı)
+        // Fatura durumu
         let faturaCell = '<span class="text-muted small">—</span>';
         if (['TAM TESLİM','KISMİ TESLİM','TAMAMLANDI'].includes(s.durum)) {
             if (s.fatura_onay_durumu === 'ONAYLI') {
@@ -8214,6 +8215,11 @@ function renderSiparisTable(siparisler) {
         }
 
         html += `<tr>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="toggleSiparisKalemSatiri(${s.id}, this)" title="Kalemleri göster">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </td>
             <td class="fw-bold text-success">${esc(s.siparis_no)}</td>
             <td class="fw-bold text-dark">${esc(s.tedarikci_adi || '-')}</td>
             <td class="text-center text-muted small">${formatTarihTR(s.siparis_tarihi) || '-'}</td>
@@ -8223,9 +8229,66 @@ function renderSiparisTable(siparisler) {
             <td class="text-center">${getSatinalmaDurumBadge(s.durum)}</td>
             <td class="text-center">${faturaCell}</td>
             <td class="text-center">${getSiparisAksiyonlari(s)}</td>
-        </tr>`;
+        </tr>
+        <tr id="siparis-kalem-row-${s.id}" class="d-none bg-light"><td colspan="10" class="p-2"><div id="siparis-kalem-icerik-${s.id}" class="ps-4"></div></td></tr>`;
     });
     tbody.innerHTML = html;
+}
+
+// Sipariş satırını aç/kapa — kalemleri lazy yükle
+async function toggleSiparisKalemSatiri(siparisId, btn) {
+    const satir = document.getElementById(`siparis-kalem-row-${siparisId}`);
+    const icerik = document.getElementById(`siparis-kalem-icerik-${siparisId}`);
+    if (!satir) return;
+    const ikon = btn.querySelector('i');
+    const aciliyor = satir.classList.contains('d-none');
+
+    if (aciliyor) {
+        satir.classList.remove('d-none');
+        ikon.classList.remove('bi-chevron-right');
+        ikon.classList.add('bi-chevron-down');
+        if (icerik.dataset.loaded === '1') return;
+        icerik.innerHTML = '<div class="text-muted small p-2"><i class="spinner-border spinner-border-sm me-2"></i>Kalemler yükleniyor...</div>';
+        const r = await secureFetch('/siparis-detay/' + siparisId);
+        if (!r.ok) { icerik.innerHTML = `<div class="text-danger small p-2">${esc(r.hata||'Yüklenemedi')}</div>`; return; }
+        icerik.innerHTML = renderSiparisKalemMini(r.data);
+        icerik.dataset.loaded = '1';
+    } else {
+        satir.classList.add('d-none');
+        ikon.classList.remove('bi-chevron-down');
+        ikon.classList.add('bi-chevron-right');
+    }
+}
+
+function renderSiparisKalemMini(kalemler) {
+    if (!kalemler || kalemler.length === 0) {
+        return '<div class="text-muted small p-2">Bu siparişte kalem yok.</div>';
+    }
+    const rows = kalemler.map(k => {
+        const sip = parseFloat(k.siparis_miktari || 0);
+        const teslim = parseFloat(k.teslim_alinan_miktar || 0);
+        const fiyat = parseFloat(k.birim_fiyat || 0);
+        const tutar = sip * fiyat;
+        const teslimRenk = teslim === 0 ? 'text-muted' : (teslim < sip ? 'text-warning' : 'text-success');
+        return `<tr>
+            <td class="small"><span class="fw-bold">${esc(k.urun_adi)}</span></td>
+            <td class="small text-muted">${esc(k.stok_kodu || '-')}</td>
+            <td class="text-end small fw-bold">${formatTR(sip)} ${esc(k.birim || '')}</td>
+            <td class="text-end small ${teslimRenk} fw-bold">${formatTR(teslim)}</td>
+            <td class="text-end small">${formatTR(fiyat)}</td>
+            <td class="text-end small fw-bold">${formatTR(tutar)}</td>
+        </tr>`;
+    }).join('');
+    return `<table class="table table-sm mb-0" style="font-size:0.78rem;">
+        <thead class="table-light"><tr>
+            <th>Ürün</th><th width="100">Kod</th>
+            <th class="text-end" width="110">Sipariş</th>
+            <th class="text-end" width="100">Teslim</th>
+            <th class="text-end" width="100">Birim Fiyat</th>
+            <th class="text-end" width="120">Tutar</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
 }
 
 // --- Sipariş aksiyon fonksiyonları ---
