@@ -1327,7 +1327,7 @@ app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, ne
         const projeR = await pool.query('SELECT id, proje_kodu, proje_adi, musteri_adi FROM projeler WHERE id=$1', [projeId]);
         if (projeR.rowCount === 0) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
 
-        // Para birimi bazında sipariş + teslim toplamları
+        // Para birimi bazında özet (toplam satırı için)
         const ozetR = await pool.query(`
             SELECT
                 COALESCE(s.para_birimi, 'TL') as para_birimi,
@@ -1344,6 +1344,26 @@ app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, ne
               AND COALESCE(s.durum, '') <> 'İPTAL'
             GROUP BY s.para_birimi
             ORDER BY siparis_tutari DESC NULLS LAST
+        `, [projeId]);
+
+        // Sipariş bazlı detay liste (her sipariş için bir satır)
+        const siparislerR = await pool.query(`
+            SELECT
+                s.id, s.siparis_no, s.durum, s.termin_tarihi, s.para_birimi, s.siparis_tarihi,
+                COALESCE(tdr.firma_adi, '-') as tedarikci_adi,
+                SUM(COALESCE(sk.siparis_miktari,0) * COALESCE(sk.birim_fiyat,0))::numeric as siparis_tutari,
+                SUM(COALESCE(sk.teslim_alinan_miktar,0) * COALESCE(sk.birim_fiyat,0))::numeric as teslim_tutari,
+                COUNT(sk.id)::int as kalem_sayisi
+            FROM satinalma_siparisleri s
+            JOIN siparis_kalemleri sk ON sk.siparis_id = s.id
+            JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            JOIN satinalma_talepleri t ON tu.talep_id = t.id
+            LEFT JOIN tedarikciler tdr ON s.tedarikci_id = tdr.id
+            WHERE t.proje_id = $1
+              AND COALESCE(s.arsiv, false) = false
+              AND COALESCE(s.durum, '') <> 'İPTAL'
+            GROUP BY s.id, tdr.firma_adi
+            ORDER BY s.siparis_tarihi DESC NULLS LAST, s.id DESC
         `, [projeId]);
 
         // Açık talep kalem sayısı (henüz siparişlenmemiş — durum: ONAY BEKLİYOR/ONAYLANDI/İŞLEME ALINDI/TEKLİF İSTENDİ)
@@ -1377,10 +1397,30 @@ app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, ne
                 : 0
         }));
 
+        const siparisler = siparislerR.rows.map(s => {
+            const sip = parseFloat(s.siparis_tutari || 0);
+            const tes = parseFloat(s.teslim_tutari || 0);
+            return {
+                id: s.id,
+                siparis_no: s.siparis_no,
+                durum: s.durum,
+                tedarikci_adi: s.tedarikci_adi,
+                para_birimi: s.para_birimi,
+                siparis_tarihi: s.siparis_tarihi,
+                termin_tarihi: s.termin_tarihi,
+                kalem_sayisi: s.kalem_sayisi,
+                siparis_tutari: sip,
+                teslim_tutari: tes,
+                bekleyen_tutari: sip - tes,
+                teslim_yuzdesi: sip > 0 ? Math.round((tes / sip) * 100) : 0
+            };
+        });
+
         res.json({
             ok: true,
             proje: projeR.rows[0],
             para_birimi_ozet: ozet,
+            siparisler,
             acik_talep_sayisi: acikR.rows[0]?.acik_talep_sayisi || 0,
             acik_kalem_sayisi: acikR.rows[0]?.acik_kalem_sayisi || 0,
             toplam_gelir: parseFloat(gelirR.rows[0]?.toplam_gelir || 0)

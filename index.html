@@ -10082,18 +10082,31 @@ async function renderProjeSatinalmaOzeti(projeId) {
         return;
     }
 
-    const paraSatirlar = (r.para_birimi_ozet || []).map(p => {
-        const teslimRenk = p.teslim_yuzdesi >= 100 ? 'bg-success' : (p.teslim_yuzdesi >= 50 ? 'bg-info' : 'bg-warning');
-        return `<tr>
-            <td class="fw-bold">${esc(p.para_birimi)}</td>
-            <td class="text-end fw-bold text-primary">${formatTR(p.siparis_tutari)}</td>
-            <td class="text-end fw-bold text-success">${formatTR(p.teslim_tutari)}</td>
-            <td class="text-end ${p.bekleyen_tutari > 0 ? 'text-warning' : 'text-muted'}">${formatTR(p.bekleyen_tutari)}</td>
-            <td class="text-center small">${p.siparis_sayisi} sipariş / ${p.kalem_sayisi} kalem</td>
-            <td style="min-width:130px;">
-              <div class="progress" style="height:18px;">
-                <div class="progress-bar ${teslimRenk}" role="progressbar" style="width:${p.teslim_yuzdesi}%">${p.teslim_yuzdesi}%</div>
-              </div>
+    // Para birimi özet satırı (header) — kompakt
+    const paraOzet = (r.para_birimi_ozet || []).map(p => {
+        return `<span class="me-3 small">
+            <strong>${esc(p.para_birimi)}:</strong>
+            <span class="text-primary">${formatTR(p.siparis_tutari)}</span> sipariş /
+            <span class="text-success">${formatTR(p.teslim_tutari)}</span> teslim
+        </span>`;
+    }).join('');
+
+    // Sipariş listesi (her sipariş tıklanabilir)
+    const sipSatirlar = (r.siparisler || []).map(s => {
+        const teslimRenk = s.teslim_yuzdesi >= 100 ? 'bg-success' : (s.teslim_yuzdesi >= 50 ? 'bg-info' : (s.teslim_yuzdesi > 0 ? 'bg-warning' : 'bg-secondary'));
+        const terminHtml = s.termin_tarihi ? new Date(s.termin_tarihi).toLocaleDateString('tr-TR') : '-';
+        return `<tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalProjeDetay'))?.hide(); setTab('satinalma'); setTimeout(()=>{switchSatinalmaSubTab('siparisler'); setTimeout(()=>openSiparisDetayModal(${s.id}, '${esc(s.siparis_no)}'), 300);}, 200);">
+            <td class="fw-bold text-success">${esc(s.siparis_no)}</td>
+            <td class="small">${esc(s.tedarikci_adi)}</td>
+            <td class="text-center small">${terminHtml}</td>
+            <td class="text-center">${getSatinalmaDurumBadge(s.durum)}</td>
+            <td class="text-end fw-bold text-primary">${formatTR(s.siparis_tutari)} ${esc(s.para_birimi)}</td>
+            <td class="text-end fw-bold text-success">${formatTR(s.teslim_tutari)}</td>
+            <td class="text-end ${s.bekleyen_tutari > 0 ? 'text-warning fw-bold' : 'text-muted'}">${formatTR(s.bekleyen_tutari)}</td>
+            <td style="min-width:120px;">
+                <div class="progress" style="height:16px;">
+                    <div class="progress-bar ${teslimRenk}" role="progressbar" style="width:${s.teslim_yuzdesi}%">${s.teslim_yuzdesi}%</div>
+                </div>
             </td>
         </tr>`;
     }).join('');
@@ -10103,24 +10116,30 @@ async function renderProjeSatinalmaOzeti(projeId) {
         : `<span class="badge bg-light text-muted border"><i class="bi bi-check-circle me-1"></i>Açık talep yok</span>`;
 
     card.querySelector('.card-body').innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
             <h6 class="fw-bold mb-0 text-warning"><i class="bi bi-cart3 me-1"></i>Satınalma Özeti</h6>
             ${acikRoz}
         </div>
-        ${paraSatirlar ? `
-        <table class="table table-sm mb-0 align-middle" style="font-size:0.82rem; background:white;">
+        ${paraOzet ? `<div class="mb-2 pb-1 border-bottom">${paraOzet}</div>` : ''}
+        ${sipSatirlar ? `
+        <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle" style="font-size:0.78rem; background:white;">
             <thead class="table-light">
                 <tr>
-                    <th width="60">Para Birimi</th>
-                    <th class="text-end">Sipariş Tutarı</th>
-                    <th class="text-end">Teslim Alınan</th>
+                    <th>Sipariş No</th>
+                    <th>Tedarikçi</th>
+                    <th class="text-center">Termin</th>
+                    <th class="text-center">Durum</th>
+                    <th class="text-end">Sipariş</th>
+                    <th class="text-end">Teslim</th>
                     <th class="text-end">Bekleyen</th>
-                    <th class="text-center">Detay</th>
                     <th>Teslim Oranı</th>
                 </tr>
             </thead>
-            <tbody>${paraSatirlar}</tbody>
+            <tbody>${sipSatirlar}</tbody>
         </table>
+        </div>
+        <div class="text-muted small mt-1"><i class="bi bi-info-circle me-1"></i>Bir satıra tıklayarak sipariş detayına gidebilirsin.</div>
         ` : '<div class="text-muted small p-2"><i class="bi bi-inbox me-1"></i>Bu projeye henüz sipariş açılmamış.</div>'}
     `;
 }
