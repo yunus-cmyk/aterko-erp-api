@@ -10250,41 +10250,42 @@ function renderGenelBakisOzetKartlari(ozet, tlToplam, kurlar, container) {
         </tr>`;
     }).join('');
 
-    // Tek konsolide kutu
+    // Tek konsolide kutu — sol/sağ yan yana
     container.innerHTML = `<div class="col-12">
         <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #fff8e1, #ffe082);">
             <div class="card-body py-3">
-                ${cokParaBirimi ? `
-                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3 pb-2 border-bottom border-warning">
-                    <div>
+                <div class="row g-3 align-items-stretch">
+                    ${cokParaBirimi ? `
+                    <div class="col-md-5 ${cokParaBirimi ? 'border-end border-warning' : ''}">
                         <div class="small fw-bold text-secondary"><i class="bi bi-calculator me-1"></i>TOPLAM (TL Eşdeğer)</div>
-                        <div class="fw-bold text-primary" style="font-size:1.8rem;">${formatTR(tlToplam.siparis)} <small class="fs-6">TL</small></div>
-                        <div class="d-flex gap-3 small mt-1">
-                            <span class="text-success">✓ Teslim: <strong>${formatTR(tlToplam.teslim)} TL</strong></span>
-                            <span class="text-warning">⏳ Kalan: <strong>${formatTR(tlToplam.bekleyen)} TL</strong></span>
-                            <span class="text-muted">${tlToplam.siparis_sayisi} sipariş</span>
+                        <div class="fw-bold text-primary" style="font-size:1.7rem; line-height:1.1;">${formatTR(tlToplam.siparis)} <small class="fs-6">TL</small></div>
+                        <div class="small mt-1">
+                            <div class="text-success">✓ Teslim: <strong>${formatTR(tlToplam.teslim)} TL</strong></div>
+                            <div class="text-warning">⏳ Kalan: <strong>${formatTR(tlToplam.bekleyen)} TL</strong></div>
+                            <div class="text-muted">${tlToplam.siparis_sayisi} sipariş</div>
                         </div>
+                        <div class="progress mt-2" style="height:20px;">
+                            <div class="progress-bar ${renkBarTl} fw-bold" style="width:${tlToplam.teslim_yuzdesi}%; font-size:0.8rem;">${tlToplam.teslim_yuzdesi}% Teslim</div>
+                        </div>
+                        ${kurBilgisi ? `<small class="text-muted d-block mt-1" title="TCMB Forex Selling"><i class="bi bi-info-circle me-1"></i>Kur: ${kurBilgisi}</small>` : ''}
                     </div>
-                    <div style="min-width: 220px;">
-                        <div class="progress" style="height:22px;">
-                            <div class="progress-bar ${renkBarTl} fw-bold" style="width:${tlToplam.teslim_yuzdesi}%; font-size:0.85rem;">${tlToplam.teslim_yuzdesi}% Teslim</div>
-                        </div>
-                        ${kurBilgisi ? `<small class="text-muted d-block mt-1 text-end" title="TCMB Forex Selling"><i class="bi bi-info-circle me-1"></i>Kur: ${kurBilgisi}</small>` : ''}
+                    ` : ''}
+                    <div class="col-md-${cokParaBirimi ? '7' : '12'}">
+                        <div class="small fw-bold text-secondary mb-1"><i class="bi bi-list-ul me-1"></i>Para Birimi Detayı</div>
+                        <table class="table table-sm mb-0 align-middle" style="font-size:0.78rem; background:transparent;">
+                            <thead>
+                                <tr class="small text-muted">
+                                    <th width="80">Birim</th>
+                                    <th class="text-end">Sipariş</th>
+                                    <th class="text-end">Teslim</th>
+                                    <th class="text-end">Kalan</th>
+                                    <th width="90">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>${paraBirimiSatirlar}</tbody>
+                        </table>
                     </div>
                 </div>
-                ` : ''}
-                <table class="table table-sm mb-0 align-middle" style="font-size:0.82rem; background:transparent;">
-                    <thead>
-                        <tr class="small text-muted">
-                            <th width="100">Para Birimi</th>
-                            <th class="text-end">Sipariş Tutarı</th>
-                            <th class="text-end">Teslim</th>
-                            <th class="text-end">Kalan</th>
-                            <th>Teslim Oranı</th>
-                        </tr>
-                    </thead>
-                    <tbody>${paraBirimiSatirlar}</tbody>
-                </table>
             </div>
         </div>
     </div>`;
