@@ -2364,10 +2364,19 @@ app.post('/api/siparis-tamamen-sil', yetkiKontrol, async (req, res, next) => {
             }
         }
 
+        // 5) Etkilenen taleplerin başlık durumunu da İŞLEME ALINDI'ya çek
+        const etkilenenTalepIds = [...new Set(skR.rows.map(r => r.talep_id))];
+        if (etkilenenTalepIds.length > 0) {
+            await client.query(
+                "UPDATE satinalma_talepleri SET durum='İŞLEME ALINDI' WHERE id = ANY($1::integer[])",
+                [etkilenenTalepIds]
+            );
+        }
+
         await client.query('COMMIT');
         res.json({
             ok: true,
-            mesaj: `Sipariş silindi. Talep kalemleri İŞLEME ALINDI durumuna döndü${birlesen > 0 ? ` ve ${birlesen} bölünmüş kalem birleştirildi` : ''}.`
+            mesaj: `Sipariş silindi. Talep ve kalemler İŞLEME ALINDI durumuna döndü${birlesen > 0 ? ` ve ${birlesen} bölünmüş kalem birleştirildi` : ''}.`
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }

@@ -2477,9 +2477,18 @@ STK-002		50	adet
                         </div>
                     </div>
 
+                    <div class="d-flex justify-content-between align-items-center p-3 bg-white rounded border shadow-sm mb-2" id="dtTalepActionBar">
+                        <div>
+                            <span class="text-muted small me-2 fw-bold">Talep İşlemleri:</span>
+                            <span id="dtTalepLevelBtns"><span class="text-muted small fst-italic">—</span></span>
+                        </div>
+                    </div>
                     <div class="d-flex justify-content-between align-items-center p-3 bg-white rounded border shadow-sm" id="dtActionBar">
-                        <div id="dtDynamicBtns">
-                            <span class="text-muted small fst-italic"><i class="bi bi-info-circle me-1"></i>İşlem yapmak için yukarıdaki listeden kalem seçimi yapın.</span>
+                        <div>
+                            <span class="text-muted small me-2 fw-bold">Kalem İşlemleri:</span>
+                            <span id="dtDynamicBtns">
+                                <span class="text-muted small fst-italic"><i class="bi bi-info-circle me-1"></i>Üstteki listeden kalem seçin.</span>
+                            </span>
                         </div>
                         <button class="btn btn-secondary btn-sm fw-bold" data-bs-dismiss="modal">Kapat</button>
                     </div>
@@ -6663,6 +6672,9 @@ async function openTalepDetayModal(talepId, talepNo) {
     document.getElementById("dtModalTitle").innerText = `Talep İnceleme ve Onay Ekranı: ${talepNo || ('#' + talepId)}`;
     document.getElementById("chkAllDetail").checked = false;
 
+    // Talep-level butonları doldur (liste tablosundakinin aynısı)
+    renderTalepDetayLevelButtons(talepId);
+
     const tbody = document.getElementById("detayTableBody");
     tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Kalemler çekiliyor...</td></tr>';
 
@@ -6677,6 +6689,37 @@ async function openTalepDetayModal(talepId, talepNo) {
 
     const myModal = new bootstrap.Modal(document.getElementById('modalTalepDetay'));
     myModal.show();
+}
+
+// Talep-level aksiyon butonlarını üst aksiyon bar'a doldur (liste'dekinin aynısı)
+// Buton tıklandığında detay modal kendisini kapatır (action sonrası).
+function renderTalepDetayLevelButtons(talepId) {
+    const slot = document.getElementById('dtTalepLevelBtns');
+    if (!slot) return;
+    const findTalep = () => (window.taleplerGlobal || []).find(t => t.id == talepId);
+    let talep = findTalep();
+    const inject = (t) => {
+        // İncele butonunu çıkar (zaten bu modal'dayız), kalanları al, her tıklamada modalı kapat
+        let html = getTalepAksiyonlari(t);
+        // Search butonunu kaldır
+        html = html.replace(/<button[^>]*title="İncele"[^>]*>.*?<\/button>/, '');
+        // Her onclick'i modal kapatma ile sarmala
+        html = html.replace(/onclick="([^"]+)"/g, 'onclick="bootstrap.Modal.getInstance(document.getElementById(\'modalTalepDetay\'))?.hide(); $1"');
+        slot.innerHTML = html;
+    };
+    if (!talep) {
+        slot.innerHTML = '<span class="text-muted small fst-italic"><i class="bi bi-hourglass-split me-1"></i>Yükleniyor...</span>';
+        secureFetch('/satinalma-listesi').then(res => {
+            if (res.ok) {
+                window.taleplerGlobal = res.talepler;
+                talep = findTalep();
+                if (talep) inject(talep);
+                else slot.innerHTML = '<span class="text-danger small">Talep bulunamadı.</span>';
+            }
+        });
+        return;
+    }
+    inject(talep);
 }
 
 // Talep özeti ve bağlı sipariş paneli
