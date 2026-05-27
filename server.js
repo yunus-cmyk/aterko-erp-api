@@ -1641,6 +1641,71 @@ app.post('/api/siparis-guncelle', yetkiKontrol, async (req, res, next) => {
     finally { client.release(); }
 });
 
+// ============================================================================
+// TEKLİF KAYITLARI (Madde 4 — yapılandırılmış teklif)
+// ============================================================================
+// Bir kaleme tedarikçi teklifi ekle/güncelle
+// Body: { id, talep_urun_id, tedarikci_id, birim_fiyat, miktar, para_birimi,
+//         vade, termin_tarihi, alternatif_urun, yorum, durum }
+app.post('/api/teklif-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const {
+            id, talep_urun_id, tedarikci_id, birim_fiyat, miktar, para_birimi,
+            vade, termin_tarihi, alternatif_urun, yorum, durum
+        } = req.body;
+        if (!talep_urun_id) return res.json({ ok: false, hata: 'Kalem ID gerekli.' });
+
+        if (id) {
+            await pool.query(`
+                UPDATE teklif_kayitlari SET
+                    tedarikci_id=$1, birim_fiyat=$2, miktar=$3, para_birimi=$4,
+                    vade=$5, termin_tarihi=$6, alternatif_urun=$7, yorum=$8, durum=$9
+                WHERE id=$10
+            `, [tedarikci_id || null, birim_fiyat || null, miktar || null, para_birimi || 'TL',
+                vade || null, termin_tarihi || null, alternatif_urun || null, yorum || null,
+                durum || 'BEKLEMEDE', id]);
+            await auditLogla(req, { eylem:'UPDATE', tablo:'teklif_kayitlari', kayit_id:id,
+                ozet:`Teklif güncellendi (kalem #${talep_urun_id})` });
+            return res.json({ ok: true, mesaj: 'Teklif güncellendi.' });
+        }
+        const ins = await pool.query(`
+            INSERT INTO teklif_kayitlari
+              (talep_urun_id, tedarikci_id, birim_fiyat, miktar, para_birimi,
+               vade, termin_tarihi, alternatif_urun, yorum, durum, olusturan_email)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id
+        `, [talep_urun_id, tedarikci_id || null, birim_fiyat || null, miktar || null,
+            para_birimi || 'TL', vade || null, termin_tarihi || null,
+            alternatif_urun || null, yorum || null, durum || 'BEKLEMEDE', req.user.email]);
+        await auditLogla(req, { eylem:'CREATE', tablo:'teklif_kayitlari', kayit_id:ins.rows[0].id,
+            ozet:`Yeni teklif kaydı (kalem #${talep_urun_id})` });
+        res.json({ ok: true, mesaj: 'Teklif kaydedildi.', id: ins.rows[0].id });
+    } catch (e) { next(e); }
+});
+
+// Bir kaleme ait teklifleri listele
+app.get('/api/teklifler/:talepUrunId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT tk.*, t.firma_adi as tedarikci_adi
+            FROM teklif_kayitlari tk
+            LEFT JOIN tedarikciler t ON tk.tedarikci_id=t.id
+            WHERE tk.talep_urun_id=$1
+            ORDER BY tk.birim_fiyat ASC NULLS LAST, tk.kayit_tarihi DESC
+        `, [req.params.talepUrunId]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Teklif sil
+app.delete('/api/teklif-sil/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        await pool.query('DELETE FROM teklif_kayitlari WHERE id=$1', [id]);
+        await auditLogla(req, { eylem:'DELETE', tablo:'teklif_kayitlari', kayit_id:id, ozet:'Teklif silindi' });
+        res.json({ ok: true, mesaj: 'Teklif silindi.' });
+    } catch (e) { next(e); }
+});
+
 // TEKLİF İSTE — kalem listesini TEKLİF İSTENDİ durumuna geçir
 // Body: { kalem_idler: [int], tedarikci_idler: [int], aciklama }
 app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
