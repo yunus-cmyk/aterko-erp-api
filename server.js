@@ -839,14 +839,19 @@ app.post('/api/teslimat-urun-talep-olustur', yetkiKontrol, async (req, res, next
         // kalem_miktarlari: { kalem_id: miktar } — kullanıcı talep miktarını listedeki değerden farklı isteyebilir
         const miktarOverride = (kalem_miktarlari && typeof kalem_miktarlari === 'object') ? kalem_miktarlari : {};
 
-        // Teslimatın projesini bul
-        const tR = await client.query('SELECT proje_id FROM proje_teslimatlari WHERE id=$1', [teslimat_id]);
+        // Teslimatın projesini ve proje kodunu bul
+        const tR = await client.query(`
+            SELECT pt.proje_id, p.proje_kodu
+            FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id=p.id
+            WHERE pt.id=$1
+        `, [teslimat_id]);
         if (tR.rowCount === 0) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
         const projeId = tR.rows[0].proje_id;
+        const projeKodu = tR.rows[0].proje_kodu || 'GENEL';
 
-        // Yeni talep no üret
-        const countRes = await client.query('SELECT COUNT(*) FROM satinalma_talepleri');
-        const talep_no = `SAT-T-${1001 + parseInt(countRes.rows[0].count)}`;
+        // Yeni talep no üret: ProjeNo-T-NNNN (sequence'tan)
+        const seqRes = await client.query("SELECT nextval('talep_no_seq') as no");
+        const talep_no = `${projeKodu}-T-${seqRes.rows[0].no}`;
 
         // Talep başlığı
         const talepInsert = await client.query(`
@@ -1007,9 +1012,15 @@ app.post('/api/yeni-talep', yetkiKontrol, async (req, res, next) => {
         const { proje_id, istenen_tarih, teslim_yeri, genel_aciklama, kalemler } = req.body;
         const talep_eden = req.user.adSoyad;
 
-        const countRes = await client.query('SELECT COUNT(*) FROM satinalma_talepleri');
-        const siradakiNo = 1001 + parseInt(countRes.rows[0].count);
-        const talep_no = `SAT-T-${siradakiNo}`;
+        // Proje kodunu al (numara formatı için)
+        let projeKodu = 'GENEL';
+        if (proje_id) {
+            const pR = await client.query('SELECT proje_kodu FROM projeler WHERE id=$1', [proje_id]);
+            if (pR.rowCount > 0) projeKodu = pR.rows[0].proje_kodu || 'GENEL';
+        }
+        // Yeni format: ProjeNo-T-NNNN (sequence'tan)
+        const seqRes = await client.query("SELECT nextval('talep_no_seq') as no");
+        const talep_no = `${projeKodu}-T-${seqRes.rows[0].no}`;
 
         const talepInsert = await client.query(`
             INSERT INTO satinalma_talepleri (talep_no, proje_id, talep_eden, istenen_tarih, teslim_yeri, genel_aciklama)
@@ -1188,6 +1199,7 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
         const { tedarikci_id, termin_tarihi, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi, kdv_orani, kalemler } = req.body;
 
         // KURAL: Tek bir siparişte sadece aynı talepten gelen kalemler olabilir
+        let kaynakTalepId = null;
         if (Array.isArray(kalemler) && kalemler.length > 0) {
             const talepIdResp = await client.query(
                 'SELECT DISTINCT talep_id FROM talep_urunleri WHERE id = ANY($1::integer[])',
@@ -1196,12 +1208,30 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
             if (talepIdResp.rowCount > 1) {
                 throw new Error('Bir siparişte sadece aynı talepten kalemler olabilir. Farklı taleplerden seçim yaptınız.');
             }
+            kaynakTalepId = talepIdResp.rows[0]?.talep_id || null;
         }
 
-        // 1. Otomatik Sipariş No Üret (Örn: SAT-S-1001)
-        const countRes = await client.query('SELECT COUNT(*) FROM satinalma_siparisleri');
-        const siradakiNo = 1001 + parseInt(countRes.rows[0].count);
-        const siparis_no = `SAT-S-${siradakiNo}`;
+        // 1. Sipariş No Üret: bağlı talep numarasından türet (T → S)
+        // İlk sipariş: ProjeNo-S-NNNN, sonraki: ProjeNo-S-NNNN-2, -3
+        let siparis_no;
+        if (kaynakTalepId) {
+            const tR = await client.query('SELECT talep_no FROM satinalma_talepleri WHERE id=$1', [kaynakTalepId]);
+            const baseTalepNo = tR.rows[0]?.talep_no || '';
+            // ProjeNo-T-NNNN[-N] → ProjeNo-S-NNNN[-N]
+            // Eski format (SAT-T-NNNN) için de çalışsın
+            const baseSiparisNo = baseTalepNo.replace('-T-', '-S-');
+            // Bu base ile başlayan kaç sipariş var?
+            const c = await client.query(
+                `SELECT COUNT(*)::int as n FROM satinalma_siparisleri WHERE siparis_no = $1 OR siparis_no LIKE $1 || '-%'`,
+                [baseSiparisNo]
+            );
+            const adet = c.rows[0].n;
+            siparis_no = adet === 0 ? baseSiparisNo : `${baseSiparisNo}-${adet + 1}`;
+        } else {
+            // Fallback (talep yoksa eski format)
+            const countRes = await client.query('SELECT COUNT(*) FROM satinalma_siparisleri');
+            siparis_no = `SAT-S-${1001 + parseInt(countRes.rows[0].count)}`;
+        }
 
         // 2. Ana Sipariş Başlığını Kaydet
         const siparisInsert = await client.query(`
@@ -4316,9 +4346,12 @@ app.post('/api/uretim-satinalma-talebi-olustur', yetkiKontrol, async (req, res, 
 
         const olusturulanTalepler = [];
         for (const [projeId, kalemlerListe] of Object.entries(byProje)) {
-            // Talep no üret
-            const c = await client.query('SELECT COUNT(*)::int as n FROM satinalma_talepleri');
-            const talep_no = `SAT-T-${1001 + c.rows[0].n + olusturulanTalepler.length}`;
+            // Proje kodunu al
+            const pR = await client.query('SELECT proje_kodu FROM projeler WHERE id=$1', [projeId]);
+            const projeKodu = pR.rows[0]?.proje_kodu || 'GENEL';
+            // Yeni format: ProjeNo-T-NNNN
+            const seqRes = await client.query("SELECT nextval('talep_no_seq') as no");
+            const talep_no = `${projeKodu}-T-${seqRes.rows[0].no}`;
 
             const tIns = await client.query(`
                 INSERT INTO satinalma_talepleri (talep_no, proje_id, talep_eden, istenen_tarih, teslim_yeri, genel_aciklama, durum)
