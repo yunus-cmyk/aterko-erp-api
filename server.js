@@ -1327,7 +1327,7 @@ app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, ne
         const projeR = await pool.query('SELECT id, proje_kodu, proje_adi, musteri_adi FROM projeler WHERE id=$1', [projeId]);
         if (projeR.rowCount === 0) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
 
-        // Para birimi bazında özet (toplam satırı için)
+        // Para birimi bazında özet (arşiv dahil, sadece İPTAL hariç)
         const ozetR = await pool.query(`
             SELECT
                 COALESCE(s.para_birimi, 'TL') as para_birimi,
@@ -1340,16 +1340,16 @@ app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, ne
             JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
             JOIN satinalma_talepleri t ON tu.talep_id = t.id
             WHERE t.proje_id = $1
-              AND COALESCE(s.arsiv, false) = false
               AND COALESCE(s.durum, '') <> 'İPTAL'
             GROUP BY s.para_birimi
             ORDER BY siparis_tutari DESC NULLS LAST
         `, [projeId]);
 
-        // Sipariş bazlı detay liste (her sipariş için bir satır)
+        // Sipariş bazlı detay liste — arşiv dahil, sadece İPTAL hariç
         const siparislerR = await pool.query(`
             SELECT
                 s.id, s.siparis_no, s.durum, s.termin_tarihi, s.para_birimi, s.siparis_tarihi,
+                COALESCE(s.arsiv, false) as arsiv,
                 COALESCE(tdr.firma_adi, '-') as tedarikci_adi,
                 SUM(COALESCE(sk.siparis_miktari,0) * COALESCE(sk.birim_fiyat,0))::numeric as siparis_tutari,
                 SUM(COALESCE(sk.teslim_alinan_miktar,0) * COALESCE(sk.birim_fiyat,0))::numeric as teslim_tutari,
@@ -1360,10 +1360,9 @@ app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, ne
             JOIN satinalma_talepleri t ON tu.talep_id = t.id
             LEFT JOIN tedarikciler tdr ON s.tedarikci_id = tdr.id
             WHERE t.proje_id = $1
-              AND COALESCE(s.arsiv, false) = false
               AND COALESCE(s.durum, '') <> 'İPTAL'
             GROUP BY s.id, tdr.firma_adi
-            ORDER BY s.siparis_tarihi DESC NULLS LAST, s.id DESC
+            ORDER BY COALESCE(s.arsiv, false) ASC, s.siparis_tarihi DESC NULLS LAST, s.id DESC
         `, [projeId]);
 
         // Açık talep kalem sayısı (henüz siparişlenmemiş — durum: ONAY BEKLİYOR/ONAYLANDI/İŞLEME ALINDI/TEKLİF İSTENDİ)
@@ -1404,6 +1403,7 @@ app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, ne
                 id: s.id,
                 siparis_no: s.siparis_no,
                 durum: s.durum,
+                arsiv: s.arsiv,
                 tedarikci_adi: s.tedarikci_adi,
                 para_birimi: s.para_birimi,
                 siparis_tarihi: s.siparis_tarihi,

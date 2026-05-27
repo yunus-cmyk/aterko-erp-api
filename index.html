@@ -10091,12 +10091,14 @@ async function renderProjeSatinalmaOzeti(projeId) {
         </span>`;
     }).join('');
 
-    // Sipariş listesi (her sipariş tıklanabilir)
+    // Sipariş listesi (her sipariş tıklanabilir, arşiv olanlar soluk + rozet)
     const sipSatirlar = (r.siparisler || []).map(s => {
         const teslimRenk = s.teslim_yuzdesi >= 100 ? 'bg-success' : (s.teslim_yuzdesi >= 50 ? 'bg-info' : (s.teslim_yuzdesi > 0 ? 'bg-warning' : 'bg-secondary'));
         const terminHtml = s.termin_tarihi ? new Date(s.termin_tarihi).toLocaleDateString('tr-TR') : '-';
-        return `<tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalProjeDetay'))?.hide(); setTab('satinalma'); setTimeout(()=>{switchSatinalmaSubTab('siparisler'); setTimeout(()=>openSiparisDetayModal(${s.id}, '${esc(s.siparis_no)}'), 300);}, 200);">
-            <td class="fw-bold text-success">${esc(s.siparis_no)}</td>
+        const arsivRozet = s.arsiv ? '<span class="badge bg-secondary ms-1" style="font-size:0.6rem;"><i class="bi bi-archive me-1"></i>ARŞİV</span>' : '';
+        const rowStyle = s.arsiv ? 'cursor:pointer; opacity:0.7; background:rgba(0,0,0,0.02);' : 'cursor:pointer;';
+        return `<tr style="${rowStyle}" onclick="bootstrap.Modal.getInstance(document.getElementById('modalProjeDetay'))?.hide(); setTab('satinalma'); setTimeout(()=>{switchSatinalmaSubTab('${s.arsiv ? 'arsiv' : 'siparisler'}'); setTimeout(()=>openSiparisDetayModal(${s.id}, '${esc(s.siparis_no)}'), 300);}, 200);">
+            <td class="fw-bold text-success">${esc(s.siparis_no)}${arsivRozet}</td>
             <td class="small">${esc(s.tedarikci_adi)}</td>
             <td class="text-center small">${terminHtml}</td>
             <td class="text-center">${getSatinalmaDurumBadge(s.durum)}</td>
