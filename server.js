@@ -1278,6 +1278,116 @@ app.get('/api/kalem-durum-paneli', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// ============================================================================
+// SİPARİŞ İLETİŞİM NOTLARI
+// ============================================================================
+app.get('/api/siparis/:siparisId/notlar', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT id, yazan_email, yazan_adsoyad, not_metni, kayit_tarihi
+            FROM siparis_notlari
+            WHERE siparis_id = $1
+            ORDER BY kayit_tarihi DESC
+        `, [req.params.siparisId]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/siparis/:siparisId/not-ekle', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { siparisId } = req.params;
+        const { not_metni } = req.body;
+        if (!not_metni || !not_metni.trim()) return res.json({ ok: false, hata: 'Not boş olamaz.' });
+        const r = await pool.query(`
+            INSERT INTO siparis_notlari (siparis_id, yazan_email, yazan_adsoyad, not_metni)
+            VALUES ($1, $2, $3, $4) RETURNING id, kayit_tarihi
+        `, [siparisId, req.user.email, req.user.adSoyad || req.user.email, not_metni.trim()]);
+        res.json({ ok: true, id: r.rows[0].id, kayit_tarihi: r.rows[0].kayit_tarihi, mesaj: 'Not eklendi.' });
+    } catch (e) { next(e); }
+});
+
+app.delete('/api/siparis-not-sil/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        // Sadece kendi notunu sil (ADMIN her notu)
+        const not = await pool.query('SELECT yazan_email FROM siparis_notlari WHERE id=$1', [req.params.id]);
+        if (not.rowCount === 0) return res.json({ ok: false, hata: 'Not bulunamadı.' });
+        const isOwner = (not.rows[0].yazan_email || '').toLowerCase() === (req.user.email || '').toLowerCase();
+        const isAdmin = (req.user.gercek_rol || req.user.rol) === 'ADMIN';
+        if (!isOwner && !isAdmin) return res.json({ ok: false, hata: 'Bu notu silme yetkiniz yok.' });
+        await pool.query('DELETE FROM siparis_notlari WHERE id=$1', [req.params.id]);
+        res.json({ ok: true, mesaj: 'Not silindi.' });
+    } catch (e) { next(e); }
+});
+
+// Proje Satınalma Özeti: bir projenin tüm sipariş/teslim durumunu özetler
+// Para birimi bazında ayrı satırlar döner.
+app.get('/api/proje/:projeId/satinalma-ozeti', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { projeId } = req.params;
+        const projeR = await pool.query('SELECT id, proje_kodu, proje_adi, musteri_adi FROM projeler WHERE id=$1', [projeId]);
+        if (projeR.rowCount === 0) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
+
+        // Para birimi bazında sipariş + teslim toplamları
+        const ozetR = await pool.query(`
+            SELECT
+                COALESCE(s.para_birimi, 'TL') as para_birimi,
+                COUNT(DISTINCT s.id)::int as siparis_sayisi,
+                SUM(COALESCE(sk.siparis_miktari,0) * COALESCE(sk.birim_fiyat,0))::numeric as siparis_tutari,
+                SUM(COALESCE(sk.teslim_alinan_miktar,0) * COALESCE(sk.birim_fiyat,0))::numeric as teslim_tutari,
+                COUNT(sk.id)::int as kalem_sayisi
+            FROM satinalma_siparisleri s
+            JOIN siparis_kalemleri sk ON sk.siparis_id = s.id
+            JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            JOIN satinalma_talepleri t ON tu.talep_id = t.id
+            WHERE t.proje_id = $1
+              AND COALESCE(s.arsiv, false) = false
+              AND COALESCE(s.durum, '') <> 'İPTAL'
+            GROUP BY s.para_birimi
+            ORDER BY siparis_tutari DESC NULLS LAST
+        `, [projeId]);
+
+        // Açık talep kalem sayısı (henüz siparişlenmemiş — durum: ONAY BEKLİYOR/ONAYLANDI/İŞLEME ALINDI/TEKLİF İSTENDİ)
+        const acikR = await pool.query(`
+            SELECT
+                COUNT(tu.id)::int as acik_kalem_sayisi,
+                COUNT(DISTINCT t.id)::int as acik_talep_sayisi
+            FROM talep_urunleri tu
+            JOIN satinalma_talepleri t ON tu.talep_id = t.id
+            WHERE t.proje_id = $1
+              AND COALESCE(t.arsiv, false) = false
+              AND tu.durum IN ('ONAY BEKLİYOR','ONAYLANDI','İŞLEME ALINDI','TEKLİF İSTENDİ')
+        `, [projeId]);
+
+        // Gelir (sözleşme bedeli) — proje teslimatlarından
+        const gelirR = await pool.query(`
+            SELECT SUM(COALESCE(kdvsiz_tutar, 0))::numeric as toplam_gelir
+            FROM proje_teslimatlari
+            WHERE proje_id = $1 AND COALESCE(durum,'') <> 'İPTAL'
+        `, [projeId]);
+
+        const ozet = ozetR.rows.map(r => ({
+            para_birimi: r.para_birimi,
+            siparis_sayisi: r.siparis_sayisi,
+            kalem_sayisi: r.kalem_sayisi,
+            siparis_tutari: parseFloat(r.siparis_tutari || 0),
+            teslim_tutari: parseFloat(r.teslim_tutari || 0),
+            bekleyen_tutari: parseFloat(r.siparis_tutari || 0) - parseFloat(r.teslim_tutari || 0),
+            teslim_yuzdesi: r.siparis_tutari > 0
+                ? Math.round((parseFloat(r.teslim_tutari) / parseFloat(r.siparis_tutari)) * 100)
+                : 0
+        }));
+
+        res.json({
+            ok: true,
+            proje: projeR.rows[0],
+            para_birimi_ozet: ozet,
+            acik_talep_sayisi: acikR.rows[0]?.acik_talep_sayisi || 0,
+            acik_kalem_sayisi: acikR.rows[0]?.acik_kalem_sayisi || 0,
+            toplam_gelir: parseFloat(gelirR.rows[0]?.toplam_gelir || 0)
+        });
+    } catch (e) { next(e); }
+});
+
 // Madde 5: Verilen talep'in projesindeki diğer sipariş-edilebilir kalemleri getir
 // (cross-talep sipariş için "başka talep ekle" havuzu)
 app.get('/api/talep/:talepId/proje-kalem-havuzu', yetkiKontrol, async (req, res, next) => {
@@ -4218,7 +4328,7 @@ app.post('/api/bildirim-otomatik-tetikle', yetkiKontrol, async (req, res, next) 
 app.get('/api/dashboard', yetkiKontrol, async (req, res, next) => {
     try {
         const [
-            acikTalep, bekleyenSiparis, terminYaklasan, kritikStok,
+            acikTalep, bekleyenSiparis, terminYaklasan, gecikenSiparis, kritikStok,
             acikIsEmri, yayindaTeslimat, sahaBekleyen, son7gunHareket,
             okunmamisBildirim, acikSevkiyat
         ] = await Promise.all([
@@ -4232,7 +4342,12 @@ app.get('/api/dashboard', yetkiKontrol, async (req, res, next) => {
             // Termini yaklaşan (7 gün içi) siparişler
             pool.query(`SELECT COUNT(*)::int as n FROM satinalma_siparisleri
                 WHERE termin_tarihi BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
-                AND durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV')
+                AND durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV','TAM TESLİM')
+                AND COALESCE(arsiv,false)=false`),
+            // Termini geçmiş (gecikmiş) siparişler — kritik
+            pool.query(`SELECT COUNT(*)::int as n FROM satinalma_siparisleri
+                WHERE termin_tarihi < CURRENT_DATE
+                AND durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV','TAM TESLİM')
                 AND COALESCE(arsiv,false)=false`),
             // Kritik stok altı
             pool.query(`SELECT COUNT(*)::int as n FROM stok_kartlari
@@ -4279,7 +4394,7 @@ app.get('/api/dashboard', yetkiKontrol, async (req, res, next) => {
             ORDER BY tarih DESC LIMIT 10
         `);
 
-        // Termin yaklaşan ilk 5 sipariş (detay)
+        // Termin yaklaşan + gecikmiş ilk 10 sipariş (gecikmiş önce)
         const terminDetay = await pool.query(`
             SELECT s.id, s.siparis_no, s.termin_tarihi, s.durum,
                    t.firma_adi as tedarikci,
@@ -4288,9 +4403,9 @@ app.get('/api/dashboard', yetkiKontrol, async (req, res, next) => {
             LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
             WHERE s.termin_tarihi IS NOT NULL
               AND s.termin_tarihi <= CURRENT_DATE + INTERVAL '14 days'
-              AND s.durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV')
+              AND s.durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV','TAM TESLİM')
               AND COALESCE(s.arsiv,false)=false
-            ORDER BY s.termin_tarihi ASC LIMIT 5
+            ORDER BY s.termin_tarihi ASC LIMIT 10
         `);
 
         // Kritik stok ilk 5
@@ -4309,6 +4424,7 @@ app.get('/api/dashboard', yetkiKontrol, async (req, res, next) => {
                 acikTalep:        acikTalep.rows[0].n,
                 bekleyenSiparis:  bekleyenSiparis.rows[0].n,
                 terminYaklasan:   terminYaklasan.rows[0].n,
+                gecikenSiparis:   gecikenSiparis.rows[0].n,
                 kritikStok:       kritikStok.rows[0].n,
                 acikIsEmri:       acikIsEmri.rows[0].n,
                 yayindaTeslimat:  yayindaTeslimat.rows[0].n,
@@ -5222,6 +5338,19 @@ async function semaGuvence() {
                 ADD COLUMN IF NOT EXISTS bolunme_tarihi TIMESTAMP
         `);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_satinalma_talepleri_parent ON satinalma_talepleri(parent_talep_id)`);
+
+        // Sipariş notları (iletişim geçmişi)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS siparis_notlari (
+                id SERIAL PRIMARY KEY,
+                siparis_id INTEGER NOT NULL REFERENCES satinalma_siparisleri(id) ON DELETE CASCADE,
+                yazan_email TEXT,
+                yazan_adsoyad TEXT,
+                not_metni TEXT NOT NULL,
+                kayit_tarihi TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_siparis_notlari_siparis ON siparis_notlari(siparis_id)`);
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için

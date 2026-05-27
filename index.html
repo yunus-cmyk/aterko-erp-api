@@ -3494,7 +3494,8 @@ function dashboardKpiRender(k) {
     const kartlar = [
         { ad: 'Açık Talepler',         say: k.acikTalep,        renk: 'primary',  ikon: 'bi-cart',           tab: 'satinalma', alt: 'talepler' },
         { ad: 'Bekleyen Sipariş',      say: k.bekleyenSiparis,  renk: 'warning',  ikon: 'bi-hourglass-split', tab: 'satinalma', alt: 'siparisler' },
-        { ad: 'Termini Yaklaşan',      say: k.terminYaklasan,   renk: 'danger',   ikon: 'bi-alarm',          tab: 'satinalma', alt: 'siparisler' },
+        { ad: 'Gecikmiş Sipariş',      say: k.gecikenSiparis || 0, renk: 'danger', ikon: 'bi-exclamation-triangle-fill', tab: 'satinalma', alt: 'siparisler' },
+        { ad: 'Termini Yaklaşan (7g)', say: k.terminYaklasan,   renk: 'warning',  ikon: 'bi-alarm',          tab: 'satinalma', alt: 'siparisler' },
         { ad: 'Kritik Stok',           say: k.kritikStok,       renk: 'danger',   ikon: 'bi-exclamation-octagon', tab: 'stok' },
         { ad: 'Açık İş Emri',          say: k.acikIsEmri,       renk: 'info',     ikon: 'bi-tools',          tab: 'uretim' },
         { ad: 'Yayında Teslimat',      say: k.yayindaTeslimat,  renk: 'success',  ikon: 'bi-check2-circle',  tab: 'urun-listesi' },
@@ -3526,12 +3527,18 @@ function dashboardTerminRender(liste) {
         return;
     }
     tbody.innerHTML = liste.map(s => {
-        const cls = s.kalan_gun <= 0 ? 'text-danger fw-bold' : (s.kalan_gun <= 3 ? 'text-warning fw-bold' : 'text-muted');
-        const txt = s.kalan_gun <= 0 ? 'BUGÜN/GEÇTİ' : (s.kalan_gun === 1 ? 'YARIN' : s.kalan_gun + ' gün');
-        return `<tr style="cursor:pointer;" onclick="setTab('satinalma'); setTimeout(()=>switchSatinalmaSubTab('siparisler'),200);">
+        const geciken = s.kalan_gun < 0;
+        const bugun = s.kalan_gun === 0;
+        const cls = geciken ? 'text-danger fw-bold' : (s.kalan_gun <= 3 ? 'text-warning fw-bold' : 'text-muted');
+        const rowBg = geciken ? 'style="cursor:pointer; background:rgba(220,53,69,0.08);"' : 'style="cursor:pointer;"';
+        const txt = geciken
+            ? `${Math.abs(s.kalan_gun)} GÜN GECİKTİ`
+            : (bugun ? 'BUGÜN' : (s.kalan_gun === 1 ? 'YARIN' : s.kalan_gun + ' gün'));
+        const ikon = geciken ? '<i class="bi bi-exclamation-triangle-fill me-1"></i>' : '';
+        return `<tr ${rowBg} onclick="setTab('satinalma'); setTimeout(()=>switchSatinalmaSubTab('siparisler'),200);">
             <td class="fw-bold text-primary">${esc(s.siparis_no)}</td>
             <td class="small">${esc(s.tedarikci || '-')}</td>
-            <td class="text-end ${cls}">${txt}<br><small class="text-muted">${new Date(s.termin_tarihi).toLocaleDateString('tr-TR')}</small></td>
+            <td class="text-end ${cls}">${ikon}${txt}<br><small class="text-muted">${new Date(s.termin_tarihi).toLocaleDateString('tr-TR')}</small></td>
         </tr>`;
     }).join('');
 }
@@ -8016,6 +8023,29 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
         </div>
         ` : ''}
 
+        <!-- İLETİŞİM NOTLARI -->
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
+                <h6 class="mb-0 fw-bold text-info"><i class="bi bi-chat-left-text me-2"></i>İletişim / Süreç Notları</h6>
+                <small class="text-muted">Tedarikçi yazışmaları, telefonla bilgi alımı, gecikme nedenleri vs.</small>
+            </div>
+            <div class="card-body py-2">
+                <div class="row g-2 mb-2">
+                    <div class="col-md-9">
+                        <input type="text" id="siparisNotInput-${siparisId}" class="form-control form-control-sm" placeholder="Yeni not... (örn: Tedarikçi 2 gün gecikme bildirdi)" onkeydown="if(event.key==='Enter') siparisNotEkle(${siparisId})">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-info btn-sm w-100 text-white fw-bold" onclick="siparisNotEkle(${siparisId})">
+                            <i class="bi bi-plus-circle me-1"></i>Not Ekle
+                        </button>
+                    </div>
+                </div>
+                <div id="siparisNotList-${siparisId}">
+                    <div class="text-muted small text-center py-2"><i class="spinner-border spinner-border-sm me-2"></i>Notlar yükleniyor...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- DOSYA EKLERİ -->
         <div class="card border-0 shadow-sm mt-4">
             <div class="card-header bg-white d-flex align-items-center justify-content-between py-2">
@@ -8042,6 +8072,57 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
             </div>
         </div>
     `;
+}
+
+    // Notları async yükle
+    siparisNotlariYukle(siparisId);
+}
+
+async function siparisNotlariYukle(siparisId) {
+    const liste = document.getElementById('siparisNotList-' + siparisId);
+    if (!liste) return;
+    const r = await secureFetch('/siparis/' + siparisId + '/notlar').catch(() => null);
+    if (!r || !r.ok) { liste.innerHTML = '<div class="text-danger small p-2">Notlar yüklenemedi.</div>'; return; }
+    if (!r.data || r.data.length === 0) {
+        liste.innerHTML = '<div class="text-muted small text-center py-2"><i class="bi bi-chat-square me-1"></i>Henüz not yok.</div>';
+        return;
+    }
+    const kullaniciEmail = (JSON.parse(localStorage.getItem('aterko_user') || '{}').email || '').toLowerCase();
+    const kullaniciRol = (JSON.parse(localStorage.getItem('aterko_user') || '{}').rol || '');
+    liste.innerHTML = r.data.map(n => {
+        const benimMi = (n.yazan_email || '').toLowerCase() === kullaniciEmail;
+        const silebilir = benimMi || kullaniciRol === 'ADMIN' || kullaniciRol === 'Admin';
+        const tarih = new Date(n.kayit_tarihi);
+        const tarihStr = tarih.toLocaleString('tr-TR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+        return `<div class="border-start border-info border-3 ps-2 py-1 mb-2 bg-light rounded small">
+            <div class="d-flex justify-content-between">
+                <span class="fw-bold text-dark"><i class="bi bi-person-circle me-1 text-info"></i>${esc(n.yazan_adsoyad || n.yazan_email || '-')}</span>
+                <span class="text-muted">${tarihStr}
+                    ${silebilir ? `<button class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="siparisNotSil(${n.id}, ${siparisId})" title="Sil"><i class="bi bi-trash"></i></button>` : ''}
+                </span>
+            </div>
+            <div class="text-dark mt-1" style="white-space:pre-wrap;">${esc(n.not_metni)}</div>
+        </div>`;
+    }).join('');
+}
+
+async function siparisNotEkle(siparisId) {
+    const input = document.getElementById('siparisNotInput-' + siparisId);
+    const metin = (input?.value || '').trim();
+    if (!metin) return showToast('Lütfen bir not yazın.', 'error');
+    const r = await secureFetch('/siparis/' + siparisId + '/not-ekle', {
+        method: 'POST',
+        body: JSON.stringify({ not_metni: metin })
+    });
+    if (r.ok) { input.value = ''; siparisNotlariYukle(siparisId); }
+    else showToast(r.hata || 'Not eklenemedi.', 'error');
+}
+
+async function siparisNotSil(notId, siparisId) {
+    if (!confirm('Bu notu silmek istediğinize emin misiniz?')) return;
+    const r = await secureFetch('/siparis-not-sil/' + notId, { method: 'DELETE' });
+    if (r.ok) siparisNotlariYukle(siparisId);
+    else showToast(r.hata || 'Silinemedi.', 'error');
 }
 
 function formatDosyaBoyut(b) {
@@ -9992,6 +10073,59 @@ function openProjeDetay(projeId) {
 }
 
 // 7. Gelen Verileri Detay Ekranına Çizer
+// Proje detayında satınalma özet kartını async doldur
+async function renderProjeSatinalmaOzeti(projeId) {
+    const card = document.getElementById('pdSatinalmaOzet');
+    if (!card) return;
+    const r = await secureFetch('/proje/' + projeId + '/satinalma-ozeti').catch(() => null);
+    if (!r || !r.ok) {
+        card.querySelector('.card-body').innerHTML = `<div class="text-danger small">Satınalma özeti yüklenemedi.</div>`;
+        return;
+    }
+
+    const paraSatirlar = (r.para_birimi_ozet || []).map(p => {
+        const teslimRenk = p.teslim_yuzdesi >= 100 ? 'bg-success' : (p.teslim_yuzdesi >= 50 ? 'bg-info' : 'bg-warning');
+        return `<tr>
+            <td class="fw-bold">${esc(p.para_birimi)}</td>
+            <td class="text-end fw-bold text-primary">${formatTR(p.siparis_tutari)}</td>
+            <td class="text-end fw-bold text-success">${formatTR(p.teslim_tutari)}</td>
+            <td class="text-end ${p.bekleyen_tutari > 0 ? 'text-warning' : 'text-muted'}">${formatTR(p.bekleyen_tutari)}</td>
+            <td class="text-center small">${p.siparis_sayisi} sipariş / ${p.kalem_sayisi} kalem</td>
+            <td style="min-width:130px;">
+              <div class="progress" style="height:18px;">
+                <div class="progress-bar ${teslimRenk}" role="progressbar" style="width:${p.teslim_yuzdesi}%">${p.teslim_yuzdesi}%</div>
+              </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    const acikRoz = r.acik_talep_sayisi > 0
+        ? `<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>${r.acik_talep_sayisi} açık talep, ${r.acik_kalem_sayisi} kalem henüz siparişe alınmadı</span>`
+        : `<span class="badge bg-light text-muted border"><i class="bi bi-check-circle me-1"></i>Açık talep yok</span>`;
+
+    card.querySelector('.card-body').innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold mb-0 text-warning"><i class="bi bi-cart3 me-1"></i>Satınalma Özeti</h6>
+            ${acikRoz}
+        </div>
+        ${paraSatirlar ? `
+        <table class="table table-sm mb-0 align-middle" style="font-size:0.82rem; background:white;">
+            <thead class="table-light">
+                <tr>
+                    <th width="60">Para Birimi</th>
+                    <th class="text-end">Sipariş Tutarı</th>
+                    <th class="text-end">Teslim Alınan</th>
+                    <th class="text-end">Bekleyen</th>
+                    <th class="text-center">Detay</th>
+                    <th>Teslim Oranı</th>
+                </tr>
+            </thead>
+            <tbody>${paraSatirlar}</tbody>
+        </table>
+        ` : '<div class="text-muted small p-2"><i class="bi bi-inbox me-1"></i>Bu projeye henüz sipariş açılmamış.</div>'}
+    `;
+}
+
 function renderProjeDetay(proje, teslimatlar) {
     document.getElementById("pdBaslik").innerHTML = `<i class="bi bi-folder2-open me-2 text-primary"></i>[${esc(proje.proje_kodu)}] ${esc(proje.musteri_adi)} - ${esc(proje.proje_adi)}`;
 
@@ -10027,7 +10161,19 @@ function renderProjeDetay(proje, teslimatlar) {
             </div>
           </div>
         </div>
+
+        <!-- Satınalma Özeti — async yüklenir -->
+        <div class="col-12 mt-2">
+          <div id="pdSatinalmaOzet" class="card border-0 shadow-sm" style="background:#fff8e1;">
+            <div class="card-body py-3">
+              <div class="text-muted small"><i class="spinner-border spinner-border-sm me-2"></i>Satınalma özeti yükleniyor...</div>
+            </div>
+          </div>
+        </div>
     `;
+
+    // Satınalma özetini async yükle
+    renderProjeSatinalmaOzeti(proje.id);
 
     // SEKMELİ TESLİMAT GÖRÜNÜMÜ
     const tablar = document.getElementById("pdTeslimatTablar");

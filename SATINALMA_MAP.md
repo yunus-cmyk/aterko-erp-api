@@ -50,6 +50,10 @@
 | `POST /api/siparis-tamamen-sil` | 2313 | Sipariş silinir + kalemler İŞLEME ALINDI'ya döner + birleştirme |
 | `POST /api/siparis-teslim-al` | 2387 | Mal kabul + otomatik stok hareketi |
 | `POST /api/siparis-fatura-onayla` | 2170 | Fatura no listesi + onay |
+| `GET /api/siparis/:id/notlar` | yeni | İletişim notları listesi |
+| `POST /api/siparis/:id/not-ekle` | yeni | Yeni not ekle |
+| `DELETE /api/siparis-not-sil/:id` | yeni | Kendi notunu (veya ADMIN) sil |
+| `GET /api/proje/:id/satinalma-ozeti` | yeni | Proje bütçe özeti |
 | `GET /api/fatura-bekleyen-siparisler` | 2209 | TAM/KISMİ + fatura YOK |
 | `GET /api/siparis-dosyalari/:siparisId` | 2587 | Eklenmiş dosyalar |
 | `POST /api/siparis-dosya-yukle/:siparisId` | 2598 | Supabase Storage'a yükle |
