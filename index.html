@@ -10213,19 +10213,62 @@ async function fetchGenelBakis() {
         kartlar.innerHTML = ''; acikPanel.innerHTML = '';
         return;
     }
-    renderGenelBakisOzetKartlari(r.para_birimi_ozet, kartlar);
+    renderGenelBakisOzetKartlari(r.para_birimi_ozet, r.tl_toplam, r.kurlar, kartlar);
     renderGenelBakisAcikTalep(r.acik_talep_bilgisi, acikPanel);
     renderGenelBakisSiparisler(r.siparisler, body);
 }
 
-function renderGenelBakisOzetKartlari(ozet, container) {
+function renderGenelBakisOzetKartlari(ozet, tlToplam, kurlar, container) {
     if (!ozet || ozet.length === 0) {
         container.innerHTML = '<div class="col-12"><div class="alert alert-light border mb-0 small text-muted"><i class="bi bi-info-circle me-1"></i>Filtreye uyan sipariş yok.</div></div>';
         return;
     }
-    container.innerHTML = ozet.map(p => {
+
+    // Birden fazla para birimi varsa TL eşdeğer toplam kartı göster
+    const cokParaBirimi = ozet.length > 1;
+    const renkBarTl = tlToplam.teslim_yuzdesi >= 100 ? 'bg-success' : (tlToplam.teslim_yuzdesi >= 50 ? 'bg-info' : (tlToplam.teslim_yuzdesi > 0 ? 'bg-warning' : 'bg-secondary'));
+
+    const kurBilgisi = kurlar ? Object.keys(kurlar)
+        .filter(k => k !== 'TL' && k !== 'TRY' && kurlar[k] && kurlar[k] !== 1)
+        .map(k => `${k}: ${formatTR(kurlar[k])}`).join(' • ') : '';
+
+    let html = '';
+
+    if (cokParaBirimi) {
+        // Büyük TL eşdeğer toplam kartı
+        html += `<div class="col-12">
+            <div class="card border-0 shadow-sm" style="background: linear-gradient(135deg, #fff8e1, #ffe082);">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                        <div>
+                            <div class="small fw-bold text-secondary"><i class="bi bi-calculator me-1"></i>TOPLAM (TL Eşdeğer)</div>
+                            <div class="fw-bold text-primary" style="font-size:1.8rem;">${formatTR(tlToplam.siparis)} <small class="fs-6">TL</small></div>
+                            <div class="d-flex gap-3 small mt-1">
+                                <span class="text-success">✓ Teslim: <strong>${formatTR(tlToplam.teslim)} TL</strong></span>
+                                <span class="text-warning">⏳ Kalan: <strong>${formatTR(tlToplam.bekleyen)} TL</strong></span>
+                                <span class="text-muted">${tlToplam.siparis_sayisi} sipariş</span>
+                            </div>
+                        </div>
+                        <div style="min-width: 200px;">
+                            <div class="progress" style="height:22px;">
+                                <div class="progress-bar ${renkBarTl} fw-bold" style="width:${tlToplam.teslim_yuzdesi}%; font-size:0.85rem;">${tlToplam.teslim_yuzdesi}% Teslim</div>
+                            </div>
+                            ${kurBilgisi ? `<small class="text-muted d-block mt-1 text-end" title="TCMB Forex Selling"><i class="bi bi-info-circle me-1"></i>Kur: ${kurBilgisi}</small>` : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // Para birimi başına detay kartlar
+    html += ozet.map(p => {
         const renkBar = p.teslim_yuzdesi >= 100 ? 'bg-success' : (p.teslim_yuzdesi >= 50 ? 'bg-info' : (p.teslim_yuzdesi > 0 ? 'bg-warning' : 'bg-secondary'));
-        return `<div class="col-md-${Math.max(3, Math.floor(12 / Math.max(1, ozet.length)))}">
+        const tlEsdeg = cokParaBirimi && p.para_birimi !== 'TL' && p.para_birimi !== 'TRY'
+            ? `<div class="small text-muted">≈ ${formatTR(p.tl_siparis)} TL (kur: ${formatTR(p.kur_tl)})</div>`
+            : '';
+        const colSize = cokParaBirimi ? Math.max(3, Math.floor(12 / Math.max(2, ozet.length))) : 12;
+        return `<div class="col-md-${colSize}">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body py-2">
                     <div class="d-flex justify-content-between align-items-center mb-1">
@@ -10234,6 +10277,7 @@ function renderGenelBakisOzetKartlari(ozet, container) {
                     </div>
                     <div class="small text-muted">Sipariş Tutarı</div>
                     <div class="fw-bold text-primary fs-5">${formatTR(p.siparis_tutari)} ${esc(p.para_birimi)}</div>
+                    ${tlEsdeg}
                     <div class="d-flex justify-content-between small mt-1">
                         <span class="text-success">Teslim: <strong>${formatTR(p.teslim_tutari)}</strong></span>
                         <span class="text-warning">Kalan: <strong>${formatTR(p.bekleyen_tutari)}</strong></span>
@@ -10245,6 +10289,8 @@ function renderGenelBakisOzetKartlari(ozet, container) {
             </div>
         </div>`;
     }).join('');
+
+    container.innerHTML = html;
 }
 
 function renderGenelBakisAcikTalep(bilgi, container) {

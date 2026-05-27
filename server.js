@@ -1319,6 +1319,64 @@ app.delete('/api/siparis-not-sil/:id', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// ============================================================================
+// TCMB Döviz Kuru Cache (günlük effektif satış kurları)
+// 1 saatlik in-memory cache. Hata olursa son başarılı kuru kullan.
+// ============================================================================
+let _kurCache = { data: null, fetchedAt: 0 };
+async function getDovizKurlari() {
+    const SAAT = 60 * 60 * 1000;
+    if (_kurCache.data && (Date.now() - _kurCache.fetchedAt) < SAAT) {
+        return _kurCache.data;
+    }
+    try {
+        const https = require('https');
+        const xml = await new Promise((resolve, reject) => {
+            https.get('https://www.tcmb.gov.tr/kurlar/today.xml', (res) => {
+                let buf = '';
+                res.on('data', c => buf += c);
+                res.on('end', () => resolve(buf));
+            }).on('error', reject);
+        });
+        // Basit regex parser (USD, EUR, GBP için <ForexSelling> ve <BanknoteSelling>)
+        const parse = (currCode) => {
+            const blockMatch = xml.match(new RegExp(`<Currency[^>]*CurrencyCode="${currCode}"[^>]*>([\\s\\S]*?)</Currency>`));
+            if (!blockMatch) return null;
+            const block = blockMatch[1];
+            // ForexSelling = döviz satış (en yaygın kullanılan)
+            const fs = block.match(/<ForexSelling>([\d.,]+)<\/ForexSelling>/);
+            return fs ? parseFloat(fs[1]) : null;
+        };
+        const kurlar = {
+            TL: 1,
+            TRY: 1,
+            USD: parse('USD'),
+            EUR: parse('EUR'),
+            GBP: parse('GBP')
+        };
+        // Geçerli en az 1 değer varsa cache'le
+        if (kurlar.USD && kurlar.EUR) {
+            _kurCache = { data: kurlar, fetchedAt: Date.now() };
+            console.log('💱 Döviz kurları güncellendi:', { USD: kurlar.USD, EUR: kurlar.EUR, GBP: kurlar.GBP });
+            return kurlar;
+        }
+        throw new Error('Kur ayrıştırılamadı');
+    } catch (e) {
+        console.warn('⚠️ TCMB kur çekilemedi:', e.message);
+        // Son başarılı cache varsa onu döndür; yoksa fallback
+        if (_kurCache.data) return _kurCache.data;
+        return { TL: 1, TRY: 1, USD: 34, EUR: 37, GBP: 43 }; // kaba fallback
+    }
+}
+
+// Döviz kurlarını dışarıdan görmek için
+app.get('/api/doviz-kurlari', yetkiKontrol, async (req, res, next) => {
+    try {
+        const kurlar = await getDovizKurlari();
+        res.json({ ok: true, kurlar, kaynak: 'TCMB Forex Selling', guncelleme: new Date(_kurCache.fetchedAt).toISOString() });
+    } catch (e) { next(e); }
+});
+
 // Satınalma Genel Bakış — filtreli özet (proje, durum, tedarikçi, tarih, arama)
 // Query: ?arama=...&proje_id=...&durum=...&tedarikci_id=...&tarih_bas=...&tarih_bit=...
 app.get('/api/satinalma-genel-ozet', yetkiKontrol, async (req, res, next) => {
@@ -1404,18 +1462,33 @@ app.get('/api/satinalma-genel-ozet', yetkiKontrol, async (req, res, next) => {
             };
         });
 
+        const kurlar = await getDovizKurlari();
         const para_birimi_ozet = ozetR.rows.map(r => {
             const sip = parseFloat(r.siparis_tutari || 0);
             const tes = parseFloat(r.teslim_tutari || 0);
+            const kur = kurlar[r.para_birimi] || 1;
             return {
                 para_birimi: r.para_birimi,
                 siparis_sayisi: r.siparis_sayisi,
                 siparis_tutari: sip,
                 teslim_tutari: tes,
                 bekleyen_tutari: sip - tes,
-                teslim_yuzdesi: sip > 0 ? Math.round((tes / sip) * 100) : 0
+                teslim_yuzdesi: sip > 0 ? Math.round((tes / sip) * 100) : 0,
+                kur_tl: kur,
+                tl_siparis: sip * kur,
+                tl_teslim: tes * kur,
+                tl_bekleyen: (sip - tes) * kur
             };
         });
+
+        // Tüm para birimlerinin TL eşdeğer toplamı
+        const tl_toplam = para_birimi_ozet.reduce((acc, p) => ({
+            siparis: acc.siparis + p.tl_siparis,
+            teslim: acc.teslim + p.tl_teslim,
+            bekleyen: acc.bekleyen + p.tl_bekleyen,
+            siparis_sayisi: acc.siparis_sayisi + p.siparis_sayisi
+        }), { siparis: 0, teslim: 0, bekleyen: 0, siparis_sayisi: 0 });
+        tl_toplam.teslim_yuzdesi = tl_toplam.siparis > 0 ? Math.round((tl_toplam.teslim / tl_toplam.siparis) * 100) : 0;
 
         // Eğer proje filtresi varsa: o projedeki açık talepleri de dön
         let acik_talep_bilgisi = null;
@@ -1439,7 +1512,7 @@ app.get('/api/satinalma-genel-ozet', yetkiKontrol, async (req, res, next) => {
             };
         }
 
-        res.json({ ok: true, siparisler, para_birimi_ozet, acik_talep_bilgisi });
+        res.json({ ok: true, siparisler, para_birimi_ozet, tl_toplam, kurlar, acik_talep_bilgisi });
     } catch (e) { next(e); }
 });
 
