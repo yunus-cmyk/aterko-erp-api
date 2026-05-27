@@ -1192,6 +1192,92 @@ app.delete('/api/tedarikci-sil/:id', yetkiKontrol, async (req, res, next) => {
 });
 
 // YENİ: Sipariş Kaydet ve Kısmi Sipariş (Split-Order) Bölünme Motoru
+// Madde 7: Kalem Bazlı Durum İzleme Paneli
+// Tüm aktif talep kalemlerini durumla birlikte listele (filtrelenebilir)
+// Query: ?durum=...&proje_id=...&arama=... (opsiyonel)
+app.get('/api/kalem-durum-paneli', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { durum, proje_id, arama } = req.query;
+        const params = [];
+        const koşul = ['COALESCE(t.arsiv, false) = false'];
+
+        if (durum && durum !== 'TUMU') {
+            params.push(durum);
+            koşul.push(`tu.durum = $${params.length}`);
+        }
+        if (proje_id) {
+            params.push(parseInt(proje_id));
+            koşul.push(`t.proje_id = $${params.length}`);
+        }
+        if (arama && arama.trim()) {
+            params.push('%' + arama.trim().toLowerCase() + '%');
+            koşul.push(`(LOWER(COALESCE(sk.stok_adi, tu.ozel_urun_adi, '')) LIKE $${params.length}
+                       OR LOWER(COALESCE(sk.stok_kodu, '')) LIKE $${params.length}
+                       OR LOWER(t.talep_no) LIKE $${params.length})`);
+        }
+
+        const r = await pool.query(`
+            SELECT
+                tu.id as kalem_id, tu.miktar as talep_miktar, tu.durum as kalem_durum,
+                tu.ozel_urun_adi, tu.ozel_urun_birim,
+                t.id as talep_id, t.talep_no, t.parent_talep_id, t.alt_sira, t.kayit_tarihi,
+                t.istenen_tarih as termin,
+                COALESCE(p.proje_kodu, 'GENEL') as proje_kodu,
+                COALESCE(p.proje_adi, 'Genel') as proje_adi,
+                COALESCE(p.musteri_adi, '') as musteri_adi,
+                COALESCE(sk.stok_adi, tu.ozel_urun_adi, '-') as urun_adi,
+                COALESCE(sk.stok_kodu, 'ÖZEL') as stok_kodu,
+                COALESCE(sk.birim, tu.ozel_urun_birim, 'ADET') as birim,
+                -- Bağlı sipariş bilgisi
+                spk.id as siparis_kalem_id,
+                spk.siparis_miktari,
+                COALESCE(spk.teslim_alinan_miktar, 0) as teslim_alinan,
+                spk.birim_fiyat,
+                s.id as siparis_id, s.siparis_no, s.durum as siparis_durum,
+                s.termin_tarihi as siparis_termin,
+                tdr.firma_adi as tedarikci_adi
+            FROM talep_urunleri tu
+            JOIN satinalma_talepleri t ON tu.talep_id = t.id
+            LEFT JOIN projeler p ON t.proje_id = p.id
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id = sk.id
+            LEFT JOIN siparis_kalemleri spk ON spk.talep_urun_id = tu.id
+            LEFT JOIN satinalma_siparisleri s ON spk.siparis_id = s.id AND COALESCE(s.arsiv,false) = false
+            LEFT JOIN tedarikciler tdr ON s.tedarikci_id = tdr.id
+            WHERE ${koşul.join(' AND ')}
+            ORDER BY
+                CASE tu.durum
+                    WHEN 'ONAY BEKLİYOR' THEN 1
+                    WHEN 'ONAYLANDI' THEN 2
+                    WHEN 'İŞLEME ALINDI' THEN 3
+                    WHEN 'TEKLİF İSTENDİ' THEN 4
+                    WHEN 'SİPARİŞ OLUŞTURULDU' THEN 5
+                    ELSE 9
+                END,
+                t.id DESC, tu.id ASC
+            LIMIT 500
+        `, params);
+
+        // Özet: durum dağılımı + termin geçmiş sayısı
+        const dağılım = {};
+        let gecikenSayisi = 0;
+        const bugun = new Date();
+        bugun.setHours(0,0,0,0);
+        r.rows.forEach(row => {
+            const d = (row.kalem_durum || 'BİLİNMİYOR').trim();
+            dağılım[d] = (dağılım[d] || 0) + 1;
+            const t = row.siparis_termin || row.termin;
+            if (t && new Date(t) < bugun && row.kalem_durum !== 'SİPARİŞ OLUŞTURULDU') {
+                // sipariş açıldıysa farklı, ama termini geçenleri sayalım
+            }
+            if (t && new Date(t) < bugun && (parseFloat(row.teslim_alinan) < parseFloat(row.talep_miktar))) {
+                gecikenSayisi++;
+            }
+        });
+
+        res.json({ ok: true, kalemler: r.rows, ozet: { dağılım, geciken: gecikenSayisi, toplam: r.rows.length } });
+    } catch (e) { next(e); }
+});
+
 // Madde 5: Verilen talep'in projesindeki diğer sipariş-edilebilir kalemleri getir
 // (cross-talep sipariş için "başka talep ekle" havuzu)
 app.get('/api/talep/:talepId/proje-kalem-havuzu', yetkiKontrol, async (req, res, next) => {
