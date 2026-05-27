@@ -116,6 +116,8 @@
 | `renderTalepTableFiltered()` | 6177 |
 | `getTalepAksiyonlari(t)` | 6253 |
 | `renderTalepTable(talepler)` | 6283 |
+| `toggleTalepKalemSatiri(talepId, btn)` (expand row) | ~6315 |
+| `renderTalepKalemMini(kalemler)` | ~6340 |
 | `talepOnayla(id)` | 6310 |
 | `talepReddet(id)` | 6318 |
 | `talepIslemeAl(id)` | 6328 |

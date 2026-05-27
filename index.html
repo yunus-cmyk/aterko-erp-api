@@ -569,6 +569,7 @@
             <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
                 <thead class="table-light fw-bold text-secondary">
                     <tr>
+                        <th width="35"></th>
                         <th>Talep No</th>
                         <th>İlgili Proje</th>
                         <th>Talep Eden</th>
@@ -6283,17 +6284,21 @@ function getTalepAksiyonlari(t) {
 function renderTalepTable(talepler) {
     const tbody = document.getElementById("talepTableBody");
     if(talepler.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">Sistemde henüz bir satınalma talebi bulunmuyor.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">Sistemde henüz bir satınalma talebi bulunmuyor.</td></tr>';
         return;
     }
 
     let html = '';
     talepler.forEach(t => {
-        // Alt-talep göstergesi (parent_talep_id varsa bölünmüş demektir)
         const altTalepRozeti = t.parent_talep_id
             ? `<span class="badge bg-warning text-dark ms-1" title="Bu talep, başka bir talepten bölünerek oluşturuldu (${t.bolunme_tarihi ? new Date(t.bolunme_tarihi).toLocaleDateString('tr-TR') : ''})"><i class="bi bi-diagram-3"></i> Alt-Talep</span>`
             : '';
         html += `<tr>
+            <td class="text-center">
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1 talep-expand-btn" onclick="toggleTalepKalemSatiri(${t.id}, this)" title="Kalemleri göster">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </td>
             <td class="fw-bold text-primary">${esc(t.talep_no)} ${altTalepRozeti}</td>
             <td class="fw-bold">${esc(t.proje_kodu)}${t.musteri_adi ? ' / ' + esc(t.musteri_adi) : ''} - ${esc(t.proje_adi)}</td>
             <td class="small">${esc(t.talep_eden || '-')}</td>
@@ -6301,9 +6306,70 @@ function renderTalepTable(talepler) {
             <td><span class="badge bg-secondary">${t.urun_sayisi} Kalem</span></td>
             <td>${getSatinalmaDurumBadge(t.durum)}</td>
             <td class="text-center">${getTalepAksiyonlari(t)}</td>
-        </tr>`;
+        </tr>
+        <tr id="talep-kalem-row-${t.id}" class="d-none bg-light"><td colspan="8" class="p-2"><div id="talep-kalem-icerik-${t.id}" class="ps-4"></div></td></tr>`;
     });
     tbody.innerHTML = html;
+}
+
+// Talep satırını aç/kapa — kalemleri lazy yükle
+async function toggleTalepKalemSatiri(talepId, btn) {
+    const satir = document.getElementById(`talep-kalem-row-${talepId}`);
+    const icerik = document.getElementById(`talep-kalem-icerik-${talepId}`);
+    if (!satir) return;
+    const ikon = btn.querySelector('i');
+    const aciliyor = satir.classList.contains('d-none');
+
+    if (aciliyor) {
+        satir.classList.remove('d-none');
+        ikon.classList.remove('bi-chevron-right');
+        ikon.classList.add('bi-chevron-down');
+        // Daha önce yüklendiyse cache'den göster
+        if (icerik.dataset.loaded === '1') return;
+        icerik.innerHTML = '<div class="text-muted small p-2"><i class="spinner-border spinner-border-sm me-2"></i>Kalemler yükleniyor...</div>';
+        const r = await secureFetch('/satinalma-detay/' + talepId);
+        if (!r.ok) { icerik.innerHTML = `<div class="text-danger small p-2">${esc(r.hata||'Yüklenemedi')}</div>`; return; }
+        icerik.innerHTML = renderTalepKalemMini(r.data);
+        icerik.dataset.loaded = '1';
+    } else {
+        satir.classList.add('d-none');
+        ikon.classList.remove('bi-chevron-down');
+        ikon.classList.add('bi-chevron-right');
+    }
+}
+
+function renderTalepKalemMini(kalemler) {
+    if (!kalemler || kalemler.length === 0) {
+        return '<div class="text-muted small p-2">Bu talepte kalem yok.</div>';
+    }
+    const rows = kalemler.map(k => {
+        const isOzel = !k.stok_kart_id;
+        const ad = isOzel ? (k.ozel_urun_adi || '-') : (k.stok_adi || '-');
+        const kod = isOzel ? '—' : (k.stok_kodu || '-');
+        const birim = isOzel ? (k.ozel_urun_birim || '') : (k.stok_birim || '');
+        const durumRenk = {
+            'ONAY BEKLİYOR': 'bg-warning text-dark',
+            'ONAYLANDI': 'bg-info text-dark',
+            'İŞLEME ALINDI': 'bg-primary',
+            'TEKLİF İSTENDİ': 'bg-secondary',
+            'SİPARİŞ OLUŞTURULDU': 'bg-success',
+            'İPTAL': 'bg-danger',
+            'REDDEDİLDİ': 'bg-danger'
+        }[k.durum] || 'bg-light text-dark border';
+        return `<tr>
+            <td class="small">${isOzel ? '<span class="badge bg-light text-warning border border-warning me-1" style="font-size:0.65rem;">Özel</span>' : ''}<span class="fw-bold">${esc(ad)}</span></td>
+            <td class="small text-muted">${esc(kod)}</td>
+            <td class="text-end small fw-bold">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
+            <td class="small text-muted">${esc(k.aciklama || '-')}</td>
+            <td class="text-center"><span class="badge ${durumRenk}" style="font-size:0.7rem;">${esc(k.durum)}</span></td>
+        </tr>`;
+    }).join('');
+    return `<table class="table table-sm mb-0" style="font-size:0.78rem;">
+        <thead class="table-light"><tr>
+            <th>Ürün</th><th width="100">Kod</th><th class="text-end" width="120">Miktar</th><th>Açıklama</th><th class="text-center" width="140">Durum</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
 }
 
 // --- Talep aksiyon fonksiyonları ---
