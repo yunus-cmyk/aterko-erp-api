@@ -2488,23 +2488,49 @@ STK-002		50	adet
                         </div>
                     </div>
 
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Aynı projeden başka taleplerin kalemlerini de bu siparişe ekleyebilirsin.</small>
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="openCrossTalepPicker()" id="btnCrossTalep" style="display:none;">
+                            <i class="bi bi-plus-circle me-1"></i>Başka Talepten Kalem Ekle
+                        </button>
+                    </div>
                     <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
                         <table class="table mb-0 align-middle" style="font-size:0.85rem;">
                             <thead class="table-dark">
                                 <tr>
                                     <th>Ürün / Malzeme Detayı</th>
+                                    <th class="text-center" width="120">Talep No</th>
                                     <th class="text-center" width="140">Onaylı Miktar</th>
                                     <th class="text-center" width="160">Sipariş Miktarı <span class="text-danger">*</span></th>
                                     <th class="text-center" width="180">Birim Fiyat (KDV Hariç) <span class="text-danger">*</span></th>
                                     <th class="text-end p-3" width="150">Satır Toplamı</th>
                                 </tr>
                             </table>
-                            <div style="max-height: 250px; overflow-y: auto; background: white;">
+                            <div style="max-height: 280px; overflow-y: auto; background: white;">
                                 <table class="table table-hover mb-0 align-middle" style="font-size:0.85rem;">
                                     <tbody id="siparisKalemTableBody">
                                         </tbody>
                                 </table>
                             </div>
+                    </div>
+
+                    <!-- Cross-Talep Picker Modal (inline alt-modal) -->
+                    <div class="modal fade" id="modalCrossTalep" tabindex="-1">
+                      <div class="modal-dialog modal-lg modal-dialog-centered">
+                        <div class="modal-content">
+                          <div class="modal-header py-2 bg-info text-dark">
+                            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-diagram-3 me-2"></i>Aynı Projeden Diğer Talep Kalemleri</h6>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                          </div>
+                          <div class="modal-body p-2" style="max-height:60vh;overflow-y:auto;">
+                            <div id="crossTalepHavuz" class="small"></div>
+                          </div>
+                          <div class="modal-footer py-2">
+                            <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Kapat</button>
+                            <button class="btn btn-sm btn-primary fw-bold" onclick="crossTalepEkle()"><i class="bi bi-check-lg me-1"></i>Seçilenleri Siparişe Ekle</button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                 </div>
@@ -6567,6 +6593,7 @@ let aktifIncelenenTalepId = null;
 // 1. İncele Butonuna Basıldığında Talebin Kalemlerini Supabase'den Çeker
 async function openTalepDetayModal(talepId, talepNo) {
     aktifIncelenenTalepId = talepId;
+    window.aktifIncelenenTalepNo = talepNo || '';
     document.getElementById("dtModalTitle").innerText = `Talep İnceleme ve Onay Ekranı: ${talepNo || ('#' + talepId)}`;
     document.getElementById("chkAllDetail").checked = false;
 
@@ -6778,11 +6805,20 @@ function executeStatusChange(hedefDurum) {
 
 // Sipariş düzenleme state
 let duzenlenenSiparisId = null;
+// Madde 5: Cross-talep için kaynak talep id'si (yeni sipariş ilk hangi talepten açıldı)
+let crossTalepKaynakId = null;
+let crossTalepProjeId = null;
 
 // 1. Sipariş Formunu Açar — yeni veya düzenleme
 function openSiparisOlusturModal(duzenlemeData) {
     const isEdit = !!duzenlemeData;
     duzenlenenSiparisId = isEdit ? duzenlemeData.siparis.id : null;
+    // Madde 5: cross-talep kaynak talep id (yeni siparişte talep detayından geldik)
+    crossTalepKaynakId = isEdit ? null : (typeof aktifIncelenenTalepId !== 'undefined' ? aktifIncelenenTalepId : null);
+    crossTalepProjeId = null;
+    // Cross-talep butonu sadece yeni siparişte ve kaynak talep biliniyorsa görünür
+    const crossBtn = document.getElementById('btnCrossTalep');
+    if (crossBtn) crossBtn.style.display = (!isEdit && crossTalepKaynakId) ? '' : 'none';
 
     // Modal başlığı + buton güncelle
     const modalEl = document.getElementById('modalSiparisOlustur');
@@ -6805,12 +6841,15 @@ function openSiparisOlusturModal(duzenlemeData) {
                 kod: k.stok_kodu,
                 miktar: parseFloat(k.siparis_miktari),
                 birim: k.birim,
-                birim_fiyat: parseFloat(k.birim_fiyat) || 0
+                birim_fiyat: parseFloat(k.birim_fiyat) || 0,
+                talep_id: k.talep_id || null,
+                talep_no: k.talep_no || ''
             });
         });
     } else {
         // Talep detayından seçilenleri al
         const checkedBoxes = document.querySelectorAll(".line-chk:checked");
+        const kaynakTalepNo = window.aktifIncelenenTalepNo || '';
         checkedBoxes.forEach(cb => {
             const row = cb.closest("tr");
             const id = cb.value;
@@ -6820,7 +6859,10 @@ function openSiparisOlusturModal(duzenlemeData) {
             const miktarParca = miktarText.split(" ");
             const miktar = parseFloat(miktarParca[0].replace(/\./g, '').replace(',', '.'));
             const birim = miktarParca[1] || "ADET";
-            secilenKalemler.push({ id: id, ad: urunText, kod: kodText, miktar: miktar, birim: birim, birim_fiyat: 0 });
+            secilenKalemler.push({
+                id: id, ad: urunText, kod: kodText, miktar: miktar, birim: birim, birim_fiyat: 0,
+                talep_id: crossTalepKaynakId, talep_no: kaynakTalepNo
+            });
         });
 
         // Ana Talep İnceleme modalını kapat
@@ -6879,12 +6921,15 @@ function renderSiparisFormLines(kalemler) {
 
     kalemler.forEach(k => {
         const fiyat = k.birim_fiyat != null ? k.birim_fiyat : 0;
+        const talepNoCell = k.talep_no ? `<span class="badge bg-light text-dark border">${esc(k.talep_no)}</span>` : '<span class="text-muted small">-</span>';
+        const silBtn = k.cross_eklenen ? `<button class="btn btn-sm btn-outline-danger ms-1 py-0" title="Kaldır" onclick="crossKalemKaldir(this)"><i class="bi bi-x"></i></button>` : '';
         tbody.innerHTML += `
-            <tr class="so-line" data-id="${k.id}" data-siparis-kalem-id="${k.siparis_kalem_id || ''}">
+            <tr class="so-line" data-id="${k.id}" data-siparis-kalem-id="${k.siparis_kalem_id || ''}" data-talep-id="${k.talep_id || ''}">
                 <td>
                     <span class="fw-bold text-dark">${esc(k.ad)}</span>
                     <span class="text-muted small d-block">${esc(k.kod)}</span>
                 </td>
+                <td class="text-center" width="120">${talepNoCell}${silBtn}</td>
                 <td class="text-center text-secondary fw-bold" width="140">${formatTR(k.miktar)} ${k.birim}</td>
                 <td width="160">
                     <input type="number" class="form-control form-control-sm text-center so-m" value="${k.miktar}" step="0.01" oninput="calculateSiparisRowTotal(this)">
@@ -6967,6 +7012,103 @@ function submitPurchaseOrder() {
             else fetchSatinalmaListesi();
         } else { showToast(res.hata, "error"); }
     });
+}
+
+// ============================================================================
+// Madde 5: Cross-Talep Sipariş Picker
+// Aynı projenin diğer sipariş-edilebilir kalemlerini havuz halinde göster,
+// seçilenleri mevcut sipariş kalem listesine ekle.
+// ============================================================================
+async function openCrossTalepPicker() {
+    if (!crossTalepKaynakId) return showToast('Kaynak talep bulunamadı.', 'error');
+    const havuzDiv = document.getElementById('crossTalepHavuz');
+    havuzDiv.innerHTML = '<div class="text-center text-muted p-3"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor...</div>';
+    const modal = new bootstrap.Modal(document.getElementById('modalCrossTalep'));
+    modal.show();
+
+    const r = await secureFetch(`/talep/${crossTalepKaynakId}/proje-kalem-havuzu`);
+    if (!r.ok) { havuzDiv.innerHTML = `<div class="text-danger p-3">${esc(r.hata || 'Yüklenemedi')}</div>`; return; }
+    crossTalepProjeId = r.proje_id;
+
+    if (!r.kalemler || r.kalemler.length === 0) {
+        havuzDiv.innerHTML = '<div class="text-center text-muted p-3"><i class="bi bi-inbox me-2"></i>Bu projenin başka aktif (İŞLEME ALINDI / TEKLİF İSTENDİ) kalemi yok.</div>';
+        return;
+    }
+
+    // Mevcut sipariş satırlarındaki id'leri çıkar (zaten ekli olanları gizle)
+    const mevcutIds = new Set(Array.from(document.querySelectorAll('.so-line')).map(tr => String(tr.getAttribute('data-id'))));
+
+    // Talep no'ya göre grupla
+    const gruplu = {};
+    r.kalemler.forEach(k => {
+        if (mevcutIds.has(String(k.talep_urun_id))) return; // zaten siparişte
+        const key = k.talep_no;
+        if (!gruplu[key]) gruplu[key] = [];
+        gruplu[key].push(k);
+    });
+
+    let html = '';
+    Object.keys(gruplu).sort().forEach(talepNo => {
+        const kalems = gruplu[talepNo];
+        const altRozet = kalems[0].parent_talep_id ? '<span class="badge bg-warning text-dark ms-1">Alt-Talep</span>' : '';
+        html += `<div class="card mb-2"><div class="card-header py-1 bg-light fw-bold"><i class="bi bi-clipboard-check me-1"></i>${esc(talepNo)} ${altRozet}</div><div class="card-body p-0"><table class="table table-sm mb-0 small"><tbody>`;
+        kalems.forEach(k => {
+            html += `<tr>
+                <td width="30"><input type="checkbox" class="cross-chk" data-id="${k.talep_urun_id}" data-talep-id="${k.talep_id}" data-talep-no="${esc(k.talep_no)}" data-ad="${esc(k.urun_adi)}" data-kod="${esc(k.stok_kodu)}" data-miktar="${k.miktar}" data-birim="${esc(k.birim)}"></td>
+                <td><span class="fw-bold">${esc(k.urun_adi)}</span> <span class="text-muted small">${esc(k.stok_kodu)}</span></td>
+                <td class="text-end text-secondary" width="120">${formatTR(k.miktar)} ${esc(k.birim)}</td>
+                <td width="120"><span class="badge bg-secondary">${esc(k.durum)}</span></td>
+            </tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+    });
+
+    if (!html) html = '<div class="text-center text-muted p-3"><i class="bi bi-check2-circle me-2"></i>Bu projenin diğer tüm kalemleri zaten bu siparişte.</div>';
+    havuzDiv.innerHTML = html;
+}
+
+function crossTalepEkle() {
+    const sec = document.querySelectorAll('.cross-chk:checked');
+    if (sec.length === 0) return showToast('Hiç kalem seçmediniz.', 'error');
+
+    // Mevcut secilenKalemler listesini yeniden oluşturmak için DOM'dan oku + yenilerini ekle
+    const mevcut = [];
+    document.querySelectorAll('.so-line').forEach(tr => {
+        mevcut.push({
+            id: tr.getAttribute('data-id'),
+            ad: tr.querySelector('td:nth-child(1) .fw-bold').innerText,
+            kod: tr.querySelector('td:nth-child(1) .text-muted').innerText,
+            miktar: parseFloat(tr.querySelector('.so-m').value || 0),
+            birim: (tr.querySelector('td:nth-child(3)').innerText.split(' ')[1] || 'ADET'),
+            birim_fiyat: parseFloat(tr.querySelector('.so-f').value || 0),
+            siparis_kalem_id: tr.getAttribute('data-siparis-kalem-id') || null,
+            talep_id: tr.getAttribute('data-talep-id') || null,
+            talep_no: (tr.querySelector('td:nth-child(2) .badge')?.innerText || '')
+        });
+    });
+
+    sec.forEach(cb => {
+        mevcut.push({
+            id: cb.getAttribute('data-id'),
+            ad: cb.getAttribute('data-ad'),
+            kod: cb.getAttribute('data-kod'),
+            miktar: parseFloat(cb.getAttribute('data-miktar')),
+            birim: cb.getAttribute('data-birim'),
+            birim_fiyat: 0,
+            talep_id: cb.getAttribute('data-talep-id'),
+            talep_no: cb.getAttribute('data-talep-no'),
+            cross_eklenen: true
+        });
+    });
+
+    renderSiparisFormLines(mevcut);
+    bootstrap.Modal.getInstance(document.getElementById('modalCrossTalep'))?.hide();
+    showToast(`${sec.length} kalem siparişe eklendi.`, 'success');
+}
+
+function crossKalemKaldir(btn) {
+    const tr = btn.closest('.so-line');
+    if (tr) tr.remove();
 }
 
 // --- YENİ NESİL SİPARİŞ LİSTELEME VE GEÇİŞ MOTORU ---

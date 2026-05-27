@@ -1192,6 +1192,37 @@ app.delete('/api/tedarikci-sil/:id', yetkiKontrol, async (req, res, next) => {
 });
 
 // YENİ: Sipariş Kaydet ve Kısmi Sipariş (Split-Order) Bölünme Motoru
+// Madde 5: Verilen talep'in projesindeki diğer sipariş-edilebilir kalemleri getir
+// (cross-talep sipariş için "başka talep ekle" havuzu)
+app.get('/api/talep/:talepId/proje-kalem-havuzu', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { talepId } = req.params;
+        const projeR = await pool.query('SELECT proje_id FROM satinalma_talepleri WHERE id=$1', [talepId]);
+        if (projeR.rowCount === 0) return res.json({ ok: false, hata: 'Talep bulunamadı.' });
+        const projeId = projeR.rows[0].proje_id;
+
+        const r = await pool.query(`
+            SELECT
+                tu.id as talep_urun_id, tu.miktar, tu.durum,
+                tu.ozel_urun_adi, tu.ozel_urun_birim,
+                t.id as talep_id, t.talep_no, t.parent_talep_id,
+                COALESCE(sk.stok_adi, tu.ozel_urun_adi, '-') as urun_adi,
+                COALESCE(sk.stok_kodu, 'ÖZEL') as stok_kodu,
+                COALESCE(sk.birim, tu.ozel_urun_birim, 'ADET') as birim
+            FROM talep_urunleri tu
+            JOIN satinalma_talepleri t ON tu.talep_id = t.id
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id = sk.id
+            WHERE t.proje_id = $1
+              AND t.id <> $2
+              AND COALESCE(t.arsiv, false) = false
+              AND tu.durum IN ('İŞLEME ALINDI', 'TEKLİF İSTENDİ')
+            ORDER BY t.id ASC, tu.id ASC
+        `, [projeId, talepId]);
+
+        res.json({ ok: true, proje_id: projeId, kalemler: r.rows });
+    } catch (e) { next(e); }
+});
+
 // ============================================================================
 // TALEP BÖLME HELPER (Madde 6)
 // Bir talepteki bazı kalemler kısmi sipariş alınca, kalan miktarlar yeni bir
@@ -1262,29 +1293,46 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
 
         const { tedarikci_id, termin_tarihi, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi, kdv_orani, kalemler } = req.body;
 
-        // KURAL: Tek bir siparişte sadece aynı talepten gelen kalemler olabilir
-        let kaynakTalepId = null;
+        // KURAL (Madde 5): Bir siparişe AYNI PROJE'den birden fazla talep eklenebilir
+        // (alt-talepler dahil). Farklı projeden talepler aynı siparişe konamaz.
+        // Tedarikçi zaten siparişin tek alanı — implicit olarak tek tedarikçi.
+        let kaynakTalepIdler = []; // tüm distinct talep_id'ler
+        let kaynakProjeId = null;
         if (Array.isArray(kalemler) && kalemler.length > 0) {
-            const talepIdResp = await client.query(
-                'SELECT DISTINCT talep_id FROM talep_urunleri WHERE id = ANY($1::integer[])',
-                [kalemler.map(k => parseInt(k.talep_urun_id))]
-            );
-            if (talepIdResp.rowCount > 1) {
-                throw new Error('Bir siparişte sadece aynı talepten kalemler olabilir. Farklı taleplerden seçim yaptınız.');
+            const talepIdResp = await client.query(`
+                SELECT DISTINCT t.id as talep_id, t.proje_id, t.talep_no
+                FROM talep_urunleri tu
+                JOIN satinalma_talepleri t ON tu.talep_id = t.id
+                WHERE tu.id = ANY($1::integer[])
+                ORDER BY t.id ASC
+            `, [kalemler.map(k => parseInt(k.talep_urun_id))]);
+            if (talepIdResp.rowCount === 0) throw new Error('Geçerli talep kalemi bulunamadı.');
+            // Proje tekilliği kontrolü
+            const projeler = [...new Set(talepIdResp.rows.map(r => r.proje_id))];
+            if (projeler.length > 1) {
+                throw new Error('Bir siparişe sadece AYNI PROJE\'nin talepleri eklenebilir. Farklı projelerden seçim yaptınız.');
             }
-            kaynakTalepId = talepIdResp.rows[0]?.talep_id || null;
+            kaynakProjeId = projeler[0];
+            kaynakTalepIdler = talepIdResp.rows.map(r => r.talep_id);
         }
 
-        // 1. Sipariş No Üret: bağlı talep numarasından türet (T → S)
-        // İlk sipariş: ProjeNo-S-NNNN, sonraki: ProjeNo-S-NNNN-2, -3
+        // 1. Sipariş No Üret: en küçük talep no'sundan türet (T → S)
+        // Cross-talep durumunda: ProjeNo-S-NNNN (en küçük talep no'ya göre)
+        // Var olan aynı base ile başlayan sipariş varsa: -2, -3 ... şeklinde artar.
         let siparis_no;
-        if (kaynakTalepId) {
-            const tR = await client.query('SELECT talep_no FROM satinalma_talepleri WHERE id=$1', [kaynakTalepId]);
-            const baseTalepNo = tR.rows[0]?.talep_no || '';
-            // ProjeNo-T-NNNN[-N] → ProjeNo-S-NNNN[-N]
-            // Eski format (SAT-T-NNNN) için de çalışsın
-            const baseSiparisNo = baseTalepNo.replace('-T-', '-S-');
-            // Bu base ile başlayan kaç sipariş var?
+        if (kaynakTalepIdler.length > 0) {
+            // En küçük root talep numarasını bul (alt-talepler için root'a bak)
+            const baseR = await client.query(`
+                SELECT t.talep_no, t.parent_talep_id,
+                       COALESCE(p.talep_no, t.talep_no) as root_no
+                FROM satinalma_talepleri t
+                LEFT JOIN satinalma_talepleri p ON t.parent_talep_id = p.id
+                WHERE t.id = ANY($1::integer[])
+                ORDER BY COALESCE(p.id, t.id) ASC, t.id ASC
+                LIMIT 1
+            `, [kaynakTalepIdler]);
+            const enKucukRootNo = (baseR.rows[0]?.root_no || baseR.rows[0]?.talep_no || '').replace(/-\d+$/, '');
+            const baseSiparisNo = enKucukRootNo.replace('-T-', '-S-');
             const c = await client.query(
                 `SELECT COUNT(*)::int as n FROM satinalma_siparisleri WHERE siparis_no = $1 OR siparis_no LIKE $1 || '-%'`,
                 [baseSiparisNo]
@@ -1306,8 +1354,8 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
         const yeniSiparisId = siparisInsert.rows[0].id;
 
         // 3. Önce kalemleri doğrula + sipariş_kalemleri kaydı oluştur + kalan listesini topla
-        //    (Kalan miktarlar tek bir alt-talebe taşınacak — Madde 6: Talep Bölme)
-        const kalanlar = []; // { stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama, durum }
+        //    (Kalan miktarlar her kaynak talep için AYRI alt-talebe taşınacak — Madde 6 + 5)
+        const kalanlarByTalep = new Map(); // talep_id => [kalanKalem...]
         for (const kalem of kalemler) {
             const origRes = await client.query(
                 'SELECT miktar, talep_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, aciklama, durum FROM talep_urunleri WHERE id = $1',
@@ -1328,8 +1376,9 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
             if (sipMiktar > origMiktar) throw new Error(`Sipariş miktarı (${sipMiktar}) talep miktarından (${origMiktar}) büyük olamaz.`);
 
             if (sipMiktar < origMiktar) {
-                // Kısmi sipariş: kalan miktarı yeni alt-talebe taşımak üzere listele
-                kalanlar.push({
+                // Kısmi sipariş: kalan miktarı kaynak talebe göre grupla
+                if (!kalanlarByTalep.has(orig.talep_id)) kalanlarByTalep.set(orig.talep_id, []);
+                kalanlarByTalep.get(orig.talep_id).push({
                     stok_kart_id: orig.stok_kart_id,
                     ozel_urun_adi: orig.ozel_urun_adi,
                     ozel_urun_birim: orig.ozel_urun_birim,
@@ -1357,23 +1406,25 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
             `, [yeniSiparisId, kalem.talep_urun_id, kalem.birim_fiyat, sipMiktar]);
         }
 
-        // 3b. Kalan miktarlar varsa talebi böl → yeni alt-talep oluştur
-        let bolunmeBilgisi = null;
-        if (kalanlar.length > 0 && kaynakTalepId) {
-            bolunmeBilgisi = await talepBol(client, kaynakTalepId, kalanlar);
+        // 3b. Kalan miktarlar varsa her kaynak talep için AYRI alt-talep oluştur
+        const bolunmeler = []; // [{kaynakTalepId, yeniTalepNo, ...}]
+        for (const [talepId, kalanKalemler] of kalanlarByTalep.entries()) {
+            const bi = await talepBol(client, talepId, kalanKalemler);
+            if (bi) bolunmeler.push({ kaynakTalepId: talepId, ...bi });
         }
 
         await client.query('COMMIT'); // Tüm işlemleri tek seferde veritabanına mühürle
-        const ekMesaj = bolunmeBilgisi
-            ? ` Kısmi sipariş — kalan miktarlar yeni alt-talebe taşındı: ${bolunmeBilgisi.yeniTalepNo}.`
+        const ekMesaj = bolunmeler.length > 0
+            ? ` Kısmi sipariş — ${bolunmeler.length} talep bölündü: ${bolunmeler.map(b=>b.yeniTalepNo).join(', ')}.`
             : '';
+        const cross = kaynakTalepIdler.length > 1 ? ` (${kaynakTalepIdler.length} taleple cross-sipariş)` : '';
         try {
             await auditLogla(req, {
                 eylem: 'CREATE', tablo: 'satinalma_siparisleri', kayit_id: yeniSiparisId, kayit_no: siparis_no,
-                ozet: `Sipariş oluşturuldu${bolunmeBilgisi ? ` + talep bölündü → ${bolunmeBilgisi.yeniTalepNo}` : ''}`
+                ozet: `Sipariş oluşturuldu${cross}${bolunmeler.length ? ` + ${bolunmeler.length} talep bölündü` : ''}`
             });
         } catch(_) {}
-        res.json({ ok: true, mesaj: `Sipariş başarıyla oluşturuldu: ${siparis_no}.${ekMesaj}`, bolunme: bolunmeBilgisi });
+        res.json({ ok: true, mesaj: `Sipariş başarıyla oluşturuldu: ${siparis_no}.${ekMesaj}`, bolunmeler });
     } catch (error) {
         await client.query('ROLLBACK'); // En ufak hatada şantiyeyi ve talepleri eski haline döndür
         next(error);
