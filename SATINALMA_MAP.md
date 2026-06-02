@@ -50,10 +50,9 @@
 | `POST /api/siparis-tamamen-sil` | 2313 | Sipariş silinir + kalemler İŞLEME ALINDI'ya döner + birleştirme |
 | `POST /api/siparis-teslim-al` | 2387 | Mal kabul + otomatik stok hareketi |
 | `POST /api/siparis-fatura-onayla` | 2170 | Fatura no listesi + onay |
-| `GET /api/siparis/:id/notlar` | yeni | İletişim notları listesi |
-| `POST /api/siparis/:id/not-ekle` | yeni | Yeni not ekle |
-| `DELETE /api/siparis-not-sil/:id` | yeni | Kendi notunu (veya ADMIN) sil |
-| `GET /api/proje/:id/satinalma-ozeti` | yeni | Proje bütçe özeti |
+| `GET /api/siparis/:id/notlar` | 1284 | İletişim notları listesi |
+| `POST /api/siparis/:id/not-ekle` | 1296 | Yeni not ekle |
+| `DELETE /api/siparis-not-sil/:id` | 1309 | Kendi notunu (veya ADMIN) sil |
 | `GET /api/fatura-bekleyen-siparisler` | 2209 | TAM/KISMİ + fatura YOK |
 | `GET /api/siparis-dosyalari/:siparisId` | 2587 | Eklenmiş dosyalar |
 | `POST /api/siparis-dosya-yukle/:siparisId` | 2598 | Supabase Storage'a yükle |
@@ -72,13 +71,16 @@
 | Endpoint | Satır | Açıklama |
 |---|---|---|
 | `GET /api/kalem-durum-paneli` | 1198 | Madde 7: kalem bazlı durum tablosu |
-| `GET /api/satinalma-arsiv` | 1627 | Arşivlenmiş talep+sipariş |
+| `GET /api/satinalma-genel-ozet` | 1382 | Genel Bakış: filtreli özet (proje/durum/tedarikçi/tarih/arama) + TL toplam |
+| `GET /api/doviz-kurlari` | 1373 | TCMB güncel kurlar (cache'li) |
+| `GET /api/satinalma-arsiv` | ~1640 | Arşivlenmiş talep+sipariş |
 
 ### Yardımcı Fonksiyonlar
 | Fonksiyon | Satır | Açıklama |
 |---|---|---|
-| `talepBol(client, orijinalTalepId, kalanKalemler)` | ~1316 | Madde 6: kısmi siparişte alt-talep oluştur |
-| `semaGuvence()` | ~5010 (sondan) | Startup'ta sequence + RLS + migration |
+| `getDovizKurlari()` | 1327 | TCMB XML parse + 1 saat cache |
+| `talepBol(client, orijinalTalepId, kalanKalemler)` | 1560 | Madde 6: kısmi siparişte alt-talep oluştur |
+| `semaGuvence()` | 5457 | Startup'ta sequence + RLS + migration + siparis_notlari tablosu |
 
 ---
 
@@ -112,6 +114,21 @@
 | `#modalTeklifIste` | 2612 | |
 | `#modalTeklifKayitlari` (Madde 4) | 2666 | |
 | `#modalSiparisDetay` | 2761 | |
+
+> NOT: Frontend satır numaraları sık değişir — ±50 sapabilir. Şüphedeysen
+> `grep -n "function isim" index.html` ile teyit et.
+
+### Fonksiyonlar — Genel Bakış (filtreli özet sekmesi)
+| Fonksiyon | Satır |
+|---|---|
+| `fetchGenelBakisDropdowns()` | 10160 |
+| `gbFiltreTemizle()` | 10181 |
+| `fetchGenelBakis()` | 10189 |
+| `renderGenelBakisOzetKartlari(ozet, tlToplam, kurlar, container)` | 10221 |
+| `renderGenelBakisAcikTalep(bilgi, container)` | 10294 |
+| `renderGenelBakisSiparisler(liste, body)` | 10309 |
+
+HTML: `#satinalmaGenelBakisDiv`, `#btnSubGenelBakis`, filtreler `#gbArama/gbProje/gbDurum/gbTedarikci/gbTarihBas/gbTarihBit`, `#gbOzetKartlar`, `#gbAcikTalepPanel`, `#gbSiparisBody`
 
 ### Fonksiyonlar — Talep
 | Fonksiyon | Satır |
