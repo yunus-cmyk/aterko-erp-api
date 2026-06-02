@@ -70,7 +70,6 @@
 ### Diğer
 | Endpoint | Satır | Açıklama |
 |---|---|---|
-| `GET /api/kalem-durum-paneli` | 1198 | Madde 7: kalem bazlı durum tablosu |
 | `GET /api/satinalma-genel-ozet` | 1382 | Genel Bakış: filtreli özet (proje/durum/tedarikçi/tarih/arama) + TL toplam |
 | `GET /api/doviz-kurlari` | 1373 | TCMB güncel kurlar (cache'li) |
 | `GET /api/satinalma-arsiv` | ~1640 | Arşivlenmiş talep+sipariş |
@@ -90,7 +89,7 @@
 | ID | Satır | Açıklama |
 |---|---|---|
 | `#satinalmaArea` | 506 | Ana satınalma container |
-| `#btnSubTalepler` / `#btnSubTeklif` / `#btnSubSiparisler` / `#btnSubKalemTakip` / `#btnSubTedarikciler` / `#btnSubArsiv` | 509-524 | Alt sekme butonları |
+| `#btnSubGenelBakis` / `#btnSubTalepler` / `#btnSubTeklif` / `#btnSubSiparisler` / `#btnSubTedarikciler` / `#btnSubArsiv` | ~509-524 | Alt sekme butonları |
 | `#satinalmaTaleplerDiv` | 538 | Talep tablosu container |
 | `#talepArama` / `#talepDurumFiltre` / `#talepProjeFiltre` / `#talepTarihBas/Bit` / `#talepSayacLabel` | 543-565 | Talep filtreleri |
 | `#talepTableBody` | 581 | Talep tablosu satırları |
@@ -98,7 +97,6 @@
 | `#satinalmaSiparislerDiv` | 609 | |
 | `#siparisArama` / `#siparisDurumFiltre` / `#siparisTedarikciFiltre` / `#siparisTarihBas/Bit` / `#siparisTerminFiltre` / `#siparisSayacLabel` | 614-641 | Sipariş filtreleri |
 | `#siparisTableBody` | 659 | |
-| `#satinalmaKalemTakipDiv` (Madde 7) | 665 | |
 | `#kalemTakipDurum` / `#kalemTakipProje` / `#kalemTakipArama` / `#kalemTakipOzet` / `#kalemTakipBody` | 671-712 | |
 | `#satinalmaArsivDiv` / `#arsivTalepBody` | 717 / ~726 | |
 | `#tedarikciArea` / `#tedarikciTableBody` | 336 / 369 | |
@@ -194,13 +192,6 @@ HTML: `#satinalmaGenelBakisDiv`, `#btnSubGenelBakis`, filtreler `#gbArama/gbProj
 | `openTeklifIste(seedTalepId)` | 7747 |
 | `submitTeklifIste()` | 7808 |
 
-### Fonksiyonlar — Kalem Takibi (Madde 7)
-| Fonksiyon | Satır |
-|---|---|
-| `fetchKalemTakipProjeler()` | 7231 |
-| `fetchKalemTakip()` | 7242 |
-| `renderKalemTakip(kalemler, ozet)` | 7260 |
-
 ### Fonksiyonlar — Tedarikçi / Arşiv / Sub-tab
 | Fonksiyon | Satır |
 |---|---|
@@ -275,7 +266,7 @@ Backend middleware desenleri: `server.js` ~3522 (`{ pattern: /^\/api\/(...)/, mo
 2. ✅ Madde 4: Teklif Kayıtları
 3. ✅ Madde 5: Cross-talep sipariş
 4. ✅ Madde 6: Talep Bölme (-N alt-talep)
-5. ✅ Madde 7: Kalem bazlı durum izleme paneli
+5. ~~Madde 7: Kalem bazlı durum izleme paneli~~ (KALDIRILDI — Talep Havuzu açılır satırları + Genel Bakış ile çakışıyordu)
 
 ## AÇIK ÖĞELER (gelecekte)
 - KISMİ TESLİM için "Geri Al" (stok hareketi geri çekme)
