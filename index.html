@@ -6504,13 +6504,18 @@ function openYeniTalepModal(duzenlemeData) {
     }
 
     // Proje Dropdown'ını doldur
+    // Yeni talepte yalnızca aktif aşamadaki projeler (PROJE / ÜRETİM / MONTAJ).
+    // Düzenlemede tüm projeler gösterilir ki talebin mevcut projesi kaybolmasın.
     const pSelect = document.getElementById("ntProje");
     pSelect.innerHTML = '<option value="">-- Proje Seçiniz --</option>';
+    const aktifAsamalar = ['PROJE', 'ÜRETİM', 'MONTAJ'];
     if(window.satinalmaProjeler) {
-        window.satinalmaProjeler.forEach(p => {
-            const tamAd = `${p.proje_kodu} / ${p.musteri_adi || ''} - ${p.proje_adi}`;
-            pSelect.innerHTML += `<option value="${p.id}">${esc(tamAd)}</option>`;
-        });
+        window.satinalmaProjeler
+            .filter(p => isEdit || aktifAsamalar.includes(p.hesaplanmis_durum))
+            .forEach(p => {
+                const tamAd = `${p.proje_kodu} / ${p.musteri_adi || ''} - ${p.proje_adi}`;
+                pSelect.innerHTML += `<option value="${p.id}">${esc(tamAd)}</option>`;
+            });
     }
 
     const isoTarih = (v) => v ? String(v).substring(0,10) : '';

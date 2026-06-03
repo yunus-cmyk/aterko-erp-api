@@ -998,9 +998,22 @@ app.get('/api/satinalma-listesi', yetkiKontrol, async (req, res, next) => {
             ORDER BY t.kayit_tarihi DESC NULLS LAST, t.id DESC
         `);
         
-        // Dropdown'lar için aktif projeleri getir (Proje No / Müşteri - Proje Adı formatı için)
-        const projelerRes = await pool.query('SELECT id, proje_kodu, musteri_adi, proje_adi FROM projeler ORDER BY id DESC');
-        
+        // Dropdown'lar için projeleri getir + hesaplanmış aşama (en ileri teslimat durumu)
+        // hesaplanmis_durum: PROJE/ÜRETİM/MONTAJ vb. — yeni talep dropdown'ı bunlara göre süzülür
+        const projelerRes = await pool.query(`
+            SELECT p.id, p.proje_kodu, p.musteri_adi, p.proje_adi,
+                   COALESCE((
+                     SELECT pt.durum FROM proje_teslimatlari pt
+                     WHERE pt.proje_id = p.id AND COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL'
+                     ORDER BY CASE COALESCE(pt.durum,'BEKLEMEDE')
+                       WHEN 'TESLİM EDİLDİ' THEN 8 WHEN 'MONTAJ' THEN 7 WHEN 'ÜRETİM' THEN 6
+                       WHEN 'PROJE' THEN 5 WHEN 'İŞ EMRİ' THEN 4 WHEN 'SÖZLEŞME' THEN 3
+                       WHEN 'BEKLEMEDE' THEN 2 ELSE 1 END DESC LIMIT 1
+                   ), p.durum, 'BEKLEMEDE') as hesaplanmis_durum
+            FROM projeler p
+            ORDER BY p.id DESC
+        `);
+
         res.json({ ok: true, talepler: taleplerRes.rows, projeler: projelerRes.rows });
     } catch (error) { next(error); }
 });
