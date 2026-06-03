@@ -2467,6 +2467,9 @@ STK-002		50	adet
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold" id="dtModalTitle">Talep İnceleme</h5>
+                    <div class="d-flex align-items-center gap-2 ms-auto me-2">
+                        <span id="dtTalepLevelBtns"></span>
+                    </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body p-4" style="background-color: #f8f9fa;">
@@ -2499,15 +2502,9 @@ STK-002		50	adet
                         </div>
                     </div>
 
-                    <div class="d-flex justify-content-between align-items-center p-3 bg-white rounded border shadow-sm mb-2" id="dtTalepActionBar">
-                        <div>
-                            <span class="text-muted small me-2 fw-bold">Talep İşlemleri:</span>
-                            <span id="dtTalepLevelBtns"><span class="text-muted small fst-italic">—</span></span>
-                        </div>
-                    </div>
                     <div class="d-flex justify-content-between align-items-center p-3 bg-white rounded border shadow-sm" id="dtActionBar">
                         <div>
-                            <span class="text-muted small me-2 fw-bold">Kalem İşlemleri:</span>
+                            <span class="text-muted small me-2 fw-bold">Seçili Kalem İşlemleri:</span>
                             <span id="dtDynamicBtns">
                                 <span class="text-muted small fst-italic"><i class="bi bi-info-circle me-1"></i>Üstteki listeden kalem seçin.</span>
                             </span>
@@ -6295,13 +6292,9 @@ function getTalepAksiyonlari(t) {
             `<button class="btn btn-sm btn-outline-secondary py-0" onclick="talepArsivle(${id})" title="Arşivle"><i class="bi bi-archive"></i></button>
              <button class="btn btn-sm btn-secondary py-0" onclick="talepGerial(${id}, 'ONAY BEKLİYOR')" title="Geri Al (Onay Bekliyor'a)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
         'İŞLEME ALINDI':
-            `<button class="btn btn-sm btn-warning py-0 text-dark" onclick="openTeklifIste(${id})" title="Teklif İste"><i class="bi bi-envelope-paper"></i></button>
-             <button class="btn btn-sm btn-success py-0" onclick="openSiparisOlustur(${id})" title="Sipariş Oluştur"><i class="bi bi-cart-plus"></i></button>
-             <button class="btn btn-sm btn-secondary py-0" onclick="talepGerial(${id}, 'ONAYLANDI')" title="Geri Al (Onaylandı'ya)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
+            `<button class="btn btn-sm btn-outline-warning py-0 text-dark fw-bold" onclick="switchSatinalmaSubTab('teklif')" title="Teklif/sipariş işlemleri Teklif Havuzu'nda yapılır"><i class="bi bi-box-arrow-up-right me-1"></i>Teklif Havuzu</button>`,
         'TEKLİF İSTENDİ':
-            `<button class="btn btn-sm btn-warning py-0 text-dark" onclick="openTeklifIste(${id})" title="Tekrar Teklif İste"><i class="bi bi-envelope-arrow-up"></i></button>
-             <button class="btn btn-sm btn-success py-0" onclick="openSiparisOlustur(${id})" title="Sipariş Oluştur"><i class="bi bi-cart-plus"></i></button>
-             <button class="btn btn-sm btn-secondary py-0" onclick="talepGerial(${id}, 'ONAYLANDI')" title="Geri Al (Onaylandı'ya)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
+            `<button class="btn btn-sm btn-outline-warning py-0 text-dark fw-bold" onclick="switchSatinalmaSubTab('teklif')" title="Teklif/sipariş işlemleri Teklif Havuzu'nda yapılır"><i class="bi bi-box-arrow-up-right me-1"></i>Teklif Havuzu</button>`,
         'TAM TESLİM':
             `<button class="btn btn-sm btn-outline-secondary py-0" onclick="talepArsivle(${id})" title="Arşivle"><i class="bi bi-archive"></i></button>`
     };
@@ -6785,30 +6778,33 @@ async function openTalepDetayModal(talepId, talepNo) {
     myModal.show();
 }
 
-// Talep-level aksiyon butonlarını üst aksiyon bar'a doldur (liste'dekinin aynısı)
-// Buton tıklandığında detay modal kendisini kapatır (action sonrası).
+// Talep başlığındaki talep-geneli işlemler: SADECE Düzenle + Arşivle.
+// (Onayla/İşleme Al/Sipariş gibi durum geçişleri artık kalem bazlı yapılır.)
 function renderTalepDetayLevelButtons(talepId) {
     const slot = document.getElementById('dtTalepLevelBtns');
     if (!slot) return;
     const findTalep = () => (window.taleplerGlobal || []).find(t => t.id == talepId);
-    let talep = findTalep();
     const inject = (t) => {
-        // İncele butonunu çıkar (zaten bu modal'dayız), kalanları al, her tıklamada modalı kapat
-        let html = getTalepAksiyonlari(t);
-        // Search butonunu kaldır
-        html = html.replace(/<button[^>]*title="İncele"[^>]*>.*?<\/button>/, '');
-        // Her onclick'i modal kapatma ile sarmala
-        html = html.replace(/onclick="([^"]+)"/g, 'onclick="bootstrap.Modal.getInstance(document.getElementById(\'modalTalepDetay\'))?.hide(); $1"');
-        slot.innerHTML = html;
+        if (!t) { slot.innerHTML = ''; return; }
+        const kapat = "bootstrap.Modal.getInstance(document.getElementById('modalTalepDetay'))?.hide();";
+        let btns = '';
+        // Düzenle: yalnızca hiç işlem görmemiş (ONAY BEKLİYOR) talepte
+        if (t.durum === 'ONAY BEKLİYOR') {
+            btns += `<button class="btn btn-sm btn-light py-0" onclick="${kapat} openTalepDuzenle(${t.id})" title="Talebi Düzenle (kalem ekle/çıkar)"><i class="bi bi-pencil me-1"></i>Düzenle</button>`;
+        }
+        // Arşivle: iptal veya tamamen teslim edilmiş talepte
+        if (t.durum === 'İPTAL' || t.durum === 'TAM TESLİM') {
+            btns += `<button class="btn btn-sm btn-light py-0 ms-1" onclick="${kapat} talepArsivle(${t.id})" title="Talebi Arşivle"><i class="bi bi-archive me-1"></i>Arşivle</button>`;
+        }
+        slot.innerHTML = btns;
     };
+    let talep = findTalep();
     if (!talep) {
-        slot.innerHTML = '<span class="text-muted small fst-italic"><i class="bi bi-hourglass-split me-1"></i>Yükleniyor...</span>';
+        slot.innerHTML = '';
         secureFetch('/satinalma-listesi').then(res => {
             if (res.ok) {
                 window.taleplerGlobal = res.talepler;
-                talep = findTalep();
-                if (talep) inject(talep);
-                else slot.innerHTML = '<span class="text-danger small">Talep bulunamadı.</span>';
+                inject(findTalep());
             }
         });
         return;
@@ -6963,20 +6959,21 @@ function updateLineActionButtons() {
     const mevcutDurum = Array.from(statuses)[0];
     let btnHtml = "";
 
-    // Duruma göre yetki butonlarını dinamik olarak basıyoruz
+    // Talep Havuzu YALNIZCA ONAY BEKLİYOR ↔ ONAYLANDI ↔ İŞLEME ALINDI'ya geçişi yönetir.
+    // İŞLEME ALINDI ve sonrası (teklif iste / sipariş / geri çek) Teklif Havuzu'nda yapılır.
     if(mevcutDurum === "ONAY BEKLİYOR") {
-        btnHtml += `<button class="btn btn-success btn-sm fw-bold me-2" onclick="executeStatusChange('ONAYLANDI')"><i class="bi bi-check-lg me-1"></i>Seçilenleri Onayla</button>`;
-        btnHtml += `<button class="btn btn-danger btn-sm fw-bold" onclick="executeStatusChange('İPTAL')"><i class="bi bi-x-lg me-1"></i>Seçilenleri İptal Et</button>`;
+        // En baş aşama — geri yok
+        btnHtml += `<button class="btn btn-success btn-sm fw-bold me-2" onclick="executeStatusChange('ONAYLANDI')"><i class="bi bi-check-lg me-1"></i>Seçilenleri Onayla →</button>`;
+        btnHtml += `<button class="btn btn-danger btn-sm fw-bold" onclick="executeStatusChange('İPTAL')"><i class="bi bi-x-lg me-1"></i>İptal Et</button>`;
     } else if(mevcutDurum === "ONAYLANDI") {
-        // ONAYLANDI'dan doğrudan sipariş açılamaz — önce İŞLEME ALINDI'ya geçirilmeli
-        btnHtml += `<button class="btn btn-primary btn-sm fw-bold me-2" onclick="executeStatusChange('İŞLEME ALINDI')"><i class="bi bi-play-fill me-1"></i>Seçilenleri İşleme Al</button>`;
-        btnHtml += `<button class="btn btn-outline-danger btn-sm fw-bold" onclick="executeStatusChange('ONAY BEKLİYOR')"><i class="bi bi-arrow-counterclockwise me-1"></i>Onayı Geri Çek</button>`;
+        btnHtml += `<button class="btn btn-outline-secondary btn-sm fw-bold me-2" onclick="executeStatusChange('ONAY BEKLİYOR')"><i class="bi bi-arrow-left me-1"></i>Onay Bekliyor'a</button>`;
+        btnHtml += `<button class="btn btn-primary btn-sm fw-bold" onclick="executeStatusChange('İŞLEME ALINDI')"><i class="bi bi-play-fill me-1"></i>Seçilenleri İşleme Al →</button>`;
     } else if(mevcutDurum === "İŞLEME ALINDI" || mevcutDurum === "TEKLİF İSTENDİ") {
-        // Sadece bu iki durumda sipariş açılabilir
-        btnHtml += `<button class="btn btn-primary btn-sm fw-bold me-2" onclick="openSiparisOlusturModal()"><i class="bi bi-file-earmark-plus-fill me-1"></i>Sipariş Fişi Düzenle</button>`;
-        btnHtml += `<span class="text-muted small fst-italic ms-2"><i class="bi bi-info-circle me-1"></i>Seçili kalemler '${mevcutDurum}' aşamasında — siparişe alınabilir.</span>`;
+        // Bu aşamadan sonrası Teklif Havuzu'nun sorumluluğunda — burada aksiyon yok
+        btnHtml += `<span class="text-muted small fst-italic me-2"><i class="bi bi-info-circle me-1"></i>Bu kalemler işleme alındı. Teklif/sipariş ve geri alma işlemleri Teklif Havuzu'nda yapılır.</span>`;
+        btnHtml += `<button class="btn btn-outline-warning btn-sm fw-bold text-dark" onclick="bootstrap.Modal.getInstance(document.getElementById('modalTalepDetay'))?.hide(); switchSatinalmaSubTab('teklif');"><i class="bi bi-box-arrow-up-right me-1"></i>Teklif Havuzu'na Git</button>`;
     } else {
-        btnHtml += `<span class="text-muted small fst-italic"><i class="bi bi-lock-fill me-1"></i>Bu kalemler '${mevcutDurum}' aşamasında olduğu için üzerinde onay/red işlemi yapılamaz.</span>`;
+        btnHtml += `<span class="text-muted small fst-italic"><i class="bi bi-lock-fill me-1"></i>Bu kalemler '${mevcutDurum}' aşamasında — burada işlem yapılamaz.</span>`;
     }
 
     btnsContainer.innerHTML = btnHtml;
@@ -7408,6 +7405,7 @@ function renderTeklifHavuzu(kalemler) {
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-success py-0" onclick="openSiparisOlustur(${k.talep_id}, ${k.id})" title="Bu kalem için sipariş oluştur"><i class="bi bi-cart-plus"></i></button>
                     <button class="btn btn-warning py-0 text-dark" onclick="openTeklifIste(${k.talep_id})" title="${teklifBtnTitle}"><i class="bi ${teklifIcon}"></i></button>
+                    <button class="btn btn-outline-secondary py-0" onclick="teklifKalemGeriAl(${k.id}, '${esc(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i></button>
                     <button class="btn btn-outline-dark py-0" onclick="openTalepDetayModal(${k.talep_id}, '${k.talep_no}')" title="Talebi İncele"><i class="bi bi-search"></i></button>
                 </div>
             </td>
@@ -7415,6 +7413,19 @@ function renderTeklifHavuzu(kalemler) {
     }).join('');
     // Her satır için teklif sayısını async yükle
     kalemler.forEach(k => teklifSayisiYukle(k.id, `teklifSay-${k.id}`));
+}
+
+// Teklif Havuzu'nda bir kalemi ONAYLANDI'ya geri çek — kalem Talep Havuzu'na döner
+async function teklifKalemGeriAl(kalemId, urunAd) {
+    if (!confirm(`"${urunAd}" kalemini ONAYLANDI durumuna geri çekmek istiyor musunuz?\n\nKalem Teklif Havuzu'ndan çıkar, Talep Havuzu'na döner. (Bu kaleme ait teklif kayıtları korunur.)`)) return;
+    showLoading();
+    const r = await secureFetch('/talep-durum-guncelle', {
+        method: 'POST',
+        body: JSON.stringify({ kalem_idler: [kalemId], yeni_durum: 'ONAYLANDI' })
+    });
+    hideLoading();
+    if (r.ok) { showToast('Kalem Onaylandı durumuna geri çekildi.', 'success'); fetchTeklifHavuzu(); }
+    else showToast(r.hata || 'İşlem başarısız.', 'error');
 }
 
 async function teklifSayisiYukle(talepUrunId, hedefSpanId) {
