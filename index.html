@@ -6505,17 +6505,22 @@ function openYeniTalepModal(duzenlemeData) {
 
     // Proje Dropdown'ını doldur
     // Yeni talepte yalnızca aktif aşamadaki projeler (PROJE / ÜRETİM / MONTAJ).
+    // İki özel/sistem projesi (10000 Diğer, 40000 Stok) her durumda ve listenin SONUNDA.
     // Düzenlemede tüm projeler gösterilir ki talebin mevcut projesi kaybolmasın.
     const pSelect = document.getElementById("ntProje");
     pSelect.innerHTML = '<option value="">-- Proje Seçiniz --</option>';
     const aktifAsamalar = ['PROJE', 'ÜRETİM', 'MONTAJ'];
+    const ozelKodlar = ['10000', '40000'];
+    const isOzel = (p) => ozelKodlar.includes(String(p.proje_kodu).trim());
     if(window.satinalmaProjeler) {
-        window.satinalmaProjeler
-            .filter(p => isEdit || aktifAsamalar.includes(p.hesaplanmis_durum))
-            .forEach(p => {
-                const tamAd = `${p.proje_kodu} / ${p.musteri_adi || ''} - ${p.proje_adi}`;
-                pSelect.innerHTML += `<option value="${p.id}">${esc(tamAd)}</option>`;
-            });
+        const tumu = window.satinalmaProjeler;
+        // Önce normal aktif projeler (özel olmayanlar), sonra özel projeler
+        const normaller = tumu.filter(p => !isOzel(p) && (isEdit || aktifAsamalar.includes(p.hesaplanmis_durum)));
+        const ozeller = tumu.filter(p => isOzel(p));
+        [...normaller, ...ozeller].forEach(p => {
+            const tamAd = `${p.proje_kodu} / ${p.musteri_adi || ''} - ${p.proje_adi}`;
+            pSelect.innerHTML += `<option value="${p.id}">${esc(tamAd)}</option>`;
+        });
     }
 
     const isoTarih = (v) => v ? String(v).substring(0,10) : '';
