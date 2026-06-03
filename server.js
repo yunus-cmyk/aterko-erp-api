@@ -1079,6 +1079,34 @@ app.get('/api/satinalma-detay/:talepId', yetkiKontrol, async (req, res, next) =>
 });
 
 // YENİ: Seçilen Talep Kalemlerinin Durumunu Toplu Güncelle (Onay/Red/İşleme Al)
+// ============================================================================
+// Talep başlık durumunu kalemlerinden TÜRET (tek doğruluk kaynağı)
+// Aktif (İPTAL olmayan) kalemlerin durumları:
+//   - hiç aktif kalem yok  → İPTAL
+//   - hepsi aynı durumda   → o durum
+//   - farklı durumlar      → KARIŞIK
+// Bu fonksiyon kalem durumu değişen HER yerde çağrılmalı.
+// ============================================================================
+async function talepBaslikDurumGuncelle(client, talepId) {
+    if (!talepId) return;
+    const r = await client.query(
+        `SELECT durum, COUNT(*)::int as n FROM talep_urunleri
+         WHERE talep_id = $1 AND COALESCE(durum,'') <> 'İPTAL'
+         GROUP BY durum`,
+        [talepId]
+    );
+    let yeni;
+    if (r.rowCount === 0) {
+        yeni = 'İPTAL';                 // tüm kalemler iptal
+    } else if (r.rowCount === 1) {
+        yeni = r.rows[0].durum;         // hepsi aynı aşamada
+    } else {
+        yeni = 'KARIŞIK';               // kalemler farklı aşamalarda
+    }
+    await client.query('UPDATE satinalma_talepleri SET durum = $1 WHERE id = $2', [yeni, talepId]);
+    return yeni;
+}
+
 app.post('/api/talep-durum-guncelle', yetkiKontrol, async (req, res, next) => {
     const client = await pool.connect();
     try {
@@ -1089,28 +1117,21 @@ app.post('/api/talep-durum-guncelle', yetkiKontrol, async (req, res, next) => {
             return res.json({ ok: false, hata: "İşlem yapılacak ürün seçilmedi." });
         }
 
-        // Seçilen tüm talep kalemlerinin durumunu güncelle
-        await client.query(`
-            UPDATE talep_urunleri 
-            SET durum = $1 
-            WHERE id = ANY($2::integer[])
-        `, [yeni_durum, kalem_idler]);
+        // Etkilenen talepleri bul (başlık durumunu sonra güncellemek için)
+        const talepRes = await client.query(
+            'SELECT DISTINCT talep_id FROM talep_urunleri WHERE id = ANY($1::integer[])',
+            [kalem_idler]
+        );
 
-        // EĞER bir talepteki tüm ürünlerin durumu değiştiyse, ana talebin durumunu da güncelle
-        // (Bu zeki kontrol mimariyi temiz tutar)
-        for (const id of kalem_idler) {
-            const talepIdRes = await client.query('SELECT talep_id FROM talep_urunleri WHERE id = $1', [id]);
-            if (talepIdRes.rowCount > 0) {
-                const talepId = talepIdRes.rows[0].talep_id;
-                
-                // Bu talebe ait başka "ONAY BEKLİYOR" kalemi kaldı mı?
-                const kalanRes = await client.query("SELECT COUNT(*) FROM talep_urunleri WHERE talep_id = $1 AND durum = 'ONAY BEKLİYOR'", [talepId]);
-                
-                if (parseInt(kalanRes.rows[0].count) === 0) {
-                    // Kalan yoksa ana talebi de 'İŞLEME ALINDI' veya ilgili duruma çek
-                    await client.query('UPDATE satinalma_talepleri SET durum = $1 WHERE id = $2', [yeni_durum, talepId]);
-                }
-            }
+        // Seçilen kalemlerin durumunu güncelle
+        await client.query(
+            `UPDATE talep_urunleri SET durum = $1 WHERE id = ANY($2::integer[])`,
+            [yeni_durum, kalem_idler]
+        );
+
+        // Her etkilenen talebin başlık durumunu kalemlerinden yeniden türet
+        for (const row of talepRes.rows) {
+            await talepBaslikDurumGuncelle(client, row.talep_id);
         }
 
         await client.query('COMMIT');
@@ -1650,6 +1671,12 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
             if (bi) bolunmeler.push({ kaynakTalepId: talepId, ...bi });
         }
 
+        // 3c. Sipariş açılan tüm kaynak taleplerin başlık durumunu kalemlerinden yeniden türet
+        // (bazı kalemler SİPARİŞ OLUŞTURULDU, diğerleri farklı aşamada kalabilir → KARIŞIK)
+        for (const tId of kaynakTalepIdler) {
+            await talepBaslikDurumGuncelle(client, tId);
+        }
+
         await client.query('COMMIT'); // Tüm işlemleri tek seferde veritabanına mühürle
         const ekMesaj = bolunmeler.length > 0
             ? ` Kısmi sipariş — ${bolunmeler.length} talep bölündü: ${bolunmeler.map(b=>b.yeniTalepNo).join(', ')}.`
@@ -2096,21 +2123,17 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
             return res.json({ ok: false, hata: `${gecersiz.length} kalem uygun durumda değil (İŞLEME ALINDI veya TEKLİF İSTENDİ olmalı).` });
         }
 
-        // Kalemleri TEKLİF İSTENDİ'ye çek
-        await pool.query("UPDATE talep_urunleri SET durum='TEKLİF İSTENDİ' WHERE id = ANY($1::integer[])", [kalem_idler]);
-
-        // Ana talep durumunu kontrol et — eğer tüm kalemler TEKLİF İSTENDİ ise talep durumunu da güncelle
+        // Etkilenen talepleri bul (başlık güncellemesi için)
         const ilgiliR = await pool.query(`
             SELECT DISTINCT talep_id FROM talep_urunleri WHERE id = ANY($1::integer[])
         `, [kalem_idler]);
+
+        // Kalemleri TEKLİF İSTENDİ'ye çek
+        await pool.query("UPDATE talep_urunleri SET durum='TEKLİF İSTENDİ' WHERE id = ANY($1::integer[])", [kalem_idler]);
+
+        // Her etkilenen talebin başlık durumunu kalemlerinden yeniden türet
         for (const t of ilgiliR.rows) {
-            const kalanR = await pool.query(`
-                SELECT COUNT(*) FROM talep_urunleri
-                WHERE talep_id = $1 AND durum NOT IN ('TEKLİF İSTENDİ','İPTAL','TAM TESLİM')
-            `, [t.talep_id]);
-            if (parseInt(kalanR.rows[0].count) === 0) {
-                await pool.query("UPDATE satinalma_talepleri SET durum='TEKLİF İSTENDİ' WHERE id=$1", [t.talep_id]);
-            }
+            await talepBaslikDurumGuncelle(pool, t.talep_id);
         }
 
         // Teklif kaydını JSONB olarak talep notlarına veya ek tabloya yazabiliriz — şimdilik aciklama sadece dönüş mesajında
@@ -2297,12 +2320,22 @@ app.post('/api/siparis-iptal', yetkiKontrol, async (req, res, next) => {
     try {
         await client.query('BEGIN');
         const { siparis_id } = req.body;
-        // Siparişin kalemlerine bağlı talep ürünlerini İŞLEME ALINDI durumuna geri çevir
+        // Etkilenen talepleri bul
+        const etkR = await client.query(
+            `SELECT DISTINCT tu.talep_id FROM siparis_kalemleri sk
+             JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+             WHERE sk.siparis_id = $1`, [siparis_id]
+        );
+        // Siparişin kalemlerine bağlı talep ürünlerini ONAYLANDI durumuna geri çevir
         await client.query(`
             UPDATE talep_urunleri SET durum='ONAYLANDI'
             WHERE id IN (SELECT talep_urun_id FROM siparis_kalemleri WHERE siparis_id=$1)
         `, [siparis_id]);
         await client.query("UPDATE satinalma_siparisleri SET durum='İPTAL' WHERE id=$1", [siparis_id]);
+        // Etkilenen taleplerin başlık durumunu yeniden türet
+        for (const row of etkR.rows) {
+            await talepBaslikDurumGuncelle(client, row.talep_id);
+        }
         await client.query('COMMIT');
         await auditLogla(req, {
             eylem: 'CANCEL', tablo: 'satinalma_siparisleri', kayit_id: siparis_id,
@@ -2515,13 +2548,10 @@ app.post('/api/siparis-tamamen-sil', yetkiKontrol, async (req, res, next) => {
             }
         }
 
-        // 5) Etkilenen taleplerin başlık durumunu da İŞLEME ALINDI'ya çek
+        // 5) Etkilenen taleplerin başlık durumunu kalemlerinden yeniden türet
         const etkilenenTalepIds = [...new Set(skR.rows.map(r => r.talep_id))];
-        if (etkilenenTalepIds.length > 0) {
-            await client.query(
-                "UPDATE satinalma_talepleri SET durum='İŞLEME ALINDI' WHERE id = ANY($1::integer[])",
-                [etkilenenTalepIds]
-            );
+        for (const tId of etkilenenTalepIds) {
+            await talepBaslikDurumGuncelle(client, tId);
         }
 
         await client.query('COMMIT');

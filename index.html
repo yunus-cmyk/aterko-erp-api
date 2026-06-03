@@ -621,6 +621,8 @@
                     <option value="ONAYLANDI">Onaylandı</option>
                     <option value="REDDEDİLDİ">Reddedildi</option>
                     <option value="İŞLEME ALINDI">İşleme Alındı</option>
+                    <option value="TEKLİF İSTENDİ">Teklif İstendi</option>
+                    <option value="KARIŞIK">Karışık</option>
                     <option value="SİPARİŞ OLUŞTURULDU">Sipariş Oluşturuldu</option>
                     <option value="KISMİ TESLİM">Kısmi Teslim</option>
                     <option value="TAM TESLİM">Tam Teslim</option>
@@ -6271,6 +6273,10 @@ function getSatinalmaDurumBadge(durum) {
         'İPTAL': 'sa-iptal',
         'ARŞİV': 'sa-arsiv'
     };
+    // KARIŞIK: kalemleri farklı aşamalarda olan talep — özel mor rozet
+    if (d === 'KARIŞIK') {
+        return `<span class="badge" style="background:#6f42c1; color:#fff;" title="Kalemler farklı aşamalarda — detaya girip kalem bazlı yönetin"><i class="bi bi-diagram-3 me-1"></i>KARIŞIK</span>`;
+    }
     const cls = map[d] || 'sa-onay-bekliyor';
     return `<span class="sa-badge ${cls}">${esc(d || 'ONAY BEKLİYOR')}</span>`;
 }
