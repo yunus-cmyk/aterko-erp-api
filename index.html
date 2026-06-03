@@ -7733,7 +7733,7 @@ function getSiparisAksiyonlari(s) {
         'SİPARİŞ OLUŞTURULDU':
             `<button class="btn btn-sm btn-info py-0 text-white" onclick="openSiparisDuzenle(${id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
              <button class="btn btn-sm btn-primary py-0" onclick="siparisOnayla(${id})" title="Siparişi Onayla"><i class="bi bi-check-lg"></i></button>
-             <button class="btn btn-sm btn-secondary py-0" onclick="siparisTamamenGerial(${id})" title="Geri Al (Sipariş silinir, talep kalemleri İŞLEME ALINDI'ya döner ve birleştirilir)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
+             <button class="btn btn-sm btn-outline-danger py-0 fw-bold" onclick="siparisTamamenGerial(${id})" title="Siparişi İptal Et — sipariş SİLİNİR, talep kalemleri İŞLEME ALINDI'ya döner"><i class="bi bi-trash me-1"></i>İptal/Sil</button>`,
         'SİPARİŞ ONAYLANDI':
             `<button class="btn btn-sm btn-warning py-0" onclick="siparisGonder(${id})" title="Siparişi Gönder"><i class="bi bi-send"></i></button>
              <button class="btn btn-sm btn-secondary py-0" onclick="siparisGerial(${id}, 'SİPARİŞ OLUŞTURULDU')" title="Geri Al (Sipariş Oluşturuldu'ya)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
@@ -8355,7 +8355,7 @@ async function siparisGonder(siparis_id) {
     else showToast(r.hata, 'error');
 }
 async function siparisTamamenGerial(siparis_id) {
-    if (!confirm('Bu siparişi tamamen geri almak istediğinize emin misiniz?\n\n⚠️ Sipariş SİLİNECEK. Talep kalemleri "İŞLEME ALINDI" durumuna geri dönecek ve yeniden sipariş açılabilir hale gelecek.')) return;
+    if (!confirm('Bu siparişi İPTAL EDİP SİLMEK istediğinize emin misiniz?\n\n⚠️ Sipariş kalıcı olarak SİLİNECEK. Talep kalemleri "İŞLEME ALINDI" durumuna geri dönecek ve yeniden sipariş açılabilir hale gelecek.')) return;
     showLoading();
     const r = await secureFetch('/siparis-tamamen-sil', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     hideLoading();
