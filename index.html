@@ -6286,6 +6286,11 @@ function getTalepAksiyonlari(t) {
     const id = t.id;
     const no = t.talep_no;
     const incele = `<button class="btn btn-sm btn-outline-dark py-0" onclick="openTalepDetayModal(${id}, '${no}')" title="İncele"><i class="bi bi-search"></i></button>`;
+    // Teklif Havuzu yönlendirmesi (İŞLEME ALINDI / TEKLİF İSTENDİ)
+    const teklifHavuzuBtn = `<button class="btn btn-sm btn-outline-warning py-0 text-dark fw-bold" onclick="switchSatinalmaSubTab('teklif')" title="Teklif/sipariş işlemleri Teklif Havuzu'nda yapılır"><i class="bi bi-box-arrow-up-right me-1"></i>Teklif Havuzu</button>`;
+    // Sipariş Listesi yönlendirmesi (sipariş aşamasındaki talepler)
+    const siparisAra = (no || '').replace('-T-', '-S-');
+    const siparisListesiBtn = `<button class="btn btn-sm btn-outline-success py-0 fw-bold" onclick="gotoSiparisListesi('${siparisAra}')" title="Sipariş işlemleri Sipariş Listesi'nde yapılır"><i class="bi bi-box-arrow-up-right me-1"></i>Sipariş Listesi</button>`;
     const buttons = {
         'ONAY BEKLİYOR':
             `<button class="btn btn-sm btn-info py-0 text-white" onclick="openTalepDuzenle(${id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
@@ -6297,14 +6302,31 @@ function getTalepAksiyonlari(t) {
         'İPTAL':
             `<button class="btn btn-sm btn-outline-secondary py-0" onclick="talepArsivle(${id})" title="Arşivle"><i class="bi bi-archive"></i></button>
              <button class="btn btn-sm btn-secondary py-0" onclick="talepGerial(${id}, 'ONAY BEKLİYOR')" title="Geri Al (Onay Bekliyor'a)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
-        'İŞLEME ALINDI':
-            `<button class="btn btn-sm btn-outline-warning py-0 text-dark fw-bold" onclick="switchSatinalmaSubTab('teklif')" title="Teklif/sipariş işlemleri Teklif Havuzu'nda yapılır"><i class="bi bi-box-arrow-up-right me-1"></i>Teklif Havuzu</button>`,
-        'TEKLİF İSTENDİ':
-            `<button class="btn btn-sm btn-outline-warning py-0 text-dark fw-bold" onclick="switchSatinalmaSubTab('teklif')" title="Teklif/sipariş işlemleri Teklif Havuzu'nda yapılır"><i class="bi bi-box-arrow-up-right me-1"></i>Teklif Havuzu</button>`,
+        'İŞLEME ALINDI':   teklifHavuzuBtn,
+        'TEKLİF İSTENDİ':  teklifHavuzuBtn,
+        // Sipariş aşamasındaki talepler → işlemler Sipariş Listesi'nde
+        'SİPARİŞ OLUŞTURULDU': siparisListesiBtn,
+        'SİPARİŞ ONAYLANDI':   siparisListesiBtn,
+        'SİPARİŞ GÖNDERİLDİ':  siparisListesiBtn,
+        'KISMİ TESLİM':        siparisListesiBtn,
+        // KARIŞIK: hem teklif hem sipariş aşaması kalemler olabilir → her ikisine de kısa yol
+        'KARIŞIK':         teklifHavuzuBtn + siparisListesiBtn,
         'TAM TESLİM':
             `<button class="btn btn-sm btn-outline-secondary py-0" onclick="talepArsivle(${id})" title="Arşivle"><i class="bi bi-archive"></i></button>`
     };
     return `<div class="btn-group btn-group-sm">${buttons[t.durum] || ''}${incele}</div>`;
+}
+
+// Sipariş Listesi sekmesine geç + verilen sipariş no kökünü aramaya yaz (talebin siparişlerini filtrele)
+function gotoSiparisListesi(siparisAramaKoku) {
+    switchSatinalmaSubTab('siparisler');
+    setTimeout(() => {
+        const arama = document.getElementById('siparisArama');
+        if (arama && siparisAramaKoku) {
+            arama.value = siparisAramaKoku;
+            renderSiparisTableFiltered();
+        }
+    }, 250);
 }
 
 // 2. Satınalma Talepleri Tablosunu Çizer
@@ -6978,6 +7000,11 @@ function updateLineActionButtons() {
         // Bu aşamadan sonrası Teklif Havuzu'nun sorumluluğunda — burada aksiyon yok
         btnHtml += `<span class="text-muted small fst-italic me-2"><i class="bi bi-info-circle me-1"></i>Bu kalemler işleme alındı. Teklif/sipariş ve geri alma işlemleri Teklif Havuzu'nda yapılır.</span>`;
         btnHtml += `<button class="btn btn-outline-warning btn-sm fw-bold text-dark" onclick="bootstrap.Modal.getInstance(document.getElementById('modalTalepDetay'))?.hide(); switchSatinalmaSubTab('teklif');"><i class="bi bi-box-arrow-up-right me-1"></i>Teklif Havuzu'na Git</button>`;
+    } else if(["SİPARİŞ OLUŞTURULDU","SİPARİŞ ONAYLANDI","SİPARİŞ GÖNDERİLDİ","KISMİ TESLİM","TAM TESLİM"].includes(mevcutDurum)) {
+        // Sipariş aşaması — işlemler Sipariş Listesi'nde yapılır
+        const siparisAra = (window.aktifIncelenenTalepNo || '').replace('-T-', '-S-');
+        btnHtml += `<span class="text-muted small fst-italic me-2"><i class="bi bi-info-circle me-1"></i>Bu kalemler siparişe alındı. Sipariş işlemleri Sipariş Listesi'nde yapılır.</span>`;
+        btnHtml += `<button class="btn btn-outline-success btn-sm fw-bold" onclick="bootstrap.Modal.getInstance(document.getElementById('modalTalepDetay'))?.hide(); gotoSiparisListesi('${siparisAra}');"><i class="bi bi-box-arrow-up-right me-1"></i>Sipariş Listesi'ne Git</button>`;
     } else {
         btnHtml += `<span class="text-muted small fst-italic"><i class="bi bi-lock-fill me-1"></i>Bu kalemler '${mevcutDurum}' aşamasında — burada işlem yapılamaz.</span>`;
     }
