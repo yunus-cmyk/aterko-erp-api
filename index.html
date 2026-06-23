@@ -2653,9 +2653,16 @@ STK-002		50	adet
 
           <div class="row g-3">
             <div class="col-md-6">
-              <label class="small fw-bold text-muted mb-1">Tedarikçi(ler) <span class="text-muted">(çoklu seçim için Cmd/Ctrl)</span></label>
-              <select id="tiTedarikci" multiple class="form-select form-select-sm" size="7"></select>
-              <div class="small text-muted mt-1"><i class="bi bi-envelope me-1"></i>E-postası kayıtlı olmayan tedarikçilere mail gitmez, yalnızca kayıt tutulur.</div>
+              <label class="small fw-bold text-muted mb-1">Tedarikçi(ler) <span id="tiSeciliSayi" class="badge bg-secondary">0</span></label>
+              <!-- Arama kutusu + açılır sonuç listesi -->
+              <div class="position-relative mb-2">
+                <input id="tiArama" type="text" class="form-control form-control-sm" placeholder="Tedarikçi ara... (yazmaya başla)" autocomplete="off"
+                       oninput="tiSonucRender()" onfocus="tiSonucRender()" onblur="setTimeout(()=>{const k=document.getElementById('tiSonucKutu');if(k)k.style.display='none';},200)">
+                <div id="tiSonucKutu" class="list-group position-absolute w-100 shadow-sm border" style="z-index:1085;max-height:230px;overflow-y:auto;display:none;"></div>
+              </div>
+              <!-- Seçilen tedarikçiler (chip) -->
+              <div id="tiSeciliChips" class="d-flex flex-wrap gap-1 p-2 border rounded bg-white" style="min-height:48px;align-content:flex-start;"></div>
+              <div class="small text-muted mt-1"><i class="bi bi-envelope me-1"></i>E-postası olmayan tedarikçilere mail gitmez, yalnızca kayıt tutulur.</div>
             </div>
             <div class="col-md-6">
               <label class="small fw-bold text-muted mb-1">Açıklama / Not (e-postaya eklenir)</label>
@@ -7917,13 +7924,14 @@ async function openTeklifIste(kalemIdler) {
     document.getElementById('tiAciklama').value = '';
     document.getElementById('tiKalemSayi').textContent = kalemler.length;
 
-    // Tedarikçiler
-    const tedSel = document.getElementById('tiTedarikci');
-    tedSel.innerHTML = '<option disabled>Yükleniyor...</option>';
+    // Tedarikçiler — arama + chip seçimi
+    window.tiTumTedarikciler = [];
+    window.tiSecili = [];
+    document.getElementById('tiArama').value = '';
+    document.getElementById('tiSeciliChips').innerHTML = '<span class="small text-muted fst-italic align-self-center">Yükleniyor...</span>';
     secureFetch('/tedarikciler?sadece_aktif=1').then(r => {
-        if (r.ok) tedSel.innerHTML = r.data.map(t =>
-            `<option value="${t.id}">${esc(t.firma_adi)}${t.email ? '' : ' (e-posta yok)'}</option>`
-        ).join('');
+        if (r.ok) window.tiTumTedarikciler = r.data;
+        tiChipRender();
     });
 
     // Kalemleri salt-okunur listele
@@ -7940,10 +7948,63 @@ async function openTeklifIste(kalemIdler) {
     new bootstrap.Modal(document.getElementById('modalTeklifIste')).show();
 }
 
+// --- Teklif İste tedarikçi arama + chip seçimi ---
+function tiSonucRender() {
+    const kutu = document.getElementById('tiSonucKutu');
+    if (!kutu) return;
+    const q = (document.getElementById('tiArama').value || '').toLocaleLowerCase('tr').trim();
+    const seciliIds = new Set((window.tiSecili || []).map(t => t.id));
+    let liste = (window.tiTumTedarikciler || []).filter(t => !seciliIds.has(t.id));
+    if (q) liste = liste.filter(t => (t.firma_adi || '').toLocaleLowerCase('tr').includes(q));
+    const toplam = liste.length;
+    if (!q) liste = liste.slice(0, 50); // boş aramada ilk 50 (performans)
+    if (toplam === 0) {
+        kutu.innerHTML = '<div class="list-group-item small text-muted py-2">Eşleşen tedarikçi yok</div>';
+    } else {
+        kutu.innerHTML = liste.map(t =>
+            `<button type="button" class="list-group-item list-group-item-action py-1 px-2 small d-flex justify-content-between align-items-center" onclick="tiEkle(${t.id})">
+                <span>${esc(t.firma_adi)}</span>
+                ${t.email ? '<i class="bi bi-envelope-check text-success" title="E-posta kayıtlı"></i>' : '<span class="badge bg-warning text-dark">e-posta yok</span>'}
+            </button>`).join('') +
+            (!q && toplam > 50 ? `<div class="list-group-item small text-muted py-1 text-center">…${toplam - 50} tedarikçi daha — aramaya devam edin</div>` : '');
+    }
+    kutu.style.display = 'block';
+}
+
+function tiEkle(id) {
+    const t = (window.tiTumTedarikciler || []).find(x => x.id === id);
+    if (t && !(window.tiSecili || []).some(s => s.id === id)) window.tiSecili.push(t);
+    document.getElementById('tiArama').value = '';
+    tiChipRender();
+    tiSonucRender();
+    document.getElementById('tiArama').focus();
+}
+
+function tiCikar(id) {
+    window.tiSecili = (window.tiSecili || []).filter(t => t.id !== id);
+    tiChipRender();
+}
+
+function tiChipRender() {
+    const c = document.getElementById('tiSeciliChips');
+    const sayi = document.getElementById('tiSeciliSayi');
+    const secili = window.tiSecili || [];
+    if (sayi) sayi.textContent = secili.length;
+    if (!secili.length) {
+        c.innerHTML = '<span class="small text-muted fst-italic align-self-center">Henüz tedarikçi seçilmedi — yukarıdan arayıp ekleyin</span>';
+        return;
+    }
+    c.innerHTML = secili.map(t =>
+        `<span class="badge ${t.email ? 'bg-primary' : 'bg-warning text-dark'} d-inline-flex align-items-center" style="font-size:0.78rem;font-weight:500;">
+            ${esc(t.firma_adi)}${t.email ? '' : ' <i class="bi bi-exclamation-triangle-fill ms-1" title="E-posta yok"></i>'}
+            <i class="bi bi-x-lg ms-2" style="cursor:pointer;" title="Kaldır" onclick="tiCikar(${t.id})"></i>
+        </span>`).join('');
+}
+
 async function submitTeklifIste() {
     const kalem_idler = window.tiSeciliKalemler || [];
     if (kalem_idler.length === 0) return showToast('Kalem seçilmedi.', 'error');
-    const tedarikci_idler = [...document.getElementById('tiTedarikci').selectedOptions].map(o => parseInt(o.value));
+    const tedarikci_idler = (window.tiSecili || []).map(t => t.id);
     if (tedarikci_idler.length === 0) return showToast('En az bir tedarikçi seçin.', 'error');
     const aciklama = document.getElementById('tiAciklama').value.trim();
 
