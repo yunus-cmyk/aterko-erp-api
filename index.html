@@ -3224,9 +3224,11 @@ function simulasyonCikis() {
     location.reload();
 }
 
-// Global escape hatch: Sayfanın herhangi bir yerinde Alt+Shift+R basılınca simülasyondan çık
+// Global escape hatch: Alt+Shift+R simülasyondan çık.
+// e.code (fiziksel tuş) kullanılır — Mac'te Option+Shift+R özel karakter ürettiği
+// için e.key güvenilmez. e.code='KeyR' klavye düzeni/modifier'dan bağımsızdır.
 document.addEventListener('keydown', function(e) {
-    if (e.altKey && e.shiftKey && (e.key === 'R' || e.key === 'r')) {
+    if (e.altKey && e.shiftKey && (e.code === 'KeyR' || e.key === 'R' || e.key === 'r')) {
         if (localStorage.getItem('aterko_simulasyon_rol')) {
             localStorage.removeItem('aterko_simulasyon_rol');
             location.reload();
