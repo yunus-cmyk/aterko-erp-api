@@ -2135,7 +2135,7 @@ function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, 
   <div style="max-width:660px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
     <div style="border-bottom:3px solid #ff4c00;padding:20px 26px;">
       <table style="width:100%;border-collapse:collapse;"><tr>
-        <td style="vertical-align:top;"><img src="https://www.aterko.com/wp-content/uploads/2022/07/aterko-logo-dark.png" alt="ATERKO" height="34" style="height:34px;width:auto;display:block;border:0;"><div style="font-size:9px;color:#6c757d;margin-top:5px;">Prefabrik &amp; Konteyner Yapı Sistemleri</div></td>
+        <td style="vertical-align:top;"><img src="https://www.aterko.com/wp-content/uploads/2022/07/aterko-logo-dark.png" alt="ATERKO" height="34" style="height:34px;width:auto;display:block;border:0;"></td>
         <td style="text-align:right;vertical-align:top;"><div style="font-size:16px;font-weight:700;color:#ff4c00;">TEKLİF TALEBİ</div><div style="font-size:12px;font-weight:600;color:#212529;">${esc2(talepEtiket)}</div></td>
       </tr></table>
     </div>
@@ -2162,7 +2162,7 @@ function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, 
       <p style="margin:20px 0 0;color:#495057;">Teklifinizi en kısa sürede tarafımıza iletmenizi rica ederiz. İyi çalışmalar dileriz.</p>
       <div style="margin-top:26px;font-size:14px;"><strong>${esc2(isteyenAd)}</strong><br><span style="color:#6c757d;">Aterko Satınalma</span></div>
     </div>
-    <div style="padding:13px 26px;border-top:1px solid #dee2e6;background:#f8f9fa;font-size:11px;color:#6c757d;">Aterko Prefabrik &amp; Konteyner Yapı Sistemleri</div>
+    <div style="padding:13px 26px;border-top:1px solid #dee2e6;background:#f8f9fa;font-size:11px;color:#6c757d;">Aterko</div>
   </div>
 </body></html>`;
 }
