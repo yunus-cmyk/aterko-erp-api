@@ -37,4 +37,4 @@ satinalma-old-*
 
 # Veri aktarımı (hassas — tedarikçi/fiyat)
 import-*.csv
-import-runner.js
+import-*.js
