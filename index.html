@@ -7068,12 +7068,17 @@ let duzenlenenSiparisId = null;
 let crossTalepKaynakId = null;
 let crossTalepProjeId = null;
 
-// 1. Sipariş Formunu Açar — yeni veya düzenleme
-function openSiparisOlusturModal(duzenlemeData) {
+// 1. Sipariş Formunu Açar — yeni / düzenleme / doğrudan kalem (Teklif Havuzu'ndan)
+// hazirKalemler verilirse talep detay modalına bağımlı olmadan o kalemlerle açılır.
+function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
     const isEdit = !!duzenlemeData;
+    const dogrudan = !isEdit && Array.isArray(hazirKalemler) && hazirKalemler.length > 0;
     duzenlenenSiparisId = isEdit ? duzenlemeData.siparis.id : null;
-    // Madde 5: cross-talep kaynak talep id (yeni siparişte talep detayından geldik)
-    crossTalepKaynakId = isEdit ? null : (typeof aktifIncelenenTalepId !== 'undefined' ? aktifIncelenenTalepId : null);
+    // Madde 5: cross-talep kaynak talep id — doğrudan modda ilk kalemden, yoksa açık talep detayından
+    crossTalepKaynakId = isEdit ? null
+        : (dogrudan ? (hazirKalemler[0].talep_id || null)
+        : (typeof aktifIncelenenTalepId !== 'undefined' ? aktifIncelenenTalepId : null));
+    if (dogrudan) window.aktifIncelenenTalepNo = hazirKalemler[0].talep_no || '';
     crossTalepProjeId = null;
     // Cross-talep butonu sadece yeni siparişte ve kaynak talep biliniyorsa görünür
     const crossBtn = document.getElementById('btnCrossTalep');
@@ -7105,6 +7110,9 @@ function openSiparisOlusturModal(duzenlemeData) {
                 talep_no: k.talep_no || ''
             });
         });
+    } else if (dogrudan) {
+        // Teklif Havuzu'ndan doğrudan verilen kalem(ler) — talep detay modalına gerek yok
+        hazirKalemler.forEach(k => secilenKalemler.push(k));
     } else {
         // Talep detayından seçilenleri al
         const checkedBoxes = document.querySelectorAll(".line-chk:checked");
@@ -7431,6 +7439,7 @@ function fetchTeklifHavuzu() {
 }
 
 function renderTeklifHavuzu(kalemler) {
+    window.teklifHavuzuCache = kalemler; // doğrudan sipariş açma için
     const tb = document.getElementById('teklifHavuzuBody');
     if (kalemler.length === 0) {
         tb.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">İşlem bekleyen kalem yok.</td></tr>';
@@ -7457,7 +7466,7 @@ function renderTeklifHavuzu(kalemler) {
             </td>
             <td class="text-center">
                 <div class="btn-group btn-group-sm">
-                    <button class="btn btn-success py-0" onclick="openSiparisOlustur(${k.talep_id}, ${k.id})" title="Bu kalem için sipariş oluştur"><i class="bi bi-cart-plus"></i></button>
+                    <button class="btn btn-success py-0" onclick="siparisOlusturTekliften(${k.id})" title="Bu kalem için sipariş oluştur"><i class="bi bi-cart-plus"></i></button>
                     <button class="btn btn-warning py-0 text-dark" onclick="openTeklifIste(${k.talep_id})" title="${teklifBtnTitle}"><i class="bi ${teklifIcon}"></i></button>
                     <button class="btn btn-outline-secondary py-0" onclick="teklifKalemGeriAl(${k.id}, '${esc(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i></button>
                     <button class="btn btn-outline-dark py-0" onclick="openTalepDetayModal(${k.talep_id}, '${k.talep_no}')" title="Talebi İncele"><i class="bi bi-search"></i></button>
@@ -7467,6 +7476,25 @@ function renderTeklifHavuzu(kalemler) {
     }).join('');
     // Her satır için teklif sayısını async yükle
     kalemler.forEach(k => teklifSayisiYukle(k.id, `teklifSay-${k.id}`));
+}
+
+// Teklif Havuzu'ndan doğrudan sipariş aç (talep detay modalına gitmeden)
+function siparisOlusturTekliften(kalemId) {
+    const k = (window.teklifHavuzuCache || []).find(x => (x.kalem_id || x.id) == kalemId);
+    if (!k) return showToast('Kalem bulunamadı, listeyi yenileyin.', 'error');
+    const urunAd = k.stok_adi || k.ozel_urun_adi || '-';
+    const birim = k.stok_birim || k.ozel_urun_birim || 'ADET';
+    openSiparisOlusturModal(null, [{
+        id: k.kalem_id || k.id,
+        ad: urunAd,
+        kod: k.stok_kodu || 'ÖZEL',
+        miktar: parseFloat(k.miktar) || 0,
+        birim: birim,
+        birim_fiyat: 0,
+        talep_id: k.talep_id,
+        talep_no: k.talep_no
+    }]);
+    // openSiparisOlusturModal modalı kendisi açar
 }
 
 // Teklif Havuzu'nda bir kalemi ONAYLANDI'ya geri çek — kalem Talep Havuzu'na döner
