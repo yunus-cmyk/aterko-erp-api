@@ -2135,7 +2135,7 @@ function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, 
   <div style="max-width:660px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
     <div style="border-bottom:3px solid #ff4c00;padding:20px 26px;">
       <table style="width:100%;border-collapse:collapse;"><tr>
-        <td style="vertical-align:top;"><div style="font-size:24px;font-weight:900;letter-spacing:1px;color:#212529;">ATERKO</div><div style="font-size:9px;color:#6c757d;">Prefabrik &amp; Konteyner Yapı Sistemleri</div></td>
+        <td style="vertical-align:top;"><img src="https://www.aterko.com/wp-content/uploads/2022/07/aterko-logo-dark.png" alt="ATERKO" height="34" style="height:34px;width:auto;display:block;border:0;"><div style="font-size:9px;color:#6c757d;margin-top:5px;">Prefabrik &amp; Konteyner Yapı Sistemleri</div></td>
         <td style="text-align:right;vertical-align:top;"><div style="font-size:16px;font-weight:700;color:#ff4c00;">TEKLİF TALEBİ</div><div style="font-size:12px;font-weight:600;color:#212529;">${esc2(talepEtiket)}</div></td>
       </tr></table>
     </div>
