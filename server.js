@@ -2243,7 +2243,6 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
         // gönderim + timeout sayesinde garanti gider ama kullanıcıyı uzun bekletmez.)
         let mailGitti = 0;
         const mailHata = [];
-        const mailHataDetay = [];
         if (mailTransporter && epostali.length) {
             const ccList = [...new Set([isteyenEmail, ...adminMails])].filter(Boolean).join(', ');
             const konu = `Aterko - ${kategoriEtiket} Teklif Talebi (${talepEtiket})`;
@@ -2263,13 +2262,12 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
             ));
             sonuclar.forEach((r, i) => {
                 if (r.status === 'fulfilled') { mailGitti++; console.log('✉️ Teklif maili gönderildi:', epostali[i].firma_adi); }
-                else { mailHata.push(epostali[i].firma_adi); mailHataDetay.push(epostali[i].firma_adi + ': ' + (r.reason && r.reason.message || r.reason)); console.error('⚠️ Teklif mail hatası:', epostali[i].firma_adi, r.reason && r.reason.message); }
+                else { mailHata.push(epostali[i].firma_adi); console.error('⚠️ Teklif mail hatası:', epostali[i].firma_adi, r.reason && r.reason.message); }
             });
         }
 
         res.json({
             ok: true,
-            mailHataDetay, // GEÇİCİ DEBUG: SMTP hata mesajları
             mesaj: `${kalem_idler.length} kalem için ${tedR.rows.length} tedarikçiden teklif istendi. ${mailGitti} e-posta gönderildi.` +
                    (mailHata.length ? ` Gönderilemedi: ${mailHata.join(', ')}.` : '') +
                    (epostasiz.length ? ` E-postası olmayan: ${epostasiz.join(', ')}.` : '')
