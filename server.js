@@ -2144,12 +2144,10 @@ function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, 
       <p style="margin:0 0 16px;color:#495057;">Aşağıda belirtilen malzemeler için fiyat teklifinizi rica ederiz.</p>
       <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
         <tr>
-          <td style="background:#f8f9fa;border-left:3px solid #ff4c00;padding:9px 12px;width:50%;"><div style="font-size:8.5px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">PROJE</div><div style="font-weight:600;margin-top:2px;">${esc2(projeAdi) || '-'}</div></td>
+          <td style="background:#f8f9fa;border-left:3px solid #ff4c00;padding:9px 12px;width:50%;"><div style="font-size:8.5px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">İSTENEN TARİH</div><div style="font-weight:600;margin-top:2px;">${esc2(istenenTarih) || '-'}</div></td>
           <td style="width:8px;"></td>
-          <td style="background:#f8f9fa;border-left:3px solid #ff4c00;padding:9px 12px;"><div style="font-size:8.5px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">İSTENEN TARİH</div><div style="font-weight:600;margin-top:2px;">${esc2(istenenTarih) || '-'}</div></td>
+          <td style="background:#f8f9fa;border-left:3px solid #ff4c00;padding:9px 12px;"><div style="font-size:8.5px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">TESLİM YERİ</div><div style="font-weight:600;margin-top:2px;">${esc2(teslimYeri) || '-'}</div></td>
         </tr>
-        <tr><td colspan="3" style="height:8px;"></td></tr>
-        <tr><td colspan="3" style="background:#f8f9fa;border-left:3px solid #ff4c00;padding:9px 12px;"><div style="font-size:8.5px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">TESLİM YERİ</div><div style="font-weight:600;margin-top:2px;">${esc2(teslimYeri) || '-'}</div></td></tr>
       </table>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead><tr style="background:#212529;color:#ffffff;">
