@@ -25,7 +25,8 @@ app.use(express.static(__dirname));
 const mailTransporter = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)
     ? nodemailer.createTransport({
         service: 'gmail',
-        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+        connectionTimeout: 15000, greetingTimeout: 10000, socketTimeout: 20000
     })
     : null;
 if (!mailTransporter) console.warn('⚠️ GMAIL_USER / GMAIL_APP_PASSWORD eksik — e-posta gönderimi devre dışı.');
@@ -2237,39 +2238,40 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
         const epostali = tedR.rows.filter(t => t.email);
         const epostasiz = tedR.rows.filter(t => !t.email).map(t => t.firma_adi);
 
-        // Yanıtı HEMEN dön — mailler arka planda gönderilir (SMTP yavaşlığı kullanıcıyı bekletmesin)
-        res.json({
-            ok: true,
-            mesaj: `${kalem_idler.length} kalem için ${tedR.rows.length} tedarikçiden teklif istendi.` +
-                   (epostali.length ? ` ${epostali.length} tedarikçiye e-posta gönderiliyor.` : '') +
-                   (epostasiz.length ? ` E-postası olmayan (mail gitmedi): ${epostasiz.join(', ')}.` : '')
-        });
-
-        // --- Arka plan: e-postaları ayrı ayrı gönder (fire-and-forget) ---
+        // E-postaları YANIT ÖNCESİ paralel gönder. (Render gibi PaaS'larda res.json
+        // sonrası fire-and-forget kod kesilebildiği için arka plana atmıyoruz; paralel
+        // gönderim + timeout sayesinde garanti gider ama kullanıcıyı uzun bekletmez.)
+        let mailGitti = 0;
+        const mailHata = [];
         if (mailTransporter && epostali.length) {
             const ccList = [...new Set([isteyenEmail, ...adminMails])].filter(Boolean).join(', ');
             const konu = `Aterko - ${kategoriEtiket} Teklif Talebi (${talepEtiket})`;
-            (async () => {
-                for (const ted of epostali) {
-                    try {
-                        await mailTransporter.sendMail({
-                            from: `"Aterko Satınalma" <${process.env.GMAIL_USER}>`,
-                            to: ted.email,
-                            cc: ccList,
-                            subject: konu,
-                            html: teklifTalebiMailHTML({
-                                tedarikciAdi: ted.firma_adi || 'İlgili', kalemler, isteyenAd,
-                                talepEtiket, projeAdi: ilkProje, teslimYeri: ilkTeslimYeri,
-                                istenenTarih: ilkIstenenTarih, not: aciklama || ''
-                            })
-                        });
-                        console.log('✉️ Teklif maili gönderildi:', ted.firma_adi, ted.email);
-                    } catch (e) {
-                        console.error('⚠️ Teklif mail hatası:', ted.firma_adi, e.message);
-                    }
-                }
-            })();
+            const html = teklifTalebiMailHTML({
+                tedarikciAdi: 'İlgili', kalemler, isteyenAd, talepEtiket,
+                projeAdi: ilkProje, teslimYeri: ilkTeslimYeri, istenenTarih: ilkIstenenTarih, not: aciklama || ''
+            });
+            const sonuclar = await Promise.allSettled(epostali.map(ted =>
+                mailTransporter.sendMail({
+                    from: `"Aterko Satınalma" <${process.env.GMAIL_USER}>`,
+                    to: ted.email,
+                    cc: ccList,
+                    subject: konu,
+                    // Her tedarikçinin hitabı kendine: gövdedeki "İlgili"yi firma adıyla değiştir
+                    html: html.replace('Sayın <strong>İlgili</strong> Yetkilisi', `Sayın <strong>${esc2(ted.firma_adi || 'İlgili')}</strong> Yetkilisi`)
+                })
+            ));
+            sonuclar.forEach((r, i) => {
+                if (r.status === 'fulfilled') { mailGitti++; console.log('✉️ Teklif maili gönderildi:', epostali[i].firma_adi); }
+                else { mailHata.push(epostali[i].firma_adi); console.error('⚠️ Teklif mail hatası:', epostali[i].firma_adi, r.reason && r.reason.message); }
+            });
         }
+
+        res.json({
+            ok: true,
+            mesaj: `${kalem_idler.length} kalem için ${tedR.rows.length} tedarikçiden teklif istendi. ${mailGitti} e-posta gönderildi.` +
+                   (mailHata.length ? ` Gönderilemedi: ${mailHata.join(', ')}.` : '') +
+                   (epostasiz.length ? ` E-postası olmayan: ${epostasiz.join(', ')}.` : '')
+        });
     } catch (e) { next(e); }
 });
 
