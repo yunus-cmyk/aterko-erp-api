@@ -660,13 +660,19 @@
     </div>
 
     <div id="satinalmaTeklifDiv" class="d-none">
-        <div class="alert alert-warning border-0 py-2 mb-2 small">
-            <i class="bi bi-info-circle me-1"></i> Bu listede TEKLİF İSTENDİ aşamasındaki tüm kalemler yer alır. Buradan sipariş açılabilir veya tekrar teklif istenebilir.
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <div class="alert alert-warning border-0 py-2 mb-0 small flex-grow-1">
+                <i class="bi bi-info-circle me-1"></i> İşleme alınmış / teklif istenmiş kalemler. Birden fazla kalemi <strong>işaretleyip</strong> tek siparişe alabilir, ya da satırdaki sepet ikonuyla tek kalemi hızlıca siparişe çevirebilirsin.
+            </div>
+            <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnTeklifSecimSiparis" onclick="siparisOlusturTeklifSecili()" disabled>
+                <i class="bi bi-cart-plus me-1"></i>Seçilenlerle Sipariş Oluştur (<span id="teklifSecimSayi">0</span>)
+            </button>
         </div>
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <table class="table table-hover align-middle mb-0" style="font-size:0.82rem;">
                 <thead class="table-warning fw-bold text-dark">
                     <tr>
+                        <th width="36" class="text-center"><input type="checkbox" id="teklifChkAll" onchange="teklifTumunuSec(this)"></th>
                         <th>Talep No</th>
                         <th>İlgili Proje</th>
                         <th>Ürün</th>
@@ -7441,8 +7447,10 @@ function fetchTeklifHavuzu() {
 function renderTeklifHavuzu(kalemler) {
     window.teklifHavuzuCache = kalemler; // doğrudan sipariş açma için
     const tb = document.getElementById('teklifHavuzuBody');
+    teklifSecimGuncelle(); // seçim sayacını sıfırla
+    const chkAll = document.getElementById('teklifChkAll'); if (chkAll) chkAll.checked = false;
     if (kalemler.length === 0) {
-        tb.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">İşlem bekleyen kalem yok.</td></tr>';
+        tb.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">İşlem bekleyen kalem yok.</td></tr>';
         return;
     }
     tb.innerHTML = kalemler.map(k => {
@@ -7453,7 +7461,8 @@ function renderTeklifHavuzu(kalemler) {
         const teklifIcon = k.durum === 'TEKLİF İSTENDİ' ? 'bi-envelope-arrow-up' : 'bi-envelope-paper';
         const teklifSayId = `teklifSay-${k.id}`;
         return `<tr>
-            <td><a href="#" class="fw-bold text-primary text-decoration-none" onclick="event.preventDefault(); openTalepDetayModal(${k.talep_id}, '${k.talep_no}')">${esc(k.talep_no)}</a></td>
+            <td class="text-center"><input type="checkbox" class="teklif-chk" value="${k.id}" onchange="teklifSecimGuncelle()"></td>
+            <td><a href="#" class="fw-bold text-primary text-decoration-none" onclick="event.preventDefault(); openTalepDetayModal(${k.talep_id}, '${k.talep_no}')" title="Talebi incele">${esc(k.talep_no)}</a></td>
             <td class="small">${esc(k.proje_kodu)} / ${esc(k.musteri_adi)} - ${esc(k.proje_adi)}</td>
             <td>${urunKod}<span class="text-dark">${esc(urunAd)}</span></td>
             <td class="text-end fw-bold">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
@@ -7469,7 +7478,6 @@ function renderTeklifHavuzu(kalemler) {
                     <button class="btn btn-success py-0" onclick="siparisOlusturTekliften(${k.id})" title="Bu kalem için sipariş oluştur"><i class="bi bi-cart-plus"></i></button>
                     <button class="btn btn-warning py-0 text-dark" onclick="openTeklifIste(${k.talep_id})" title="${teklifBtnTitle}"><i class="bi ${teklifIcon}"></i></button>
                     <button class="btn btn-outline-secondary py-0" onclick="teklifKalemGeriAl(${k.id}, '${esc(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i></button>
-                    <button class="btn btn-outline-dark py-0" onclick="openTalepDetayModal(${k.talep_id}, '${k.talep_no}')" title="Talebi İncele"><i class="bi bi-search"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -7478,23 +7486,50 @@ function renderTeklifHavuzu(kalemler) {
     kalemler.forEach(k => teklifSayisiYukle(k.id, `teklifSay-${k.id}`));
 }
 
-// Teklif Havuzu'ndan doğrudan sipariş aç (talep detay modalına gitmeden)
-function siparisOlusturTekliften(kalemId) {
-    const k = (window.teklifHavuzuCache || []).find(x => (x.kalem_id || x.id) == kalemId);
-    if (!k) return showToast('Kalem bulunamadı, listeyi yenileyin.', 'error');
-    const urunAd = k.stok_adi || k.ozel_urun_adi || '-';
-    const birim = k.stok_birim || k.ozel_urun_birim || 'ADET';
-    openSiparisOlusturModal(null, [{
+// Teklif Havuzu kalemini sipariş-modalı formatına çevir
+function teklifKalemToSiparis(k) {
+    return {
         id: k.kalem_id || k.id,
-        ad: urunAd,
+        ad: k.stok_adi || k.ozel_urun_adi || '-',
         kod: k.stok_kodu || 'ÖZEL',
         miktar: parseFloat(k.miktar) || 0,
-        birim: birim,
+        birim: k.stok_birim || k.ozel_urun_birim || 'ADET',
         birim_fiyat: 0,
         talep_id: k.talep_id,
         talep_no: k.talep_no
-    }]);
-    // openSiparisOlusturModal modalı kendisi açar
+    };
+}
+
+// Tek kalem (satır sepet ikonu) → doğrudan sipariş aç
+function siparisOlusturTekliften(kalemId) {
+    const k = (window.teklifHavuzuCache || []).find(x => (x.kalem_id || x.id) == kalemId);
+    if (!k) return showToast('Kalem bulunamadı, listeyi yenileyin.', 'error');
+    openSiparisOlusturModal(null, [teklifKalemToSiparis(k)]);
+}
+
+// Seçim kutusu değiştikçe sayaç + buton durumu güncelle
+function teklifSecimGuncelle() {
+    const sec = document.querySelectorAll('.teklif-chk:checked');
+    const say = document.getElementById('teklifSecimSayi');
+    const btn = document.getElementById('btnTeklifSecimSiparis');
+    if (say) say.textContent = sec.length;
+    if (btn) btn.disabled = sec.length === 0;
+}
+
+// Tümünü seç/kaldır
+function teklifTumunuSec(master) {
+    document.querySelectorAll('.teklif-chk').forEach(cb => cb.checked = master.checked);
+    teklifSecimGuncelle();
+}
+
+// Seçili kalemlerle tek sipariş aç (aynı/farklı talep — cross-talep desteğiyle)
+function siparisOlusturTeklifSecili() {
+    const ids = [...document.querySelectorAll('.teklif-chk:checked')].map(cb => cb.value);
+    if (ids.length === 0) return showToast('En az bir kalem seçin.', 'error');
+    const cache = window.teklifHavuzuCache || [];
+    const kalemler = ids.map(id => cache.find(x => (x.kalem_id || x.id) == id)).filter(Boolean).map(teklifKalemToSiparis);
+    if (kalemler.length === 0) return showToast('Seçili kalemler bulunamadı, listeyi yenileyin.', 'error');
+    openSiparisOlusturModal(null, kalemler);
 }
 
 // Teklif Havuzu'nda bir kalemi ONAYLANDI'ya geri çek — kalem Talep Havuzu'na döner
