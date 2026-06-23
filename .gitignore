@@ -34,3 +34,7 @@ satinalma-old-*
 
 # Eski tek seferlik migration dosyaları (isteğe bağlı)
 # migrate-*.js
+
+# Veri aktarımı (hassas — tedarikçi/fiyat)
+import-*.csv
+import-runner.js
