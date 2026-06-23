@@ -3154,20 +3154,29 @@ function sekmeGorunur(modul) {
 async function izinHaritasiYukle() {
     // Aktif simülasyon var mı kontrol et
     const simRol = localStorage.getItem('aterko_simulasyon_rol');
-    const url = simRol ? '/me/izinler?as=' + encodeURIComponent(simRol) : '/me/izinler';
-    const r = await secureFetch(url).catch(() => null);
-    if (!r || !r.ok) return;
-    window.kullaniciIzinleri = r.izinler || {};
-
-    // Simülasyon banner kontrolü
     const banner = document.getElementById('simulasyonBanner');
-    if (r.simulasyon && banner) {
+
+    // KRİTİK: Simülasyon aktifse banner'ı HER ZAMAN göster (backend çağrısından
+    // bağımsız). Böylece /me/izinler başarısız olsa bile "Çık" butonu erişilebilir
+    // kalır ve kullanıcı asla simülasyonda sıkışmaz.
+    if (simRol && banner) {
         banner.classList.remove('d-none');
-        document.getElementById('simulasyonRolAd').textContent = r.rol;
-        // Etkin yetkiyi de override et (sekmeGorunur ADMIN bypass'ını devre dışı bırakmak için)
-        kullaniciYetki = r.rol;
+        const adEl = document.getElementById('simulasyonRolAd');
+        if (adEl) adEl.textContent = simRol;
     } else if (banner) {
         banner.classList.add('d-none');
+    }
+
+    const url = simRol ? '/me/izinler?as=' + encodeURIComponent(simRol) : '/me/izinler';
+    const r = await secureFetch(url).catch(() => null);
+    if (!r || !r.ok) return; // banner zaten gösterildi → çıkış garantili
+    window.kullaniciIzinleri = r.izinler || {};
+
+    if (r.simulasyon) {
+        // Etkin yetkiyi override et (sekmeGorunur ADMIN bypass'ını devre dışı bırak)
+        kullaniciYetki = r.rol;
+        if (banner) { banner.classList.remove('d-none'); const adEl = document.getElementById('simulasyonRolAd'); if (adEl) adEl.textContent = r.rol; }
+    } else {
         // Gerçek yetkiyi geri yükle
         const user = JSON.parse(localStorage.getItem('aterko_user') || '{}');
         kullaniciYetki = user.yetki || '';
