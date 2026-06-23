@@ -662,11 +662,16 @@
     <div id="satinalmaTeklifDiv" class="d-none">
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
             <div class="alert alert-warning border-0 py-2 mb-0 small flex-grow-1">
-                <i class="bi bi-info-circle me-1"></i> İşleme alınmış / teklif istenmiş kalemler. Birden fazla kalemi <strong>işaretleyip</strong> tek siparişe alabilir, ya da satırdaki sepet ikonuyla tek kalemi hızlıca siparişe çevirebilirsin.
+                <i class="bi bi-info-circle me-1"></i> İşleme alınmış / teklif istenmiş kalemler. Kalemleri <strong>işaretleyip</strong> üstteki butonlarla topluca <strong>teklif iste</strong> veya <strong>siparişe al</strong>.
             </div>
-            <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnTeklifSecimSiparis" onclick="siparisOlusturTeklifSecili()" disabled>
-                <i class="bi bi-cart-plus me-1"></i>Seçilenlerle Sipariş Oluştur (<span id="teklifSecimSayi">0</span>)
-            </button>
+            <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-warning btn-sm fw-bold shadow-sm px-3 text-dark" id="btnTeklifSecimTeklif" onclick="teklifIsteSecili()" disabled>
+                    <i class="bi bi-envelope-paper me-1"></i>Seçilenlerden Teklif İste (<span id="teklifSecimSayi2">0</span>)
+                </button>
+                <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnTeklifSecimSiparis" onclick="siparisOlusturTeklifSecili()" disabled>
+                    <i class="bi bi-cart-plus me-1"></i>Seçilenlerle Sipariş Oluştur (<span id="teklifSecimSayi">0</span>)
+                </button>
+            </div>
         </div>
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <table class="table table-hover align-middle mb-0" style="font-size:0.82rem;">
@@ -2644,37 +2649,30 @@ STK-002		50	adet
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-4" style="background-color:#f8f9fa;">
-          <p class="text-muted small mb-3"><i class="bi bi-info-circle me-1"></i>Teklif istemek için kalemler seçin. <strong>Farklı taleplerden kalemler aynı listede toplanabilir.</strong> Seçilen tedarikçi(ler)e bu kalemlerin teklifi sorulur.</p>
+          <p class="text-muted small mb-3"><i class="bi bi-info-circle me-1"></i>Seçili kalemler için <strong>seçtiğin her tedarikçiye ayrı ayrı</strong> teklif talebi e-postası gönderilir (tedarikçiler birbirini görmez). Bilgi kopyası seni ve Admin'i de bulur.</p>
 
           <div class="row g-3">
             <div class="col-md-6">
               <label class="small fw-bold text-muted mb-1">Tedarikçi(ler) <span class="text-muted">(çoklu seçim için Cmd/Ctrl)</span></label>
-              <select id="tiTedarikci" multiple class="form-select form-select-sm" size="6"></select>
+              <select id="tiTedarikci" multiple class="form-select form-select-sm" size="7"></select>
+              <div class="small text-muted mt-1"><i class="bi bi-envelope me-1"></i>E-postası kayıtlı olmayan tedarikçilere mail gitmez, yalnızca kayıt tutulur.</div>
             </div>
             <div class="col-md-6">
-              <label class="small fw-bold text-muted mb-1">Açıklama / Not (tedarikçiye iletilecek)</label>
-              <textarea id="tiAciklama" class="form-control form-control-sm" rows="6" placeholder="Termin tarihi, ödeme şartları, vb."></textarea>
+              <label class="small fw-bold text-muted mb-1">Açıklama / Not (e-postaya eklenir)</label>
+              <textarea id="tiAciklama" class="form-control form-control-sm" rows="7" placeholder="Termin tarihi, ödeme şartları, özel talimat vb."></textarea>
             </div>
             <div class="col-12">
-              <label class="small fw-bold text-muted mb-1">Teklif istenecek kalemler</label>
+              <label class="small fw-bold text-muted mb-1">Teklif istenecek kalemler (<span id="tiKalemSayi">0</span>)</label>
               <div class="card border">
-                <div class="table-responsive">
+                <div class="table-responsive" style="max-height:240px;overflow-y:auto;">
                   <table class="table table-sm mb-0" style="font-size:0.82rem;">
-                    <thead class="table-light">
-                      <tr>
-                        <th width="40"><input type="checkbox" id="tiHepsi" onchange="tiToggleHepsi(this)"></th>
-                        <th>Talep No</th>
-                        <th>Proje</th>
-                        <th>Ürün</th>
-                        <th class="text-end">Miktar</th>
-                        <th class="text-center">Durum</th>
-                      </tr>
+                    <thead class="table-light sticky-top">
+                      <tr><th>Talep No</th><th>Ürün</th><th class="text-end">Miktar</th></tr>
                     </thead>
                     <tbody id="tiKalemBody"></tbody>
                   </table>
                 </div>
               </div>
-              <div class="small text-muted mt-1"><span id="tiSayac">0</span> kalem seçildi</div>
             </div>
           </div>
         </div>
@@ -7486,7 +7484,7 @@ function renderTeklifHavuzu(kalemler) {
                 <td class="text-center"><input type="checkbox" class="teklif-chk" data-talep-id="${k.talep_id}" value="${k.id}" onchange="teklifSecimGuncelle()"></td>
                 <td class="text-muted text-center"><i class="bi bi-arrow-return-right"></i></td>
                 <td></td>
-                <td>${urunKod}<span class="text-dark">${esc(urunAd)}</span></td>
+                <td>${urunKod}<span class="text-dark">${esc(urunAd)}</span><div class="small text-muted mt-1" id="teklifGecmis-${k.id}"></div></td>
                 <td class="text-end fw-bold">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
                 <td class="small">${renderTerminTarihi(k.istenen_tarih)}</td>
                 <td class="text-center">${getSatinalmaDurumBadge(k.durum)}</td>
@@ -7496,11 +7494,7 @@ function renderTeklifHavuzu(kalemler) {
                     </button>
                 </td>
                 <td class="text-center">
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-success py-0" onclick="siparisOlusturTekliften(${k.id})" title="Bu kalem için sipariş oluştur"><i class="bi bi-cart-plus"></i></button>
-                        <button class="btn btn-warning py-0 text-dark" onclick="openTeklifIste(${k.talep_id})" title="${teklifBtnTitle}"><i class="bi ${teklifIcon}"></i></button>
-                        <button class="btn btn-outline-secondary py-0" onclick="teklifKalemGeriAl(${k.id}, '${esc(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i></button>
-                    </div>
+                    <button class="btn btn-sm btn-outline-secondary py-0" onclick="teklifKalemGeriAl(${k.id}, '${esc(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i> Geri Al</button>
                 </td>
             </tr>`;
         });
@@ -7537,13 +7531,11 @@ function siparisOlusturTekliften(kalemId) {
     openSiparisOlusturModal(null, [teklifKalemToSiparis(k)]);
 }
 
-// Seçim kutusu değiştikçe sayaç + buton durumu güncelle
+// Seçim kutusu değiştikçe sayaçlar + her iki toplu buton durumu güncelle
 function teklifSecimGuncelle() {
-    const sec = document.querySelectorAll('.teklif-chk:checked');
-    const say = document.getElementById('teklifSecimSayi');
-    const btn = document.getElementById('btnTeklifSecimSiparis');
-    if (say) say.textContent = sec.length;
-    if (btn) btn.disabled = sec.length === 0;
+    const n = document.querySelectorAll('.teklif-chk:checked').length;
+    ['teklifSecimSayi', 'teklifSecimSayi2'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = n; });
+    ['btnTeklifSecimSiparis', 'btnTeklifSecimTeklif'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = n === 0; });
 }
 
 // Tümünü seç/kaldır (kalem + grup checkbox'ları)
@@ -7578,8 +7570,18 @@ async function teklifKalemGeriAl(kalemId, urunAd) {
 async function teklifSayisiYukle(talepUrunId, hedefSpanId) {
     const r = await secureFetch('/teklifler/' + talepUrunId).catch(() => null);
     const el = document.getElementById(hedefSpanId);
-    if (!el) return;
-    el.textContent = (r && r.ok) ? (r.data.length || 0) : '0';
+    if (el) el.textContent = (r && r.ok) ? (r.data.length || 0) : '0';
+    // İstek/teklif geçmişi (kimden, ne zaman, fiyat geldiyse)
+    const g = document.getElementById('teklifGecmis-' + talepUrunId);
+    if (g) {
+        if (r && r.ok && r.data.length) {
+            g.innerHTML = '<i class="bi bi-envelope me-1"></i>İstendi: ' + r.data.map(x => {
+                const t = x.kayit_tarihi ? new Date(x.kayit_tarihi).toLocaleDateString('tr-TR') : '';
+                const fiyat = x.birim_fiyat ? ` · <span class="text-success fw-bold">${formatTR(x.birim_fiyat)} ${esc(x.para_birimi || '')}</span>` : '';
+                return `${esc(x.tedarikci_adi || '?')} (${t})${fiyat}`;
+            }).join(' &nbsp;|&nbsp; ');
+        } else g.innerHTML = '';
+    }
 }
 
 // ============================================================================
@@ -7898,72 +7900,51 @@ async function downloadSiparisPdf(siparisId, siparisNo) {
 // TEKLİF İSTE
 // =================================================================
 // İlgili talepteki İŞLEME ALINDI/TEKLİF İSTENDİ kalemleri + diğer talepleri de listele
-async function openTeklifIste(seedTalepId) {
-    // Modal'ı aç ve hazırlık yap
-    showLoading();
-    // Tüm uygun kalemleri çek (TÜM taleplerden, İŞLEME ALINDI veya TEKLİF İSTENDİ olanlar)
-    // Bunun için yeni bir endpoint yok, mevcut /api/satinalma-listesi + /api/satinalma-detay'ı birleştireceğiz
-    // Daha pratik: aktif (arşivlenmemiş) tüm talepleri zaten çekiyoruz, her birinin detayını al
-    const tum = (window.taleplerGlobal || []).filter(t => ['ONAYLANDI','İŞLEME ALINDI','TEKLİF İSTENDİ'].includes(t.durum));
-    if (tum.length === 0) { hideLoading(); return showToast('Uygun talep bulunamadı.', 'error'); }
+// Teklif Havuzu'nda seçili kalemlerle teklif iste modalını aç
+function teklifIsteSecili() {
+    const ids = [...document.querySelectorAll('.teklif-chk:checked')].map(cb => cb.value);
+    if (ids.length === 0) return showToast('En az bir kalem seçin.', 'error');
+    openTeklifIste(ids);
+}
 
-    // Her talebin kalemlerini çek (paralel)
-    const kalemler = [];
-    const detayPromises = tum.map(t => secureFetch(`/satinalma-detay/${t.id}`));
-    const detayResults = await Promise.all(detayPromises);
-    detayResults.forEach((d, i) => {
-        if (d.ok) {
-            d.data.forEach(k => {
-                if (['İŞLEME ALINDI','TEKLİF İSTENDİ'].includes((k.durum||'').trim())) {
-                    kalemler.push({ ...k, talep_no: tum[i].talep_no, proje: tum[i].proje_kodu + ' - ' + tum[i].proje_adi });
-                }
-            });
-        }
-    });
+// Teklif iste modalı — verilen kalem id'leriyle (Teklif Havuzu'ndan), salt-okunur kalem listesi + tedarikçi seçimi
+async function openTeklifIste(kalemIdler) {
+    const cache = window.teklifHavuzuCache || [];
+    const kalemler = kalemIdler.map(id => cache.find(x => (x.kalem_id || x.id) == id)).filter(Boolean);
+    if (kalemler.length === 0) return showToast('Seçili kalemler bulunamadı, listeyi yenileyin.', 'error');
+    window.tiSeciliKalemler = kalemler.map(k => parseInt(k.kalem_id || k.id));
 
-    // Modal alanlarını doldur
     document.getElementById('tiAciklama').value = '';
-    document.getElementById('tiHepsi').checked = false;
+    document.getElementById('tiKalemSayi').textContent = kalemler.length;
 
     // Tedarikçiler
     const tedSel = document.getElementById('tiTedarikci');
+    tedSel.innerHTML = '<option disabled>Yükleniyor...</option>';
     secureFetch('/tedarikciler?sadece_aktif=1').then(r => {
-        if (r.ok) tedSel.innerHTML = r.data.map(t => `<option value="${t.id}">${esc(t.firma_adi)}</option>`).join('');
+        if (r.ok) tedSel.innerHTML = r.data.map(t =>
+            `<option value="${t.id}">${esc(t.firma_adi)}${t.email ? '' : ' (e-posta yok)'}</option>`
+        ).join('');
     });
 
-    // Kalemleri tabloya yaz
-    const tb = document.getElementById('tiKalemBody');
-    tb.innerHTML = kalemler.map(k => `
-        <tr>
-            <td><input type="checkbox" class="ti-chk form-check-input" data-kalem-id="${k.id}" data-talep-id="${k.talep_id}" onchange="tiSayacGuncelle()" ${k.talep_id == seedTalepId ? 'checked' : ''}></td>
+    // Kalemleri salt-okunur listele
+    document.getElementById('tiKalemBody').innerHTML = kalemler.map(k => {
+        const ad = k.stok_adi || k.ozel_urun_adi || '-';
+        const birim = k.stok_birim || k.ozel_urun_birim || '';
+        return `<tr>
             <td class="small">${esc(k.talep_no)}</td>
-            <td class="small">${esc(k.proje)}</td>
-            <td>${esc(k.stok_adi || k.ozel_urun_adi || '-')}</td>
-            <td class="text-end">${formatTR(parseFloat(k.miktar))} ${esc(k.stok_birim || k.ozel_urun_birim || '')}</td>
-            <td class="text-center">${getSatinalmaDurumBadge(k.durum)}</td>
-        </tr>
-    `).join('');
+            <td>${k.stok_kodu ? `<span class="text-primary small fw-bold">${esc(k.stok_kodu)}</span> ` : ''}${esc(ad)}</td>
+            <td class="text-end fw-bold">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
+        </tr>`;
+    }).join('');
 
-    tiSayacGuncelle();
-    hideLoading();
     new bootstrap.Modal(document.getElementById('modalTeklifIste')).show();
 }
 
-function tiToggleHepsi(el) {
-    document.querySelectorAll('.ti-chk').forEach(cb => cb.checked = el.checked);
-    tiSayacGuncelle();
-}
-
-function tiSayacGuncelle() {
-    const sec = document.querySelectorAll('.ti-chk:checked').length;
-    document.getElementById('tiSayac').textContent = sec;
-}
-
 async function submitTeklifIste() {
-    const kalem_idler = [...document.querySelectorAll('.ti-chk:checked')].map(cb => parseInt(cb.dataset.kalemId));
-    if (kalem_idler.length === 0) return showToast('En az bir kalem seçin.', 'error');
-
+    const kalem_idler = window.tiSeciliKalemler || [];
+    if (kalem_idler.length === 0) return showToast('Kalem seçilmedi.', 'error');
     const tedarikci_idler = [...document.getElementById('tiTedarikci').selectedOptions].map(o => parseInt(o.value));
+    if (tedarikci_idler.length === 0) return showToast('En az bir tedarikçi seçin.', 'error');
     const aciklama = document.getElementById('tiAciklama').value.trim();
 
     showLoading();
@@ -7971,8 +7952,8 @@ async function submitTeklifIste() {
     hideLoading();
     if (r.ok) {
         showToast(r.mesaj, 'success');
-        bootstrap.Modal.getInstance(document.getElementById('modalTeklifIste')).hide();
-        fetchSatinalmaListesi();
+        bootstrap.Modal.getInstance(document.getElementById('modalTeklifIste'))?.hide();
+        fetchTeklifHavuzu();
     } else { showToast(r.hata, 'error'); }
 }
 

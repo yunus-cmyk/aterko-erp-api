@@ -2121,39 +2121,151 @@ app.delete('/api/teklif-sil/:id', yetkiKontrol, async (req, res, next) => {
 
 // TEKLİF İSTE — kalem listesini TEKLİF İSTENDİ durumuna geçir
 // Body: { kalem_idler: [int], tedarikci_idler: [int], aciklama }
+// Teklif Talebi e-posta gövdesi (siparis.html görsel diline uygun, inline CSS)
+function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, projeAdi, teslimYeri, istenenTarih, not }) {
+    const satirlar = kalemler.map((k, i) => `
+        <tr style="${i % 2 ? 'background:#fafbfc;' : ''}">
+          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;">${i + 1}</td>
+          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;color:#0d6efd;font-weight:600;">${esc2(k.kod)}</td>
+          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;">${esc2(k.ad)}</td>
+          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;text-align:center;font-weight:600;">${k.miktar} ${esc2(k.birim)}</td>
+        </tr>`).join('');
+    return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:20px;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif;color:#212529;">
+  <div style="max-width:660px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
+    <div style="border-bottom:3px solid #ff4c00;padding:20px 26px;">
+      <table style="width:100%;border-collapse:collapse;"><tr>
+        <td style="vertical-align:top;"><div style="font-size:24px;font-weight:900;letter-spacing:1px;color:#212529;">ATERKO</div><div style="font-size:9px;color:#6c757d;">Prefabrik &amp; Konteyner Yapı Sistemleri</div></td>
+        <td style="text-align:right;vertical-align:top;"><div style="font-size:16px;font-weight:700;color:#ff4c00;">TEKLİF TALEBİ</div><div style="font-size:12px;font-weight:600;color:#212529;">${esc2(talepEtiket)}</div></td>
+      </tr></table>
+    </div>
+    <div style="padding:24px 26px;">
+      <p style="margin:0 0 6px;">Sayın <strong>${esc2(tedarikciAdi)}</strong> Yetkilisi,</p>
+      <p style="margin:0 0 16px;color:#495057;">Aşağıda belirtilen malzemeler için fiyat teklifinizi rica ederiz.</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <tr>
+          <td style="background:#f8f9fa;border-left:3px solid #ff4c00;padding:9px 12px;width:50%;"><div style="font-size:8.5px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">PROJE</div><div style="font-weight:600;margin-top:2px;">${esc2(projeAdi) || '-'}</div></td>
+          <td style="width:8px;"></td>
+          <td style="background:#f8f9fa;border-left:3px solid #ff4c00;padding:9px 12px;"><div style="font-size:8.5px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">İSTENEN TARİH</div><div style="font-weight:600;margin-top:2px;">${esc2(istenenTarih) || '-'}</div></td>
+        </tr>
+        <tr><td colspan="3" style="height:8px;"></td></tr>
+        <tr><td colspan="3" style="background:#f8f9fa;border-left:3px solid #ff4c00;padding:9px 12px;"><div style="font-size:8.5px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">TESLİM YERİ</div><div style="font-weight:600;margin-top:2px;">${esc2(teslimYeri) || '-'}</div></td></tr>
+      </table>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:#212529;color:#ffffff;">
+          <th style="padding:9px 6px;text-align:left;font-size:11px;text-transform:uppercase;">Sıra</th>
+          <th style="padding:9px 6px;text-align:left;font-size:11px;text-transform:uppercase;">Kod</th>
+          <th style="padding:9px 6px;text-align:left;font-size:11px;text-transform:uppercase;">Ürün / Malzeme</th>
+          <th style="padding:9px 6px;text-align:center;font-size:11px;text-transform:uppercase;">Miktar</th>
+        </tr></thead>
+        <tbody>${satirlar}</tbody>
+      </table>
+      ${not ? `<div style="margin-top:16px;padding:11px 13px;background:#fff8e1;border-left:3px solid #ffc107;font-size:13px;"><strong style="color:#856404;">NOT:</strong> ${esc2(not).replace(/\n/g, '<br>')}</div>` : ''}
+      <p style="margin:20px 0 0;color:#495057;">Teklifinizi en kısa sürede tarafımıza iletmenizi rica ederiz. İyi çalışmalar dileriz.</p>
+      <div style="margin-top:26px;font-size:14px;"><strong>${esc2(isteyenAd)}</strong><br><span style="color:#6c757d;">Aterko Satınalma</span></div>
+    </div>
+    <div style="padding:13px 26px;border-top:1px solid #dee2e6;background:#f8f9fa;font-size:11px;color:#6c757d;">Aterko Prefabrik &amp; Konteyner Yapı Sistemleri</div>
+  </div>
+</body></html>`;
+}
+// Basit HTML-escape (mail gövdesi için)
+function esc2(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
 app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
     try {
         const { kalem_idler, tedarikci_idler, aciklama } = req.body;
         if (!Array.isArray(kalem_idler) || kalem_idler.length === 0) {
             return res.json({ ok: false, hata: 'En az bir kalem seçilmelidir.' });
         }
-        // Kalemlerin İŞLEME ALINDI veya TEKLİF İSTENDİ olduğunu kontrol et
-        const ctrl = await pool.query(
-            "SELECT id, durum FROM talep_urunleri WHERE id = ANY($1::integer[])", [kalem_idler]
-        );
-        const gecersiz = ctrl.rows.filter(r => !['İŞLEME ALINDI','TEKLİF İSTENDİ'].includes((r.durum||'').trim()));
+        if (!Array.isArray(tedarikci_idler) || tedarikci_idler.length === 0) {
+            return res.json({ ok: false, hata: 'En az bir tedarikçi seçilmelidir.' });
+        }
+
+        // Kalem detayları (ürün, miktar, birim, kategori, talep, proje)
+        const kalemlerR = await pool.query(`
+            SELECT tu.id, tu.miktar, tu.durum,
+                   COALESCE(sk.stok_adi, tu.ozel_urun_adi, '-') as ad,
+                   COALESCE(sk.stok_kodu, 'ÖZEL') as kod,
+                   COALESCE(sk.birim, tu.ozel_urun_birim, 'ADET') as birim,
+                   COALESCE(sk.kategori, '') as kategori,
+                   t.talep_no, t.istenen_tarih, t.teslim_yeri,
+                   TRIM(COALESCE(p.proje_kodu,'') || ' ' || COALESCE(p.proje_adi,'')) as proje
+            FROM talep_urunleri tu
+            JOIN satinalma_talepleri t ON tu.talep_id = t.id
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id = sk.id
+            LEFT JOIN projeler p ON t.proje_id = p.id
+            WHERE tu.id = ANY($1::integer[])
+        `, [kalem_idler]);
+        const kalemler = kalemlerR.rows;
+        const gecersiz = kalemler.filter(k => !['İŞLEME ALINDI', 'TEKLİF İSTENDİ'].includes((k.durum || '').trim()));
         if (gecersiz.length > 0) {
             return res.json({ ok: false, hata: `${gecersiz.length} kalem uygun durumda değil (İŞLEME ALINDI veya TEKLİF İSTENDİ olmalı).` });
         }
 
-        // Etkilenen talepleri bul (başlık güncellemesi için)
-        const ilgiliR = await pool.query(`
-            SELECT DISTINCT talep_id FROM talep_urunleri WHERE id = ANY($1::integer[])
-        `, [kalem_idler]);
+        // Tedarikçi + admin + isteyen bilgileri
+        const tedR = await pool.query("SELECT id, firma_adi, email FROM tedarikciler WHERE id = ANY($1::integer[])", [tedarikci_idler]);
+        const admR = await pool.query("SELECT email FROM kullanicilar WHERE rol IN ('ADMIN','Admin') AND durum='AKTIF'");
+        const adminMails = admR.rows.map(a => a.email).filter(Boolean);
+        const isteyenEmail = req.user.email;
+        const isteyenAd = req.user.adSoyad || req.user.email;
 
-        // Kalemleri TEKLİF İSTENDİ'ye çek
+        // Kalemleri TEKLİF İSTENDİ'ye çek + talep başlıklarını güncelle
         await pool.query("UPDATE talep_urunleri SET durum='TEKLİF İSTENDİ' WHERE id = ANY($1::integer[])", [kalem_idler]);
+        const talepIdsR = await pool.query("SELECT DISTINCT talep_id FROM talep_urunleri WHERE id = ANY($1::integer[])", [kalem_idler]);
+        for (const t of talepIdsR.rows) await talepBaslikDurumGuncelle(pool, t.talep_id);
 
-        // Her etkilenen talebin başlık durumunu kalemlerinden yeniden türet
-        for (const t of ilgiliR.rows) {
-            await talepBaslikDurumGuncelle(pool, t.talep_id);
+        // Konu etiketleri
+        const kategoriler = [...new Set(kalemler.map(k => k.kategori).filter(Boolean))];
+        const kategoriEtiket = kategoriler.length === 1 ? kategoriler[0] : (kategoriler.length > 1 ? 'Muhtelif' : 'Malzeme');
+        const talepNolar = [...new Set(kalemler.map(k => k.talep_no).filter(Boolean))];
+        const talepEtiket = talepNolar.length === 1 ? talepNolar[0] : (talepNolar[0] + ' vd.');
+        const ilkProje = kalemler[0]?.proje || '';
+        const ilkTeslimYeri = kalemler[0]?.teslim_yeri || '';
+        const ilkIstenenTarih = kalemler[0]?.istenen_tarih ? new Date(kalemler[0].istenen_tarih).toLocaleDateString('tr-TR') : '';
+
+        // Her tedarikçi için: kayıt + AYRI mail (birbirlerinden habersiz)
+        let mailGitti = 0;
+        const mailGitmeyen = [];
+        const ccList = [...new Set([isteyenEmail, ...adminMails])].filter(Boolean).join(', ');
+        for (const ted of tedR.rows) {
+            // teklif_kayitlari: kalem+tedarikçi için kayıt yoksa "İSTENDİ" olarak ekle (geçmiş birikir)
+            for (const k of kalemler) {
+                const varMi = await pool.query("SELECT 1 FROM teklif_kayitlari WHERE talep_urun_id=$1 AND tedarikci_id=$2 LIMIT 1", [k.id, ted.id]);
+                if (varMi.rowCount === 0) {
+                    await pool.query(
+                        "INSERT INTO teklif_kayitlari (talep_urun_id, tedarikci_id, miktar, durum, olusturan_email) VALUES ($1,$2,$3,'İSTENDİ',$4)",
+                        [k.id, ted.id, k.miktar, isteyenEmail]
+                    );
+                }
+            }
+            // Mail (e-postası olana, ayrı ayrı)
+            if (ted.email && mailTransporter) {
+                try {
+                    await mailTransporter.sendMail({
+                        from: `"Aterko Satınalma" <${process.env.GMAIL_USER}>`,
+                        to: ted.email,
+                        cc: ccList,
+                        subject: `Aterko - ${kategoriEtiket} Teklif Talebi (${talepEtiket})`,
+                        html: teklifTalebiMailHTML({
+                            tedarikciAdi: ted.firma_adi || 'İlgili', kalemler, isteyenAd,
+                            talepEtiket, projeAdi: ilkProje, teslimYeri: ilkTeslimYeri,
+                            istenenTarih: ilkIstenenTarih, not: aciklama || ''
+                        })
+                    });
+                    mailGitti++;
+                } catch (e) {
+                    console.error('Teklif mail hatası:', ted.firma_adi, e.message);
+                    mailGitmeyen.push(`${ted.firma_adi} (gönderilemedi)`);
+                }
+            } else if (!ted.email) {
+                mailGitmeyen.push(`${ted.firma_adi} (e-posta yok)`);
+            }
         }
 
-        // Teklif kaydını JSONB olarak talep notlarına veya ek tabloya yazabiliriz — şimdilik aciklama sadece dönüş mesajında
-        const tedariliciSayisi = Array.isArray(tedarikci_idler) ? tedarikci_idler.length : 0;
         res.json({
             ok: true,
-            mesaj: `${kalem_idler.length} kalem TEKLİF İSTENDİ durumuna geçirildi.${tedariliciSayisi > 0 ? ` (${tedariliciSayisi} tedarikçi)` : ''}`
+            mesaj: `${kalem_idler.length} kalem için ${tedR.rows.length} tedarikçiden teklif istendi. ${mailGitti} e-posta gönderildi.` +
+                   (mailGitmeyen.length ? ` Mail gitmeyen: ${mailGitmeyen.join(', ')}` : '')
         });
     } catch (e) { next(e); }
 });
