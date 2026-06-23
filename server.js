@@ -4017,19 +4017,13 @@ async function genelIzinMiddleware(req, res, next) {
 // ?as=ROL parametresi: sadece ADMIN için — başka rolün izinlerini simüle eder
 app.get('/api/me/izinler', yetkiKontrol, async (req, res, next) => {
     try {
-        let etkinRol = req.user.rol;
-        let simulasyon = false;
-        const yansitilan = (req.query.as || '').trim().toUpperCase();
-        if (yansitilan && (req.user.rol === 'ADMIN' || req.user.rol === 'Admin')) {
-            // Geçerli rol mü?
-            const r = await pool.query('SELECT 1 FROM roller WHERE ad=$1', [yansitilan]);
-            if (r.rowCount > 0) {
-                etkinRol = yansitilan;
-                simulasyon = true;
-            }
-        }
+        // yetkiKontrol middleware'i X-Yansit-Rol header'ını zaten işledi:
+        // simülasyonda req.user.rol = yansıtılan rol, req.user.gercek_rol = ADMIN, req.user.simulasyon = true.
+        // Bu yüzden burada tekrar kontrol etmiyoruz — middleware'in sonucunu kullanıyoruz.
+        const etkinRol = req.user.rol;
+        const simulasyon = !!req.user.simulasyon;
         const izinler = await getKullaniciIzinleri(etkinRol);
-        res.json({ ok: true, rol: etkinRol, gercek_rol: req.user.rol, simulasyon, izinler, modul_katalog: MODUL_KATALOG });
+        res.json({ ok: true, rol: etkinRol, gercek_rol: req.user.gercek_rol || req.user.rol, simulasyon, izinler, modul_katalog: MODUL_KATALOG });
     } catch (e) { next(e); }
 });
 
