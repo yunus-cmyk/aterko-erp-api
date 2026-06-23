@@ -7453,37 +7453,67 @@ function renderTeklifHavuzu(kalemler) {
         tb.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">İşlem bekleyen kalem yok.</td></tr>';
         return;
     }
-    tb.innerHTML = kalemler.map(k => {
-        const urunAd = k.stok_adi || k.ozel_urun_adi || '-';
-        const urunKod = k.stok_kodu ? `<span class="text-primary fw-bold small">${esc(k.stok_kodu)}</span><br>` : '';
-        const birim = k.stok_birim || k.ozel_urun_birim || '';
-        const teklifBtnTitle = k.durum === 'TEKLİF İSTENDİ' ? 'Tekrar Teklif İste' : 'Teklif İste';
-        const teklifIcon = k.durum === 'TEKLİF İSTENDİ' ? 'bi-envelope-arrow-up' : 'bi-envelope-paper';
-        const teklifSayId = `teklifSay-${k.id}`;
-        return `<tr>
-            <td class="text-center"><input type="checkbox" class="teklif-chk" value="${k.id}" onchange="teklifSecimGuncelle()"></td>
-            <td><a href="#" class="fw-bold text-primary text-decoration-none" onclick="event.preventDefault(); openTalepDetayModal(${k.talep_id}, '${k.talep_no}')" title="Talebi incele">${esc(k.talep_no)}</a></td>
-            <td class="small">${esc(k.proje_kodu)} / ${esc(k.musteri_adi)} - ${esc(k.proje_adi)}</td>
-            <td>${urunKod}<span class="text-dark">${esc(urunAd)}</span></td>
-            <td class="text-end fw-bold">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
-            <td class="small">${renderTerminTarihi(k.istenen_tarih)}</td>
-            <td class="text-center">${getSatinalmaDurumBadge(k.durum)}</td>
-            <td class="text-center">
-                <button class="btn btn-sm btn-outline-info py-0 px-2" onclick="openTeklifKayitlariModal(${k.id}, '${esc(urunAd)}')" title="Teklif kayıtlarını gör/yönet">
-                    <i class="bi bi-card-list me-1"></i><span id="${teklifSayId}">…</span>
-                </button>
+    // Kalemleri talebe göre grupla (backend zaten talep sıralı döndürüyor, sırayı koru)
+    const gruplar = []; const grupMap = new Map();
+    kalemler.forEach(k => {
+        if (!grupMap.has(k.talep_id)) { const g = { t: k, kalemler: [] }; grupMap.set(k.talep_id, g); gruplar.push(g); }
+        grupMap.get(k.talep_id).kalemler.push(k);
+    });
+
+    let html = '';
+    gruplar.forEach(g => {
+        const t = g.t;
+        // — Talep grup başlığı (belirgin: koyu arka plan + kalın üst çizgi) —
+        html += `<tr class="table-secondary" style="border-top:3px solid #495057;">
+            <td class="text-center"><input type="checkbox" class="teklif-grup-chk" onchange="teklifGrupSec(this, ${t.talep_id})" title="Bu talebin tüm kalemlerini seç"></td>
+            <td colspan="7">
+                <span class="fw-bold text-dark"><i class="bi bi-clipboard-check me-1"></i>${esc(t.talep_no)}</span>
+                <span class="text-muted small ms-2">${esc(t.proje_kodu)} / ${esc(t.musteri_adi)} - ${esc(t.proje_adi)}</span>
+                <span class="badge bg-secondary ms-2">${g.kalemler.length} kalem</span>
             </td>
             <td class="text-center">
-                <div class="btn-group btn-group-sm">
-                    <button class="btn btn-success py-0" onclick="siparisOlusturTekliften(${k.id})" title="Bu kalem için sipariş oluştur"><i class="bi bi-cart-plus"></i></button>
-                    <button class="btn btn-warning py-0 text-dark" onclick="openTeklifIste(${k.talep_id})" title="${teklifBtnTitle}"><i class="bi ${teklifIcon}"></i></button>
-                    <button class="btn btn-outline-secondary py-0" onclick="teklifKalemGeriAl(${k.id}, '${esc(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i></button>
-                </div>
+                <button class="btn btn-sm btn-outline-dark py-0" onclick="openTalepDetayModal(${t.talep_id}, '${t.talep_no}')" title="Talebi/ürünleri incele"><i class="bi bi-search"></i> İncele</button>
             </td>
         </tr>`;
-    }).join('');
-    // Her satır için teklif sayısını async yükle
+        // — Talebin kalemleri —
+        g.kalemler.forEach(k => {
+            const urunAd = k.stok_adi || k.ozel_urun_adi || '-';
+            const urunKod = k.stok_kodu ? `<span class="text-primary fw-bold small">${esc(k.stok_kodu)}</span><br>` : '';
+            const birim = k.stok_birim || k.ozel_urun_birim || '';
+            const teklifBtnTitle = k.durum === 'TEKLİF İSTENDİ' ? 'Tekrar Teklif İste' : 'Teklif İste';
+            const teklifIcon = k.durum === 'TEKLİF İSTENDİ' ? 'bi-envelope-arrow-up' : 'bi-envelope-paper';
+            html += `<tr>
+                <td class="text-center"><input type="checkbox" class="teklif-chk" data-talep-id="${k.talep_id}" value="${k.id}" onchange="teklifSecimGuncelle()"></td>
+                <td class="text-muted text-center"><i class="bi bi-arrow-return-right"></i></td>
+                <td></td>
+                <td>${urunKod}<span class="text-dark">${esc(urunAd)}</span></td>
+                <td class="text-end fw-bold">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
+                <td class="small">${renderTerminTarihi(k.istenen_tarih)}</td>
+                <td class="text-center">${getSatinalmaDurumBadge(k.durum)}</td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-outline-info py-0 px-2" onclick="openTeklifKayitlariModal(${k.id}, '${esc(urunAd)}')" title="Teklif kayıtlarını gör/yönet">
+                        <i class="bi bi-card-list me-1"></i><span id="teklifSay-${k.id}">…</span>
+                    </button>
+                </td>
+                <td class="text-center">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-success py-0" onclick="siparisOlusturTekliften(${k.id})" title="Bu kalem için sipariş oluştur"><i class="bi bi-cart-plus"></i></button>
+                        <button class="btn btn-warning py-0 text-dark" onclick="openTeklifIste(${k.talep_id})" title="${teklifBtnTitle}"><i class="bi ${teklifIcon}"></i></button>
+                        <button class="btn btn-outline-secondary py-0" onclick="teklifKalemGeriAl(${k.id}, '${esc(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i></button>
+                    </div>
+                </td>
+            </tr>`;
+        });
+    });
+    tb.innerHTML = html;
+    // Her kalem için teklif sayısını async yükle
     kalemler.forEach(k => teklifSayisiYukle(k.id, `teklifSay-${k.id}`));
+}
+
+// Bir talebin grup checkbox'ı → o talebin tüm kalemlerini seç/kaldır
+function teklifGrupSec(master, talepId) {
+    document.querySelectorAll(`.teklif-chk[data-talep-id="${talepId}"]`).forEach(cb => cb.checked = master.checked);
+    teklifSecimGuncelle();
 }
 
 // Teklif Havuzu kalemini sipariş-modalı formatına çevir
@@ -7516,9 +7546,9 @@ function teklifSecimGuncelle() {
     if (btn) btn.disabled = sec.length === 0;
 }
 
-// Tümünü seç/kaldır
+// Tümünü seç/kaldır (kalem + grup checkbox'ları)
 function teklifTumunuSec(master) {
-    document.querySelectorAll('.teklif-chk').forEach(cb => cb.checked = master.checked);
+    document.querySelectorAll('.teklif-chk, .teklif-grup-chk').forEach(cb => cb.checked = master.checked);
     teklifSecimGuncelle();
 }
 
