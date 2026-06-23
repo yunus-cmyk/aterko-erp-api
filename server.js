@@ -2221,12 +2221,8 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
         const ilkTeslimYeri = kalemler[0]?.teslim_yeri || '';
         const ilkIstenenTarih = kalemler[0]?.istenen_tarih ? new Date(kalemler[0].istenen_tarih).toLocaleDateString('tr-TR') : '';
 
-        // Her tedarikçi için: kayıt + AYRI mail (birbirlerinden habersiz)
-        let mailGitti = 0;
-        const mailGitmeyen = [];
-        const ccList = [...new Set([isteyenEmail, ...adminMails])].filter(Boolean).join(', ');
+        // teklif_kayitlari: her tedarikçi×kalem için kayıt yoksa "İSTENDİ" ekle (geçmiş birikir) — SENKRON, hızlı
         for (const ted of tedR.rows) {
-            // teklif_kayitlari: kalem+tedarikçi için kayıt yoksa "İSTENDİ" olarak ekle (geçmiş birikir)
             for (const k of kalemler) {
                 const varMi = await pool.query("SELECT 1 FROM teklif_kayitlari WHERE talep_urun_id=$1 AND tedarikci_id=$2 LIMIT 1", [k.id, ted.id]);
                 if (varMi.rowCount === 0) {
@@ -2236,35 +2232,44 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
                     );
                 }
             }
-            // Mail (e-postası olana, ayrı ayrı)
-            if (ted.email && mailTransporter) {
-                try {
-                    await mailTransporter.sendMail({
-                        from: `"Aterko Satınalma" <${process.env.GMAIL_USER}>`,
-                        to: ted.email,
-                        cc: ccList,
-                        subject: `Aterko - ${kategoriEtiket} Teklif Talebi (${talepEtiket})`,
-                        html: teklifTalebiMailHTML({
-                            tedarikciAdi: ted.firma_adi || 'İlgili', kalemler, isteyenAd,
-                            talepEtiket, projeAdi: ilkProje, teslimYeri: ilkTeslimYeri,
-                            istenenTarih: ilkIstenenTarih, not: aciklama || ''
-                        })
-                    });
-                    mailGitti++;
-                } catch (e) {
-                    console.error('Teklif mail hatası:', ted.firma_adi, e.message);
-                    mailGitmeyen.push(`${ted.firma_adi} (gönderilemedi)`);
-                }
-            } else if (!ted.email) {
-                mailGitmeyen.push(`${ted.firma_adi} (e-posta yok)`);
-            }
         }
 
+        const epostali = tedR.rows.filter(t => t.email);
+        const epostasiz = tedR.rows.filter(t => !t.email).map(t => t.firma_adi);
+
+        // Yanıtı HEMEN dön — mailler arka planda gönderilir (SMTP yavaşlığı kullanıcıyı bekletmesin)
         res.json({
             ok: true,
-            mesaj: `${kalem_idler.length} kalem için ${tedR.rows.length} tedarikçiden teklif istendi. ${mailGitti} e-posta gönderildi.` +
-                   (mailGitmeyen.length ? ` Mail gitmeyen: ${mailGitmeyen.join(', ')}` : '')
+            mesaj: `${kalem_idler.length} kalem için ${tedR.rows.length} tedarikçiden teklif istendi.` +
+                   (epostali.length ? ` ${epostali.length} tedarikçiye e-posta gönderiliyor.` : '') +
+                   (epostasiz.length ? ` E-postası olmayan (mail gitmedi): ${epostasiz.join(', ')}.` : '')
         });
+
+        // --- Arka plan: e-postaları ayrı ayrı gönder (fire-and-forget) ---
+        if (mailTransporter && epostali.length) {
+            const ccList = [...new Set([isteyenEmail, ...adminMails])].filter(Boolean).join(', ');
+            const konu = `Aterko - ${kategoriEtiket} Teklif Talebi (${talepEtiket})`;
+            (async () => {
+                for (const ted of epostali) {
+                    try {
+                        await mailTransporter.sendMail({
+                            from: `"Aterko Satınalma" <${process.env.GMAIL_USER}>`,
+                            to: ted.email,
+                            cc: ccList,
+                            subject: konu,
+                            html: teklifTalebiMailHTML({
+                                tedarikciAdi: ted.firma_adi || 'İlgili', kalemler, isteyenAd,
+                                talepEtiket, projeAdi: ilkProje, teslimYeri: ilkTeslimYeri,
+                                istenenTarih: ilkIstenenTarih, not: aciklama || ''
+                            })
+                        });
+                        console.log('✉️ Teklif maili gönderildi:', ted.firma_adi, ted.email);
+                    } catch (e) {
+                        console.error('⚠️ Teklif mail hatası:', ted.firma_adi, e.message);
+                    }
+                }
+            })();
+        }
     } catch (e) { next(e); }
 });
 
