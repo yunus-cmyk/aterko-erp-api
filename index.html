@@ -170,6 +170,7 @@
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('kullanicilar')"><i class="bi bi-people me-2"></i>Kullanıcılar</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('roller')"><i class="bi bi-person-badge me-2"></i>Roller &amp; İzinler</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('formtanim')"><i class="bi bi-ui-checks me-2"></i>Form Tanımları</a></li>
+          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('bildirimayar')"><i class="bi bi-bell me-2"></i>Bildirim Yönetimi</a></li>
           <li><hr class="dropdown-divider"></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); openSimulasyonModal()"><i class="bi bi-incognito me-2"></i>Rol Simülasyonu</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('audit')"><i class="bi bi-shield-check me-2"></i>Audit Log</a></li>
@@ -1303,6 +1304,22 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- BİLDİRİM YÖNETİMİ (sadece ADMIN) -->
+    <div id="bildirimAyarArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+            <h5 class="fw-bold mb-0"><i class="bi bi-bell-fill me-2 text-warning"></i>Bildirim Yönetimi</h5>
+        </div>
+        <div class="alert alert-info py-2 mb-3 small">
+            <i class="bi bi-info-circle me-1"></i>
+            Her olayda <strong>e-posta bildirimi</strong> gönderilip gönderilmeyeceğini ve <strong>kimlere</strong> gideceğini buradan yönetin.
+            Değişiklikler <strong>anında kaydedilir</strong>.
+            <span class="badge bg-success">Aktif</span> olaylar canlıda tetiklenir;
+            <span class="badge bg-secondary">Hazırlanıyor</span> olanlar henüz sisteme bağlanmadı (yakında).
+            Alıcı: rol seç (o roldeki herkese gider), <span class="badge bg-warning text-dark">⚡ Talebi açan kişi</span> (olaya özel), veya ekstra e-posta ekle.
+        </div>
+        <div id="bildirimAyarListe"><div class="text-center text-muted p-4"><div class="spinner-border text-warning"></div></div></div>
     </div>
 
     <!-- Rol Ekle/Düzenle Modal -->
@@ -4225,6 +4242,72 @@ async function rolSilHardId(id) {
 }
 
 // İzin matrisi
+// --- BİLDİRİM YÖNETİMİ PANELİ ---
+// Gerçekten endpoint'e bağlı (canlıda tetiklenen) olaylar
+const BILDIRIM_BAGLI = ['TALEP_ONAYLANDI', 'TALEP_REDDEDILDI'];
+// "Talebi açan kişi" (dinamik) alıcısının anlamlı olduğu olaylar
+const BILDIRIM_DINAMIK_DESTEK = ['TALEP_ONAYLANDI', 'TALEP_REDDEDILDI', 'TALEP_ISLEME_ALINDI', 'MAL_KABUL'];
+
+async function bildirimAyarYukle() {
+    const liste = document.getElementById('bildirimAyarListe');
+    liste.innerHTML = '<div class="text-center text-muted p-4"><div class="spinner-border text-warning"></div></div>';
+    const r = await secureFetch('/bildirim-kurallari');
+    if (!r || !r.ok) { liste.innerHTML = `<div class="alert alert-danger">${esc((r && r.hata) || 'Yüklenemedi')}</div>`; return; }
+    window.bildirimRoller = r.roller || [];
+    window.bildirimKurallari = r.kurallar || [];
+    renderBildirimAyar();
+}
+
+function renderBildirimAyar() {
+    const liste = document.getElementById('bildirimAyarListe');
+    const roller = window.bildirimRoller || [];
+    const gruplar = {};
+    (window.bildirimKurallari || []).forEach(k => { (gruplar[k.kategori] = gruplar[k.kategori] || []).push(k); });
+    let html = '';
+    for (const [kat, kurallar] of Object.entries(gruplar)) {
+        html += `<div class="fw-bold text-muted small text-uppercase mt-3 mb-2" style="letter-spacing:.5px;">${esc(kat)}</div>`;
+        kurallar.forEach(k => {
+            const bagli = BILDIRIM_BAGLI.includes(k.olay_kodu);
+            const dinamikDestek = BILDIRIM_DINAMIK_DESTEK.includes(k.olay_kodu);
+            const seciliRoller = new Set(k.roller || []);
+            const talepSahibi = (k.dinamik_alicilar || []).includes('TALEP_SAHIBI');
+            html += `
+            <div class="card border mb-2 ${k.aktif ? '' : 'opacity-75'}" data-kural-id="${k.id}">
+              <div class="card-body py-2 px-3">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-check form-switch mb-0">
+                    <input class="form-check-input ba-aktif" type="checkbox" ${k.aktif ? 'checked' : ''} onchange="bildirimAyarKaydet(${k.id})" style="cursor:pointer;">
+                  </div>
+                  <span class="fw-semibold">${esc(k.olay_adi)}</span>
+                  ${bagli ? '<span class="badge bg-success">Aktif</span>' : '<span class="badge bg-secondary" title="Olay henüz sisteme bağlanmadı — yakında">Hazırlanıyor</span>'}
+                </div>
+                <div class="mt-2 ps-1 d-flex flex-wrap align-items-center gap-2 small">
+                  <span class="text-muted">Alıcılar:</span>
+                  ${roller.map(rol => `<label class="badge bg-light text-dark border" style="cursor:pointer;font-weight:500;"><input type="checkbox" class="ba-rol me-1" value="${esc(rol)}" ${seciliRoller.has(rol) ? 'checked' : ''} onchange="bildirimAyarKaydet(${k.id})">${esc(rol)}</label>`).join('')}
+                  ${dinamikDestek ? `<label class="badge bg-warning text-dark" style="cursor:pointer;font-weight:500;"><input type="checkbox" class="ba-dinamik me-1" ${talepSahibi ? 'checked' : ''} onchange="bildirimAyarKaydet(${k.id})">⚡ Talebi açan kişi</label>` : ''}
+                  <input type="text" class="form-control form-control-sm ba-email" style="max-width:240px;" placeholder="+ ekstra e-posta (virgülle)" value="${esc((k.ekstra_emailler || []).join(', '))}" onblur="bildirimAyarKaydet(${k.id})">
+                </div>
+              </div>
+            </div>`;
+        });
+    }
+    liste.innerHTML = html;
+}
+
+async function bildirimAyarKaydet(id) {
+    const kart = document.querySelector(`[data-kural-id="${id}"]`);
+    if (!kart) return;
+    const aktif = kart.querySelector('.ba-aktif').checked;
+    const roller = [...kart.querySelectorAll('.ba-rol:checked')].map(c => c.value);
+    const dinEl = kart.querySelector('.ba-dinamik');
+    const dinamik_alicilar = (dinEl && dinEl.checked) ? ['TALEP_SAHIBI'] : [];
+    const emailRaw = (kart.querySelector('.ba-email').value || '').trim();
+    const ekstra_emailler = emailRaw ? emailRaw.split(',').map(e => e.trim()).filter(Boolean) : [];
+    const r = await secureFetch('/bildirim-kural-guncelle', { method: 'POST', body: JSON.stringify({ id, aktif, roller, ekstra_emailler, dinamik_alicilar }) });
+    if (r && r.ok) { showToast('Bildirim ayarı kaydedildi.', 'success'); kart.classList.toggle('opacity-75', !aktif); }
+    else showToast((r && r.hata) || 'Kaydedilemedi', 'error');
+}
+
 async function izinMatrisiYukle() {
     // Önce modül kataloğu + roller + matris üçünü al
     if (modulKatalogCache.length === 0) {
@@ -4343,7 +4426,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','kullanicilarArea','rollerArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','kullanicilarArea','rollerArea','bildirimAyarArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -4365,6 +4448,9 @@ function setTab(tab) {
     } else if (tab === 'roller') {
         document.getElementById("rollerArea").classList.remove("d-none");
         switchRolSekme('liste');
+    } else if (tab === 'bildirimayar') {
+        document.getElementById("bildirimAyarArea").classList.remove("d-none");
+        bildirimAyarYukle();
     } else if (tab === 'projeler') {
         document.getElementById("projeArea").classList.remove("d-none");
         fetchProjeler();
