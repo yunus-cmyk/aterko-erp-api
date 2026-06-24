@@ -30,6 +30,10 @@ const mailTransporter = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWOR
     })
     : null;
 if (!mailTransporter) console.warn('⚠️ GMAIL_USER / GMAIL_APP_PASSWORD eksik — e-posta gönderimi devre dışı.');
+// Gönderen adresi: MAIL_FROM_EMAIL tanımlıysa onu kullan (örn satinalma@aterko.com),
+// yoksa kimlik doğrulayan hesabın adresi. NOT: farklı bir adres kullanmak için o adres
+// Gmail'de "Send mail as" (alias) olarak eklenmiş VEYA ayrı bir gönderim hesabı olmalı.
+const MAIL_FROM_EMAIL = process.env.MAIL_FROM_EMAIL || process.env.GMAIL_USER;
 
 // Supabase Storage istemcisi (dosya yükleme için)
 const supabaseStorage = (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY)
@@ -2273,14 +2277,28 @@ async function bildirimGonder(olayKodu, context = {}) {
             if (eR.rowCount) aliciSet.add(eR.rows[0].email);
         }
         const alicilar = [...aliciSet].filter(Boolean);
-        if (!alicilar.length) return;
+        // CC alıcıları: cc_roller → kullanıcılar, cc_emailler
+        const ccSet = new Set();
+        if (k.cc_roller && k.cc_roller.length) {
+            const cR = await pool.query(
+                "SELECT email FROM kullanicilar WHERE rol = ANY($1) AND durum='AKTIF' AND email IS NOT NULL", [k.cc_roller]);
+            cR.rows.forEach(u => ccSet.add(u.email));
+        }
+        (k.cc_emailler || []).forEach(e => e && ccSet.add(e));
+        // TO'da zaten olan adresleri CC'den çıkar (mükerrer olmasın)
+        let ccList = [...ccSet].filter(e => e && !aliciSet.has(e));
+        if (!alicilar.length && !ccList.length) return;
+        // TO hiç yoksa ama CC varsa, CC'yi TO yap (boş to ile mail gitmez)
+        const toList = alicilar.length ? alicilar : ccList;
+        const realCc = alicilar.length ? ccList : [];
         await mailTransporter.sendMail({
-            from: `"Aterko Workspace" <${process.env.GMAIL_USER}>`,
-            to: alicilar.join(', '),
+            from: `"Aterko Workspace" <${MAIL_FROM_EMAIL}>`,
+            to: toList.join(', '),
+            cc: realCc.length ? realCc.join(', ') : undefined,
             subject: context.konu || context.baslik || 'Aterko Workspace Bildirimi',
             html: bildirimMailHTML(context)
         });
-        console.log('🔔 Bildirim:', olayKodu, '→', alicilar.length, 'alıcı');
+        console.log('🔔 Bildirim:', olayKodu, '→', toList.length, 'alıcı' + (realCc.length ? ` + ${realCc.length} CC` : ''));
     } catch (e) {
         console.error('⚠️ Bildirim hatası:', olayKodu, e.message);
     }
@@ -2368,7 +2386,7 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
             });
             const sonuclar = await Promise.allSettled(epostali.map(ted =>
                 mailTransporter.sendMail({
-                    from: `"Aterko Satınalma" <${process.env.GMAIL_USER}>`,
+                    from: `"Aterko Satınalma" <${MAIL_FROM_EMAIL}>`,
                     to: ted.email,
                     cc: ccList,
                     subject: konu,
@@ -2468,7 +2486,7 @@ app.post('/api/siparis-gonder', yetkiKontrol, async (req, res, next) => {
                 `;
 
                 await mailTransporter.sendMail({
-                    from: `"Aterko Satın Alma" <${process.env.GMAIL_USER}>`,
+                    from: `"Aterko Satın Alma" <${MAIL_FROM_EMAIL}>`,
                     to: aliciListe,
                     cc: process.env.GMAIL_USER,
                     subject: konu,
@@ -4020,11 +4038,11 @@ app.post('/api/bildirim-kural-guncelle', yetkiKontrol, async (req, res, next) =>
         return res.json({ ok: false, hata: 'Sadece ADMIN.' });
     }
     try {
-        const { id, aktif, roller, ekstra_emailler, dinamik_alicilar } = req.body;
+        const { id, aktif, roller, ekstra_emailler, dinamik_alicilar, cc_roller, cc_emailler } = req.body;
         if (!id) return res.json({ ok: false, hata: 'Kural ID gerekli.' });
         await pool.query(
-            `UPDATE bildirim_kurallari SET aktif=$1, roller=$2, ekstra_emailler=$3, dinamik_alicilar=$4 WHERE id=$5`,
-            [!!aktif, roller || [], ekstra_emailler || [], dinamik_alicilar || [], id]
+            `UPDATE bildirim_kurallari SET aktif=$1, roller=$2, ekstra_emailler=$3, dinamik_alicilar=$4, cc_roller=$5, cc_emailler=$6 WHERE id=$7`,
+            [!!aktif, roller || [], ekstra_emailler || [], dinamik_alicilar || [], cc_roller || [], cc_emailler || [], id]
         );
         res.json({ ok: true, mesaj: 'Bildirim kuralı güncellendi.' });
     } catch (e) { next(e); }
@@ -5754,6 +5772,12 @@ async function semaGuvence() {
               ('FATURA_ONAYLANDI',      'Fatura onaylandı',           'SİPARİŞ',      false, '{MUHASEBE}',         '{}',            90),
               ('SIPARIS_IPTAL',         'Sipariş iptal edildi',       'SİPARİŞ',      false, '{YONETIM,SATINALMA}','{}',           100)
             ON CONFLICT (olay_kodu) DO NOTHING
+        `);
+        // CC alıcı alanları (sonradan eklendi — mevcut tabloya da uygulanır)
+        await pool.query(`
+            ALTER TABLE bildirim_kurallari
+                ADD COLUMN IF NOT EXISTS cc_roller TEXT[] DEFAULT '{}',
+                ADD COLUMN IF NOT EXISTS cc_emailler TEXT[] DEFAULT '{}'
         `);
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
