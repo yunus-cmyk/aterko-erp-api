@@ -1000,7 +1000,9 @@ app.get('/api/satinalma-listesi', yetkiKontrol, async (req, res, next) => {
                        'stok_kart_id', tu.stok_kart_id, 'stok_adi', sk.stok_adi, 'stok_kodu', sk.stok_kodu,
                        'stok_birim', sk.birim, 'kategori', sk.kategori, 'ozel_urun_adi', tu.ozel_urun_adi,
                        'ozel_urun_birim', tu.ozel_urun_birim, 'miktar', tu.miktar, 'aciklama', tu.aciklama, 'durum', tu.durum
-                   ) ORDER BY tu.id) FILTER (WHERE tu.id IS NOT NULL), '[]') as kalemler
+                   ) ORDER BY tu.id) FILTER (WHERE tu.id IS NOT NULL), '[]') as kalemler,
+                   (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT('id', td.id, 'dosya_adi', td.dosya_adi, 'public_url', td.public_url) ORDER BY td.id), '[]')
+                    FROM talep_dosyalari td WHERE td.talep_id = t.id) as dosyalar
             FROM satinalma_talepleri t
             LEFT JOIN projeler p ON t.proje_id = p.id
             LEFT JOIN talep_urunleri tu ON t.id = tu.talep_id

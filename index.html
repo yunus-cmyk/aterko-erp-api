@@ -652,6 +652,7 @@
                         <th>Talep Eden</th>
                         <th>İstenen Tarih</th>
                         <th>Kalem Sayısı</th>
+                        <th class="text-center">Dosya</th>
                         <th>Durum</th>
                         <th>İşlem</th>
                     </tr>
@@ -2521,6 +2522,11 @@ STK-002		50	adet
                         <div class="card-body py-3 px-3" id="dtBilgiPanel">
                             <div class="text-muted small">Yükleniyor...</div>
                         </div>
+                    </div>
+
+                    <!-- Ekli dosyalar (salt-okunur: yalnızca indirme) -->
+                    <div class="card border-0 shadow-sm mb-3 bg-white">
+                        <div class="card-body py-2 px-3" id="dtDosyaPanel"></div>
                     </div>
 
                     <!-- Talep özet + bağlı siparişler paneli -->
@@ -6469,7 +6475,7 @@ function gotoSiparisListesi(siparisAramaKoku) {
 function renderTalepTable(talepler) {
     const tbody = document.getElementById("talepTableBody");
     if(talepler.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Sistemde henüz bir satınalma talebi bulunmuyor.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted p-4">Sistemde henüz bir satınalma talebi bulunmuyor.</td></tr>';
         return;
     }
 
@@ -6490,10 +6496,11 @@ function renderTalepTable(talepler) {
             <td class="small">${esc(t.talep_eden || '-')}</td>
             <td class="small">${renderTerminTarihi(t.istenen_tarih)}</td>
             <td><span class="badge bg-secondary">${t.urun_sayisi} Kalem</span></td>
+            <td class="text-center">${(t.dosyalar && t.dosyalar.length) ? t.dosyalar.map(d => `<a href="${esc(d.public_url)}" target="_blank" rel="noopener" title="${esc(d.dosya_adi || 'Dosya')}" class="text-decoration-none me-1"><i class="bi bi-file-earmark-arrow-down text-primary fs-6"></i></a>`).join('') : '<span class="text-muted">-</span>'}</td>
             <td>${getSatinalmaDurumBadge(t.durum)}</td>
             <td class="text-center">${getTalepAksiyonlari(t)}</td>
         </tr>
-        <tr id="talep-kalem-row-${t.id}" class="bg-white"><td colspan="9" class="px-3 py-2"><div id="talep-kalem-icerik-${t.id}" class="ps-4" data-loaded="1">${renderTalepKalemMini(t.kalemler || [])}</div></td></tr>`;
+        <tr id="talep-kalem-row-${t.id}" class="bg-white"><td colspan="10" class="px-3 py-2"><div id="talep-kalem-icerik-${t.id}" class="ps-4" data-loaded="1">${renderTalepKalemMini(t.kalemler || [])}</div></td></tr>`;
     });
     tbody.innerHTML = html;
 }
@@ -6957,6 +6964,23 @@ function renderTalepBilgiPanel(t) {
       </div>`;
 }
 
+// Talep Detayı'nda dosyalar — SALT OKUNUR (yalnızca indirme; ekleme/silme yok)
+function talepDetayDosyaGoster(talepId) {
+    const panel = document.getElementById('dtDosyaPanel');
+    if (!panel) return;
+    panel.innerHTML = '<div class="small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Dosyalar yükleniyor...</div>';
+    secureFetch('/talep-dosyalari/' + talepId).then(r => {
+        const dosyalar = (r && r.ok && r.data) ? r.data : [];
+        if (!dosyalar.length) {
+            panel.innerHTML = '<div class="small text-muted"><i class="bi bi-paperclip me-1"></i>Bu talebe eklenmiş dosya yok.</div>';
+            return;
+        }
+        panel.innerHTML = `<div class="small text-muted fw-bold mb-2"><i class="bi bi-paperclip me-1"></i>Ekli Dosyalar (${dosyalar.length})</div>
+          <div class="d-flex flex-wrap gap-2">${dosyalar.map(d => `
+            <a href="${esc(d.public_url)}" target="_blank" rel="noopener" class="badge bg-light text-primary border text-decoration-none p-2" style="font-weight:500;" title="${esc(d.dosya_adi || '')}"><i class="bi bi-file-earmark-arrow-down me-1"></i>${esc(d.dosya_adi || 'Dosya')}</a>`).join('')}</div>`;
+    });
+}
+
 // Talep dosyaları — Yeni Giriş/Düzenle modalında (ntDosyaListe).
 // Düzenleme (talep id var): dosyalar sunucuda, anında yükle/sil.
 // Yeni talep (id yok): dosyalar geçici tutulur (window.ntBekleyenDosyalar), kayıttan sonra yüklenir.
@@ -7056,6 +7080,7 @@ async function openTalepDetayModal(talepId, talepNo) {
         if(res.ok) {
             renderTalepDetayLines(res.data);
             renderTalepBilgiPanel(res.talep);
+            talepDetayDosyaGoster(talepId);
         } else { showToast(res.hata, "error"); }
     }).catch(err => showToast("Detaylar yüklenemedi.", "error"));
 
