@@ -6461,7 +6461,7 @@ function renderTalepTable(talepler) {
         const altTalepRozeti = t.parent_talep_id
             ? `<span class="badge bg-warning text-dark ms-1" title="Bu talep, başka bir talepten bölünerek oluşturuldu (${t.bolunme_tarihi ? new Date(t.bolunme_tarihi).toLocaleDateString('tr-TR') : ''})"><i class="bi bi-diagram-3"></i> Alt-Talep</span>`
             : '';
-        html += `<tr>
+        html += `<tr style="background-color:#e7f0fb;border-top:2px solid #b9d3ef;">
             <td class="text-center">
                 <button class="btn btn-sm btn-outline-secondary py-0 px-1 talep-expand-btn" onclick="toggleTalepKalemSatiri(${t.id}, this)" title="Kalemleri gizle/göster">
                     <i class="bi bi-chevron-down"></i>
@@ -6476,7 +6476,7 @@ function renderTalepTable(talepler) {
             <td>${getSatinalmaDurumBadge(t.durum)}</td>
             <td class="text-center">${getTalepAksiyonlari(t)}</td>
         </tr>
-        <tr id="talep-kalem-row-${t.id}" class="bg-light"><td colspan="9" class="p-2"><div id="talep-kalem-icerik-${t.id}" class="ps-4" data-loaded="1">${renderTalepKalemMini(t.kalemler || [])}</div></td></tr>`;
+        <tr id="talep-kalem-row-${t.id}" class="bg-white"><td colspan="9" class="px-3 py-2"><div id="talep-kalem-icerik-${t.id}" class="ps-4" data-loaded="1">${renderTalepKalemMini(t.kalemler || [])}</div></td></tr>`;
     });
     tbody.innerHTML = html;
 }
@@ -8515,7 +8515,7 @@ function renderSiparisTable(siparisler) {
             }
         }
 
-        html += `<tr>
+        html += `<tr style="background-color:#e7f3ea;border-top:2px solid #bbdfc6;">
             <td class="text-center">
                 <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="toggleSiparisKalemSatiri(${s.id}, this)" title="Kalemleri gizle/göster">
                     <i class="bi bi-chevron-down"></i>
@@ -8532,7 +8532,7 @@ function renderSiparisTable(siparisler) {
             <td class="text-center">${faturaCell}</td>
             <td class="text-center">${getSiparisAksiyonlari(s)}</td>
         </tr>
-        <tr id="siparis-kalem-row-${s.id}" class="bg-light"><td colspan="11" class="p-2"><div id="siparis-kalem-icerik-${s.id}" class="ps-4" data-loaded="1">${renderSiparisKalemMini(s.kalemler || [])}</div></td></tr>`;
+        <tr id="siparis-kalem-row-${s.id}" class="bg-white"><td colspan="11" class="px-3 py-2"><div id="siparis-kalem-icerik-${s.id}" class="ps-4" data-loaded="1">${renderSiparisKalemMini(s.kalemler || [])}</div></td></tr>`;
     });
     tbody.innerHTML = html;
 }
