@@ -3149,6 +3149,49 @@ app.delete('/api/siparis-dosya-sil/:dosyaId', yetkiKontrol, async (req, res, nex
     } catch (e) { next(e); }
 });
 
+// --- TALEP DOSYALARI (sipariş dosya sistemiyle aynı mekanizma) ---
+app.get('/api/talep-dosyalari/:talepId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query('SELECT * FROM talep_dosyalari WHERE talep_id=$1 ORDER BY kayit_tarihi DESC', [req.params.talepId]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/talep-dosya-yukle/:talepId', yetkiKontrol, dosyaUpload.single('dosya'), async (req, res, next) => {
+    if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
+    try {
+        const { talepId } = req.params;
+        if (!req.file) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
+        const tR = await pool.query('SELECT talep_no FROM satinalma_talepleri WHERE id=$1', [talepId]);
+        if (tR.rowCount === 0) return res.json({ ok: false, hata: 'Talep bulunamadı.' });
+        const talepNo = tR.rows[0].talep_no;
+        const safeName = req.file.originalname.replace(/[^A-Za-z0-9._\-]/g, '_');
+        const storagePath = `talep/${talepNo}/${Date.now()}-${safeName}`;
+        const { error: upErr } = await supabaseStorage.storage
+            .from(SIPARIS_BUCKET).upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
+        if (upErr) return res.json({ ok: false, hata: 'Yükleme hatası: ' + upErr.message });
+        const { data: urlData } = supabaseStorage.storage.from(SIPARIS_BUCKET).getPublicUrl(storagePath);
+        const r = await pool.query(`
+            INSERT INTO talep_dosyalari
+            (talep_id, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
+        `, [talepId, req.file.originalname, storagePath, urlData.publicUrl, req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email]);
+        res.json({ ok: true, mesaj: 'Dosya yüklendi.', data: r.rows[0] });
+    } catch (e) { console.error('Talep dosya yükleme:', e); next(e); }
+});
+
+app.delete('/api/talep-dosya-sil/:dosyaId', yetkiKontrol, async (req, res, next) => {
+    if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
+    try {
+        const r = await pool.query('SELECT storage_path FROM talep_dosyalari WHERE id=$1', [req.params.dosyaId]);
+        if (r.rowCount === 0) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
+        const { error: delErr } = await supabaseStorage.storage.from(SIPARIS_BUCKET).remove([r.rows[0].storage_path]);
+        if (delErr) console.warn('Storage sil uyarı:', delErr.message);
+        await pool.query('DELETE FROM talep_dosyalari WHERE id=$1', [req.params.dosyaId]);
+        res.json({ ok: true, mesaj: 'Dosya silindi.' });
+    } catch (e) { next(e); }
+});
+
 // Sipariş PDF üret ve indir
 const { renderToPDF: pdfRender } = require('./lib/pdf-generator');
 app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
@@ -5757,6 +5800,23 @@ async function semaGuvence() {
             )
         `);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_siparis_notlari_siparis ON siparis_notlari(siparis_id)`);
+
+        // Talep dosyaları (sipariş dosya sistemiyle aynı yapı)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS talep_dosyalari (
+                id SERIAL PRIMARY KEY,
+                talep_id INTEGER NOT NULL REFERENCES satinalma_talepleri(id) ON DELETE CASCADE,
+                dosya_adi TEXT,
+                storage_path TEXT,
+                public_url TEXT,
+                mime_type TEXT,
+                boyut BIGINT,
+                yukleyen_adsoyad TEXT,
+                yukleyen_email TEXT,
+                kayit_tarihi TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_talep_dosyalari_talep ON talep_dosyalari(talep_id)`);
 
         // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
         await pool.query(`
