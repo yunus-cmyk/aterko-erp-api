@@ -2482,7 +2482,17 @@ STK-002		50	adet
                      </div>
                   </div>
               </div>
-    
+
+              <div class="card border-0 shadow-sm rounded-3 mt-3">
+                  <div class="card-body">
+                     <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="small fw-bold text-muted mb-0"><i class="bi bi-paperclip me-1"></i>Dosyalar (teknik çizim, numune fotoğrafı, vb.)</label>
+                        <label class="btn btn-sm btn-outline-primary mb-0 py-0"><i class="bi bi-upload me-1"></i>Dosya Ekle<input type="file" class="d-none" id="ntDosyaInput" onchange="ntDosyaEkle(this)"></label>
+                     </div>
+                     <div id="ntDosyaListe" class="d-flex flex-wrap gap-2"><span class="small text-muted fst-italic">Henüz dosya eklenmedi.</span></div>
+                  </div>
+              </div>
+
             </div>
             
             <div class="modal-footer py-3 bg-white border-top">
@@ -2511,11 +2521,6 @@ STK-002		50	adet
                         <div class="card-body py-3 px-3" id="dtBilgiPanel">
                             <div class="text-muted small">Yükleniyor...</div>
                         </div>
-                    </div>
-
-                    <!-- Eklenen dosyalar -->
-                    <div class="card border-0 shadow-sm mb-3 bg-white">
-                        <div class="card-body py-2 px-3" id="dtDosyaPanel"></div>
                     </div>
 
                     <!-- Talep özet + bağlı siparişler paneli -->
@@ -6674,6 +6679,10 @@ function openYeniTalepModal(duzenlemeData) {
         addNewReqRow();
     }
 
+    // Dosya alanı: yeni talepte geçici liste sıfırlanır, düzenlemede sunucudaki dosyalar yüklenir
+    window.ntBekleyenDosyalar = [];
+    ntDosyalariRender();
+
     new bootstrap.Modal(modalEl).show();
 }
 
@@ -6906,14 +6915,21 @@ function saveNewRequest() {
 
     const endpoint = isEdit ? '/talep-guncelle' : '/yeni-talep';
     showLoading();
-    secureFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) }).then(res => {
+    secureFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) }).then(async res => {
         hideLoading();
         if(res.ok) {
+            // Yeni talepte bekleyen dosyaları şimdi yükle (düzenlemede dosyalar zaten anında yüklendi)
+            if (!isEdit && (window.ntBekleyenDosyalar || []).length) {
+                showLoading();
+                await ntBekleyenDosyalariYukle(res.id);
+                hideLoading();
+            }
             showToast(res.mesaj || (isEdit ? 'Talep güncellendi.' : 'Talep işlendi.'), "success");
             const modalEl = document.getElementById('modalYeniTalep');
             const modalInstance = bootstrap.Modal.getInstance(modalEl);
             if(modalInstance) modalInstance.hide();
             duzenlenenTalepId = null;
+            window.ntBekleyenDosyalar = [];
             fetchSatinalmaListesi();
         } else { showToast(res.hata, "error"); }
     });
@@ -6941,55 +6957,84 @@ function renderTalepBilgiPanel(t) {
       </div>`;
 }
 
-// Talebe eklenen dosyalar — endpoint'ten yükle, indir/sil + yeni dosya yükle
-async function talepDosyalariYukle(talepId) {
-    const panel = document.getElementById('dtDosyaPanel');
-    if (!panel) return;
-    const yukleBtn = `<label class="btn btn-sm btn-outline-primary mb-0 py-0"><i class="bi bi-upload me-1"></i>Dosya Yükle<input type="file" class="d-none" onchange="uploadTalepDosya(${talepId}, this)"></label>`;
-    panel.innerHTML = '<div class="small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Dosyalar yükleniyor...</div>';
-    const r = await secureFetch('/talep-dosyalari/' + talepId);
-    const dosyalar = (r && r.ok && r.data) ? r.data : [];
-    let html = `<div class="d-flex justify-content-between align-items-center mb-2">
-        <span class="small text-muted fw-bold"><i class="bi bi-paperclip me-1"></i>Ekli Dosyalar (${dosyalar.length})</span>
-        ${yukleBtn}
-    </div>`;
-    if (dosyalar.length === 0) {
-        html += '<div class="small text-muted fst-italic">Henüz dosya eklenmemiş.</div>';
+// Talep dosyaları — Yeni Giriş/Düzenle modalında (ntDosyaListe).
+// Düzenleme (talep id var): dosyalar sunucuda, anında yükle/sil.
+// Yeni talep (id yok): dosyalar geçici tutulur (window.ntBekleyenDosyalar), kayıttan sonra yüklenir.
+function ntDosyalariRender() {
+    const liste = document.getElementById('ntDosyaListe');
+    if (!liste) return;
+    const bos = '<span class="small text-muted fst-italic">Henüz dosya eklenmedi.</span>';
+    if (duzenlenenTalepId) {
+        liste.innerHTML = '<span class="small text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Yükleniyor...</span>';
+        secureFetch('/talep-dosyalari/' + duzenlenenTalepId).then(r => {
+            const dosyalar = (r && r.ok && r.data) ? r.data : [];
+            if (!dosyalar.length) { liste.innerHTML = bos; return; }
+            liste.innerHTML = dosyalar.map(d => `
+                <div class="d-inline-flex align-items-center badge bg-light text-dark border p-2" style="font-weight:500;">
+                    <a href="${esc(d.public_url)}" target="_blank" rel="noopener" class="text-decoration-none text-primary" title="${esc(d.dosya_adi||'')}"><i class="bi bi-file-earmark-arrow-down me-1"></i>${esc(d.dosya_adi || 'Dosya')}</a>
+                    <i class="bi bi-x-circle ms-2 text-danger" style="cursor:pointer;" title="Sil" onclick="ntDosyaSil(${d.id})"></i>
+                </div>`).join('');
+        });
     } else {
-        html += '<div class="d-flex flex-wrap gap-2">' + dosyalar.map(d => `
+        const bekleyen = window.ntBekleyenDosyalar || [];
+        if (!bekleyen.length) { liste.innerHTML = bos; return; }
+        liste.innerHTML = bekleyen.map((f, i) => `
             <div class="d-inline-flex align-items-center badge bg-light text-dark border p-2" style="font-weight:500;">
-                <a href="${esc(d.public_url)}" target="_blank" rel="noopener" class="text-decoration-none text-primary" title="${esc(d.dosya_adi||'')}"><i class="bi bi-file-earmark-arrow-down me-1"></i>${esc(d.dosya_adi || 'Dosya')}</a>
-                <i class="bi bi-x-circle ms-2 text-danger" style="cursor:pointer;" title="Sil" onclick="deleteTalepDosya(${d.id}, ${talepId})"></i>
-            </div>`).join('') + '</div>';
+                <i class="bi bi-file-earmark me-1 text-primary"></i>${esc(f.name)}
+                <i class="bi bi-x-circle ms-2 text-danger" style="cursor:pointer;" title="Kaldır" onclick="ntDosyaSil(${i})"></i>
+            </div>`).join('');
     }
-    panel.innerHTML = html;
 }
 
-async function uploadTalepDosya(talepId, inputEl) {
+async function ntDosyaEkle(inputEl) {
     const file = inputEl.files[0];
     if (!file) return;
-    if (file.size > 25 * 1024 * 1024) return showToast('Dosya 25MB\'tan büyük olamaz.', 'error');
-    const fd = new FormData();
-    fd.append('dosya', file);
-    showLoading();
-    try {
-        const token = localStorage.getItem('aterko_token');
-        const r = await fetch(`${API_URL}/talep-dosya-yukle/${talepId}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd });
-        const res = await r.json();
-        hideLoading();
-        if (res.ok) { showToast(res.mesaj, 'success'); talepDosyalariYukle(talepId); }
-        else showToast(res.hata, 'error');
-    } catch (e) { hideLoading(); showToast(e.message, 'error'); }
+    if (file.size > 25 * 1024 * 1024) { inputEl.value = ''; return showToast('Dosya 25MB\'tan büyük olamaz.', 'error'); }
+    if (duzenlenenTalepId) {
+        const fd = new FormData(); fd.append('dosya', file);
+        showLoading();
+        try {
+            const token = localStorage.getItem('aterko_token');
+            const r = await fetch(`${API_URL}/talep-dosya-yukle/${duzenlenenTalepId}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd });
+            const res = await r.json();
+            hideLoading();
+            if (res.ok) { showToast('Dosya yüklendi.', 'success'); ntDosyalariRender(); }
+            else showToast(res.hata, 'error');
+        } catch (e) { hideLoading(); showToast(e.message, 'error'); }
+    } else {
+        window.ntBekleyenDosyalar = window.ntBekleyenDosyalar || [];
+        window.ntBekleyenDosyalar.push(file);
+        ntDosyalariRender();
+    }
     inputEl.value = '';
 }
 
-async function deleteTalepDosya(dosyaId, talepId) {
-    if (!confirm('Bu dosyayı silmek istediğinize emin misiniz?')) return;
-    showLoading();
-    const r = await secureFetch(`/talep-dosya-sil/${dosyaId}`, { method: 'DELETE' });
-    hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); talepDosyalariYukle(talepId); }
-    else showToast(r.hata, 'error');
+async function ntDosyaSil(idVeyaIndex) {
+    if (duzenlenenTalepId) {
+        if (!confirm('Bu dosyayı silmek istediğinize emin misiniz?')) return;
+        showLoading();
+        const r = await secureFetch(`/talep-dosya-sil/${idVeyaIndex}`, { method: 'DELETE' });
+        hideLoading();
+        if (r.ok) { showToast('Dosya silindi.', 'success'); ntDosyalariRender(); }
+        else showToast(r.hata, 'error');
+    } else {
+        (window.ntBekleyenDosyalar || []).splice(idVeyaIndex, 1);
+        ntDosyalariRender();
+    }
+}
+
+// Yeni talep kaydından sonra bekleyen dosyaları sunucuya yükler
+async function ntBekleyenDosyalariYukle(talepId) {
+    const bekleyen = window.ntBekleyenDosyalar || [];
+    if (!bekleyen.length || !talepId) return;
+    const token = localStorage.getItem('aterko_token');
+    for (const f of bekleyen) {
+        try {
+            const fd = new FormData(); fd.append('dosya', f);
+            await fetch(`${API_URL}/talep-dosya-yukle/${talepId}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd });
+        } catch (_) {}
+    }
+    window.ntBekleyenDosyalar = [];
 }
 
 async function openTalepDetayModal(talepId, talepNo) {
@@ -7011,7 +7056,6 @@ async function openTalepDetayModal(talepId, talepNo) {
         if(res.ok) {
             renderTalepDetayLines(res.data);
             renderTalepBilgiPanel(res.talep);
-            talepDosyalariYukle(talepId);
         } else { showToast(res.hata, "error"); }
     }).catch(err => showToast("Detaylar yüklenemedi.", "error"));
 

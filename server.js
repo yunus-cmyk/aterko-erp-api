@@ -1078,7 +1078,7 @@ app.post('/api/yeni-talep', yetkiKontrol, async (req, res, next) => {
             detaylar: [{ label: 'Talep No', value: talep_no }, { label: 'Talep eden', value: talep_eden }, { label: 'Kalem sayısı', value: String((kalemler || []).length) }],
             talepEdenAd: talep_eden
         });
-        res.json({ ok: true, mesaj: `Talep başarıyla oluşturuldu: ${talep_no}` });
+        res.json({ ok: true, mesaj: `Talep başarıyla oluşturuldu: ${talep_no}`, id: yeniTalepId });
     } catch (error) {
         await client.query('ROLLBACK');
         next(error);
