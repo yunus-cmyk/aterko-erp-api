@@ -615,33 +615,6 @@
     </div>
 
     <div id="satinalmaTaleplerDiv">
-        <div class="card border-0 shadow-sm rounded-3 mb-2">
-            <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
-                <select id="talepDurumFiltre" class="form-select form-select-sm" style="width:160px;" onchange="renderTalepTableFiltered()">
-                    <option value="">Tüm Durumlar</option>
-                    <option value="ONAY BEKLİYOR">Onay Bekliyor</option>
-                    <option value="ONAYLANDI">Onaylandı</option>
-                    <option value="REDDEDİLDİ">Reddedildi</option>
-                    <option value="İŞLEME ALINDI">İşleme Alındı</option>
-                    <option value="TEKLİF İSTENDİ">Teklif İstendi</option>
-                    <option value="KARIŞIK">Karışık</option>
-                    <option value="SİPARİŞ OLUŞTURULDU">Sipariş Oluşturuldu</option>
-                    <option value="KISMİ TESLİM">Kısmi Teslim</option>
-                    <option value="TAM TESLİM">Tam Teslim</option>
-                    <option value="İPTAL">İptal</option>
-                </select>
-                <select id="talepProjeFiltre" class="form-select form-select-sm" style="width:280px;" onchange="renderTalepTableFiltered()">
-                    <option value="">Tüm Projeler</option>
-                </select>
-                <div class="input-group input-group-sm" style="width:240px;">
-                    <span class="input-group-text bg-white"><i class="bi bi-calendar3 text-muted"></i></span>
-                    <input type="date" id="talepTarihBas" class="form-control form-control-sm shadow-none" onchange="renderTalepTableFiltered()" title="İstenen tarih - başlangıç">
-                    <input type="date" id="talepTarihBit" class="form-control form-control-sm shadow-none" onchange="renderTalepTableFiltered()" title="İstenen tarih - bitiş">
-                </div>
-                <button class="btn btn-sm btn-outline-secondary" onclick="sifirlaTalepFiltre()" title="Sıfırla"><i class="bi bi-x-circle"></i></button>
-                <span class="text-muted small ms-auto" id="talepSayacLabel"></span>
-            </div>
-        </div>
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
                 <thead class="table-light fw-bold text-secondary">
@@ -698,36 +671,6 @@
     </div>
 
     <div id="satinalmaSiparislerDiv" class="d-none">
-        <div class="card border-0 shadow-sm rounded-3 mb-2">
-            <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
-                <select id="siparisDurumFiltre" class="form-select form-select-sm" style="width:170px;" onchange="renderSiparisTableFiltered()">
-                    <option value="">Tüm Durumlar</option>
-                    <option value="SİPARİŞ OLUŞTURULDU">Sipariş Oluşturuldu</option>
-                    <option value="SİPARİŞ ONAYLANDI">Sipariş Onaylandı</option>
-                    <option value="SİPARİŞ GÖNDERİLDİ">Sipariş Gönderildi</option>
-                    <option value="KISMİ TESLİM">Kısmi Teslim</option>
-                    <option value="TAM TESLİM">Tam Teslim</option>
-                    <option value="İPTAL">İptal</option>
-                </select>
-                <select id="siparisTedarikciFiltre" class="form-select form-select-sm" style="width:240px;" onchange="renderSiparisTableFiltered()">
-                    <option value="">Tüm Tedarikçiler</option>
-                </select>
-                <div class="input-group input-group-sm" style="width:240px;">
-                    <span class="input-group-text bg-white"><i class="bi bi-calendar3 text-muted"></i></span>
-                    <input type="date" id="siparisTarihBas" class="form-control form-control-sm shadow-none" onchange="renderSiparisTableFiltered()" title="Sipariş tarihi - başlangıç">
-                    <input type="date" id="siparisTarihBit" class="form-control form-control-sm shadow-none" onchange="renderSiparisTableFiltered()" title="Sipariş tarihi - bitiş">
-                </div>
-                <select id="siparisTerminFiltre" class="form-select form-select-sm" style="width:140px;" onchange="renderSiparisTableFiltered()" title="Termin durumu">
-                    <option value="">Tüm Termin</option>
-                    <option value="gecikti">Geçti</option>
-                    <option value="bugun">Bugün</option>
-                    <option value="hafta">Bu Hafta</option>
-                    <option value="gelecek">Gelecek</option>
-                </select>
-                <button class="btn btn-sm btn-outline-secondary" onclick="sifirlaSiparisFiltre()" title="Sıfırla"><i class="bi bi-x-circle"></i></button>
-                <span class="text-muted small ms-auto" id="siparisSayacLabel"></span>
-            </div>
-        </div>
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
                 <thead class="table-dark fw-bold">
@@ -6368,10 +6311,8 @@ function renderTalepTableFiltered() {
 }
 
 function sifirlaTalepFiltre() {
-    document.getElementById('talepDurumFiltre').value = '';
-    document.getElementById('talepProjeFiltre').value = '';
-    document.getElementById('talepTarihBas').value = '';
-    document.getElementById('talepTarihBit').value = '';
+    // Sekme-içi filtreler kaldırıldı; ortak arama × ile temizlenir.
+    const g = document.getElementById('satinalmaGlobalArama'); if (g) g.value = '';
     renderTalepTableFiltered();
 }
 
