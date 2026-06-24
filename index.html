@@ -648,6 +648,7 @@
                         <th width="35"></th>
                         <th>Talep No</th>
                         <th>İlgili Proje</th>
+                        <th>Kategori</th>
                         <th>Talep Eden</th>
                         <th>İstenen Tarih</th>
                         <th>Kalem Sayısı</th>
@@ -736,6 +737,7 @@
                         <th width="35"></th>
                         <th>Sipariş No</th>
                         <th>Tedarikçi Firma</th>
+                        <th>Kategori</th>
                         <th class="text-center">Sipariş Tarihi</th>
                         <th class="text-center">Termin Tarihi</th>
                         <th class="text-center">Kalem</th>
@@ -6450,7 +6452,7 @@ function gotoSiparisListesi(siparisAramaKoku) {
 function renderTalepTable(talepler) {
     const tbody = document.getElementById("talepTableBody");
     if(talepler.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">Sistemde henüz bir satınalma talebi bulunmuyor.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Sistemde henüz bir satınalma talebi bulunmuyor.</td></tr>';
         return;
     }
 
@@ -6461,19 +6463,20 @@ function renderTalepTable(talepler) {
             : '';
         html += `<tr>
             <td class="text-center">
-                <button class="btn btn-sm btn-outline-secondary py-0 px-1 talep-expand-btn" onclick="toggleTalepKalemSatiri(${t.id}, this)" title="Kalemleri göster">
-                    <i class="bi bi-chevron-right"></i>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1 talep-expand-btn" onclick="toggleTalepKalemSatiri(${t.id}, this)" title="Kalemleri gizle/göster">
+                    <i class="bi bi-chevron-down"></i>
                 </button>
             </td>
             <td class="fw-bold text-primary">${esc(t.talep_no)} ${altTalepRozeti}</td>
             <td class="fw-bold">${esc(t.proje_kodu)}${t.musteri_adi ? ' / ' + esc(t.musteri_adi) : ''} - ${esc(t.proje_adi)}</td>
+            <td class="small text-muted">${t.kategoriler ? esc(t.kategoriler) : '<span class="text-muted">-</span>'}</td>
             <td class="small">${esc(t.talep_eden || '-')}</td>
             <td class="small">${renderTerminTarihi(t.istenen_tarih)}</td>
             <td><span class="badge bg-secondary">${t.urun_sayisi} Kalem</span></td>
             <td>${getSatinalmaDurumBadge(t.durum)}</td>
             <td class="text-center">${getTalepAksiyonlari(t)}</td>
         </tr>
-        <tr id="talep-kalem-row-${t.id}" class="d-none bg-light"><td colspan="8" class="p-2"><div id="talep-kalem-icerik-${t.id}" class="ps-4"></div></td></tr>`;
+        <tr id="talep-kalem-row-${t.id}" class="bg-light"><td colspan="9" class="p-2"><div id="talep-kalem-icerik-${t.id}" class="ps-4" data-loaded="1">${renderTalepKalemMini(t.kalemler || [])}</div></td></tr>`;
     });
     tbody.innerHTML = html;
 }
@@ -6524,15 +6527,16 @@ function renderTalepKalemMini(kalemler) {
         }[k.durum] || 'bg-light text-dark border';
         return `<tr>
             <td class="small">${isOzel ? '<span class="badge bg-light text-warning border border-warning me-1" style="font-size:0.65rem;">Özel</span>' : ''}<span class="fw-bold">${esc(ad)}</span></td>
-            <td class="small text-muted">${esc(kod)}</td>
-            <td class="text-end small fw-bold">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
-            <td class="small text-muted">${esc(k.aciklama || '-')}</td>
-            <td class="text-center"><span class="badge ${durumRenk}" style="font-size:0.7rem;">${esc(k.durum)}</span></td>
+            <td class="small text-muted ps-3">${esc(kod)}</td>
+            <td class="small text-muted ps-3">${k.kategori ? esc(k.kategori) : '-'}</td>
+            <td class="text-end small fw-bold ps-3">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
+            <td class="small text-muted ps-3">${esc(k.aciklama || '-')}</td>
+            <td class="text-center ps-3"><span class="badge ${durumRenk}" style="font-size:0.7rem;">${esc(k.durum)}</span></td>
         </tr>`;
     }).join('');
-    return `<table class="table table-sm mb-0" style="font-size:0.78rem;">
+    return `<table class="table table-sm mb-0" style="font-size:0.78rem;width:auto;">
         <thead class="table-light"><tr>
-            <th>Ürün</th><th width="100">Kod</th><th class="text-end" width="120">Miktar</th><th>Açıklama</th><th class="text-center" width="140">Durum</th>
+            <th>Ürün</th><th class="ps-3">Kod</th><th class="ps-3">Kategori</th><th class="text-end ps-3">Miktar</th><th class="ps-3">Açıklama</th><th class="text-center ps-3">Durum</th>
         </tr></thead>
         <tbody>${rows}</tbody>
     </table>`;
@@ -8489,7 +8493,7 @@ function renderSiparisTable(siparisler) {
     window.siparislerCache = siparisler; // Detay modal için
     const tbody = document.getElementById("siparisTableBody");
     if(siparisler.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted p-4">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted p-4">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</td></tr>';
         return;
     }
 
@@ -8513,12 +8517,13 @@ function renderSiparisTable(siparisler) {
 
         html += `<tr>
             <td class="text-center">
-                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="toggleSiparisKalemSatiri(${s.id}, this)" title="Kalemleri göster">
-                    <i class="bi bi-chevron-right"></i>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="toggleSiparisKalemSatiri(${s.id}, this)" title="Kalemleri gizle/göster">
+                    <i class="bi bi-chevron-down"></i>
                 </button>
             </td>
             <td class="fw-bold text-success">${esc(s.siparis_no)}</td>
             <td class="fw-bold text-dark">${esc(s.tedarikci_adi || '-')}</td>
+            <td class="small text-muted">${s.kategoriler ? esc(s.kategoriler) : '<span class="text-muted">-</span>'}</td>
             <td class="text-center text-muted small">${formatTarihTR(s.siparis_tarihi) || '-'}</td>
             <td class="text-center small">${renderTerminTarihi(s.termin_tarihi)}</td>
             <td class="text-center"><span class="badge bg-secondary">${s.kalem_sayisi} Ürün</span></td>
@@ -8527,7 +8532,7 @@ function renderSiparisTable(siparisler) {
             <td class="text-center">${faturaCell}</td>
             <td class="text-center">${getSiparisAksiyonlari(s)}</td>
         </tr>
-        <tr id="siparis-kalem-row-${s.id}" class="d-none bg-light"><td colspan="10" class="p-2"><div id="siparis-kalem-icerik-${s.id}" class="ps-4"></div></td></tr>`;
+        <tr id="siparis-kalem-row-${s.id}" class="bg-light"><td colspan="11" class="p-2"><div id="siparis-kalem-icerik-${s.id}" class="ps-4" data-loaded="1">${renderSiparisKalemMini(s.kalemler || [])}</div></td></tr>`;
     });
     tbody.innerHTML = html;
 }
@@ -8569,20 +8574,21 @@ function renderSiparisKalemMini(kalemler) {
         const teslimRenk = teslim === 0 ? 'text-muted' : (teslim < sip ? 'text-warning' : 'text-success');
         return `<tr>
             <td class="small"><span class="fw-bold">${esc(k.urun_adi)}</span></td>
-            <td class="small text-muted">${esc(k.stok_kodu || '-')}</td>
-            <td class="text-end small fw-bold">${formatTR(sip)} ${esc(k.birim || '')}</td>
-            <td class="text-end small ${teslimRenk} fw-bold">${formatTR(teslim)}</td>
-            <td class="text-end small">${formatTR(fiyat)}</td>
-            <td class="text-end small fw-bold">${formatTR(tutar)}</td>
+            <td class="small text-muted ps-3">${esc(k.stok_kodu || '-')}</td>
+            <td class="small text-muted ps-3">${k.kategori ? esc(k.kategori) : '-'}</td>
+            <td class="text-end small fw-bold ps-3">${formatTR(sip)} ${esc(k.birim || '')}</td>
+            <td class="text-end small ${teslimRenk} fw-bold ps-3">${formatTR(teslim)}</td>
+            <td class="text-end small ps-3">${formatTR(fiyat)}</td>
+            <td class="text-end small fw-bold ps-3">${formatTR(tutar)}</td>
         </tr>`;
     }).join('');
-    return `<table class="table table-sm mb-0" style="font-size:0.78rem;">
+    return `<table class="table table-sm mb-0" style="font-size:0.78rem;width:auto;">
         <thead class="table-light"><tr>
-            <th>Ürün</th><th width="100">Kod</th>
-            <th class="text-end" width="110">Sipariş</th>
-            <th class="text-end" width="100">Teslim</th>
-            <th class="text-end" width="100">Birim Fiyat</th>
-            <th class="text-end" width="120">Tutar</th>
+            <th>Ürün</th><th class="ps-3">Kod</th><th class="ps-3">Kategori</th>
+            <th class="text-end ps-3">Sipariş</th>
+            <th class="text-end ps-3">Teslim</th>
+            <th class="text-end ps-3">Birim Fiyat</th>
+            <th class="text-end ps-3">Tutar</th>
         </tr></thead>
         <tbody>${rows}</tbody>
     </table>`;

@@ -994,10 +994,17 @@ app.get('/api/satinalma-listesi', yetkiKontrol, async (req, res, next) => {
                    COALESCE(p.proje_adi, 'Genel / Belirsiz') as proje_adi,
                    COALESCE(p.proje_kodu, 'GENEL') as proje_kodu,
                    COALESCE(p.musteri_adi, '') as musteri_adi,
-                   COALESCE(COUNT(tu.id), 0) as urun_sayisi
+                   COALESCE(COUNT(tu.id), 0) as urun_sayisi,
+                   STRING_AGG(DISTINCT NULLIF(TRIM(sk.kategori), ''), ', ') as kategoriler,
+                   COALESCE(JSON_AGG(JSON_BUILD_OBJECT(
+                       'stok_kart_id', tu.stok_kart_id, 'stok_adi', sk.stok_adi, 'stok_kodu', sk.stok_kodu,
+                       'stok_birim', sk.birim, 'kategori', sk.kategori, 'ozel_urun_adi', tu.ozel_urun_adi,
+                       'ozel_urun_birim', tu.ozel_urun_birim, 'miktar', tu.miktar, 'aciklama', tu.aciklama, 'durum', tu.durum
+                   ) ORDER BY tu.id) FILTER (WHERE tu.id IS NOT NULL), '[]') as kalemler
             FROM satinalma_talepleri t
             LEFT JOIN projeler p ON t.proje_id = p.id
             LEFT JOIN talep_urunleri tu ON t.id = tu.talep_id
+            LEFT JOIN stok_kartlari sk ON tu.stok_kart_id = sk.id
             WHERE COALESCE(t.arsiv, false) = false
             GROUP BY t.id, p.proje_adi, p.proje_kodu, p.musteri_adi
             ORDER BY t.kayit_tarihi DESC NULLS LAST, t.id DESC
@@ -1752,10 +1759,18 @@ app.get('/api/siparis-listesi', yetkiKontrol, async (req, res, next) => {
                    COALESCE(SUM(sk.siparis_miktari * sk.birim_fiyat), 0) as ara_toplam,
                    COUNT(sk.id) as kalem_sayisi,
                    s.fatura_nolari, s.fatura_onay_durumu, s.fatura_onay_tarihi,
-                   s.fatura_onaylayan_email, s.fatura_notu
+                   s.fatura_onaylayan_email, s.fatura_notu,
+                   STRING_AGG(DISTINCT NULLIF(TRIM(skart.kategori), ''), ', ') as kategoriler,
+                   COALESCE(JSON_AGG(JSON_BUILD_OBJECT(
+                       'urun_adi', COALESCE(skart.stok_adi, tu.ozel_urun_adi), 'stok_kodu', COALESCE(skart.stok_kodu, 'ÖZEL'),
+                       'birim', COALESCE(skart.birim, tu.ozel_urun_birim), 'kategori', skart.kategori,
+                       'siparis_miktari', sk.siparis_miktari, 'teslim_alinan_miktar', COALESCE(sk.teslim_alinan_miktar, 0), 'birim_fiyat', sk.birim_fiyat
+                   ) ORDER BY sk.id) FILTER (WHERE sk.id IS NOT NULL), '[]') as kalemler
             FROM satinalma_siparisleri s
             LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
             LEFT JOIN siparis_kalemleri sk ON s.id = sk.siparis_id
+            LEFT JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            LEFT JOIN stok_kartlari skart ON tu.stok_kart_id = skart.id
             WHERE COALESCE(s.arsiv, false) = false
             GROUP BY s.id, t.firma_adi
             ORDER BY s.siparis_tarihi DESC NULLS LAST, s.id DESC
