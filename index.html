@@ -2451,10 +2451,7 @@ STK-002		50	adet
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold" id="dtModalTitle">Talep İnceleme</h5>
-                    <div class="d-flex align-items-center gap-2 ms-auto me-2">
-                        <span id="dtTalepLevelBtns"></span>
-                    </div>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body p-4" style="background-color: #f8f9fa;">
 
@@ -2505,7 +2502,10 @@ STK-002		50	adet
                                 <span class="text-muted small fst-italic"><i class="bi bi-info-circle me-1"></i>Üstteki listeden kalem seçin.</span>
                             </span>
                         </div>
-                        <button class="btn btn-secondary btn-sm fw-bold" data-bs-dismiss="modal">Kapat</button>
+                        <div class="d-flex align-items-center gap-2">
+                            <span id="dtTalepLevelBtns"></span>
+                            <button class="btn btn-secondary btn-sm fw-bold" data-bs-dismiss="modal">Kapat</button>
+                        </div>
                     </div>
 
                 </div>
@@ -6489,17 +6489,17 @@ function renderTalepKalemMini(kalemler) {
             'REDDEDİLDİ': 'bg-danger'
         }[k.durum] || 'bg-light text-dark border';
         return `<tr>
-            <td class="small">${isOzel ? '<span class="badge bg-light text-warning border border-warning me-1" style="font-size:0.65rem;">Özel</span>' : ''}<span class="fw-bold">${esc(ad)}</span></td>
-            <td class="small text-muted ps-3">${esc(kod)}</td>
-            <td class="small text-muted ps-3">${k.kategori ? esc(k.kategori) : '-'}</td>
-            <td class="text-end small fw-bold ps-3">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
-            <td class="small text-muted ps-3">${esc(k.aciklama || '-')}</td>
-            <td class="text-center ps-3"><span class="badge ${durumRenk}" style="font-size:0.7rem;">${esc(k.durum)}</span></td>
+            <td class="small pe-4">${isOzel ? '<span class="badge bg-light text-warning border border-warning me-1" style="font-size:0.65rem;">Özel</span>' : ''}<span class="fw-bold">${esc(ad)}</span></td>
+            <td class="small text-muted px-4">${esc(kod)}</td>
+            <td class="small text-muted px-4">${k.kategori ? esc(k.kategori) : '-'}</td>
+            <td class="text-end small fw-bold px-4">${formatTR(parseFloat(k.miktar))} ${esc(birim)}</td>
+            <td class="small text-muted px-4">${esc(k.aciklama || '-')}</td>
+            <td class="text-center px-4"><span class="badge ${durumRenk}" style="font-size:0.7rem;">${esc(k.durum)}</span></td>
         </tr>`;
     }).join('');
     return `<table class="table table-sm mb-0" style="font-size:0.78rem;width:auto;">
         <thead class="table-light"><tr>
-            <th>Ürün</th><th class="ps-3">Kod</th><th class="ps-3">Kategori</th><th class="text-end ps-3">Miktar</th><th class="ps-3">Açıklama</th><th class="text-center ps-3">Durum</th>
+            <th class="pe-4">Ürün</th><th class="px-4">Kod</th><th class="px-4">Kategori</th><th class="text-end px-4">Miktar</th><th class="px-4">Açıklama</th><th class="text-center px-4">Durum</th>
         </tr></thead>
         <tbody>${rows}</tbody>
     </table>`;
