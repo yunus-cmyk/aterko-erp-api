@@ -4243,8 +4243,8 @@ async function rolSilHardId(id) {
 
 // İzin matrisi
 // --- BİLDİRİM YÖNETİMİ PANELİ ---
-// Gerçekten endpoint'e bağlı (canlıda tetiklenen) olaylar
-const BILDIRIM_BAGLI = ['TALEP_ONAYLANDI', 'TALEP_REDDEDILDI'];
+// Gerçekten endpoint'e bağlı (canlıda tetiklenen) olaylar — 10 çekirdek olayın tümü bağlı
+const BILDIRIM_BAGLI = ['TALEP_ONAYA_GONDERILDI', 'TALEP_ONAYLANDI', 'TALEP_REDDEDILDI', 'TALEP_ISLEME_ALINDI', 'TEKLIF_GIRILDI', 'SIPARIS_OLUSTURULDU', 'SIPARIS_ONAYLANDI', 'MAL_KABUL', 'FATURA_ONAYLANDI', 'SIPARIS_IPTAL'];
 // "Talebi açan kişi" (dinamik) alıcısının anlamlı olduğu olaylar
 const BILDIRIM_DINAMIK_DESTEK = ['TALEP_ONAYA_GONDERILDI', 'TALEP_ONAYLANDI', 'TALEP_REDDEDILDI', 'TALEP_ISLEME_ALINDI', 'MAL_KABUL'];
 

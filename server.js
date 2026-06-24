@@ -1059,6 +1059,14 @@ app.post('/api/yeni-talep', yetkiKontrol, async (req, res, next) => {
         }
 
         await client.query('COMMIT');
+        // Bildirim: onaylayacak role + talebi açana
+        await bildirimGonder('TALEP_ONAYA_GONDERILDI', {
+            konu: `Aterko Workspace - Yeni talep onay bekliyor (${talep_no})`,
+            baslik: 'Yeni talep onay bekliyor',
+            mesaj: `${talep_eden} tarafından ${talep_no} numaralı yeni bir satınalma talebi oluşturuldu ve onay bekliyor.`,
+            detaylar: [{ label: 'Talep No', value: talep_no }, { label: 'Talep eden', value: talep_eden }, { label: 'Kalem sayısı', value: String((kalemler || []).length) }],
+            talepEdenAd: talep_eden
+        });
         res.json({ ok: true, mesaj: `Talep başarıyla oluşturuldu: ${talep_no}` });
     } catch (error) {
         await client.query('ROLLBACK');
@@ -1149,6 +1157,19 @@ app.post('/api/talep-durum-guncelle', yetkiKontrol, async (req, res, next) => {
         }
 
         await client.query('COMMIT');
+        // Bildirim: yalnızca İŞLEME ALINDI geçişinde, her etkilenen talebin sahibine
+        if (yeni_durum === 'İŞLEME ALINDI') {
+            for (const row of talepRes.rows) {
+                const t = (await pool.query("SELECT talep_no, talep_eden FROM satinalma_talepleri WHERE id=$1", [row.talep_id])).rows[0];
+                if (t) await bildirimGonder('TALEP_ISLEME_ALINDI', {
+                    konu: `Aterko Workspace - Talebiniz işleme alındı (${t.talep_no})`,
+                    baslik: 'Talebiniz işleme alındı',
+                    mesaj: `${t.talep_no} numaralı talebiniz satınalma tarafından işleme alındı; teklif/sipariş süreci başladı.`,
+                    detaylar: [{ label: 'Talep No', value: t.talep_no }],
+                    talepEdenAd: t.talep_eden
+                });
+            }
+        }
         res.json({ ok: true, mesaj: `Seçilen ${kalem_idler.length} kalemin durumu '${yeni_durum}' olarak güncellendi.` });
     } catch (error) {
         await client.query('ROLLBACK');
@@ -1702,6 +1723,12 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
                 ozet: `Sipariş oluşturuldu${cross}${bolunmeler.length ? ` + ${bolunmeler.length} talep bölündü` : ''}`
             });
         } catch(_) {}
+        await bildirimGonder('SIPARIS_OLUSTURULDU', {
+            konu: `Aterko Workspace - Yeni sipariş oluşturuldu (${siparis_no})`,
+            baslik: 'Yeni sipariş oluşturuldu',
+            mesaj: `${req.user.adSoyad} tarafından ${siparis_no} numaralı yeni bir satınalma siparişi oluşturuldu.`,
+            detaylar: [{ label: 'Sipariş No', value: siparis_no }]
+        });
         res.json({ ok: true, mesaj: `Sipariş başarıyla oluşturuldu: ${siparis_no}.${ekMesaj}`, bolunmeler });
     } catch (error) {
         await client.query('ROLLBACK'); // En ufak hatada şantiyeyi ve talepleri eski haline döndür
@@ -2111,6 +2138,18 @@ app.post('/api/teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             alternatif_urun || null, yorum || null, durum || 'BEKLEMEDE', req.user.email]);
         await auditLogla(req, { eylem:'CREATE', tablo:'teklif_kayitlari', kayit_id:ins.rows[0].id,
             ozet:`Yeni teklif kaydı (kalem #${talep_urun_id})` });
+        const tkUrun = (await pool.query("SELECT COALESCE(sk.stok_adi, tu.ozel_urun_adi, '-') urun FROM talep_urunleri tu LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id WHERE tu.id=$1", [talep_urun_id])).rows[0];
+        const tkTed = tedarikci_id ? (await pool.query("SELECT firma_adi FROM tedarikciler WHERE id=$1", [tedarikci_id])).rows[0] : null;
+        await bildirimGonder('TEKLIF_GIRILDI', {
+            konu: 'Aterko Workspace - Yeni tedarikçi teklifi girildi',
+            baslik: 'Tedarikçiden teklif girildi',
+            mesaj: `${(tkTed && tkTed.firma_adi) || 'Bir tedarikçi'} için yeni teklif kaydedildi.`,
+            detaylar: [
+                { label: 'Ürün', value: (tkUrun && tkUrun.urun) || '-' },
+                { label: 'Tedarikçi', value: (tkTed && tkTed.firma_adi) || '-' },
+                { label: 'Birim fiyat', value: birim_fiyat ? `${birim_fiyat} ${para_birimi || 'TL'}` : '-' }
+            ]
+        });
         res.json({ ok: true, mesaj: 'Teklif kaydedildi.', id: ins.rows[0].id });
     } catch (e) { next(e); }
 });
@@ -2374,6 +2413,13 @@ app.post('/api/siparis-onayla', yetkiKontrol, async (req, res, next) => {
             eylem: 'APPROVE', tablo: 'satinalma_siparisleri', kayit_id: req.body.siparis_id,
             ozet: 'Sipariş onaylandı'
         });
+        const soNo = (await pool.query("SELECT siparis_no FROM satinalma_siparisleri WHERE id=$1", [req.body.siparis_id])).rows[0];
+        await bildirimGonder('SIPARIS_ONAYLANDI', {
+            konu: `Aterko Workspace - Sipariş onaylandı (${(soNo && soNo.siparis_no) || ''})`,
+            baslik: 'Sipariş onaylandı',
+            mesaj: `${(soNo && soNo.siparis_no) || ''} numaralı sipariş ${req.user.adSoyad} tarafından onaylandı.`,
+            detaylar: [{ label: 'Sipariş No', value: (soNo && soNo.siparis_no) || '-' }]
+        });
         res.json({ ok: true, mesaj: 'Sipariş onaylandı.' });
     } catch (e) { next(e); }
 });
@@ -2548,6 +2594,13 @@ app.post('/api/siparis-iptal', yetkiKontrol, async (req, res, next) => {
             eylem: 'CANCEL', tablo: 'satinalma_siparisleri', kayit_id: siparis_id,
             ozet: 'Sipariş iptal edildi'
         });
+        const siNo = (await pool.query("SELECT siparis_no FROM satinalma_siparisleri WHERE id=$1", [siparis_id])).rows[0];
+        await bildirimGonder('SIPARIS_IPTAL', {
+            konu: `Aterko Workspace - Sipariş iptal edildi (${(siNo && siNo.siparis_no) || ''})`,
+            baslik: 'Sipariş iptal edildi',
+            mesaj: `${(siNo && siNo.siparis_no) || ''} numaralı sipariş ${req.user.adSoyad} tarafından iptal edildi; bağlı talepler geri alındı.`,
+            detaylar: [{ label: 'Sipariş No', value: (siNo && siNo.siparis_no) || '-' }]
+        });
         res.json({ ok: true, mesaj: 'Sipariş iptal edildi, talepler geri alındı.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
@@ -2591,6 +2644,12 @@ app.post('/api/siparis-fatura-onayla', yetkiKontrol, async (req, res, next) => {
             ozet: liste.length > 0
                 ? `Fatura onaylandı: ${liste.join(', ')}`
                 : 'Fatura onayı kaldırıldı'
+        });
+        if (liste.length > 0) await bildirimGonder('FATURA_ONAYLANDI', {
+            konu: `Aterko Workspace - Fatura onaylandı (${sR.rows[0].siparis_no})`,
+            baslik: 'Fatura onaylandı',
+            mesaj: `${sR.rows[0].siparis_no} numaralı siparişin faturası ${req.user.adSoyad} tarafından onaylandı.`,
+            detaylar: [{ label: 'Sipariş No', value: sR.rows[0].siparis_no }, { label: 'Fatura No', value: liste.join(', ') }]
         });
         res.json({ ok: true, mesaj: liste.length > 0 ? `${liste.length} fatura onaylandı.` : 'Fatura onayı kaldırıldı.' });
     } catch (e) { next(e); }
@@ -2907,6 +2966,21 @@ app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
             [yeniSiparisDurum, siparis_id]);
 
         await client.query('COMMIT');
+        // Bildirim: MUHASEBE'ye + malı bekleyen talep sahibine
+        const teR = await pool.query(`SELECT DISTINCT t.talep_eden FROM siparis_kalemleri sk
+            JOIN talep_urunleri tu ON sk.talep_urun_id=tu.id JOIN satinalma_talepleri t ON tu.talep_id=t.id
+            WHERE sk.siparis_id=$1 AND t.talep_eden IS NOT NULL`, [siparis_id]);
+        await bildirimGonder('MAL_KABUL', {
+            konu: `Aterko Workspace - Mal kabul yapıldı (${siparisBilgi.siparis_no})`,
+            baslik: 'Mal kabul / teslim alındı',
+            mesaj: `${siparisBilgi.siparis_no} numaralı siparişte mal kabul yapıldı${siparisBilgi.tedarikci_adi ? ' (' + siparisBilgi.tedarikci_adi + ')' : ''}. Sipariş durumu: ${yeniSiparisDurum}.`,
+            detaylar: [
+                { label: 'Sipariş No', value: siparisBilgi.siparis_no },
+                { label: 'Tedarikçi', value: siparisBilgi.tedarikci_adi || '-' },
+                { label: 'Durum', value: yeniSiparisDurum }
+            ],
+            talepEdenAd: teR.rows[0] && teR.rows[0].talep_eden
+        });
         res.json({
             ok: true,
             mesaj: `Mal kabul tamamlandı. Sipariş durumu: ${yeniSiparisDurum}. Stok ve hareketler güncellendi.`,
