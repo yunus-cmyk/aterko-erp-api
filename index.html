@@ -6461,7 +6461,7 @@ function renderTalepTable(talepler) {
         const altTalepRozeti = t.parent_talep_id
             ? `<span class="badge bg-warning text-dark ms-1" title="Bu talep, başka bir talepten bölünerek oluşturuldu (${t.bolunme_tarihi ? new Date(t.bolunme_tarihi).toLocaleDateString('tr-TR') : ''})"><i class="bi bi-diagram-3"></i> Alt-Talep</span>`
             : '';
-        html += `<tr style="background-color:#e7f0fb;border-top:2px solid #b9d3ef;">
+        html += `<tr style="background-color:#eceef1;border-top:2px solid #d2d6db;">
             <td class="text-center">
                 <button class="btn btn-sm btn-outline-secondary py-0 px-1 talep-expand-btn" onclick="toggleTalepKalemSatiri(${t.id}, this)" title="Kalemleri gizle/göster">
                     <i class="bi bi-chevron-down"></i>
@@ -8515,7 +8515,7 @@ function renderSiparisTable(siparisler) {
             }
         }
 
-        html += `<tr style="background-color:#e7f3ea;border-top:2px solid #bbdfc6;">
+        html += `<tr style="background-color:#eceef1;border-top:2px solid #d2d6db;">
             <td class="text-center">
                 <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="toggleSiparisKalemSatiri(${s.id}, this)" title="Kalemleri gizle/göster">
                     <i class="bi bi-chevron-down"></i>
