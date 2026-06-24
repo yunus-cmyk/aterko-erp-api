@@ -4246,7 +4246,7 @@ async function rolSilHardId(id) {
 // Gerçekten endpoint'e bağlı (canlıda tetiklenen) olaylar
 const BILDIRIM_BAGLI = ['TALEP_ONAYLANDI', 'TALEP_REDDEDILDI'];
 // "Talebi açan kişi" (dinamik) alıcısının anlamlı olduğu olaylar
-const BILDIRIM_DINAMIK_DESTEK = ['TALEP_ONAYLANDI', 'TALEP_REDDEDILDI', 'TALEP_ISLEME_ALINDI', 'MAL_KABUL'];
+const BILDIRIM_DINAMIK_DESTEK = ['TALEP_ONAYA_GONDERILDI', 'TALEP_ONAYLANDI', 'TALEP_REDDEDILDI', 'TALEP_ISLEME_ALINDI', 'MAL_KABUL'];
 
 async function bildirimAyarYukle() {
     const liste = document.getElementById('bildirimAyarListe');

@@ -5669,7 +5669,7 @@ async function semaGuvence() {
         // Çekirdek olaylar — yalnızca yoksa eklenir (panel ayarlarını ezmez)
         await pool.query(`
             INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, dinamik_alicilar, sira) VALUES
-              ('TALEP_ONAYA_GONDERILDI','Yeni talep onaya gönderildi','TALEP & ONAY', true,  '{YONETIM}',          '{}',            10),
+              ('TALEP_ONAYA_GONDERILDI','Yeni talep onaya gönderildi','TALEP & ONAY', true,  '{YONETIM}',          '{TALEP_SAHIBI}',10),
               ('TALEP_ONAYLANDI',       'Talep onaylandı',            'TALEP & ONAY', true,  '{SATINALMA}',        '{TALEP_SAHIBI}',20),
               ('TALEP_REDDEDILDI',      'Talep reddedildi',           'TALEP & ONAY', true,  '{}',                 '{TALEP_SAHIBI}',30),
               ('TALEP_ISLEME_ALINDI',   'Talep işleme alındı',        'TALEP & ONAY', false, '{}',                 '{TALEP_SAHIBI}',40),
