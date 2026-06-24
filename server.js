@@ -1892,6 +1892,15 @@ app.post('/api/talep-onayla', yetkiKontrol, async (req, res, next) => {
             eylem: 'APPROVE', tablo: 'satinalma_talepleri', kayit_id: talep_id,
             ozet: 'Talep onaylandı'
         });
+        // Bildirim: talebi açana + SATINALMA'ya
+        const tBil = (await pool.query("SELECT talep_no, talep_eden FROM satinalma_talepleri WHERE id=$1", [talep_id])).rows[0];
+        if (tBil) await bildirimGonder('TALEP_ONAYLANDI', {
+            konu: `Aterko Workspace - Talebiniz onaylandı (${tBil.talep_no})`,
+            baslik: 'Talebiniz onaylandı ✓',
+            mesaj: `${tBil.talep_no} numaralı talebiniz ${req.user.adSoyad} tarafından onaylandı ve satınalma sürecine alındı.`,
+            detaylar: [{ label: 'Talep No', value: tBil.talep_no }, { label: 'Onaylayan', value: req.user.adSoyad }],
+            talepEdenAd: tBil.talep_eden
+        });
         res.json({ ok: true, mesaj: 'Talep onaylandı.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
@@ -1919,6 +1928,16 @@ app.post('/api/talep-iptal', yetkiKontrol, async (req, res, next) => {
         await auditLogla(req, {
             eylem: 'CANCEL', tablo: 'satinalma_talepleri', kayit_id: talep_id,
             ozet: gerekce ? `Talep iptal: ${gerekce.substring(0,200)}` : 'Talep iptal edildi'
+        });
+        // Bildirim: talebi açana (reddedildi/iptal)
+        const tBilR = (await pool.query("SELECT talep_no, talep_eden FROM satinalma_talepleri WHERE id=$1", [talep_id])).rows[0];
+        if (tBilR) await bildirimGonder('TALEP_REDDEDILDI', {
+            konu: `Aterko Workspace - Talebiniz reddedildi (${tBilR.talep_no})`,
+            baslik: 'Talebiniz reddedildi',
+            mesaj: `${tBilR.talep_no} numaralı talebiniz ${req.user.adSoyad} tarafından reddedildi/iptal edildi.`,
+            detaylar: [{ label: 'Talep No', value: tBilR.talep_no }, { label: 'İşlem yapan', value: req.user.adSoyad }]
+                .concat(gerekce ? [{ label: 'Gerekçe', value: gerekce }] : []),
+            talepEdenAd: tBilR.talep_eden
         });
         res.json({ ok: true, mesaj: 'Talep iptal edildi.' });
     } catch (e) { next(e); }
@@ -2169,6 +2188,64 @@ function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, 
 }
 // Basit HTML-escape (mail gövdesi için)
 function esc2(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// --- BİLDİRİM SİSTEMİ ---
+// Genel amaçlı iç bildirim e-postası (siparis.html görsel diliyle uyumlu)
+function bildirimMailHTML({ baslik, mesaj, detaylar }) {
+    const satirlar = (detaylar || []).map(d =>
+        `<tr><td style="padding:7px 14px;color:#6c757d;font-size:13px;white-space:nowrap;vertical-align:top;">${esc2(d.label)}</td><td style="padding:7px 14px;font-weight:600;font-size:13px;color:#212529;">${esc2(d.value)}</td></tr>`
+    ).join('');
+    return `
+    <div style="max-width:580px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;background:#fff;border:1px solid #e9ecef;border-radius:8px;overflow:hidden;">
+      <div style="padding:18px 26px;border-bottom:3px solid #ff4c00;">
+        <img src="https://www.aterko.com/wp-content/uploads/2022/07/aterko-logo-dark.png" alt="ATERKO" height="30" style="height:30px;width:auto;display:block;border:0;">
+      </div>
+      <div style="padding:24px 26px;">
+        <div style="font-size:17px;font-weight:700;color:#212529;margin-bottom:10px;">${esc2(baslik)}</div>
+        <div style="font-size:14px;color:#495057;line-height:1.6;margin-bottom:${satirlar ? '18px' : '0'};">${esc2(mesaj)}</div>
+        ${satirlar ? `<table style="border-collapse:collapse;width:100%;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;">${satirlar}</table>` : ''}
+        <div style="margin-top:22px;font-size:12px;color:#adb5bd;">Bu otomatik bir bildirimdir — Aterko Workspace tarafından gönderildi.</div>
+      </div>
+      <div style="padding:13px 26px;border-top:1px solid #dee2e6;background:#f8f9fa;font-size:11px;color:#6c757d;">Aterko</div>
+    </div>`;
+}
+
+// Bir olay kuralını okuyup (aktifse) alıcıları çözer ve TEK e-posta gönderir.
+// Render fire-and-forget'i kestiği için res.json ÖNCESİ await edilmeli.
+// context: { konu, baslik, mesaj, detaylar, talepEdenAd }
+async function bildirimGonder(olayKodu, context = {}) {
+    try {
+        if (!mailTransporter) return;
+        const kR = await pool.query("SELECT * FROM bildirim_kurallari WHERE olay_kodu=$1 AND aktif=true", [olayKodu]);
+        if (kR.rowCount === 0) return; // pasif veya tanımsız → sessizce çık
+        const k = kR.rows[0];
+        const aliciSet = new Set();
+        // 1) Roller → o roldeki (pasif olmayan) kullanıcılar
+        if (k.roller && k.roller.length) {
+            const uR = await pool.query(
+                "SELECT email FROM kullanicilar WHERE rol = ANY($1) AND durum='AKTIF' AND email IS NOT NULL", [k.roller]);
+            uR.rows.forEach(u => aliciSet.add(u.email));
+        }
+        // 2) Ekstra belirli e-postalar
+        (k.ekstra_emailler || []).forEach(e => e && aliciSet.add(e));
+        // 3) Dinamik: talebi açan kişi (ad_soyad → email)
+        if (k.dinamik_alicilar && k.dinamik_alicilar.includes('TALEP_SAHIBI') && context.talepEdenAd) {
+            const eR = await pool.query("SELECT email FROM kullanicilar WHERE ad_soyad=$1 AND email IS NOT NULL LIMIT 1", [context.talepEdenAd]);
+            if (eR.rowCount) aliciSet.add(eR.rows[0].email);
+        }
+        const alicilar = [...aliciSet].filter(Boolean);
+        if (!alicilar.length) return;
+        await mailTransporter.sendMail({
+            from: `"Aterko Workspace" <${process.env.GMAIL_USER}>`,
+            to: alicilar.join(', '),
+            subject: context.konu || context.baslik || 'Aterko Workspace Bildirimi',
+            html: bildirimMailHTML(context)
+        });
+        console.log('🔔 Bildirim:', olayKodu, '→', alicilar.length, 'alıcı');
+    } catch (e) {
+        console.error('⚠️ Bildirim hatası:', olayKodu, e.message);
+    }
+}
 
 app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
     try {
@@ -3850,6 +3927,33 @@ const IZIN_SEVIYELERI = ['YOK', 'OKUMA', 'YAZMA', 'TAM'];
 // Modül kataloğunu döndüren endpoint (frontend matris UI'si için)
 app.get('/api/modul-katalog', yetkiKontrol, (req, res) => {
     res.json({ ok: true, modul_katalog: MODUL_KATALOG, izin_seviyeleri: IZIN_SEVIYELERI });
+});
+
+// --- BİLDİRİM KURALLARI PANELİ (sadece ADMIN) ---
+app.get('/api/bildirim-kurallari', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.status(403).json({ ok: false, hata: 'Sadece ADMIN.' });
+    }
+    try {
+        const r = await pool.query("SELECT * FROM bildirim_kurallari ORDER BY sira, id");
+        const roller = (await pool.query("SELECT ad FROM roller WHERE ad<>'ADMIN' ORDER BY sistem_rol DESC, id")).rows.map(x => x.ad);
+        res.json({ ok: true, kurallar: r.rows, roller });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/bildirim-kural-guncelle', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN.' });
+    }
+    try {
+        const { id, aktif, roller, ekstra_emailler, dinamik_alicilar } = req.body;
+        if (!id) return res.json({ ok: false, hata: 'Kural ID gerekli.' });
+        await pool.query(
+            `UPDATE bildirim_kurallari SET aktif=$1, roller=$2, ekstra_emailler=$3, dinamik_alicilar=$4 WHERE id=$5`,
+            [!!aktif, roller || [], ekstra_emailler || [], dinamik_alicilar || [], id]
+        );
+        res.json({ ok: true, mesaj: 'Bildirim kuralı güncellendi.' });
+    } catch (e) { next(e); }
 });
 
 // Tüm roller (sistem + özel)
@@ -5546,6 +5650,37 @@ async function semaGuvence() {
             )
         `);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_siparis_notlari_siparis ON siparis_notlari(siparis_id)`);
+
+        // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS bildirim_kurallari (
+                id SERIAL PRIMARY KEY,
+                olay_kodu TEXT UNIQUE NOT NULL,
+                olay_adi TEXT NOT NULL,
+                kategori TEXT,
+                aktif BOOLEAN DEFAULT true,
+                roller TEXT[] DEFAULT '{}',
+                ekstra_emailler TEXT[] DEFAULT '{}',
+                dinamik_alicilar TEXT[] DEFAULT '{}',
+                aciklama TEXT,
+                sira INTEGER DEFAULT 0
+            )
+        `);
+        // Çekirdek olaylar — yalnızca yoksa eklenir (panel ayarlarını ezmez)
+        await pool.query(`
+            INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, dinamik_alicilar, sira) VALUES
+              ('TALEP_ONAYA_GONDERILDI','Yeni talep onaya gönderildi','TALEP & ONAY', true,  '{YONETIM}',          '{}',            10),
+              ('TALEP_ONAYLANDI',       'Talep onaylandı',            'TALEP & ONAY', true,  '{SATINALMA}',        '{TALEP_SAHIBI}',20),
+              ('TALEP_REDDEDILDI',      'Talep reddedildi',           'TALEP & ONAY', true,  '{}',                 '{TALEP_SAHIBI}',30),
+              ('TALEP_ISLEME_ALINDI',   'Talep işleme alındı',        'TALEP & ONAY', false, '{}',                 '{TALEP_SAHIBI}',40),
+              ('TEKLIF_GIRILDI',        'Tedarikçiden teklif girildi','TEKLİF',       false, '{SATINALMA}',        '{}',            50),
+              ('SIPARIS_OLUSTURULDU',   'Yeni sipariş oluşturuldu',   'SİPARİŞ',      true,  '{YONETIM,SATINALMA}','{}',            60),
+              ('SIPARIS_ONAYLANDI',     'Sipariş onaylandı',          'SİPARİŞ',      false, '{SATINALMA}',        '{}',            70),
+              ('MAL_KABUL',             'Mal kabul / teslim alındı',  'SİPARİŞ',      true,  '{MUHASEBE}',         '{TALEP_SAHIBI}',80),
+              ('FATURA_ONAYLANDI',      'Fatura onaylandı',           'SİPARİŞ',      false, '{MUHASEBE}',         '{}',            90),
+              ('SIPARIS_IPTAL',         'Sipariş iptal edildi',       'SİPARİŞ',      false, '{YONETIM,SATINALMA}','{}',           100)
+            ON CONFLICT (olay_kodu) DO NOTHING
+        `);
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için
