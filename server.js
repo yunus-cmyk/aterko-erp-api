@@ -1635,7 +1635,9 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
                 ORDER BY COALESCE(p.id, t.id) ASC, t.id ASC
                 LIMIT 1
             `, [kaynakTalepIdler]);
-            const enKucukRootNo = (baseR.rows[0]?.root_no || baseR.rows[0]?.talep_no || '').replace(/-\d+$/, '');
+            // Talep no'yu olduğu gibi al (sayıyı KORU), yalnızca -T- → -S- çevir
+            // Örn: 72738-T-5851 → 72738-S-5851
+            const enKucukRootNo = (baseR.rows[0]?.root_no || baseR.rows[0]?.talep_no || '');
             const baseSiparisNo = enKucukRootNo.replace('-T-', '-S-');
             const c = await client.query(
                 `SELECT COUNT(*)::int as n FROM satinalma_siparisleri WHERE siparis_no = $1 OR siparis_no LIKE $1 || '-%'`,
@@ -1755,6 +1757,7 @@ app.get('/api/siparis-listesi', yetkiKontrol, async (req, res, next) => {
         const query = `
             SELECT s.id, s.siparis_no, s.siparis_tarihi, s.termin_tarihi, s.para_birimi, s.kdv_orani,
                    COALESCE(s.durum, 'SİPARİŞ VERİLDİ') as durum,
+                   s.tedarikci_id,
                    t.firma_adi as tedarikci_adi,
                    COALESCE(SUM(sk.siparis_miktari * sk.birim_fiyat), 0) as ara_toplam,
                    COUNT(sk.id) as kalem_sayisi,
@@ -1880,6 +1883,7 @@ app.get('/api/satinalma-arsiv', yetkiKontrol, async (req, res, next) => {
         const siparisler = await pool.query(`
             SELECT s.id, s.siparis_no, s.siparis_tarihi, s.termin_tarihi, s.para_birimi, s.kdv_orani,
                    COALESCE(s.durum, 'SİPARİŞ VERİLDİ') as durum,
+                   s.tedarikci_id,
                    t.firma_adi as tedarikci_adi,
                    COALESCE(SUM(sk.siparis_miktari * sk.birim_fiyat), 0) as ara_toplam,
                    COUNT(sk.id) as kalem_sayisi
