@@ -526,6 +526,11 @@
                 <i class="bi bi-bar-chart me-1"></i> Satınalma Raporu
             </button>
         </div>
+        <div class="input-group input-group-sm shadow-sm mx-3" style="max-width:360px;">
+            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+            <input type="text" id="satinalmaGlobalArama" class="form-control border-start-0 shadow-none" placeholder="Tüm sekmelerde ara: proje, ürün, no, tedarikçi…" oninput="satinalmaGlobalAramaDegisti()" title="Talep, Teklif ve Sipariş sekmelerinde ortak arar — sekme değişse de kalır">
+            <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('satinalmaGlobalArama').value='';satinalmaGlobalAramaDegisti();" title="Aramayı temizle"><i class="bi bi-x-lg"></i></button>
+        </div>
         <div class="d-flex gap-2">
             <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnYeniTalepUst" data-izin-modul="satinalma.talepler" data-izin-seviye="YAZMA" onclick="openYeniTalepModal()">
                 <i class="bi bi-plus-lg me-1"></i> Yeni Talep Oluştur
@@ -612,10 +617,6 @@
     <div id="satinalmaTaleplerDiv">
         <div class="card border-0 shadow-sm rounded-3 mb-2">
             <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
-                <div class="input-group input-group-sm" style="max-width:240px;">
-                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" id="talepArama" class="form-control border-start-0 shadow-none" placeholder="Talep no, proje, kişi..." onkeyup="renderTalepTableFiltered()">
-                </div>
                 <select id="talepDurumFiltre" class="form-select form-select-sm" style="width:160px;" onchange="renderTalepTableFiltered()">
                     <option value="">Tüm Durumlar</option>
                     <option value="ONAY BEKLİYOR">Onay Bekliyor</option>
@@ -699,10 +700,6 @@
     <div id="satinalmaSiparislerDiv" class="d-none">
         <div class="card border-0 shadow-sm rounded-3 mb-2">
             <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
-                <div class="input-group input-group-sm" style="max-width:240px;">
-                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" id="siparisArama" class="form-control border-start-0 shadow-none" placeholder="Sipariş no, tedarikçi..." onkeyup="renderSiparisTableFiltered()">
-                </div>
                 <select id="siparisDurumFiltre" class="form-select form-select-sm" style="width:170px;" onchange="renderSiparisTableFiltered()">
                     <option value="">Tüm Durumlar</option>
                     <option value="SİPARİŞ OLUŞTURULDU">Sipariş Oluşturuldu</option>
@@ -6347,7 +6344,7 @@ function fetchSatinalmaListesi() {
 // Filtreli render — talepGlobal üzerinde çalışır
 function renderTalepTableFiltered() {
     const tum = window.taleplerGlobal || [];
-    const arama = (document.getElementById('talepArama')?.value || '').toLowerCase();
+    const arama = (document.getElementById('satinalmaGlobalArama')?.value || '').toLowerCase().trim();
     const durumF = document.getElementById('talepDurumFiltre')?.value || '';
     const projeF = document.getElementById('talepProjeFiltre')?.value || '';
     const tBas = document.getElementById('talepTarihBas')?.value || '';
@@ -6359,7 +6356,8 @@ function renderTalepTableFiltered() {
         if (tBas && t.istenen_tarih && new Date(t.istenen_tarih) < new Date(tBas)) return false;
         if (tBit && t.istenen_tarih && new Date(t.istenen_tarih) > new Date(tBit)) return false;
         if (arama) {
-            const txt = `${t.talep_no} ${t.proje_kodu} ${t.musteri_adi || ''} ${t.proje_adi} ${t.talep_eden || ''}`.toLowerCase();
+            const kalemTxt = (t.kalemler || []).map(k => `${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''}`).join(' ');
+            const txt = `${t.talep_no} ${t.proje_kodu} ${t.musteri_adi || ''} ${t.proje_adi} ${t.talep_eden || ''} ${t.kategoriler || ''} ${kalemTxt}`.toLowerCase();
             if (!txt.includes(arama)) return false;
         }
         return true;
@@ -6370,7 +6368,6 @@ function renderTalepTableFiltered() {
 }
 
 function sifirlaTalepFiltre() {
-    document.getElementById('talepArama').value = '';
     document.getElementById('talepDurumFiltre').value = '';
     document.getElementById('talepProjeFiltre').value = '';
     document.getElementById('talepTarihBas').value = '';
@@ -6464,10 +6461,10 @@ function getTalepAksiyonlari(t) {
 function gotoSiparisListesi(siparisAramaKoku) {
     switchSatinalmaSubTab('siparisler');
     setTimeout(() => {
-        const arama = document.getElementById('siparisArama');
+        const arama = document.getElementById('satinalmaGlobalArama');
         if (arama && siparisAramaKoku) {
             arama.value = siparisAramaKoku;
-            renderSiparisTableFiltered();
+            satinalmaGlobalAramaDegisti();
         }
     }, 250);
 }
@@ -7643,7 +7640,17 @@ function crossKalemKaldir(btn) {
 // --- YENİ NESİL SİPARİŞ LİSTELEME VE GEÇİŞ MOTORU ---
 
 // 1. Alt Sekmeler Arası Geçiş Sihirbazı
+// Ortak (sticky) arama — Talep/Teklif/Sipariş sekmelerinde aynı metni uygular.
+// Sekme değişince fetch → renderXFiltered global input'u okuduğu için filtre korunur.
+function satinalmaGlobalAramaDegisti() {
+    const sekme = window.aktifSatinalmaSekme || 'talepler';
+    if (sekme === 'talepler') renderTalepTableFiltered();
+    else if (sekme === 'siparisler') renderSiparisTableFiltered();
+    else if (sekme === 'teklif') renderTeklifHavuzu(window.teklifHavuzuCache || []);
+}
+
 function switchSatinalmaSubTab(target) {
+    window.aktifSatinalmaSekme = target; // global arama hangi sekmeyi yenileyeceğini bilir
     const divs = {
         genelbakis: document.getElementById("satinalmaGenelBakisDiv"),
         talepler: document.getElementById("satinalmaTaleplerDiv"),
@@ -7701,17 +7708,22 @@ function fetchTeklifHavuzu() {
 }
 
 function renderTeklifHavuzu(kalemler) {
-    window.teklifHavuzuCache = kalemler; // doğrudan sipariş açma için
+    window.teklifHavuzuCache = kalemler; // doğrudan sipariş açma için (filtreden bağımsız)
+    const arama = (document.getElementById('satinalmaGlobalArama')?.value || '').toLowerCase().trim();
+    const liste = arama ? kalemler.filter(k => {
+        const txt = `${k.talep_no || ''} ${k.proje_kodu || ''} ${k.musteri_adi || ''} ${k.proje_adi || ''} ${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''} ${k.kategori || ''}`.toLowerCase();
+        return txt.includes(arama);
+    }) : kalemler;
     const tb = document.getElementById('teklifHavuzuBody');
     teklifSecimGuncelle(); // seçim sayacını sıfırla
     const chkAll = document.getElementById('teklifChkAll'); if (chkAll) chkAll.checked = false;
-    if (kalemler.length === 0) {
-        tb.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">İşlem bekleyen kalem yok.</td></tr>';
+    if (liste.length === 0) {
+        tb.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-4">${arama ? 'Aramaya uyan kalem bulunamadı.' : 'İşlem bekleyen kalem yok.'}</td></tr>`;
         return;
     }
     // Kalemleri talebe göre grupla (backend zaten talep sıralı döndürüyor, sırayı koru)
     const gruplar = []; const grupMap = new Map();
-    kalemler.forEach(k => {
+    liste.forEach(k => {
         if (!grupMap.has(k.talep_id)) { const g = { t: k, kalemler: [] }; grupMap.set(k.talep_id, g); gruplar.push(g); }
         grupMap.get(k.talep_id).kalemler.push(k);
     });
@@ -8053,7 +8065,7 @@ function fetchSiparisListesi() {
 
 function renderSiparisTableFiltered() {
     const tum = window.siparislerGlobal || [];
-    const arama = (document.getElementById('siparisArama')?.value || '').toLowerCase();
+    const arama = (document.getElementById('satinalmaGlobalArama')?.value || '').toLowerCase().trim();
     const durumF = document.getElementById('siparisDurumFiltre')?.value || '';
     const tedF = document.getElementById('siparisTedarikciFiltre')?.value || '';
     const tBas = document.getElementById('siparisTarihBas')?.value || '';
@@ -8078,7 +8090,9 @@ function renderSiparisTableFiltered() {
             return false; // termin yok ama filtre var
         }
         if (arama) {
-            const txt = `${s.siparis_no} ${s.tedarikci_adi || ''}`.toLowerCase();
+            const kalemTxt = (s.kalemler || []).map(k => `${k.urun_adi || ''} ${k.stok_kodu || ''}`).join(' ');
+            const projeTxt = s.proje ? `${s.proje.kodu || ''} ${s.proje.musteri || ''} ${s.proje.adi || ''}` : '';
+            const txt = `${s.siparis_no} ${s.tedarikci_adi || ''} ${projeTxt} ${s.kategoriler || ''} ${kalemTxt}`.toLowerCase();
             if (!txt.includes(arama)) return false;
         }
         return true;
@@ -8089,7 +8103,7 @@ function renderSiparisTableFiltered() {
 }
 
 function sifirlaSiparisFiltre() {
-    ['siparisArama','siparisDurumFiltre','siparisTedarikciFiltre','siparisTarihBas','siparisTarihBit','siparisTerminFiltre'].forEach(id => {
+    ['siparisDurumFiltre','siparisTedarikciFiltre','siparisTarihBas','siparisTarihBit','siparisTerminFiltre'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
