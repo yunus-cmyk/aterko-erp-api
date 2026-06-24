@@ -8682,22 +8682,22 @@ function renderSiparisKalemMini(kalemler) {
         const tutar = sip * fiyat;
         const teslimRenk = teslim === 0 ? 'text-muted' : (teslim < sip ? 'text-warning' : 'text-success');
         return `<tr>
-            <td class="small"><span class="fw-bold">${esc(k.urun_adi)}</span></td>
-            <td class="small text-muted ps-3">${esc(k.stok_kodu || '-')}</td>
-            <td class="small text-muted ps-3">${k.kategori ? esc(k.kategori) : '-'}</td>
-            <td class="text-end small fw-bold ps-3">${formatTR(sip)} ${esc(k.birim || '')}</td>
-            <td class="text-end small ${teslimRenk} fw-bold ps-3">${formatTR(teslim)}</td>
-            <td class="text-end small ps-3">${formatTR(fiyat)}</td>
-            <td class="text-end small fw-bold ps-3">${formatTR(tutar)}</td>
+            <td class="small pe-4"><span class="fw-bold">${esc(k.urun_adi)}</span></td>
+            <td class="small text-muted px-4">${esc(k.stok_kodu || '-')}</td>
+            <td class="small text-muted px-4">${k.kategori ? esc(k.kategori) : '-'}</td>
+            <td class="text-end small fw-bold px-4">${formatTR(sip)} ${esc(k.birim || '')}</td>
+            <td class="text-end small ${teslimRenk} fw-bold px-4">${formatTR(teslim)}</td>
+            <td class="text-end small px-4">${formatTR(fiyat)}</td>
+            <td class="text-end small fw-bold px-4">${formatTR(tutar)}</td>
         </tr>`;
     }).join('');
     return `<table class="table table-sm mb-0" style="font-size:0.78rem;width:auto;">
         <thead class="table-light"><tr>
-            <th>Ürün</th><th class="ps-3">Kod</th><th class="ps-3">Kategori</th>
-            <th class="text-end ps-3">Sipariş</th>
-            <th class="text-end ps-3">Teslim</th>
-            <th class="text-end ps-3">Birim Fiyat</th>
-            <th class="text-end ps-3">Tutar</th>
+            <th class="pe-4">Ürün</th><th class="px-4">Kod</th><th class="px-4">Kategori</th>
+            <th class="text-end px-4">Sipariş</th>
+            <th class="text-end px-4">Teslim</th>
+            <th class="text-end px-4">Birim Fiyat</th>
+            <th class="text-end px-4">Tutar</th>
         </tr></thead>
         <tbody>${rows}</tbody>
     </table>`;
