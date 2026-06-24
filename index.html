@@ -737,6 +737,7 @@
                     <tr>
                         <th width="35"></th>
                         <th>Sipariş No</th>
+                        <th>İlgili Proje</th>
                         <th>Tedarikçi Firma</th>
                         <th>Kategori</th>
                         <th class="text-center">Sipariş Tarihi</th>
@@ -8329,6 +8330,7 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
         </div>` : ''}
         <div class="row g-2 mb-3">
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş No</span><span class="fw-bold text-primary">${esc(siparisNo)}</span></div></div>
+            <div class="col-md-6"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">İlgili Proje</span><span class="fw-bold text-dark">${sip?.proje ? `${esc(sip.proje.kodu || '')}${sip.proje.musteri ? ' / ' + esc(sip.proje.musteri) : ''}${sip.proje.adi ? ' - ' + esc(sip.proje.adi) : ''}` : '-'}</span></div></div>
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Tedarikçi</span><span class="fw-bold text-dark">${esc(sip?.tedarikci_adi || '-')}</span></div></div>
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş Tarihi</span><span>${formatTarihTR(sip?.siparis_tarihi) || '-'}</span></div></div>
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Termin</span>${renderTerminTarihi(sip?.termin_tarihi)}</div></div>
@@ -8644,7 +8646,7 @@ function renderSiparisTable(siparisler) {
     window.siparislerCache = siparisler; // Detay modal için
     const tbody = document.getElementById("siparisTableBody");
     if(siparisler.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted p-4">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted p-4">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</td></tr>';
         return;
     }
 
@@ -8673,6 +8675,7 @@ function renderSiparisTable(siparisler) {
                 </button>
             </td>
             <td class="fw-bold text-success">${esc(s.siparis_no)}</td>
+            <td class="small">${s.proje ? `${esc(s.proje.kodu || '')}${s.proje.musteri ? ' / ' + esc(s.proje.musteri) : ''}${s.proje.adi ? ' - ' + esc(s.proje.adi) : ''}` : '<span class="text-muted">-</span>'}</td>
             <td class="fw-bold text-dark">${esc(s.tedarikci_adi || '-')}</td>
             <td class="small text-muted">${s.kategoriler ? esc(s.kategoriler) : '<span class="text-muted">-</span>'}</td>
             <td class="text-center text-muted small">${formatTarihTR(s.siparis_tarihi) || '-'}</td>
@@ -8683,7 +8686,7 @@ function renderSiparisTable(siparisler) {
             <td class="text-center">${faturaCell}</td>
             <td class="text-center">${getSiparisAksiyonlari(s)}</td>
         </tr>
-        <tr id="siparis-kalem-row-${s.id}" class="bg-white"><td colspan="11" class="px-3 py-2"><div id="siparis-kalem-icerik-${s.id}" class="ps-4" data-loaded="1">${renderSiparisKalemMini(s.kalemler || [])}</div></td></tr>`;
+        <tr id="siparis-kalem-row-${s.id}" class="bg-white"><td colspan="12" class="px-3 py-2"><div id="siparis-kalem-icerik-${s.id}" class="ps-4" data-loaded="1">${renderSiparisKalemMini(s.kalemler || [])}</div></td></tr>`;
     });
     tbody.innerHTML = html;
 }

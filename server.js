@@ -1770,7 +1770,13 @@ app.get('/api/siparis-listesi', yetkiKontrol, async (req, res, next) => {
                        'urun_adi', COALESCE(skart.stok_adi, tu.ozel_urun_adi), 'stok_kodu', COALESCE(skart.stok_kodu, 'ÖZEL'),
                        'birim', COALESCE(skart.birim, tu.ozel_urun_birim), 'kategori', skart.kategori,
                        'siparis_miktari', sk.siparis_miktari, 'teslim_alinan_miktar', COALESCE(sk.teslim_alinan_miktar, 0), 'birim_fiyat', sk.birim_fiyat
-                   ) ORDER BY sk.id) FILTER (WHERE sk.id IS NOT NULL), '[]') as kalemler
+                   ) ORDER BY sk.id) FILTER (WHERE sk.id IS NOT NULL), '[]') as kalemler,
+                   (SELECT JSON_BUILD_OBJECT('kodu', p.proje_kodu, 'musteri', p.musteri_adi, 'adi', p.proje_adi)
+                    FROM siparis_kalemleri sk2
+                    JOIN talep_urunleri tu2 ON sk2.talep_urun_id = tu2.id
+                    JOIN satinalma_talepleri t2 ON tu2.talep_id = t2.id
+                    JOIN projeler p ON t2.proje_id = p.id
+                    WHERE sk2.siparis_id = s.id LIMIT 1) as proje
             FROM satinalma_siparisleri s
             LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
             LEFT JOIN siparis_kalemleri sk ON s.id = sk.siparis_id
