@@ -2506,6 +2506,18 @@ STK-002		50	adet
                 </div>
                 <div class="modal-body p-4" style="background-color: #f8f9fa;">
 
+                    <!-- Talep başlık bilgileri (proje, talep eden, tarih, teslim yeri, açıklama) -->
+                    <div class="card border-0 shadow-sm mb-3 bg-white">
+                        <div class="card-body py-3 px-3" id="dtBilgiPanel">
+                            <div class="text-muted small">Yükleniyor...</div>
+                        </div>
+                    </div>
+
+                    <!-- Eklenen dosyalar -->
+                    <div class="card border-0 shadow-sm mb-3 bg-white">
+                        <div class="card-body py-2 px-3" id="dtDosyaPanel"></div>
+                    </div>
+
                     <!-- Talep özet + bağlı siparişler paneli -->
                     <div class="card border-0 shadow-sm mb-3 bg-white">
                         <div class="card-body py-2 px-3" id="talepEkPanel">
@@ -6912,6 +6924,45 @@ function saveNewRequest() {
 let aktifIncelenenTalepId = null;
 
 // 1. İncele Butonuna Basıldığında Talebin Kalemlerini Supabase'den Çeker
+// Talep başlık bilgileri paneli (proje, talep eden, tarih, teslim yeri, açıklama)
+function renderTalepBilgiPanel(t) {
+    const panel = document.getElementById('dtBilgiPanel');
+    if (!panel) return;
+    if (!t) { panel.innerHTML = '<div class="text-muted small">Talep bilgisi bulunamadı.</div>'; return; }
+    const proje = `${esc(t.proje_kodu || '')}${t.musteri_adi ? ' / ' + esc(t.musteri_adi) : ''}${t.proje_adi ? ' - ' + esc(t.proje_adi) : ''}`.trim();
+    const tarih = t.istenen_tarih ? new Date(t.istenen_tarih).toLocaleDateString('tr-TR') : '-';
+    panel.innerHTML = `
+      <div class="row g-3">
+        <div class="col-md-5"><div class="small text-muted fw-bold">PROJE</div><div class="fw-semibold">${proje || '-'}</div></div>
+        <div class="col-md-3"><div class="small text-muted fw-bold">TALEP EDEN</div><div class="fw-semibold">${esc(t.talep_eden || '-')}</div></div>
+        <div class="col-md-2"><div class="small text-muted fw-bold">İSTENEN TARİH</div><div class="fw-semibold">${tarih}</div></div>
+        <div class="col-md-2"><div class="small text-muted fw-bold">TESLİM YERİ</div><div class="fw-semibold">${esc(t.teslim_yeri || '-')}</div></div>
+        ${t.genel_aciklama ? `<div class="col-12"><div class="small text-muted fw-bold">GENEL AÇIKLAMA / NOT</div><div style="white-space:pre-wrap;">${esc(t.genel_aciklama)}</div></div>` : ''}
+      </div>`;
+}
+
+// Talebe eklenen dosyalar paneli (dosya_linkleri)
+function renderTalepDosyaPanel(t) {
+    const panel = document.getElementById('dtDosyaPanel');
+    if (!panel) return;
+    let linkler = [];
+    try {
+        const raw = t && t.dosya_linkleri;
+        if (Array.isArray(raw)) linkler = raw;
+        else if (typeof raw === 'string' && raw.trim()) linkler = JSON.parse(raw);
+    } catch (_) { linkler = []; }
+    if (!linkler || linkler.length === 0) {
+        panel.innerHTML = '<div class="small text-muted"><i class="bi bi-paperclip me-1"></i>Bu talebe eklenmiş dosya yok.</div>';
+        return;
+    }
+    panel.innerHTML = `<div class="small text-muted fw-bold mb-2"><i class="bi bi-paperclip me-1"></i>Ekli Dosyalar (${linkler.length})</div>
+      <div class="d-flex flex-wrap gap-2">${linkler.map(l => {
+          const url = (typeof l === 'string') ? l : (l.url || l.link || '');
+          const ad = (typeof l === 'object' && (l.ad || l.isim || l.name)) ? (l.ad || l.isim || l.name) : (url.split('/').pop() || 'Dosya');
+          return `<a href="${esc(url)}" target="_blank" rel="noopener" class="badge bg-light text-primary border text-decoration-none p-2"><i class="bi bi-file-earmark-arrow-down me-1"></i>${esc(ad)}</a>`;
+      }).join('')}</div>`;
+}
+
 async function openTalepDetayModal(talepId, talepNo) {
     aktifIncelenenTalepId = talepId;
     window.aktifIncelenenTalepNo = talepNo || '';
@@ -6930,6 +6981,8 @@ async function openTalepDetayModal(talepId, talepNo) {
     secureFetch(`/satinalma-detay/${talepId}`).then(res => {
         if(res.ok) {
             renderTalepDetayLines(res.data);
+            renderTalepBilgiPanel(res.talep);
+            renderTalepDosyaPanel(res.talep);
         } else { showToast(res.hata, "error"); }
     }).catch(err => showToast("Detaylar yüklenemedi.", "error"));
 
