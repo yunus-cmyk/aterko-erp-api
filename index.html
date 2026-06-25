@@ -6274,8 +6274,8 @@ function renderTalepTableFiltered() {
         if (tBas && t.istenen_tarih && new Date(t.istenen_tarih) < new Date(tBas)) return false;
         if (tBit && t.istenen_tarih && new Date(t.istenen_tarih) > new Date(tBit)) return false;
         if (arama) {
-            const kalemTxt = (t.kalemler || []).map(k => `${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''}`).join(' ');
-            const txt = `${t.talep_no} ${t.proje_kodu} ${t.musteri_adi || ''} ${t.proje_adi} ${t.talep_eden || ''} ${t.kategoriler || ''} ${kalemTxt}`.toLowerCase();
+            const kalemTxt = (t.kalemler || []).map(k => `${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''} ${k.durum || ''}`).join(' ');
+            const txt = `${t.talep_no} ${t.proje_kodu} ${t.musteri_adi || ''} ${t.proje_adi} ${t.talep_eden || ''} ${t.kategoriler || ''} ${t.durum || ''} ${kalemTxt}`.toLowerCase();
             if (!txt.includes(arama)) return false;
         }
         return true;
@@ -7635,7 +7635,7 @@ function renderTeklifHavuzu(kalemler) {
     window.teklifHavuzuCache = kalemler; // doğrudan sipariş açma için (filtreden bağımsız)
     const arama = (document.getElementById('satinalmaGlobalArama')?.value || '').toLowerCase().trim();
     const liste = arama ? kalemler.filter(k => {
-        const txt = `${k.talep_no || ''} ${k.proje_kodu || ''} ${k.musteri_adi || ''} ${k.proje_adi || ''} ${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''} ${k.kategori || ''}`.toLowerCase();
+        const txt = `${k.talep_no || ''} ${k.proje_kodu || ''} ${k.musteri_adi || ''} ${k.proje_adi || ''} ${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''} ${k.kategori || ''} ${k.durum || ''}`.toLowerCase();
         return txt.includes(arama);
     }) : kalemler;
     const tb = document.getElementById('teklifHavuzuBody');
@@ -8016,7 +8016,7 @@ function renderSiparisTableFiltered() {
         if (arama) {
             const kalemTxt = (s.kalemler || []).map(k => `${k.urun_adi || ''} ${k.stok_kodu || ''}`).join(' ');
             const projeTxt = s.proje ? `${s.proje.kodu || ''} ${s.proje.musteri || ''} ${s.proje.adi || ''}` : '';
-            const txt = `${s.siparis_no} ${s.tedarikci_adi || ''} ${projeTxt} ${s.kategoriler || ''} ${kalemTxt}`.toLowerCase();
+            const txt = `${s.siparis_no} ${s.tedarikci_adi || ''} ${projeTxt} ${s.kategoriler || ''} ${s.durum || ''} ${kalemTxt}`.toLowerCase();
             if (!txt.includes(arama)) return false;
         }
         return true;
