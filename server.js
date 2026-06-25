@@ -1756,12 +1756,19 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
                 ozet: `Sipariş oluşturuldu${cross}${bolunmeler.length ? ` + ${bolunmeler.length} talep bölündü` : ''}`
             });
         } catch(_) {}
+        // Taslak (imzasız) sipariş formunu bildirim mailine ekle — o an durum "OLUŞTURULDU"
+        let olusturuldukEkler;
+        try {
+            const taslakPdf = await siparisPDFUret(yeniSiparisId, req.user);
+            olusturuldukEkler = [{ filename: `Siparis-${siparis_no}-Taslak.pdf`, content: taslakPdf }];
+        } catch (pe) { console.error('⚠️ Taslak PDF (bildirim eki):', pe.message); }
         await bildirimGonder('SIPARIS_OLUSTURULDU', {
             siparisId: yeniSiparisId,
             konu: `Aterko Workspace - Yeni sipariş oluşturuldu (${siparis_no})`,
             baslik: 'Yeni sipariş oluşturuldu',
             mesaj: `${req.user.adSoyad} tarafından ${siparis_no} numaralı yeni bir satınalma siparişi oluşturuldu.`,
-            detaylar: [{ label: 'Sipariş No', value: siparis_no }]
+            detaylar: [{ label: 'Sipariş No', value: siparis_no }],
+            ekler: olusturuldukEkler
         });
         res.json({ ok: true, mesaj: `Sipariş başarıyla oluşturuldu: ${siparis_no}.${ekMesaj}`, bolunmeler });
     } catch (error) {
@@ -2388,7 +2395,8 @@ async function bildirimGonder(olayKodu, context = {}) {
             to: toList.join(', '),
             cc: realCc.length ? realCc.join(', ') : undefined,
             subject: context.konu || context.baslik || 'Aterko Workspace Bildirimi',
-            html: bildirimMailHTML(context)
+            html: bildirimMailHTML(context),
+            attachments: (context.ekler && context.ekler.length) ? context.ekler : undefined
         });
         console.log('🔔 Bildirim:', olayKodu, '→', toList.length, 'alıcı' + (realCc.length ? ` + ${realCc.length} CC` : ''));
     } catch (e) {
@@ -2524,12 +2532,19 @@ app.post('/api/siparis-onayla', yetkiKontrol, async (req, res, next) => {
             ozet: 'Sipariş onaylandı'
         });
         const soNo = (await pool.query("SELECT siparis_no FROM satinalma_siparisleri WHERE id=$1", [req.body.siparis_id])).rows[0];
+        // Final (kaşe+imzalı) sipariş formunu bildirim mailine ekle — durum artık "ONAYLANDI"
+        let onaylandiEkler;
+        try {
+            const finalPdf = await siparisPDFUret(req.body.siparis_id, req.user);
+            onaylandiEkler = [{ filename: `Siparis-${(soNo && soNo.siparis_no) || req.body.siparis_id}.pdf`, content: finalPdf }];
+        } catch (pe) { console.error('⚠️ Final PDF (bildirim eki):', pe.message); }
         await bildirimGonder('SIPARIS_ONAYLANDI', {
             siparisId: req.body.siparis_id,
             konu: `Aterko Workspace - Sipariş onaylandı (${(soNo && soNo.siparis_no) || ''})`,
             baslik: 'Sipariş onaylandı',
             mesaj: `${(soNo && soNo.siparis_no) || ''} numaralı sipariş ${req.user.adSoyad} tarafından onaylandı.`,
-            detaylar: [{ label: 'Sipariş No', value: (soNo && soNo.siparis_no) || '-' }]
+            detaylar: [{ label: 'Sipariş No', value: (soNo && soNo.siparis_no) || '-' }],
+            ekler: onaylandiEkler
         });
         res.json({ ok: true, mesaj: 'Sipariş onaylandı.' });
     } catch (e) { next(e); }
@@ -2541,7 +2556,9 @@ app.post('/api/siparis-gonder', yetkiKontrol, async (req, res, next) => {
 
         // Tedarikçi mail bilgisini al
         const sR = await pool.query(`
-            SELECT s.siparis_no, s.para_birimi, s.kdv_orani, t.firma_adi, t.email as tedarikci_email
+            SELECT s.siparis_no, s.para_birimi, s.kdv_orani, s.siparis_tarihi, s.termin_tarihi,
+                   s.teslim_adresi, s.odeme_vade, s.teslim_nakliye,
+                   t.firma_adi, t.email as tedarikci_email, t.adres as tedarikci_adres
             FROM satinalma_siparisleri s
             LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
             WHERE s.id = $1
@@ -2560,18 +2577,64 @@ app.post('/api/siparis-gonder', yetkiKontrol, async (req, res, next) => {
         let mailDurum = 'gönderilmedi';
         if (mailTransporter) {
             try {
-                // PDF üret (mevcut endpoint mantığını burada inline kullanalım)
+                // PDF üret (siparisPDFUret = tek kaynak, yeni şablon + durum bazlı imza)
                 const pdfBuffer = await siparisPDFUret(siparis_id, req.user);
+
+                // Mail gövdesi için sipariş özeti (kalemler + toplam)
+                const trNum = n => { const v = parseFloat(n) || 0; const p = v.toFixed(2).split('.'); return p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + p[1]; };
+                const trTarih = d => { if (!d) return '-'; const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
+                const para = sip.para_birimi || 'TL';
+                const kdv = parseInt(sip.kdv_orani) || 20;
+                const kgR = await pool.query(`
+                    SELECT sk.siparis_miktari, sk.birim_fiyat,
+                           COALESCE(sc.stok_adi, tu.ozel_urun_adi) as urun_adi,
+                           COALESCE(sc.birim, tu.ozel_urun_birim) as birim
+                    FROM siparis_kalemleri sk
+                    JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+                    LEFT JOIN stok_kartlari sc ON tu.stok_kart_id = sc.id
+                    WHERE sk.siparis_id = $1 ORDER BY sk.id ASC
+                `, [siparis_id]);
+                let araT = 0;
+                const kalemRows = kgR.rows.map((k, i) => {
+                    const t = parseFloat(k.siparis_miktari) * parseFloat(k.birim_fiyat); araT += t;
+                    return `<tr>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;">${i+1}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;">${k.urun_adi || '-'}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${trNum(k.siparis_miktari)} ${k.birim || ''}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${trNum(k.birim_fiyat)} ${para}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${trNum(t)} ${para}</td>
+                    </tr>`;
+                }).join('');
+                const genelT = araT * (1 + kdv / 100);
+                const bilgiSatir = (l, v) => `<tr><td style="padding:3px 12px 3px 0;color:#6c757d;">${l}</td><td style="padding:3px 0;"><strong>${v}</strong></td></tr>`;
 
                 const aliciListe = [sip.tedarikci_email, ek_alici].filter(Boolean).join(', ');
                 const konu = `Sipariş Bildirimi — ${sip.siparis_no} | Aterko`;
                 const govdeHTML = `
-                    <div style="font-family:Arial,sans-serif;color:#212529;">
+                    <div style="font-family:Arial,sans-serif;color:#212529;max-width:640px;">
                       <p>Sayın <strong>${sip.firma_adi || 'İlgili Yetkili'}</strong>,</p>
-                      <p>Aşağıda detayları bulunan sipariş tarafınıza iletilmiştir. Detaylar ekteki PDF'tedir.</p>
-                      <table style="border-collapse:collapse;font-size:14px;">
-                        <tr><td style="padding:4px 10px;color:#6c757d;">Sipariş No:</td><td style="padding:4px 10px;"><strong>${sip.siparis_no}</strong></td></tr>
+                      <p>Aşağıda detayları bulunan sipariş tarafınıza iletilmiştir. Resmî sipariş formu ekteki PDF'tedir.</p>
+                      <table style="border-collapse:collapse;font-size:14px;margin:10px 0 16px;">
+                        ${bilgiSatir('Sipariş No', sip.siparis_no)}
+                        ${bilgiSatir('Sipariş Tarihi', trTarih(sip.siparis_tarihi))}
+                        ${bilgiSatir('Termin Tarihi', trTarih(sip.termin_tarihi))}
+                        ${bilgiSatir('Ödeme Koşulu', sip.odeme_vade || '-')}
+                        ${bilgiSatir('Nakliye', sip.teslim_nakliye || '-')}
+                        ${bilgiSatir('Teslim Adresi', sip.teslim_adresi || sip.tedarikci_adres || '-')}
                       </table>
+                      <table style="border-collapse:collapse;font-size:13px;width:100%;">
+                        <thead>
+                          <tr style="background:#1a1a1a;color:#fff;">
+                            <th style="padding:7px 8px;text-align:left;">No</th>
+                            <th style="padding:7px 8px;text-align:left;">Ürün / Malzeme</th>
+                            <th style="padding:7px 8px;text-align:center;">Miktar</th>
+                            <th style="padding:7px 8px;text-align:right;">Birim Fiyat</th>
+                            <th style="padding:7px 8px;text-align:right;">Toplam</th>
+                          </tr>
+                        </thead>
+                        <tbody>${kalemRows}</tbody>
+                      </table>
+                      <p style="text-align:right;font-size:15px;margin:12px 0;">Genel Toplam (KDV %${kdv} dahil): <strong style="color:#ff4c00;">${trNum(genelT)} ${para}</strong></p>
                       ${ek_mesaj ? `<p style="margin-top:12px;padding:10px;background:#fff8e1;border-left:3px solid #ffc107;">${ek_mesaj.replace(/\n/g, '<br>')}</p>` : ''}
                       <p>Termin tarihinden önce teslimat planınızı bildirmenizi rica ederiz. Sorularınız için cevap mailimizden ulaşabilirsiniz.</p>
                       <p style="margin-top:18px;color:#6c757d;font-size:12px;">İyi çalışmalar,<br><strong>Aterko Satın Alma</strong></p>
@@ -2613,7 +2676,8 @@ async function siparisPDFUret(siparisId, user) {
         SELECT sk.siparis_miktari, sk.birim_fiyat,
                COALESCE(sc.stok_adi, tu.ozel_urun_adi) as urun_adi,
                COALESCE(sc.stok_kodu, 'ÖZEL') as stok_kodu,
-               COALESCE(sc.birim, tu.ozel_urun_birim) as birim
+               COALESCE(sc.birim, tu.ozel_urun_birim) as birim,
+               tu.aciklama
         FROM siparis_kalemleri sk
         JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
         LEFT JOIN stok_kartlari sc ON tu.stok_kart_id = sc.id
@@ -2637,10 +2701,10 @@ async function siparisPDFUret(siparisId, user) {
     const kalemSatirlari = kR.rows.map((k, i) => {
         const tutar = parseFloat(k.siparis_miktari) * parseFloat(k.birim_fiyat);
         araToplam += tutar;
+        const aciklamaHtml = k.aciklama ? `<div class="urun-aciklama">${k.aciklama}</div>` : '';
         return `<tr>
             <td class="text-center">${i+1}</td>
-            <td>${k.stok_kodu || '-'}</td>
-            <td>${k.urun_adi || '-'}</td>
+            <td>${k.urun_adi || '-'}${aciklamaHtml}</td>
             <td class="text-center">${trNum(k.siparis_miktari)}</td>
             <td class="text-center">${k.birim || ''}</td>
             <td class="text-end">${trNum(k.birim_fiyat)} ${para}</td>
@@ -2650,27 +2714,31 @@ async function siparisPDFUret(siparisId, user) {
     const kdvTutar = araToplam * kdv / 100;
     const genelToplam = araToplam + kdvTutar;
 
+    const imzaliDurumlar = ['SİPARİŞ ONAYLANDI', 'SİPARİŞ GÖNDERİLDİ', 'KISMİ TESLİM', 'TAM TESLİM', 'TAMAMLANDI', 'TESLİM EDİLDİ'];
+    const onayImzaHtml = imzaliDurumlar.includes(s.durum) ? '<img src="images/siparis_imza.png" alt="Onay">' : '';
+
     const degerler = {
-        'Sipariş No': s.siparis_no,
-        'Sipariş Tarihi': trTarih(s.siparis_tarihi),
-        'Tedarikçi Adı': s.tedarikci_adi || '-',
-        'Termin Tarihi': trTarih(s.termin_tarihi),
-        'Ödeme Vadesi': s.odeme_vade || '-',
-        'Teslim Nakliye': s.teslim_nakliye || '-',
-        'Teslim Adresi': s.teslim_adresi || s.tedarikci_adres || '-',
-        'Ara Toplam': `${trNum(araToplam)} ${para}`,
-        'KDV Oranı': String(kdv),
-        'KDV Tutarı': `${trNum(kdvTutar)} ${para}`,
-        'Genel Toplam': `${trNum(genelToplam)} ${para}`,
-        'Sipariş Notu': s.siparis_notu || '',
-        'Sipariş Notu Var?': s.siparis_notu ? 'Evet' : 'Hayır',
-        'Hazırlayan': (user && user.adSoyad) || '-'
+        'SIPARIS_NO': s.siparis_no,
+        'SIP_TARIH': trTarih(s.siparis_tarihi),
+        'ISTENEN_TARIH': trTarih(s.termin_tarihi),
+        'TEDARIKCI': s.tedarikci_adi || '-',
+        'ARA_TOPLAM': `${trNum(araToplam)} ${para}`,
+        'KDV_ORANI': String(kdv),
+        'KDV_TUTARI': `${trNum(kdvTutar)} ${para}`,
+        'GENEL_TOPLAM': `${trNum(genelToplam)} ${para}`,
+        'SIP_ACIKLAMA': s.siparis_notu || '-',
+        'EK_DOSYA': '-',
+        'ODEME': s.odeme_vade || '-',
+        'NAKLIYE': s.teslim_nakliye || '-',
+        'TESLIM_ADRESI': s.teslim_adresi || s.tedarikci_adres || '-',
+        'SATINALMA_YETKILISI': s.olusturan_adsoyad || (user && user.adSoyad) || '-'
     };
 
     const fs = require('fs');
     const path = require('path');
     let html = fs.readFileSync(path.join(__dirname, 'templates', 'siparis.html'), 'utf8');
     html = html.replace('{{KALEM_SATIRLARI}}', kalemSatirlari);
+    html = html.replace('{{ONAY_IMZA}}', onayImzaHtml);
     const tempPath = path.join(__dirname, 'templates', `__siparis_mail_${Date.now()}.html`);
     fs.writeFileSync(tempPath, html);
     const tempName = path.basename(tempPath, '.html');
@@ -3278,98 +3346,13 @@ const { renderToPDF: pdfRender } = require('./lib/pdf-generator');
 app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
     try {
         const { siparisId } = req.params;
-        // Sipariş + tedarikçi + kalemler
-        const sR = await pool.query(`
-            SELECT s.*, t.firma_adi as tedarikci_adi, t.adres as tedarikci_adres
-            FROM satinalma_siparisleri s
-            LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
-            WHERE s.id = $1
-        `, [siparisId]);
-        if (sR.rowCount === 0) return res.status(404).json({ ok: false, hata: 'Sipariş bulunamadı.' });
-        const s = sR.rows[0];
+        const nR = await pool.query('SELECT siparis_no FROM satinalma_siparisleri WHERE id=$1', [siparisId]);
+        if (nR.rowCount === 0) return res.status(404).json({ ok: false, hata: 'Sipariş bulunamadı.' });
 
-        const kR = await pool.query(`
-            SELECT sk.siparis_miktari, sk.birim_fiyat,
-                   COALESCE(sc.stok_adi, tu.ozel_urun_adi) as urun_adi,
-                   COALESCE(sc.stok_kodu, 'ÖZEL') as stok_kodu,
-                   COALESCE(sc.birim, tu.ozel_urun_birim) as birim,
-                   tu.aciklama
-            FROM siparis_kalemleri sk
-            JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
-            LEFT JOIN stok_kartlari sc ON tu.stok_kart_id = sc.id
-            WHERE sk.siparis_id = $1
-            ORDER BY sk.id ASC
-        `, [siparisId]);
-        const kalemler = kR.rows;
+        // Tek kaynak: siparisPDFUret (siparis-gonder ve bildirim ekleri de aynı helper'ı kullanır)
+        const pdfBuffer = await siparisPDFUret(siparisId, req.user);
 
-        // Türkçe sayı formatı
-        const trNum = n => {
-            const v = parseFloat(n) || 0;
-            const parts = v.toFixed(2).split('.');
-            return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + parts[1];
-        };
-        const trTarih = d => {
-            if (!d) return '-';
-            const dt = new Date(d);
-            return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`;
-        };
-
-        const para = s.para_birimi || 'TL';
-        const kdv = parseInt(s.kdv_orani) || 20;
-        let araToplam = 0;
-        const kalemSatirlari = kalemler.map((k, i) => {
-            const tutar = parseFloat(k.siparis_miktari) * parseFloat(k.birim_fiyat);
-            araToplam += tutar;
-            const aciklamaHtml = k.aciklama ? `<div class="urun-aciklama">${k.aciklama}</div>` : '';
-            return `<tr>
-                <td class="text-center">${i+1}</td>
-                <td>${k.urun_adi || '-'}${aciklamaHtml}</td>
-                <td class="text-center">${trNum(k.siparis_miktari)}</td>
-                <td class="text-center">${k.birim || ''}</td>
-                <td class="text-end">${trNum(k.birim_fiyat)} ${para}</td>
-                <td class="text-end">${trNum(tutar)} ${para}</td>
-            </tr>`;
-        }).join('');
-        const kdvTutar = araToplam * kdv / 100;
-        const genelToplam = araToplam + kdvTutar;
-
-        // Onaylanmış (ve sonraki) durumlarda kaşe+imza basılır; sadece "Sipariş Oluşturuldu"da imzasız
-        const imzaliDurumlar = ['SİPARİŞ ONAYLANDI', 'SİPARİŞ GÖNDERİLDİ', 'KISMİ TESLİM', 'TAM TESLİM', 'TAMAMLANDI', 'TESLİM EDİLDİ'];
-        const onayImzaHtml = imzaliDurumlar.includes(s.durum) ? '<img src="images/siparis_imza.png" alt="Onay">' : '';
-
-        const degerler = {
-            'SIPARIS_NO': s.siparis_no,
-            'SIP_TARIH': trTarih(s.siparis_tarihi),
-            'ISTENEN_TARIH': trTarih(s.termin_tarihi),
-            'TEDARIKCI': s.tedarikci_adi || '-',
-            'ARA_TOPLAM': `${trNum(araToplam)} ${para}`,
-            'KDV_ORANI': String(kdv),
-            'KDV_TUTARI': `${trNum(kdvTutar)} ${para}`,
-            'GENEL_TOPLAM': `${trNum(genelToplam)} ${para}`,
-            'SIP_ACIKLAMA': s.siparis_notu || '-',
-            'EK_DOSYA': '-',
-            'ODEME': s.odeme_vade || '-',
-            'NAKLIYE': s.teslim_nakliye || '-',
-            'TESLIM_ADRESI': s.teslim_adresi || s.tedarikci_adres || '-',
-            'SATINALMA_YETKILISI': s.olusturan_adsoyad || req.user.adSoyad || '-'
-        };
-
-        // Şablonu işle (KALEM_SATIRLARI'nı pre-process et)
-        const { renderTemplate } = require('./lib/pdf-generator');
-        const fs = require('fs');
-        const path = require('path');
-        let html = fs.readFileSync(path.join(__dirname, 'templates', 'siparis.html'), 'utf8');
-        // {{KALEM_SATIRLARI}} özel — raw HTML olduğu için escape etmiyoruz
-        html = html.replace('{{KALEM_SATIRLARI}}', kalemSatirlari);
-        html = html.replace('{{ONAY_IMZA}}', onayImzaHtml);
-        // Tempfile'a yaz
-        fs.writeFileSync(path.join(__dirname, 'templates', '__siparis_temp.html'), html);
-
-        const pdfBuffer = await pdfRender('__siparis_temp', degerler);
-        // Tempfile'ı temizle
-        try { fs.unlinkSync(path.join(__dirname, 'templates', '__siparis_temp.html')); } catch (e) {}
-
-        const dosyaAdi = `Siparis-${s.siparis_no}.pdf`;
+        const dosyaAdi = `Siparis-${nR.rows[0].siparis_no}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${dosyaAdi}"`);
         res.send(pdfBuffer);
