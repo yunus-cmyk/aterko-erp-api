@@ -268,8 +268,7 @@ app.post('/api/stok-hareket-kaydet', yetkiKontrol, async (req, res, next) => {
 });
 
 // Hareket güncelle (sadece admin) — stok bakiyesini doğru şekilde yeniden hesapla
-app.post('/api/stok-hareket-guncelle', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Bu işlem sadece Yöneticiler için.' });
+app.post('/api/stok-hareket-guncelle', yetkiKontrol, izinGerekli('stok', 'TAM'), async (req, res, next) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -306,8 +305,7 @@ app.post('/api/stok-hareket-guncelle', yetkiKontrol, async (req, res, next) => {
 });
 
 // Hareket sil (sadece admin) — stok bakiyesini geri al
-app.delete('/api/stok-hareket-sil/:id', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Bu işlem sadece Yöneticiler için.' });
+app.delete('/api/stok-hareket-sil/:id', yetkiKontrol, izinGerekli('stok', 'TAM'), async (req, res, next) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
