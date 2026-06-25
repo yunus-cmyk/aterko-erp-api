@@ -8025,28 +8025,28 @@ function sifirlaSiparisFiltre() {
 function getSiparisAksiyonlari(s, detayMode) {
     const id = s.id;
     const no = s.siparis_no;
-    const incele = detayMode ? '' : `<button class="btn btn-sm btn-outline-dark py-0" onclick="openSiparisDetayModal(${id}, '${no}')" title="Detay / İncele"><i class="bi bi-search"></i></button>`;
-    const pdf = `<button class="btn btn-sm btn-outline-danger py-0" onclick="downloadSiparisPdf(${id}, '${no}')" title="PDF İndir"><i class="bi bi-file-earmark-pdf"></i></button>`;
-    const malKabul = `<button class="btn btn-sm btn-success py-0" onclick="openSiparisTeslimAlModal(${id}, '${no}')" title="Mal Kabul"><i class="bi bi-truck"></i></button>`;
+    const incele = detayMode ? '' : `<button class="btn btn-sm btn-outline-dark" onclick="openSiparisDetayModal(${id}, '${no}')"><i class="bi bi-search me-1"></i>İncele</button>`;
+    const pdf = `<button class="btn btn-sm btn-outline-danger" onclick="downloadSiparisPdf(${id}, '${no}')"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>`;
+    const malKabul = `<button class="btn btn-sm btn-success" onclick="openSiparisTeslimAlModal(${id}, '${no}')"><i class="bi bi-truck me-1"></i>Mal Kabul</button>`;
     const buttons = {
         'SİPARİŞ OLUŞTURULDU':
-            `<button class="btn btn-sm btn-info py-0 text-white" onclick="openSiparisDuzenle(${id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
-             <button class="btn btn-sm btn-primary py-0" onclick="siparisOnayla(${id})" title="Siparişi Onayla"><i class="bi bi-check-lg"></i></button>
-             <button class="btn btn-sm btn-outline-danger py-0 fw-bold" onclick="siparisTamamenGerial(${id})" title="Siparişi İptal Et — sipariş SİLİNİR, talep kalemleri İŞLEME ALINDI'ya döner"><i class="bi bi-trash me-1"></i>İptal/Sil</button>`,
+            `<button class="btn btn-sm btn-info text-white" onclick="openSiparisDuzenle(${id})"><i class="bi bi-pencil me-1"></i>Düzenle</button>
+             <button class="btn btn-sm btn-primary" onclick="siparisOnayla(${id})"><i class="bi bi-check-lg me-1"></i>Onayla</button>
+             <button class="btn btn-sm btn-outline-danger" onclick="siparisTamamenGerial(${id})" title="Sipariş SİLİNİR, talep kalemleri İŞLEME ALINDI'ya döner"><i class="bi bi-trash me-1"></i>İptal / Sil</button>`,
         'SİPARİŞ ONAYLANDI':
-            `<button class="btn btn-sm btn-warning py-0" onclick="siparisGonder(${id})" title="Siparişi Gönder"><i class="bi bi-send"></i></button>
-             <button class="btn btn-sm btn-secondary py-0" onclick="siparisGerial(${id}, 'SİPARİŞ OLUŞTURULDU')" title="Geri Al (Sipariş Oluşturuldu'ya)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
+            `<button class="btn btn-sm btn-warning" onclick="siparisGonder(${id})"><i class="bi bi-send me-1"></i>Tedarikçiye Gönder</button>
+             <button class="btn btn-sm btn-secondary" onclick="siparisGerial(${id}, 'SİPARİŞ OLUŞTURULDU')"><i class="bi bi-arrow-counterclockwise me-1"></i>Geri Al</button>`,
         'SİPARİŞ GÖNDERİLDİ':
-            `<button class="btn btn-sm btn-outline-warning py-0" onclick="siparisGonder(${id})" title="Tekrar Gönder"><i class="bi bi-send-arrow-up"></i></button>` +
+            `<button class="btn btn-sm btn-outline-warning" onclick="siparisGonder(${id})"><i class="bi bi-send-arrow-up me-1"></i>Tekrar Gönder</button>` +
             malKabul +
-            `<button class="btn btn-sm btn-secondary py-0" onclick="siparisGerial(${id}, 'SİPARİŞ ONAYLANDI')" title="Geri Al (Sipariş Onaylandı'ya)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
+            `<button class="btn btn-sm btn-secondary" onclick="siparisGerial(${id}, 'SİPARİŞ ONAYLANDI')"><i class="bi bi-arrow-counterclockwise me-1"></i>Geri Al</button>`,
         'KISMİ TESLİM': malKabul,
         'TAM TESLİM':
-            `<button class="btn btn-sm btn-outline-secondary py-0" onclick="siparisArsivle(${id})" title="Arşivle"><i class="bi bi-archive"></i></button>`,
+            `<button class="btn btn-sm btn-outline-secondary" onclick="siparisArsivle(${id})"><i class="bi bi-archive me-1"></i>Arşivle</button>`,
         'TESLİM EDİLDİ':
-            `<button class="btn btn-sm btn-outline-secondary py-0" onclick="siparisArsivle(${id})" title="Arşivle"><i class="bi bi-archive"></i></button>`
+            `<button class="btn btn-sm btn-outline-secondary" onclick="siparisArsivle(${id})"><i class="bi bi-archive me-1"></i>Arşivle</button>`
     };
-    return `<div class="btn-group btn-group-sm">${buttons[s.durum] || ''}${pdf}${incele}</div>`;
+    return `<div class="d-flex flex-wrap gap-2">${buttons[s.durum] || ''}${pdf}${incele}</div>`;
 }
 
 // Sipariş PDF indir
@@ -8607,10 +8607,10 @@ function renderSiparisTable(siparisler) {
               <span><i class="bi bi-calendar3"></i> ${formatTarihTR(s.siparis_tarihi) || '-'}</span>
               <span><i class="bi bi-truck"></i> ${renderTerminTarihi(s.termin_tarihi)}</span>
               ${kategoriChip}
-              <span class="fw-bold text-dark"><i class="bi bi-cash-stack"></i> ${formatTR(genelToplam)} ${s.para_birimi}</span>
+              <span class="fw-bold text-dark"><i class="bi bi-cash-stack"></i> ${formatTR(genelToplam)} ${s.para_birimi} <span class="fw-normal text-muted" style="font-size:0.92em;">(KDV dahil)</span></span>
               ${faturaHtml}
             </div>
-            ${renderSiparisKalemMini(s.kalemler || [])}
+            ${renderSiparisKalemMini(s.kalemler || [], s.para_birimi)}
           </div>
         </div>`;
     }).join('');
@@ -8641,25 +8641,22 @@ async function toggleSiparisKalemSatiri(siparisId, btn) {
     }
 }
 
-function renderSiparisKalemMini(kalemler) {
+function renderSiparisKalemMini(kalemler, para) {
     if (!kalemler || kalemler.length === 0) {
         return '<div class="text-muted small fst-italic">Bu siparişte kalem yok.</div>';
     }
+    const pb = para || 'TL';
     const satirlar = kalemler.map((k, i) => {
         const sip = parseFloat(k.siparis_miktari || 0);
-        const teslim = parseFloat(k.teslim_alinan_miktar || 0);
-        const durumMetin = teslim === 0 ? 'Bekliyor' : (teslim >= sip ? 'Teslim alındı' : `Kısmi ${formatTR(teslim)}/${formatTR(sip)}`);
-        const renk = teslim === 0 ? '#5F5E5A' : (teslim >= sip ? '#3B6D11' : '#854F0B');
-        const alt = k.kategori ? esc(k.kategori) : '-';
+        const fiyat = parseFloat(k.birim_fiyat || 0);
+        const tutar = sip * fiyat;
+        const alt = [k.kategori, `${formatTR(sip)} ${esc(k.birim || '')} × ${formatTR(fiyat)} ${esc(pb)}`].filter(Boolean).join(' · ');
         return `<div ${i ? 'style="border-top:0.5px solid #e2e5e9;"' : ''}>
             <div class="d-flex justify-content-between gap-2 pt-2" style="font-size:0.82rem;">
                 <span class="fw-semibold">${esc(k.urun_adi || '-')}</span>
-                <span class="fw-bold text-nowrap">${formatTR(sip)} ${esc(k.birim || '')}</span>
+                <span class="fw-bold text-nowrap">${formatTR(tutar)} ${esc(pb)}</span>
             </div>
-            <div class="d-flex justify-content-between gap-2 pb-2" style="font-size:0.74rem;color:#8a8f96;">
-                <span>${alt}</span>
-                <span class="text-nowrap" style="color:${renk};">● ${durumMetin}</span>
-            </div>
+            <div class="pb-2" style="font-size:0.74rem;color:#8a8f96;">${alt}</div>
         </div>`;
     }).join('');
     return `<div style="background:#f6f7f9;border-radius:8px;padding:2px 14px;">${satirlar}</div>`;
