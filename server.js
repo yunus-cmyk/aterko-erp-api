@@ -1074,6 +1074,7 @@ app.post('/api/yeni-talep', yetkiKontrol, async (req, res, next) => {
         await client.query('COMMIT');
         // Bildirim: onaylayacak role + talebi açana
         await bildirimGonder('TALEP_ONAYA_GONDERILDI', {
+            talepId: yeniTalepId,
             konu: `Aterko Workspace - Yeni talep onay bekliyor (${talep_no})`,
             baslik: 'Yeni talep onay bekliyor',
             mesaj: `${talep_eden} tarafından ${talep_no} numaralı yeni bir satınalma talebi oluşturuldu ve onay bekliyor.`,
@@ -1175,6 +1176,7 @@ app.post('/api/talep-durum-guncelle', yetkiKontrol, async (req, res, next) => {
             for (const row of talepRes.rows) {
                 const t = (await pool.query("SELECT talep_no, talep_eden FROM satinalma_talepleri WHERE id=$1", [row.talep_id])).rows[0];
                 if (t) await bildirimGonder('TALEP_ISLEME_ALINDI', {
+                    talepId: row.talep_id,
                     konu: `Aterko Workspace - Talebiniz işleme alındı (${t.talep_no})`,
                     baslik: 'Talebiniz işleme alındı',
                     mesaj: `${t.talep_no} numaralı talebiniz satınalma tarafından işleme alındı; teklif/sipariş süreci başladı.`,
@@ -1739,6 +1741,7 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
             });
         } catch(_) {}
         await bildirimGonder('SIPARIS_OLUSTURULDU', {
+            siparisId: yeniSiparisId,
             konu: `Aterko Workspace - Yeni sipariş oluşturuldu (${siparis_no})`,
             baslik: 'Yeni sipariş oluşturuldu',
             mesaj: `${req.user.adSoyad} tarafından ${siparis_no} numaralı yeni bir satınalma siparişi oluşturuldu.`,
@@ -1953,6 +1956,7 @@ app.post('/api/talep-onayla', yetkiKontrol, async (req, res, next) => {
         // Bildirim: talebi açana + SATINALMA'ya
         const tBil = (await pool.query("SELECT talep_no, talep_eden FROM satinalma_talepleri WHERE id=$1", [talep_id])).rows[0];
         if (tBil) await bildirimGonder('TALEP_ONAYLANDI', {
+            talepId: talep_id,
             konu: `Aterko Workspace - Talebiniz onaylandı (${tBil.talep_no})`,
             baslik: 'Talebiniz onaylandı ✓',
             mesaj: `${tBil.talep_no} numaralı talebiniz ${req.user.adSoyad} tarafından onaylandı ve satınalma sürecine alındı.`,
@@ -1990,6 +1994,7 @@ app.post('/api/talep-iptal', yetkiKontrol, async (req, res, next) => {
         // Bildirim: talebi açana (reddedildi/iptal)
         const tBilR = (await pool.query("SELECT talep_no, talep_eden FROM satinalma_talepleri WHERE id=$1", [talep_id])).rows[0];
         if (tBilR) await bildirimGonder('TALEP_REDDEDILDI', {
+            talepId: talep_id,
             konu: `Aterko Workspace - Talebiniz reddedildi (${tBilR.talep_no})`,
             baslik: 'Talebiniz reddedildi',
             mesaj: `${tBilR.talep_no} numaralı talebiniz ${req.user.adSoyad} tarafından reddedildi/iptal edildi.`,
@@ -2261,10 +2266,24 @@ function esc2(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').repl
 
 // --- BİLDİRİM SİSTEMİ ---
 // Genel amaçlı iç bildirim e-postası (siparis.html görsel diliyle uyumlu)
-function bildirimMailHTML({ baslik, mesaj, detaylar }) {
+function bildirimMailHTML({ baslik, mesaj, detaylar, kalemler }) {
     const satirlar = (detaylar || []).map(d =>
         `<tr><td style="padding:7px 14px;color:#6c757d;font-size:13px;white-space:nowrap;vertical-align:top;">${esc2(d.label)}</td><td style="padding:7px 14px;font-weight:600;font-size:13px;color:#212529;">${esc2(d.value)}</td></tr>`
     ).join('');
+    const kalemTablosu = (kalemler && kalemler.length) ? `
+        <div style="font-size:12px;color:#6c757d;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin:20px 0 6px;">Ürünler (${kalemler.length})</div>
+        <table style="border-collapse:collapse;width:100%;border:1px solid #e9ecef;font-size:13px;">
+          <thead><tr style="background:#212529;color:#fff;">
+            <th style="padding:7px 10px;text-align:left;font-weight:600;">Ürün</th>
+            <th style="padding:7px 10px;text-align:left;font-weight:600;">Kod</th>
+            <th style="padding:7px 10px;text-align:right;font-weight:600;white-space:nowrap;">Miktar</th>
+          </tr></thead>
+          <tbody>${kalemler.map((k, i) => `<tr style="background:${i % 2 ? '#fafbfc' : '#ffffff'};">
+            <td style="padding:6px 10px;border-bottom:1px solid #eee;">${esc2(k.ad)}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid #eee;color:#6c757d;">${esc2(k.kod)}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600;white-space:nowrap;">${esc2(k.miktar)} ${esc2(k.birim || '')}</td>
+          </tr>`).join('')}</tbody>
+        </table>` : '';
     return `
     <div style="max-width:580px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;background:#fff;border:1px solid #e9ecef;border-radius:8px;overflow:hidden;">
       <div style="padding:18px 26px;border-bottom:3px solid #ff4c00;">
@@ -2274,6 +2293,7 @@ function bildirimMailHTML({ baslik, mesaj, detaylar }) {
         <div style="font-size:17px;font-weight:700;color:#212529;margin-bottom:10px;">${esc2(baslik)}</div>
         <div style="font-size:14px;color:#495057;line-height:1.6;margin-bottom:${satirlar ? '18px' : '0'};">${esc2(mesaj)}</div>
         ${satirlar ? `<table style="border-collapse:collapse;width:100%;background:#f8f9fa;border-radius:6px;border:1px solid #e9ecef;">${satirlar}</table>` : ''}
+        ${kalemTablosu}
         <div style="margin-top:22px;font-size:12px;color:#adb5bd;">Bu otomatik bir bildirimdir — Aterko Workspace tarafından gönderildi.</div>
       </div>
       <div style="padding:13px 26px;border-top:1px solid #dee2e6;background:#f8f9fa;font-size:11px;color:#6c757d;">Aterko</div>
@@ -2318,6 +2338,35 @@ async function bildirimGonder(olayKodu, context = {}) {
         // TO hiç yoksa ama CC varsa, CC'yi TO yap (boş to ile mail gitmez)
         const toList = alicilar.length ? alicilar : ccList;
         const realCc = alicilar.length ? ccList : [];
+
+        // Zengin içerik: talep/sipariş id verilmişse proje + ürün listesini otomatik ekle
+        // (mail tek başına yeterli bilgi versin — kodun karşılığı aranmasın)
+        try {
+            context.detaylar = context.detaylar || [];
+            const ekleDetay = (label, value) => { if (value && !context.detaylar.some(d => d.label === label)) context.detaylar.push({ label, value }); };
+            if (context.talepId) {
+                const tD = (await pool.query(
+                    "SELECT p.proje_kodu, p.musteri_adi, p.proje_adi FROM satinalma_talepleri t LEFT JOIN projeler p ON t.proje_id=p.id WHERE t.id=$1", [context.talepId])).rows[0];
+                if (tD) ekleDetay('Proje', `${tD.proje_kodu || ''}${tD.musteri_adi ? ' / ' + tD.musteri_adi : ''}${tD.proje_adi ? ' - ' + tD.proje_adi : ''}`.trim());
+                const kD = (await pool.query(
+                    "SELECT COALESCE(sk.stok_adi, tu.ozel_urun_adi, '-') ad, COALESCE(sk.stok_kodu, 'ÖZEL') kod, tu.miktar, COALESCE(sk.birim, tu.ozel_urun_birim, '') birim FROM talep_urunleri tu LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id WHERE tu.talep_id=$1 ORDER BY tu.id", [context.talepId])).rows;
+                if (kD.length && !context.kalemler) context.kalemler = kD;
+            }
+            if (context.siparisId) {
+                const sD = (await pool.query(
+                    `SELECT ted.firma_adi tedarikci,
+                       (SELECT p.proje_kodu || COALESCE(' / ' || p.musteri_adi, '') || COALESCE(' - ' || p.proje_adi, '')
+                        FROM siparis_kalemleri sk2 JOIN talep_urunleri tu2 ON sk2.talep_urun_id=tu2.id
+                        JOIN satinalma_talepleri t2 ON tu2.talep_id=t2.id JOIN projeler p ON t2.proje_id=p.id
+                        WHERE sk2.siparis_id=s.id LIMIT 1) proje
+                     FROM satinalma_siparisleri s LEFT JOIN tedarikciler ted ON s.tedarikci_id=ted.id WHERE s.id=$1`, [context.siparisId])).rows[0];
+                if (sD) { ekleDetay('Proje', sD.proje); ekleDetay('Tedarikçi', sD.tedarikci); }
+                const kD = (await pool.query(
+                    "SELECT COALESCE(sk.stok_adi, tu.ozel_urun_adi, '-') ad, COALESCE(sk.stok_kodu, 'ÖZEL') kod, skk.siparis_miktari miktar, COALESCE(sk.birim, tu.ozel_urun_birim, '') birim FROM siparis_kalemleri skk JOIN talep_urunleri tu ON skk.talep_urun_id=tu.id LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id WHERE skk.siparis_id=$1 ORDER BY skk.id", [context.siparisId])).rows;
+                if (kD.length && !context.kalemler) context.kalemler = kD;
+            }
+        } catch (ze) { console.error('⚠️ Bildirim zenginleştirme:', ze.message); }
+
         await mailTransporter.sendMail({
             from: `"Aterko Workspace" <${MAIL_FROM_EMAIL}>`,
             to: toList.join(', '),
@@ -2460,6 +2509,7 @@ app.post('/api/siparis-onayla', yetkiKontrol, async (req, res, next) => {
         });
         const soNo = (await pool.query("SELECT siparis_no FROM satinalma_siparisleri WHERE id=$1", [req.body.siparis_id])).rows[0];
         await bildirimGonder('SIPARIS_ONAYLANDI', {
+            siparisId: req.body.siparis_id,
             konu: `Aterko Workspace - Sipariş onaylandı (${(soNo && soNo.siparis_no) || ''})`,
             baslik: 'Sipariş onaylandı',
             mesaj: `${(soNo && soNo.siparis_no) || ''} numaralı sipariş ${req.user.adSoyad} tarafından onaylandı.`,
@@ -2641,6 +2691,7 @@ app.post('/api/siparis-iptal', yetkiKontrol, async (req, res, next) => {
         });
         const siNo = (await pool.query("SELECT siparis_no FROM satinalma_siparisleri WHERE id=$1", [siparis_id])).rows[0];
         await bildirimGonder('SIPARIS_IPTAL', {
+            siparisId: siparis_id,
             konu: `Aterko Workspace - Sipariş iptal edildi (${(siNo && siNo.siparis_no) || ''})`,
             baslik: 'Sipariş iptal edildi',
             mesaj: `${(siNo && siNo.siparis_no) || ''} numaralı sipariş ${req.user.adSoyad} tarafından iptal edildi; bağlı talepler geri alındı.`,
@@ -2691,6 +2742,7 @@ app.post('/api/siparis-fatura-onayla', yetkiKontrol, async (req, res, next) => {
                 : 'Fatura onayı kaldırıldı'
         });
         if (liste.length > 0) await bildirimGonder('FATURA_ONAYLANDI', {
+            siparisId: siparis_id,
             konu: `Aterko Workspace - Fatura onaylandı (${sR.rows[0].siparis_no})`,
             baslik: 'Fatura onaylandı',
             mesaj: `${sR.rows[0].siparis_no} numaralı siparişin faturası ${req.user.adSoyad} tarafından onaylandı.`,
@@ -3016,6 +3068,7 @@ app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
             JOIN talep_urunleri tu ON sk.talep_urun_id=tu.id JOIN satinalma_talepleri t ON tu.talep_id=t.id
             WHERE sk.siparis_id=$1 AND t.talep_eden IS NOT NULL`, [siparis_id]);
         await bildirimGonder('MAL_KABUL', {
+            siparisId: siparis_id,
             konu: `Aterko Workspace - Mal kabul yapıldı (${siparisBilgi.siparis_no})`,
             baslik: 'Mal kabul / teslim alındı',
             mesaj: `${siparisBilgi.siparis_no} numaralı siparişte mal kabul yapıldı${siparisBilgi.tedarikci_adi ? ' (' + siparisBilgi.tedarikci_adi + ')' : ''}. Sipariş durumu: ${yeniSiparisDurum}.`,
