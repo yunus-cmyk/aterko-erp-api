@@ -6,7 +6,6 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "postinstall": "puppeteer browsers install chrome",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "engines": {
@@ -17,6 +16,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "@supabase/supabase-js": "^2.106.1",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
@@ -31,7 +31,8 @@
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.18.0",
     "pg": "^8.21.0",
-    "puppeteer": "^25.0.4"
+    "puppeteer": "^25.0.4",
+    "puppeteer-core": "^25.2.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
