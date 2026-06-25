@@ -435,6 +435,19 @@
     </div>
 
     <!-- HAREKET EKLEME MODALI -->
+    <div class="modal fade" id="modalStokGecmis" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h5 class="modal-title fw-bold"><i class="bi bi-clock-history me-2"></i>Stok Hareketi İşlem Geçmişi</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-3" id="stokGecmisBody"></div>
+          <div class="modal-footer py-2"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Kapat</button></div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal fade" id="modalStokHareket" tabindex="-1" data-bs-backdrop="static">
       <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
@@ -9232,14 +9245,39 @@ function renderHareketTable(hareketler) {
             <td class="small text-muted">${esc(h.depo_adi || '-')}</td>
             <td class="small text-muted">${esc(h.aciklama || '-')}</td>
             <td class="small text-muted">${esc(h.kullanici_adsoyad || '-')}</td>
-            <td class="text-center">
-                <button class="btn btn-sm btn-outline-dark py-0" onclick='openStokHareketModal(${JSON.stringify(h).replace(/'/g, "&apos;")})'>
+            <td class="text-center text-nowrap">
+                <button class="btn btn-sm btn-outline-secondary py-0 me-1" onclick="openStokHareketGecmis(${h.id})" title="İşlem geçmişi (kim, ne zaman, ne yaptı)"><i class="bi bi-clock-history"></i></button>
+                <button class="btn btn-sm btn-outline-dark py-0" onclick='openStokHareketModal(${JSON.stringify(h).replace(/'/g, "&apos;")})' title="Düzenle">
                     <i class="bi bi-pencil"></i>
                 </button>
             </td>
         </tr>`;
     });
     tbody.innerHTML = html;
+}
+
+// Bir stok hareketinin işlem geçmişi — herkes (stok erişimi olan) görebilir (şeffaflık)
+async function openStokHareketGecmis(id) {
+    const body = document.getElementById('stokGecmisBody');
+    body.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary"></div></div>';
+    new bootstrap.Modal(document.getElementById('modalStokGecmis')).show();
+    const r = await secureFetch('/stok-hareket-audit/' + id);
+    if (!r || !r.ok) { body.innerHTML = `<div class="alert alert-danger">${esc((r && r.hata) || 'Geçmiş yüklenemedi')}</div>`; return; }
+    const kayitlar = r.data || [];
+    if (!kayitlar.length) {
+        body.innerHTML = '<div class="text-muted small p-2"><i class="bi bi-info-circle me-1"></i>Bu hareket için kayıtlı işlem geçmişi yok. (Eski kayıtlarda geçmiş tutulmamış olabilir; bundan sonraki tüm işlemler buraya yazılır.)</div>';
+        return;
+    }
+    const eylemAd = { 'CREATE': 'Oluşturuldu', 'UPDATE': 'Düzeltildi', 'DELETE': 'Silindi' };
+    const eylemRenk = { 'CREATE': 'success', 'UPDATE': 'warning text-dark', 'DELETE': 'danger' };
+    body.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0" style="font-size:0.85rem;">
+        <thead class="table-light"><tr><th>Tarih / Saat</th><th>İşlem</th><th>Yapan</th><th>Detay</th></tr></thead>
+        <tbody>${kayitlar.map(k => `<tr>
+            <td class="small text-nowrap">${new Date(k.kayit_tarihi).toLocaleString('tr-TR')}</td>
+            <td><span class="badge bg-${eylemRenk[k.eylem] || 'secondary'}">${eylemAd[k.eylem] || esc(k.eylem)}</span></td>
+            <td class="small">${esc(k.kullanici_adsoyad || k.kullanici_email || '-')}</td>
+            <td class="small text-muted">${esc(k.ozet || '-')}</td>
+        </tr>`).join('')}</tbody></table></div>`;
 }
 
 function renderHareketSayfalama(toplam) {

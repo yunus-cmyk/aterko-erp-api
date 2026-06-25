@@ -245,10 +245,10 @@ app.post('/api/stok-hareket-kaydet', yetkiKontrol, async (req, res, next) => {
         const birimMaliyet = parseFloat(stokRow.ortalama_alis_fiyati) || 0;
 
         // Hareketi ekle
-        await client.query(`
+        const insR = await client.query(`
             INSERT INTO stok_hareketleri
             (stok_kart_id, tip, miktar, proje_id, depo_id, aciklama, kullanici_email, kullanici_adsoyad, birim_maliyet)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id
         `, [stok_kart_id, tip, miktarF, proje_id || null, depo_id || null, aciklama || null,
             req.user.email, req.user.adSoyad, birimMaliyet]);
 
@@ -258,6 +258,8 @@ app.post('/api/stok-hareket-kaydet', yetkiKontrol, async (req, res, next) => {
             [delta, stok_kart_id]);
 
         await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'stok_hareketleri', kayit_id: insR.rows[0].id,
+            ozet: `${tip} • ${miktarF} ${stokRow.stok_adi}${aciklama ? ' • ' + aciklama : ''}` });
         res.json({ ok: true, mesaj: 'Hareket kaydedildi.' });
     } catch (e) {
         await client.query('ROLLBACK');
@@ -295,6 +297,8 @@ app.post('/api/stok-hareket-guncelle', yetkiKontrol, izinGerekli('stok', 'TAM'),
         `, [stok_kart_id, tip, yeniMiktar, proje_id || null, depo_id || null, aciklama || null, id]);
 
         await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'stok_hareketleri', kayit_id: id,
+            ozet: `Düzeltildi: ${eski.tip} ${eski.miktar} → ${tip} ${yeniMiktar}` });
         res.json({ ok: true, mesaj: 'Hareket güncellendi.' });
     } catch (e) {
         await client.query('ROLLBACK');
@@ -317,6 +321,8 @@ app.delete('/api/stok-hareket-sil/:id', yetkiKontrol, izinGerekli('stok', 'TAM')
             [delta, h.stok_kart_id]);
         await client.query('DELETE FROM stok_hareketleri WHERE id=$1', [req.params.id]);
         await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'stok_hareketleri', kayit_id: parseInt(req.params.id),
+            ozet: `Silindi: ${h.tip} ${h.miktar}` });
         res.json({ ok: true, mesaj: 'Hareket silindi.' });
     } catch (e) {
         await client.query('ROLLBACK');
@@ -324,6 +330,18 @@ app.delete('/api/stok-hareket-sil/:id', yetkiKontrol, izinGerekli('stok', 'TAM')
     } finally {
         client.release();
     }
+});
+
+// Bir stok hareketinin işlem geçmişi (kim, ne zaman, ne yaptı) — stok OKUMA yetkisi yeter
+// (Suistimal şeffaflığı: hareketi düzenleyemeyenler de geçmişi görebilsin)
+app.get('/api/stok-hareket-audit/:id', yetkiKontrol, izinGerekli('stok', 'OKUMA'), async (req, res, next) => {
+    try {
+        const r = await pool.query(
+            `SELECT kullanici_adsoyad, kullanici_email, eylem, ozet, kayit_tarihi
+             FROM audit_log WHERE tablo='stok_hareketleri' AND kayit_id=$1 ORDER BY kayit_tarihi ASC`,
+            [req.params.id]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
 });
 
 // =================================================================
