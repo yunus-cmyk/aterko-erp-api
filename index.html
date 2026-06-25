@@ -6354,8 +6354,8 @@ function getTalepAksiyonlari(t) {
         'KISMİ TESLİM':        siparisListesiBtn,
         // KARIŞIK: hem teklif hem sipariş aşaması kalemler olabilir → her ikisine de kısa yol
         'KARIŞIK':         teklifHavuzuBtn + siparisListesiBtn,
-        'TAM TESLİM':
-            `<button class="btn btn-sm btn-outline-secondary py-0" onclick="talepArsivle(${id})" title="Arşivle"><i class="bi bi-archive"></i></button>`
+        // TAM TESLİM: manuel arşiv yok — siparişler arşivlenince talep otomatik arşive gider
+        'TAM TESLİM':          siparisListesiBtn
     };
     return `<div class="btn-group btn-group-sm">${buttons[t.durum] || ''}${incele}</div>`;
 }
@@ -7011,9 +7011,10 @@ function renderTalepDetayLevelButtons(talepId) {
         if (t.durum === 'ONAY BEKLİYOR') {
             btns += `<button class="btn btn-sm btn-light py-0" onclick="${kapat} openTalepDuzenle(${t.id})" title="Talebi Düzenle (kalem ekle/çıkar)"><i class="bi bi-pencil me-1"></i>Düzenle</button>`;
         }
-        // Arşivle: iptal veya tamamen teslim edilmiş talepte
-        if (t.durum === 'İPTAL' || t.durum === 'TAM TESLİM') {
-            btns += `<button class="btn btn-sm btn-light py-0 ms-1" onclick="${kapat} talepArsivle(${t.id})" title="Talebi Arşivle"><i class="bi bi-archive me-1"></i>Arşivle</button>`;
+        // Arşivle: YALNIZCA İPTAL talepte. (Aktif/teslim edilmiş talepler, kalemleri
+        // siparişe dönüp arşivlendikçe otomatik arşive gider — manuel arşiv yok.)
+        if (t.durum === 'İPTAL') {
+            btns += `<button class="btn btn-sm btn-light py-0 ms-1" onclick="${kapat} talepArsivle(${t.id})" title="İptal edilen talebi arşivle"><i class="bi bi-archive me-1"></i>Arşivle</button>`;
         }
         slot.innerHTML = btns;
     };

@@ -1932,6 +1932,28 @@ app.get('/api/satinalma-arsiv', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// Bir talebin AÇIK kalemi kalmadıysa (tüm kalemleri ya arşivlenmiş siparişte ya
+// İPTAL/REDDEDİLDİ) talebi otomatik arşivler. Sipariş arşivlendiğinde çağrılır.
+// Talep arşivi BUNUN DIŞINDA sadece İPTAL talepler için manuel yapılabilir.
+async function talepArsivSenkron(client, talepId) {
+    const r = await client.query(`
+        SELECT COUNT(*)::int AS acik FROM talep_urunleri tu
+        WHERE tu.talep_id = $1
+          AND tu.durum NOT IN ('İPTAL', 'REDDEDİLDİ')
+          AND NOT EXISTS (
+              SELECT 1 FROM siparis_kalemleri sk
+              JOIN satinalma_siparisleri s ON sk.siparis_id = s.id
+              WHERE sk.talep_urun_id = tu.id AND COALESCE(s.arsiv, false) = true
+          )
+    `, [talepId]);
+    if (r.rows[0].acik === 0) {
+        const u = await client.query(
+            "UPDATE satinalma_talepleri SET arsiv=true WHERE id=$1 AND COALESCE(arsiv,false)=false", [talepId]);
+        return u.rowCount > 0;
+    }
+    return false;
+}
+
 // Arşivden geri çıkar (talep veya sipariş)
 app.post('/api/arsivden-cikar', yetkiKontrol, async (req, res, next) => {
     try {
@@ -1940,6 +1962,15 @@ app.post('/api/arsivden-cikar', yetkiKontrol, async (req, res, next) => {
             await pool.query("UPDATE satinalma_talepleri SET arsiv=false WHERE id=$1", [id]);
         } else if (tur === 'siparis') {
             await pool.query("UPDATE satinalma_siparisleri SET arsiv=false WHERE id=$1", [id]);
+            // Simetri: sipariş arşivden çıkınca, onunla birlikte arşive gitmiş talepleri de geri getir
+            await pool.query(`
+                UPDATE satinalma_talepleri SET arsiv=false
+                WHERE COALESCE(arsiv,false)=true AND id IN (
+                    SELECT DISTINCT tu.talep_id FROM siparis_kalemleri sk
+                    JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+                    WHERE sk.siparis_id = $1
+                )
+            `, [id]);
         } else {
             return res.json({ ok: false, hata: 'Geçersiz tür.' });
         }
@@ -2031,29 +2062,20 @@ app.post('/api/talep-iptal', yetkiKontrol, async (req, res, next) => {
 
 // Talebi arşivle — bağlı siparişler de arşivlenir
 app.post('/api/talep-arsivle', yetkiKontrol, async (req, res, next) => {
-    const client = await pool.connect();
     try {
-        await client.query('BEGIN');
         const { talep_id } = req.body;
-        await client.query("UPDATE satinalma_talepleri SET arsiv=true WHERE id=$1", [talep_id]);
-        // Bağlı siparişleri de arşivle
-        const sR = await client.query(`
-            UPDATE satinalma_siparisleri SET arsiv=true
-            WHERE id IN (
-                SELECT DISTINCT s.id FROM satinalma_siparisleri s
-                JOIN siparis_kalemleri sk ON s.id = sk.siparis_id
-                JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
-                WHERE tu.talep_id = $1
-            )
-            RETURNING id
-        `, [talep_id]);
-        await client.query('COMMIT');
-        const mesaj = sR.rowCount > 0
-            ? `Talep ve bağlı ${sR.rowCount} sipariş arşivlendi.`
-            : 'Talep arşivlendi.';
-        res.json({ ok: true, mesaj });
-    } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+        // Talep arşivi YALNIZCA İPTAL durumundaki talepler için manuel yapılabilir.
+        // Aktif talepler, tüm kalemleri siparişe dönüp arşivlendiğinde otomatik
+        // arşive gider (siparis-arsivle → talepArsivSenkron).
+        const dR = await pool.query("SELECT durum FROM satinalma_talepleri WHERE id=$1", [talep_id]);
+        if (dR.rowCount === 0) return res.json({ ok: false, hata: 'Talep bulunamadı.' });
+        if ((dR.rows[0].durum || '').trim() !== 'İPTAL') {
+            return res.json({ ok: false, hata: 'Yalnızca İPTAL durumundaki talepler arşivlenebilir. Aktif talepler, tüm kalemleri siparişe dönüp arşivlendiğinde kendiliğinden arşive gider.' });
+        }
+        await pool.query("UPDATE satinalma_talepleri SET arsiv=true WHERE id=$1", [talep_id]);
+        await auditLogla(req, { eylem: 'ARCHIVE', tablo: 'satinalma_talepleri', kayit_id: talep_id, ozet: 'İptal edilen talep arşivlendi' });
+        res.json({ ok: true, mesaj: 'İptal edilen talep arşivlendi.' });
+    } catch (e) { next(e); }
 });
 
 // Talep düzenleme — sadece ONAY BEKLİYOR durumunda
@@ -2911,14 +2933,34 @@ app.get('/api/urun-fiyat-gecmisi/:stokKartId', yetkiKontrol, async (req, res, ne
 });
 
 app.post('/api/siparis-arsivle', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
     try {
-        await pool.query("UPDATE satinalma_siparisleri SET arsiv=true WHERE id=$1", [req.body.siparis_id]);
+        await client.query('BEGIN');
+        const siparis_id = req.body.siparis_id;
+        await client.query("UPDATE satinalma_siparisleri SET arsiv=true WHERE id=$1", [siparis_id]);
+        // Bu siparişin bağlı olduğu talepleri kontrol et: tüm kalemleri kapandıysa talep de arşive gitsin
+        const tR = await client.query(`
+            SELECT DISTINCT tu.talep_id FROM siparis_kalemleri sk
+            JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            WHERE sk.siparis_id = $1
+        `, [siparis_id]);
+        let arsivlenenTalep = 0;
+        for (const row of tR.rows) {
+            if (await talepArsivSenkron(client, row.talep_id)) arsivlenenTalep++;
+        }
+        await client.query('COMMIT');
         await auditLogla(req, {
-            eylem: 'ARCHIVE', tablo: 'satinalma_siparisleri', kayit_id: req.body.siparis_id,
-            ozet: 'Sipariş arşivlendi'
+            eylem: 'ARCHIVE', tablo: 'satinalma_siparisleri', kayit_id: siparis_id,
+            ozet: arsivlenenTalep ? `Sipariş arşivlendi (+${arsivlenenTalep} talep tamamlandı)` : 'Sipariş arşivlendi'
         });
-        res.json({ ok: true, mesaj: 'Sipariş arşivlendi.' });
-    } catch (e) { next(e); }
+        res.json({
+            ok: true,
+            mesaj: arsivlenenTalep
+                ? `Sipariş arşivlendi. Tüm kalemleri tamamlanan ${arsivlenenTalep} talep de arşive alındı.`
+                : 'Sipariş arşivlendi.'
+        });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
 });
 
 app.post('/api/siparis-gerial', yetkiKontrol, async (req, res, next) => {
