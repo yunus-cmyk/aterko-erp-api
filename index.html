@@ -6262,7 +6262,7 @@ function fetchSatinalmaListesi() {
 // Filtreli render — talepGlobal üzerinde çalışır
 function renderTalepTableFiltered() {
     const tum = window.taleplerGlobal || [];
-    const arama = (document.getElementById('satinalmaGlobalArama')?.value || '').toLowerCase().trim();
+    const arama = trAra(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
     const durumF = document.getElementById('talepDurumFiltre')?.value || '';
     const projeF = document.getElementById('talepProjeFiltre')?.value || '';
     const tBas = document.getElementById('talepTarihBas')?.value || '';
@@ -6275,7 +6275,7 @@ function renderTalepTableFiltered() {
         if (tBit && t.istenen_tarih && new Date(t.istenen_tarih) > new Date(tBit)) return false;
         if (arama) {
             const kalemTxt = (t.kalemler || []).map(k => `${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''} ${k.durum || ''}`).join(' ');
-            const txt = `${t.talep_no} ${t.proje_kodu} ${t.musteri_adi || ''} ${t.proje_adi} ${t.talep_eden || ''} ${t.kategoriler || ''} ${t.durum || ''} ${kalemTxt}`.toLowerCase();
+            const txt = trAra(`${t.talep_no} ${t.proje_kodu} ${t.musteri_adi || ''} ${t.proje_adi} ${t.talep_eden || ''} ${t.kategoriler || ''} ${t.durum || ''} ${kalemTxt}`);
             if (!txt.includes(arama)) return false;
         }
         return true;
@@ -7566,6 +7566,15 @@ function crossKalemKaldir(btn) {
 // 1. Alt Sekmeler Arası Geçiş Sihirbazı
 // Ortak (sticky) arama — Talep/Teklif/Sipariş sekmelerinde aynı metni uygular.
 // Sekme değişince fetch → renderXFiltered global input'u okuduğu için filtre korunur.
+// Türkçe-duyarsız arama normalizasyonu: i/İ/I/ı → i, ş→s, ğ→g, ü→u, ö→o, ç→c + küçük harf
+// (JS toLowerCase 'İ'yi bozuyor; bu yüzden manuel fold ediyoruz)
+function trAra(s) {
+    return String(s || '')
+        .replace(/[İIı]/g, 'i').replace(/[Şş]/g, 's').replace(/[Ğğ]/g, 'g')
+        .replace(/[Üü]/g, 'u').replace(/[Öö]/g, 'o').replace(/[Çç]/g, 'c')
+        .toLowerCase();
+}
+
 function satinalmaGlobalAramaDegisti() {
     const sekme = window.aktifSatinalmaSekme || 'talepler';
     if (sekme === 'talepler') renderTalepTableFiltered();
@@ -7633,9 +7642,9 @@ function fetchTeklifHavuzu() {
 
 function renderTeklifHavuzu(kalemler) {
     window.teklifHavuzuCache = kalemler; // doğrudan sipariş açma için (filtreden bağımsız)
-    const arama = (document.getElementById('satinalmaGlobalArama')?.value || '').toLowerCase().trim();
+    const arama = trAra(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
     const liste = arama ? kalemler.filter(k => {
-        const txt = `${k.talep_no || ''} ${k.proje_kodu || ''} ${k.musteri_adi || ''} ${k.proje_adi || ''} ${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''} ${k.kategori || ''} ${k.durum || ''}`.toLowerCase();
+        const txt = trAra(`${k.talep_no || ''} ${k.proje_kodu || ''} ${k.musteri_adi || ''} ${k.proje_adi || ''} ${k.stok_adi || ''} ${k.ozel_urun_adi || ''} ${k.stok_kodu || ''} ${k.kategori || ''} ${k.durum || ''}`);
         return txt.includes(arama);
     }) : kalemler;
     const tb = document.getElementById('teklifHavuzuBody');
@@ -7989,7 +7998,7 @@ function fetchSiparisListesi() {
 
 function renderSiparisTableFiltered() {
     const tum = window.siparislerGlobal || [];
-    const arama = (document.getElementById('satinalmaGlobalArama')?.value || '').toLowerCase().trim();
+    const arama = trAra(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
     const durumF = document.getElementById('siparisDurumFiltre')?.value || '';
     const tedF = document.getElementById('siparisTedarikciFiltre')?.value || '';
     const tBas = document.getElementById('siparisTarihBas')?.value || '';
@@ -8016,7 +8025,7 @@ function renderSiparisTableFiltered() {
         if (arama) {
             const kalemTxt = (s.kalemler || []).map(k => `${k.urun_adi || ''} ${k.stok_kodu || ''}`).join(' ');
             const projeTxt = s.proje ? `${s.proje.kodu || ''} ${s.proje.musteri || ''} ${s.proje.adi || ''}` : '';
-            const txt = `${s.siparis_no} ${s.tedarikci_adi || ''} ${projeTxt} ${s.kategoriler || ''} ${s.durum || ''} ${kalemTxt}`.toLowerCase();
+            const txt = trAra(`${s.siparis_no} ${s.tedarikci_adi || ''} ${projeTxt} ${s.kategoriler || ''} ${s.durum || ''} ${kalemTxt}`);
             if (!txt.includes(arama)) return false;
         }
         return true;
