@@ -1673,9 +1673,9 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
 
         // 2. Ana Sipariş Başlığını Kaydet
         const siparisInsert = await client.query(`
-            INSERT INTO satinalma_siparisleri (siparis_no, tedarikci_id, siparis_tarihi, termin_tarihi, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi, kdv_orani)
-            VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9) RETURNING id
-        `, [siparis_no, tedarikci_id, termin_tarihi || null, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi || 'TL', kdv_orani || 20]);
+            INSERT INTO satinalma_siparisleri (siparis_no, tedarikci_id, siparis_tarihi, termin_tarihi, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi, kdv_orani, olusturan_adsoyad, olusturan_email)
+            VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
+        `, [siparis_no, tedarikci_id, termin_tarihi || null, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi || 'TL', kdv_orani || 20, req.user.adSoyad || null, req.user.email || null]);
 
         const yeniSiparisId = siparisInsert.rows[0].id;
 
@@ -3351,7 +3351,7 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
             'ODEME': s.odeme_vade || '-',
             'NAKLIYE': s.teslim_nakliye || '-',
             'TESLIM_ADRESI': s.teslim_adresi || s.tedarikci_adres || '-',
-            'SATINALMA_YETKILISI': req.user.adSoyad || '-'
+            'SATINALMA_YETKILISI': s.olusturan_adsoyad || req.user.adSoyad || '-'
         };
 
         // Şablonu işle (KALEM_SATIRLARI'nı pre-process et)
@@ -5903,6 +5903,13 @@ async function semaGuvence() {
             )
         `);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_talep_dosyalari_talep ON talep_dosyalari(talep_id)`);
+
+        // Siparişi oluşturan kişi (PDF'te "Satınalma Yetkilisi" alanı için)
+        await pool.query(`
+            ALTER TABLE satinalma_siparisleri
+                ADD COLUMN IF NOT EXISTS olusturan_adsoyad TEXT,
+                ADD COLUMN IF NOT EXISTS olusturan_email TEXT
+        `);
 
         // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
         await pool.query(`
