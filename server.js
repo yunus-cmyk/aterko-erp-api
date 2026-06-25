@@ -3292,7 +3292,8 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
             SELECT sk.siparis_miktari, sk.birim_fiyat,
                    COALESCE(sc.stok_adi, tu.ozel_urun_adi) as urun_adi,
                    COALESCE(sc.stok_kodu, 'ÖZEL') as stok_kodu,
-                   COALESCE(sc.birim, tu.ozel_urun_birim) as birim
+                   COALESCE(sc.birim, tu.ozel_urun_birim) as birim,
+                   tu.aciklama
             FROM siparis_kalemleri sk
             JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
             LEFT JOIN stok_kartlari sc ON tu.stok_kart_id = sc.id
@@ -3319,10 +3320,10 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
         const kalemSatirlari = kalemler.map((k, i) => {
             const tutar = parseFloat(k.siparis_miktari) * parseFloat(k.birim_fiyat);
             araToplam += tutar;
+            const aciklamaHtml = k.aciklama ? `<div class="urun-aciklama">${k.aciklama}</div>` : '';
             return `<tr>
                 <td class="text-center">${i+1}</td>
-                <td>${k.stok_kodu || '-'}</td>
-                <td>${k.urun_adi || '-'}</td>
+                <td>${k.urun_adi || '-'}${aciklamaHtml}</td>
                 <td class="text-center">${trNum(k.siparis_miktari)}</td>
                 <td class="text-center">${k.birim || ''}</td>
                 <td class="text-end">${trNum(k.birim_fiyat)} ${para}</td>
@@ -3332,22 +3333,25 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
         const kdvTutar = araToplam * kdv / 100;
         const genelToplam = araToplam + kdvTutar;
 
+        // Onaylanmış (ve sonraki) durumlarda kaşe+imza basılır; sadece "Sipariş Oluşturuldu"da imzasız
+        const imzaliDurumlar = ['SİPARİŞ ONAYLANDI', 'SİPARİŞ GÖNDERİLDİ', 'KISMİ TESLİM', 'TAM TESLİM', 'TAMAMLANDI', 'TESLİM EDİLDİ'];
+        const onayImzaHtml = imzaliDurumlar.includes(s.durum) ? '<img src="images/siparis_imza.png" alt="Onay">' : '';
+
         const degerler = {
-            'Sipariş No': s.siparis_no,
-            'Sipariş Tarihi': trTarih(s.siparis_tarihi),
-            'Tedarikçi Adı': s.tedarikci_adi || '-',
-            'Termin Tarihi': trTarih(s.termin_tarihi),
-            'Ödeme Vadesi': s.odeme_vade || '-',
-            'Teslim Nakliye': s.teslim_nakliye || '-',
-            'Teslim Adresi': s.teslim_adresi || s.tedarikci_adres || '-',
-            'Ara Toplam': `${trNum(araToplam)} ${para}`,
-            'KDV Oranı': String(kdv),
-            'KDV Tutarı': `${trNum(kdvTutar)} ${para}`,
-            'Genel Toplam': `${trNum(genelToplam)} ${para}`,
-            'Sipariş Notu': s.siparis_notu || '',
-            'Sipariş Notu Var?': s.siparis_notu ? 'Evet' : 'Hayır',
-            'Hazırlayan': req.user.adSoyad || '-',
-            'KALEM_SATIRLARI': kalemSatirlari // özel placeholder, raw HTML
+            'SIPARIS_NO': s.siparis_no,
+            'SIP_TARIH': trTarih(s.siparis_tarihi),
+            'ISTENEN_TARIH': trTarih(s.termin_tarihi),
+            'TEDARIKCI': s.tedarikci_adi || '-',
+            'ARA_TOPLAM': `${trNum(araToplam)} ${para}`,
+            'KDV_ORANI': String(kdv),
+            'KDV_TUTARI': `${trNum(kdvTutar)} ${para}`,
+            'GENEL_TOPLAM': `${trNum(genelToplam)} ${para}`,
+            'SIP_ACIKLAMA': s.siparis_notu || '-',
+            'EK_DOSYA': '-',
+            'ODEME': s.odeme_vade || '-',
+            'NAKLIYE': s.teslim_nakliye || '-',
+            'TESLIM_ADRESI': s.teslim_adresi || s.tedarikci_adres || '-',
+            'SATINALMA_YETKILISI': req.user.adSoyad || '-'
         };
 
         // Şablonu işle (KALEM_SATIRLARI'nı pre-process et)
@@ -3357,6 +3361,7 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
         let html = fs.readFileSync(path.join(__dirname, 'templates', 'siparis.html'), 'utf8');
         // {{KALEM_SATIRLARI}} özel — raw HTML olduğu için escape etmiyoruz
         html = html.replace('{{KALEM_SATIRLARI}}', kalemSatirlari);
+        html = html.replace('{{ONAY_IMZA}}', onayImzaHtml);
         // Tempfile'a yaz
         fs.writeFileSync(path.join(__dirname, 'templates', '__siparis_temp.html'), html);
 
