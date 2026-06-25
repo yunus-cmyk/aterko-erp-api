@@ -8022,10 +8022,10 @@ function sifirlaSiparisFiltre() {
 }
 
 // Sipariş durumuna göre buton listesi — matrise göre
-function getSiparisAksiyonlari(s) {
+function getSiparisAksiyonlari(s, detayMode) {
     const id = s.id;
     const no = s.siparis_no;
-    const incele = `<button class="btn btn-sm btn-outline-dark py-0" onclick="openSiparisDetayModal(${id}, '${no}')" title="Detay / İncele"><i class="bi bi-search"></i></button>`;
+    const incele = detayMode ? '' : `<button class="btn btn-sm btn-outline-dark py-0" onclick="openSiparisDetayModal(${id}, '${no}')" title="Detay / İncele"><i class="bi bi-search"></i></button>`;
     const pdf = `<button class="btn btn-sm btn-outline-danger py-0" onclick="downloadSiparisPdf(${id}, '${no}')" title="PDF İndir"><i class="bi bi-file-earmark-pdf"></i></button>`;
     const malKabul = `<button class="btn btn-sm btn-success py-0" onclick="openSiparisTeslimAlModal(${id}, '${no}')" title="Mal Kabul"><i class="bi bi-truck"></i></button>`;
     const buttons = {
@@ -8248,6 +8248,7 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
     } catch (e) {}
 
     document.getElementById('siparisDetayBody').innerHTML = `
+        ${sip ? `<div class="d-flex justify-content-end flex-wrap align-items-center gap-2 mb-3 pb-3 border-bottom"><span class="small text-muted me-auto fw-bold">İşlemler:</span>${getSiparisAksiyonlari(sip, true)}</div>` : ''}
         ${baglıTalep ? `<div class="alert alert-info py-2 px-3 mb-3 small">
             <i class="bi bi-arrow-left-right me-1"></i> Kaynak Talep:
             <a href="#" class="fw-bold text-decoration-none" onclick="event.preventDefault(); bootstrap.Modal.getInstance(document.getElementById('modalSiparisDetay'))?.hide(); switchSatinalmaSubTab('talepler'); setTimeout(()=>openTalepDetayModal(${baglıTalep.id}, '${baglıTalep.talep_no}'), 300);">${esc(baglıTalep.talep_no)}</a>
