@@ -7,6 +7,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://accounts.google.com/gsi/client"></script>
   <style>
     :root { --aterko-primary: #ff4c00; --aterko-dark: #212529; --bg-main: #f4f7f9; }
@@ -602,6 +603,7 @@
 
         <!-- Para birimi özet kartları -->
         <div id="gbOzetKartlar" class="row g-2 mb-3"></div>
+        <div id="gbGrafikler" class="row g-3 mb-3"></div>
 
         <!-- Açık talep paneli (sadece proje seçilirse) -->
         <div id="gbAcikTalepPanel"></div>
@@ -10541,8 +10543,53 @@ async function fetchGenelBakis() {
         return;
     }
     renderGenelBakisOzetKartlari(r.para_birimi_ozet, r.tl_toplam, r.kurlar, kartlar);
+    renderGenelBakisGrafikler(r.grafikler);
     renderGenelBakisAcikTalep(r.acik_talep_bilgisi, acikPanel);
     renderGenelBakisSiparisler(r.siparisler, body);
+}
+
+// Genel Bakış grafikleri (Chart.js) — aylık harcama, durum, tedarikçi, kategori
+let gbChartlar = {};
+function renderGenelBakisGrafikler(g) {
+    const cont = document.getElementById('gbGrafikler');
+    if (!cont || typeof Chart === 'undefined') { if (cont) cont.innerHTML = ''; return; }
+    Object.values(gbChartlar).forEach(c => { try { c.destroy(); } catch (e) {} });
+    gbChartlar = {};
+    const bos = !g || (!(g.aylik||[]).length && !(g.durum||[]).length && !(g.tedarikci||[]).length && !(g.kategori||[]).length);
+    if (bos) { cont.innerHTML = ''; return; }
+
+    const kart = (baslik, id, col) => `<div class="${col}"><div class="card border-0 shadow-sm h-100"><div class="card-body"><h6 class="fw-bold text-secondary mb-2" style="font-size:0.85rem;">${baslik}</h6><div style="position:relative;height:240px;"><canvas id="${id}"></canvas></div></div></div></div>`;
+    cont.innerHTML =
+        kart('<i class="bi bi-graph-up me-1"></i>Aylık Harcama (₺)', 'gbChartAylik', 'col-12 col-xl-8') +
+        kart('<i class="bi bi-pie-chart me-1"></i>Durum Dağılımı', 'gbChartDurum', 'col-12 col-md-6 col-xl-4') +
+        kart('<i class="bi bi-bar-chart-steps me-1"></i>Tedarikçi Harcaması (₺, ilk 8)', 'gbChartTedarikci', 'col-12 col-md-6') +
+        kart('<i class="bi bi-tags me-1"></i>Kategori Dağılımı (₺, ilk 8)', 'gbChartKategori', 'col-12 col-md-6');
+
+    const PALET = ['#ff4c00','#0d6efd','#198754','#6f42c1','#fd7e14','#0dcaf0','#d63384','#6c757d'];
+    const ayAd = a => { const [y,m] = a.split('-'); return ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'][parseInt(m)-1] + ' ' + y.slice(2); };
+    const tlTick = { ticks: { callback: v => formatTR(v) } };
+
+    const aylik = (g.aylik || []).slice(-12);
+    if (aylik.length) gbChartlar.aylik = new Chart(document.getElementById('gbChartAylik'), {
+        type: 'line',
+        data: { labels: aylik.map(x => ayAd(x.ad)), datasets: [{ label: 'Harcama', data: aylik.map(x => x.deger), borderColor: '#ff4c00', backgroundColor: 'rgba(255,76,0,0.13)', fill: true, tension: 0.3, pointRadius: 3 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: tlTick } }
+    });
+    if ((g.durum || []).length) gbChartlar.durum = new Chart(document.getElementById('gbChartDurum'), {
+        type: 'doughnut',
+        data: { labels: g.durum.map(x => x.ad), datasets: [{ data: g.durum.map(x => x.deger), backgroundColor: PALET }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } } } }
+    });
+    if ((g.tedarikci || []).length) gbChartlar.tedarikci = new Chart(document.getElementById('gbChartTedarikci'), {
+        type: 'bar',
+        data: { labels: g.tedarikci.map(x => x.ad), datasets: [{ data: g.tedarikci.map(x => x.deger), backgroundColor: '#0d6efd' }] },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: tlTick } }
+    });
+    if ((g.kategori || []).length) gbChartlar.kategori = new Chart(document.getElementById('gbChartKategori'), {
+        type: 'doughnut',
+        data: { labels: g.kategori.map(x => x.ad), datasets: [{ data: g.kategori.map(x => x.deger), backgroundColor: PALET }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } } } }
+    });
 }
 
 function renderGenelBakisOzetKartlari(ozet, tlToplam, kurlar, container) {

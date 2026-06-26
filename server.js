@@ -1516,7 +1516,40 @@ app.get('/api/satinalma-genel-ozet', yetkiKontrol, async (req, res, next) => {
             };
         }
 
-        res.json({ ok: true, siparisler, para_birimi_ozet, tl_toplam, kurlar, acik_talep_bilgisi });
+        // ---- Dashboard grafik verileri (aynı filtre) ----
+        const JOINS = `
+            FROM satinalma_siparisleri s
+            JOIN siparis_kalemleri sk ON sk.siparis_id = s.id
+            JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            JOIN satinalma_talepleri t ON tu.talep_id = t.id
+            LEFT JOIN projeler p ON t.proje_id = p.id
+            LEFT JOIN tedarikciler tdr ON s.tedarikci_id = tdr.id
+            LEFT JOIN stok_kartlari skart ON tu.stok_kart_id = skart.id`;
+        const [durumDag, tedarikciDag, kategoriDag, aylikDag] = await Promise.all([
+            // Durum dağılımı (sipariş adedi)
+            pool.query(`SELECT COALESCE(s.durum,'-') as ad, COUNT(DISTINCT s.id)::int as deger
+                ${JOINS} WHERE ${where} GROUP BY s.durum ORDER BY deger DESC`, params),
+            // Tedarikçi dağılımı (tutar, ilk 8)
+            pool.query(`SELECT COALESCE(tdr.firma_adi,'-') as ad,
+                SUM(COALESCE(sk.siparis_miktari,0)*COALESCE(sk.birim_fiyat,0))::numeric as deger
+                ${JOINS} WHERE ${where} GROUP BY tdr.firma_adi ORDER BY deger DESC NULLS LAST LIMIT 8`, params),
+            // Kategori dağılımı (tutar, ilk 8)
+            pool.query(`SELECT COALESCE(NULLIF(TRIM(skart.kategori),''),'Diğer') as ad,
+                SUM(COALESCE(sk.siparis_miktari,0)*COALESCE(sk.birim_fiyat,0))::numeric as deger
+                ${JOINS} WHERE ${where} GROUP BY 1 ORDER BY deger DESC NULLS LAST LIMIT 8`, params),
+            // Aylık harcama (tutar, kronolojik)
+            pool.query(`SELECT TO_CHAR(DATE_TRUNC('month', s.siparis_tarihi),'YYYY-MM') as ad,
+                SUM(COALESCE(sk.siparis_miktari,0)*COALESCE(sk.birim_fiyat,0))::numeric as deger
+                ${JOINS} WHERE ${where} AND s.siparis_tarihi IS NOT NULL GROUP BY 1 ORDER BY 1 ASC`, params)
+        ]);
+        const grafikler = {
+            durum:     durumDag.rows.map(r => ({ ad: r.ad, deger: r.deger })),
+            tedarikci: tedarikciDag.rows.map(r => ({ ad: r.ad, deger: parseFloat(r.deger || 0) })),
+            kategori:  kategoriDag.rows.map(r => ({ ad: r.ad, deger: parseFloat(r.deger || 0) })),
+            aylik:     aylikDag.rows.map(r => ({ ad: r.ad, deger: parseFloat(r.deger || 0) }))
+        };
+
+        res.json({ ok: true, siparisler, para_birimi_ozet, tl_toplam, kurlar, acik_talep_bilgisi, grafikler });
     } catch (e) { next(e); }
 });
 
