@@ -3449,7 +3449,7 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
 const { renderToPDF } = require('./lib/pdf-generator');
 // Teknik şartnameyi form tanımları + seçenek metni kütüphanesinden DİNAMİK üretir.
 // Her bina türü için ayrı şablon gerekmez — form_tanimlari neyse PDF onu yansıtır.
-function teknikSartnameHTML(t, ft) {
+function teknikSartnameHTML(t, ft, kullaniciAd) {
     const ek = t.ek_veriler || {};
     const veri = {
         ...ek,
@@ -3460,70 +3460,72 @@ function teknikSartnameHTML(t, ft) {
     };
     const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const trTarih = d => { const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
-    // Formdaki SORU_GIZLE koşulu (alan gizlenmeli mi?)
-    const gizliMi = kosul => !kosul ? false : kosul.split('||').map(x => x.trim()).some(x => {
-        const m = x.match(/^(.+?)=(.+?)→SORU_GIZLE$/); if (!m) return false;
-        const g = veri[m[1].trim()], b = m[2].trim();
-        return Array.isArray(g) ? g.includes(b) : String(g || '').trim() === b;
-    });
     // Ham cevap yerine şartname cümlesi (kütüphaneden), yoksa cevabın kendisi
     const metinAl = (a, deger) => {
         const sm = a.secenek_metinleri;
         return (sm && typeof sm === 'object' && sm[deger]) ? sm[deger] : deger;
     };
+    const cevapHTML = (a, v) => {
+        if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) return '';
+        return Array.isArray(v)
+            ? '<ul class="ml">' + v.map(md => `<li>${esc(metinAl(a, md))}</li>`).join('') + '</ul>'
+            : esc(metinAl(a, v));
+    };
 
+    // Form bölümleri — TÜM satırlar gösterilir (boş cevap = boş hücre). Atlama/koşul YOK.
     const bolumler = []; const map = {};
-    ft.forEach(a => { if (!map[a.bolum_adi]) { map[a.bolum_adi] = { ad: a.bolum_adi, alanlar: [] }; bolumler.push(map[a.bolum_adi]); } map[a.bolum_adi].alanlar.push(a); });
+    ft.forEach(a => { if (!map[a.bolum_adi]) { map[a.bolum_adi] = { ad: a.bolum_adi, sira: a.bolum_sirasi, alanlar: [] }; bolumler.push(map[a.bolum_adi]); } map[a.bolum_adi].alanlar.push(a); });
 
-    let bolumHtml = '';
+    let formHtml = '';
     bolumler.forEach(b => {
-        const ana = b.alanlar.find(a => a.soru === b.ad);
-        if (ana && String(veri[b.ad] || '').trim() === 'Yok') return; // bölüm "Yok" → atla
-        let satir = '';
-        b.alanlar.forEach(a => {
-            if (a.soru === b.ad || gizliMi(a.kosullar)) return;
-            const v = veri[a.soru];
-            if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) return;
-            const icerik = Array.isArray(v)
-                ? '<ul class="ml">' + v.map(md => `<li>${esc(metinAl(a, md))}</li>`).join('') + '</ul>'
-                : esc(metinAl(a, v));
-            satir += `<tr><td class="s">${esc(a.soru)}</td><td class="d">${icerik}</td></tr>`;
-        });
+        const satir = b.alanlar
+            .filter(a => a.soru !== b.ad) // bölümün ana Var/Yok sorusu satır olarak tekrarlanmaz (başlıkta)
+            .map(a => `<tr><td class="soru">${esc(a.soru)}</td><td class="cevap">${cevapHTML(a, veri[a.soru])}</td></tr>`)
+            .join('');
         if (!satir) return;
-        bolumHtml += `<div class="bolum"><h2>${esc(b.ad)}</h2><table>${satir}</table></div>`;
+        formHtml += `
+        <div class="bolum-bas"><div class="bolum-no">${b.sira != null ? esc(b.sira) : ''}</div><div class="bolum-baslik"><span class="ana">${esc((b.ad || '').toLocaleUpperCase('tr'))}</span></div></div>
+        <table class="ts">${satir}</table>`;
     });
 
+    const binaTuruBaslik = (t.bina_turu || '').toLocaleUpperCase('tr') + ' BİNA TEKNİK ÖZELLİKLERİ';
+    const param = `[ ${esc(t.bina_tipi || '')} - ${esc(t.kat_yuksekligi || '')} mm - ${esc(t.kat_adedi || '')} Kat - ${esc(t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '')} ]`;
+
     return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><style>
-      @page { margin: 12mm; size: A4; }
+      @page { margin: 10mm 12mm; size: A4; }
       * { box-sizing: border-box; }
       body { font-family:'Arial','Helvetica',sans-serif; font-size:10pt; color:#1a1a1a; margin:0; }
-      .ust { display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid #ff4c00; padding-bottom:10px; margin-bottom:14px; }
-      .ust img { height:42px; }
-      .ust .bilgi { text-align:right; }
-      .ust .t { font-size:15pt; font-weight:800; letter-spacing:.5px; }
-      .ust .s2 { font-size:10pt; color:#6c757d; }
-      .proje { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; }
-      .proje > div { border:1px solid #e9ecef; border-radius:5px; padding:7px 10px; }
-      .proje span { display:block; font-size:8pt; color:#6c757d; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
-      .proje b { font-size:10pt; }
-      .bolum { margin-bottom:12px; page-break-inside:avoid; }
-      .bolum h2 { font-size:11pt; color:#fff; background:#ff4c00; padding:5px 10px; border-radius:3px; margin:0 0 6px; }
-      .bolum table { width:100%; border-collapse:collapse; font-size:9.5pt; }
-      .bolum td { padding:5px 8px; border-bottom:1px solid #eee; vertical-align:top; line-height:1.45; }
-      .bolum tr:last-child td { border-bottom:none; }
-      .bolum td.s { color:#6c757d; width:32%; font-weight:600; padding-right:12px; }
-      .bolum ul.ml { margin:0; padding-left:16px; }
-      .footer { margin-top:18px; padding-top:8px; border-top:1px solid #e9ecef; font-size:7.5pt; color:#adb5bd; text-align:center; }
+      .header { margin-bottom:16px; }
+      .header img { width:100%; height:auto; }
+      .bolum-bas { display:flex; align-items:stretch; margin:16px 0 6px; page-break-inside:avoid; }
+      .bolum-no { border:1.5px solid #ff4c00; color:#1a1a1a; font-weight:700; font-size:15pt; width:46px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+      .bolum-baslik { padding-left:14px; display:flex; flex-direction:column; justify-content:center; }
+      .bolum-baslik .turuncu { color:#ff4c00; font-weight:700; font-size:12pt; line-height:1.3; }
+      .bolum-baslik .ana { color:#1a1a1a; font-weight:800; font-size:13pt; }
+      table.ts { width:100%; border-collapse:collapse; margin-bottom:14px; page-break-inside:auto; }
+      table.ts td { border:1px solid #ffad94; padding:7px 12px; vertical-align:top; font-size:10pt; line-height:1.4; }
+      table.ts td.soru { font-weight:700; width:34%; }
+      table.ts ul.ml { margin:0; padding-left:16px; }
+      table.ts tr { page-break-inside:avoid; }
     </style></head><body>
-      <div class="ust"><img src="images/siparis_logo.png" alt="ATERKO"><div class="bilgi"><div class="t">TEKNİK ŞARTNAME</div><div class="s2">${esc(t.bina_turu || '')} • ${trTarih(new Date())}</div></div></div>
-      <div class="proje">
-        <div><span>Proje</span><b>${esc(t.proje_kodu || '-')} — ${esc(t.proje_adi || '')}</b></div>
-        <div><span>Müşteri</span><b>${esc(t.musteri_adi || '-')}</b></div>
-        <div><span>Bina</span><b>${esc(t.bina_adi || '-')}${t.bina_tipi ? ' (' + esc(t.bina_tipi) + ')' : ''}</b></div>
-        <div><span>Kat / Büyüklük</span><b>${esc(t.kat_adedi || '-')} kat • ${esc(t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '-')}</b></div>
+      <div class="header"><img src="images/siparis_logo.png" alt="ATERKO"></div>
+      <div class="bolum-bas">
+        <div class="bolum-no">0</div>
+        <div class="bolum-baslik">
+          <span class="turuncu">${esc(t.bina_adi || '')}</span>
+          <span class="turuncu">${param}</span>
+          <span class="ana">${esc(binaTuruBaslik)}</span>
+        </div>
       </div>
-      ${bolumHtml || '<div style="color:#888;padding:20px;text-align:center;">Bu teslimatta doldurulmuş şartname verisi yok.</div>'}
-      <div class="footer">Aterko Workspace • ${esc(t.proje_kodu)}-${t.id} • ${trTarih(new Date())}</div>
+      <table class="ts">
+        <tr><td class="soru">Tarih</td><td class="cevap">${trTarih(new Date())}</td></tr>
+        <tr><td class="soru">Düzenleyen</td><td class="cevap">${esc(kullaniciAd || '')}</td></tr>
+        <tr><td class="soru">Müşteri Adı</td><td class="cevap">${esc(t.musteri_adi || '')}</td></tr>
+        <tr><td class="soru">Proje Adı</td><td class="cevap">${esc(t.proje_adi || '')} [ ${esc(t.proje_kodu || '')} ]</td></tr>
+        <tr><td class="soru">Proje Yeri</td><td class="cevap">${esc(t.bina_yeri || '')}</td></tr>
+        <tr><td class="soru">Nakliye Sorumluluğu</td><td class="cevap">${esc(t.nakliye || '')}</td></tr>
+      </table>
+      ${formHtml}
     </body></html>`;
 }
 
@@ -3545,7 +3547,7 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
             return res.status(400).json({ ok: false, hata: `"${t.bina_turu}" bina türü için form tanımı yok. Yönetim → Form Tanımları'ndan ekleyebilirsiniz.` });
         }
         const { htmlToPDF } = require('./lib/pdf-generator');
-        const pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows));
+        const pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, req.user.adSoyad));
         const dosyaAdi = `${t.proje_kodu}-${t.bina_adi}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${dosyaAdi}"`);
