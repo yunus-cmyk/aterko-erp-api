@@ -9948,7 +9948,7 @@ function tsKosullariCalistir() {
         // Alanın DOM container'ını bul — buildFormField ilk input'un parent'ı (col-md-*)
         const input = document.querySelector(`#tsModalBody .ts-input[data-soru="${CSS.escape(a.soru)}"]`);
         if (!input) return;
-        const container = input.closest('.col-md-6, .col-md-12');
+        const container = input.closest('.ts-alan');
         if (!container) return;
         const gizle = tsKosulSaglandi(a.kosullar, mevcut);
         container.style.display = gizle ? 'none' : '';
@@ -9956,7 +9956,7 @@ function tsKosullariCalistir() {
 
     // Bölümün tüm alanları gizliyse, bölümü de gizle
     document.querySelectorAll('#tsModalBody .ts-bolum').forEach(bolum => {
-        const alanlar = bolum.querySelectorAll('.col-md-6, .col-md-12');
+        const alanlar = bolum.querySelectorAll('.ts-alan');
         const gorunen = Array.from(alanlar).filter(a => a.style.display !== 'none');
         bolum.style.display = gorunen.length === 0 ? 'none' : '';
     });
