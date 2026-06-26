@@ -6481,7 +6481,7 @@ async function talepOnayla(talep_id) {
     showLoading();
     const r = await secureFetch('/talep-onayla', { method: 'POST', body: JSON.stringify({ talep_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSatinalmaListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function talepReddet(talep_id) {
@@ -6491,7 +6491,7 @@ async function talepReddet(talep_id) {
     // Yeni mantık: Reddet artık talebi İPTAL durumuna atar
     const r = await secureFetch('/talep-iptal', { method: 'POST', body: JSON.stringify({ talep_id, gerekce }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSatinalmaListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function talepIslemeAl(talep_id) {
@@ -6499,7 +6499,7 @@ async function talepIslemeAl(talep_id) {
     showLoading();
     const r = await secureFetch('/talep-gerial', { method: 'POST', body: JSON.stringify({ talep_id, hedef_durum: 'İŞLEME ALINDI' }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSatinalmaListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function talepGerial(talep_id, hedef_durum) {
@@ -6508,7 +6508,7 @@ async function talepGerial(talep_id, hedef_durum) {
     showLoading();
     const r = await secureFetch('/talep-gerial', { method: 'POST', body: JSON.stringify({ talep_id, hedef_durum: hedef }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSatinalmaListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function talepArsivle(talep_id) {
@@ -6516,7 +6516,7 @@ async function talepArsivle(talep_id) {
     showLoading();
     const r = await secureFetch('/talep-arsivle', { method: 'POST', body: JSON.stringify({ talep_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSatinalmaListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 // İkinci parametre verilirse o kalemin checkbox'ını otomatik işaretler
@@ -6841,12 +6841,9 @@ function saveNewRequest() {
                 hideLoading();
             }
             showToast(res.mesaj || (isEdit ? 'Talep güncellendi.' : 'Talep işlendi.'), "success");
-            const modalEl = document.getElementById('modalYeniTalep');
-            const modalInstance = bootstrap.Modal.getInstance(modalEl);
-            if(modalInstance) modalInstance.hide();
             duzenlenenTalepId = null;
             window.ntBekleyenDosyalar = [];
-            fetchSatinalmaListesi();
+            satinalmaIslemSonrasi();
         } else { showToast(res.hata, "error"); }
     });
 }
@@ -7220,13 +7217,7 @@ function executeStatusChange(hedefDurum) {
         hideLoading();
         if(res.ok) {
             showToast(res.mesaj, "success");
-            
-            // Modalı kapatıp ana listeyi tazeleyelim
-            const modalEl = document.getElementById('modalTalepDetay');
-            const modalInstance = bootstrap.Modal.getInstance(modalEl);
-            if(modalInstance) modalInstance.hide();
-            
-            fetchSatinalmaListesi(); // Ana tabloyu yenile
+            satinalmaIslemSonrasi(); // modalı kapat + aktif sekmeyi tazele
         } else { showToast(res.hata, "error"); }
     }).catch(err => { hideLoading(); showToast("İşlem gerçekleştirilemedi.", "error"); });
 }
@@ -7443,11 +7434,10 @@ function submitPurchaseOrder() {
         hideLoading();
         if(res.ok) {
             showToast(res.mesaj || (isEdit ? 'Sipariş güncellendi.' : 'Sipariş oluşturuldu.'), "success");
-            bootstrap.Modal.getInstance(document.getElementById('modalSiparisOlustur')).hide();
             duzenlenenSiparisId = null;
-            // Hangi listede olduğumuza göre yenile
-            if (isEdit) fetchSiparisListesi();
-            else fetchSatinalmaListesi();
+            // Modalı kapat + O AN AÇIK olan sekmeyi yenile (Teklif Havuzu'ndan oluşturulduysa
+            // kalem oradan düşer; böylece tekrar denenip "kalem zaten siparişte" hatası alınmaz)
+            satinalmaIslemSonrasi();
         } else { showToast(res.hata, "error"); }
     });
 }
@@ -7976,6 +7966,21 @@ async function arsivdenCikar(tur, id) {
 }
 
 // 2. Sipariş Verilerini Supabase'den Çeker
+// İşlem sonrası ortak davranış (kullanıcı kararı: ekran kapansın + liste tazelensin):
+// açık detay/işlem modallarını kapatır ve O AN AÇIK olan satınalma alt-sekmesini yeniler.
+function satinalmaIslemSonrasi() {
+    ['modalSiparisDetay', 'modalTalepDetay', 'modalSiparisOlustur', 'modalYeniTalep', 'modalSiparisTeslimAl'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { const m = bootstrap.Modal.getInstance(el); if (m) m.hide(); }
+    });
+    const acik = id => !document.getElementById(id)?.classList.contains('d-none');
+    if (acik('satinalmaTeklifDiv')) fetchTeklifHavuzu();
+    else if (acik('satinalmaSiparislerDiv')) fetchSiparisListesi();
+    else if (acik('satinalmaGenelBakisDiv')) { if (typeof fetchGenelBakis === 'function') fetchGenelBakis(); }
+    else if (acik('satinalmaArsivDiv')) { if (typeof fetchArsiv === 'function') fetchArsiv(); }
+    else fetchSatinalmaListesi();
+}
+
 function fetchSiparisListesi() {
     showLoading();
     secureFetch('/siparis-listesi?_=' + Date.now()).then(res => {
@@ -8689,7 +8694,7 @@ async function siparisOnayla(siparis_id) {
     showLoading();
     const r = await secureFetch('/siparis-onayla', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSiparisListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function siparisGonder(siparis_id) {
@@ -8697,7 +8702,7 @@ async function siparisGonder(siparis_id) {
     showLoading();
     const r = await secureFetch('/siparis-gonder', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSiparisListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function siparisTamamenGerial(siparis_id) {
@@ -8705,7 +8710,7 @@ async function siparisTamamenGerial(siparis_id) {
     showLoading();
     const r = await secureFetch('/siparis-tamamen-sil', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSiparisListesi(); fetchSatinalmaListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 
@@ -8714,7 +8719,7 @@ async function siparisIptal(siparis_id) {
     showLoading();
     const r = await secureFetch('/siparis-iptal', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSiparisListesi(); fetchSatinalmaListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function siparisGerial(siparis_id, hedef_durum) {
@@ -8722,7 +8727,7 @@ async function siparisGerial(siparis_id, hedef_durum) {
     showLoading();
     const r = await secureFetch('/siparis-gerial', { method: 'POST', body: JSON.stringify({ siparis_id, hedef_durum }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSiparisListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function siparisArsivle(siparis_id) {
@@ -8730,7 +8735,7 @@ async function siparisArsivle(siparis_id) {
     showLoading();
     const r = await secureFetch('/siparis-arsivle', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); fetchSiparisListesi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 
@@ -8847,8 +8852,7 @@ function submitOrderDelivery() {
         hideLoading();
         if(res.ok) {
             showToast(res.mesaj, "success");
-            bootstrap.Modal.getInstance(document.getElementById('modalSiparisTeslimAl')).hide();
-            fetchSiparisListesi();
+            satinalmaIslemSonrasi(); // teslim al modalı + (açıksa) sipariş detayı kapanır, liste tazelenir
         } else { showToast(res.hata, "error"); }
     });
 }
