@@ -3539,15 +3539,37 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
         `, [teslimatId]);
         if (r.rowCount === 0) return res.status(404).json({ ok: false, hata: 'Teslimat bulunamadı.' });
         const t = r.rows[0];
-        const ftR = await pool.query(`
-            SELECT bolum_adi, bolum_sirasi, soru, soru_sirasi, giris_tipi, kosullar, secenek_metinleri
-            FROM form_tanimlari WHERE bina_turu = $1 ORDER BY bolum_sirasi, soru_sirasi
-        `, [t.bina_turu]);
-        if (ftR.rowCount === 0) {
-            return res.status(400).json({ ok: false, hata: `"${t.bina_turu}" bina türü için form tanımı yok. Yönetim → Form Tanımları'ndan ekleyebilirsiniz.` });
+
+        // Bina türünün özel (zengin, EĞER/HESAP/HARİCİ'li) şablonu varsa onu kullan — birebir doküman.
+        const SABLON_HARITASI = { 'Prefabrik': 'prefabrik' };
+        const fs = require('fs'); const path = require('path');
+        const sablon = SABLON_HARITASI[t.bina_turu];
+        const { renderToPDF, htmlToPDF } = require('./lib/pdf-generator');
+        let pdfBuffer;
+
+        if (sablon && fs.existsSync(path.join(__dirname, 'templates', sablon + '.html'))) {
+            const trTarih = d => { const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
+            const degerler = {
+                'Proje No': t.proje_kodu, 'Müşteri Adı': t.musteri_adi, 'Proje Adı': t.proje_adi,
+                'Bina Yeri': t.bina_yeri || '', 'Nakliye': t.nakliye || '',
+                'Bina Adı': t.bina_adi || '', 'Bina Tipi': t.bina_tipi || '',
+                'Kat Yüksekliği': t.kat_yuksekligi || '', 'Kat Adedi': t.kat_adedi || '',
+                'Büyüklük': t.buyukluk_m2 ? `${t.buyukluk_m2} m²` : '',
+                'TARİH': trTarih(new Date()), 'DÜZENLEYEN': req.user.adSoyad || '', 'KOD': `${t.proje_kodu}-${t.id}`,
+                ...(t.ek_veriler || {}) // form cevapları (Dış Duvar Kalınlığı (mm), Bina Tipi vb.)
+            };
+            pdfBuffer = await renderToPDF(sablon, degerler);
+        } else {
+            // Özel şablonu olmayan türler için form tanımlarından dinamik üretim
+            const ftR = await pool.query(`
+                SELECT bolum_adi, bolum_sirasi, soru, soru_sirasi, giris_tipi, kosullar, secenek_metinleri
+                FROM form_tanimlari WHERE bina_turu = $1 ORDER BY bolum_sirasi, soru_sirasi
+            `, [t.bina_turu]);
+            if (ftR.rowCount === 0) {
+                return res.status(400).json({ ok: false, hata: `"${t.bina_turu}" bina türü için şablon veya form tanımı yok.` });
+            }
+            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, req.user.adSoyad));
         }
-        const { htmlToPDF } = require('./lib/pdf-generator');
-        const pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, req.user.adSoyad));
         const dosyaAdi = `${t.proje_kodu}-${t.bina_adi}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${dosyaAdi}"`);
