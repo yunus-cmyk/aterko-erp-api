@@ -6841,9 +6841,12 @@ function saveNewRequest() {
                 hideLoading();
             }
             showToast(res.mesaj || (isEdit ? 'Talep güncellendi.' : 'Talep işlendi.'), "success");
+            const dTId = duzenlenenTalepId;
             duzenlenenTalepId = null;
             window.ntBekleyenDosyalar = [];
-            satinalmaIslemSonrasi();
+            // Revizyon → güncel talep detayına dön; yeni talep → listeye
+            if (isEdit && dTId) satinalmaIslemSonrasi('talep', dTId);
+            else satinalmaIslemSonrasi();
         } else { showToast(res.hata, "error"); }
     });
 }
@@ -7217,7 +7220,7 @@ function executeStatusChange(hedefDurum) {
         hideLoading();
         if(res.ok) {
             showToast(res.mesaj, "success");
-            satinalmaIslemSonrasi(); // modalı kapat + aktif sekmeyi tazele
+            satinalmaIslemSonrasi('talep', aktifIncelenenTalepId); // kapat + güncel talep detayına dön
         } else { showToast(res.hata, "error"); }
     }).catch(err => { hideLoading(); showToast("İşlem gerçekleştirilemedi.", "error"); });
 }
@@ -7434,10 +7437,12 @@ function submitPurchaseOrder() {
         hideLoading();
         if(res.ok) {
             showToast(res.mesaj || (isEdit ? 'Sipariş güncellendi.' : 'Sipariş oluşturuldu.'), "success");
+            const dId = duzenlenenSiparisId;
             duzenlenenSiparisId = null;
-            // Modalı kapat + O AN AÇIK olan sekmeyi yenile (Teklif Havuzu'ndan oluşturulduysa
-            // kalem oradan düşer; böylece tekrar denenip "kalem zaten siparişte" hatası alınmaz)
-            satinalmaIslemSonrasi();
+            // Revizyon → güncel sipariş detayına dön. Yeni sipariş → detay açma, sadece sekmeyi
+            // yenile (Teklif Havuzu'ndan oluşturulduysa kalem düşer; "kalem zaten siparişte" hatası önlenir)
+            if (isEdit && dId) satinalmaIslemSonrasi('siparis', dId);
+            else satinalmaIslemSonrasi();
         } else { showToast(res.hata, "error"); }
     });
 }
@@ -7966,9 +7971,11 @@ async function arsivdenCikar(tur, id) {
 }
 
 // 2. Sipariş Verilerini Supabase'den Çeker
-// İşlem sonrası ortak davranış (kullanıcı kararı: ekran kapansın + liste tazelensin):
-// açık detay/işlem modallarını kapatır ve O AN AÇIK olan satınalma alt-sekmesini yeniler.
-function satinalmaIslemSonrasi() {
+// İşlem sonrası ortak davranış (Projeler modülü yöntemi): açık detay/işlem modallarını
+// kapatır, O AN AÇIK satınalma alt-sekmesini yeniler ve — istenirse — ilgili kaydın
+// DETAY modalını güncel veriyle yeniden açar (ekran "kapanıp güncel detaya düşer").
+// reAcTur: 'siparis' | 'talep' | yok (yok → sadece listeye dön; arşiv/iptal/yeni için).
+function satinalmaIslemSonrasi(reAcTur, reAcId) {
     ['modalSiparisDetay', 'modalTalepDetay', 'modalSiparisOlustur', 'modalYeniTalep', 'modalSiparisTeslimAl'].forEach(id => {
         const el = document.getElementById(id);
         if (el) { const m = bootstrap.Modal.getInstance(el); if (m) m.hide(); }
@@ -7979,6 +7986,9 @@ function satinalmaIslemSonrasi() {
     else if (acik('satinalmaGenelBakisDiv')) { if (typeof fetchGenelBakis === 'function') fetchGenelBakis(); }
     else if (acik('satinalmaArsivDiv')) { if (typeof fetchArsiv === 'function') fetchArsiv(); }
     else fetchSatinalmaListesi();
+    // İstenirse güncel detaya dön (modal kapanır, kısa gecikmeyle yeniden açılır)
+    if (reAcTur === 'siparis' && reAcId) setTimeout(() => openSiparisDetayModal(reAcId), 320);
+    else if (reAcTur === 'talep' && reAcId) setTimeout(() => openTalepDetayModal(reAcId), 320);
 }
 
 function fetchSiparisListesi() {
@@ -8222,6 +8232,10 @@ async function submitTeklifIste() {
 
 // Sipariş Detay Modalı — salt-okunur özet
 async function openSiparisDetayModal(siparisId, siparisNo) {
+    if (!siparisNo) {
+        const c = (window.siparislerGlobal || []).find(x => x.id === siparisId) || (window.siparislerCache || []).find(x => x.id === siparisId);
+        siparisNo = c ? c.siparis_no : '';
+    }
     document.getElementById('siparisDetayBaslik').innerHTML = `<i class="bi bi-file-earmark-text me-2"></i>Sipariş Detayı: ${esc(siparisNo)}`;
     document.getElementById('siparisDetayBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
     new bootstrap.Modal(document.getElementById('modalSiparisDetay')).show();
@@ -8694,7 +8708,7 @@ async function siparisOnayla(siparis_id) {
     showLoading();
     const r = await secureFetch('/siparis-onayla', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi('siparis', siparis_id); }
     else showToast(r.hata, 'error');
 }
 async function siparisGonder(siparis_id) {
@@ -8702,7 +8716,7 @@ async function siparisGonder(siparis_id) {
     showLoading();
     const r = await secureFetch('/siparis-gonder', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi('siparis', siparis_id); }
     else showToast(r.hata, 'error');
 }
 async function siparisTamamenGerial(siparis_id) {
@@ -8727,7 +8741,7 @@ async function siparisGerial(siparis_id, hedef_durum) {
     showLoading();
     const r = await secureFetch('/siparis-gerial', { method: 'POST', body: JSON.stringify({ siparis_id, hedef_durum }) });
     hideLoading();
-    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
+    if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi('siparis', siparis_id); }
     else showToast(r.hata, 'error');
 }
 async function siparisArsivle(siparis_id) {
@@ -8852,7 +8866,7 @@ function submitOrderDelivery() {
         hideLoading();
         if(res.ok) {
             showToast(res.mesaj, "success");
-            satinalmaIslemSonrasi(); // teslim al modalı + (açıksa) sipariş detayı kapanır, liste tazelenir
+            satinalmaIslemSonrasi('siparis', aktifTeslimAlinanSiparisId); // teslim al + detay kapanır, güncel sipariş detayına dönülür
         } else { showToast(res.hata, "error"); }
     });
 }
