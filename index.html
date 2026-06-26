@@ -7114,6 +7114,7 @@ function renderTalepDetayLines(kalemler) {
                 <td>
                     ${isOzel ? '<span class="badge bg-light text-warning border border-warning me-1" style="font-size:0.65rem;">Özel Ürün</span>' : ''}
                     <span class="fw-bold text-dark">${esc(urunAdi)}</span>
+                    ${isOzel ? '' : `<button class="btn btn-sm btn-link p-0 ms-1 align-baseline" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${esc(urunAdi)}')" title="Tedarikçi fiyat karşılaştırması / geçmişi"><i class="bi bi-graph-up text-info"></i></button>`}
                     <span class="text-muted small d-block">${isOzel ? '-' : esc(k.stok_kodu)}</span>
                 </td>
                 <td class="text-center fw-bold text-primary">${formatTR(k.miktar)} <small class="text-muted fw-normal">${birim}</small></td>
@@ -7663,7 +7664,7 @@ function renderTeklifHavuzu(kalemler) {
                     <div class="d-flex align-items-start gap-2">
                         <input type="checkbox" class="teklif-chk form-check-input mt-1" data-talep-id="${k.talep_id}" value="${k.id}" onchange="teklifSecimGuncelle()">
                         <div>
-                            <div class="fw-semibold" style="font-size:0.85rem;">${urunKod}${esc(urunAd)}</div>
+                            <div class="fw-semibold" style="font-size:0.85rem;">${urunKod}${esc(urunAd)}${k.stok_kart_id ? `<button class="btn btn-sm btn-link p-0 ms-1 align-baseline" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${esc(urunAd)}')" title="Tedarikçi fiyat karşılaştırması / geçmişi"><i class="bi bi-graph-up text-info"></i></button>` : ''}</div>
                             <div class="d-flex flex-wrap gap-3 mt-1" style="font-size:0.75rem;color:#8a8f96;">
                                 <span><i class="bi bi-box-seam"></i> ${formatTR(parseFloat(k.miktar))} ${esc(birim)}</span>
                                 <span><i class="bi bi-calendar3"></i> ${renderTerminTarihi(k.istenen_tarih)}</span>

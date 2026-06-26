@@ -1914,7 +1914,7 @@ app.get('/api/siparis/:siparisId/talep', yetkiKontrol, async (req, res, next) =>
 app.get('/api/teklif-havuzu', yetkiKontrol, async (req, res, next) => {
     try {
         const result = await pool.query(`
-            SELECT tu.id as kalem_id, tu.id as id, tu.miktar, tu.aciklama, tu.durum,
+            SELECT tu.id as kalem_id, tu.id as id, tu.miktar, tu.aciklama, tu.durum, tu.stok_kart_id,
                    tu.teklif_notlari,
                    t.id as talep_id, t.talep_no, t.istenen_tarih, t.kayit_tarihi,
                    COALESCE(p.proje_kodu,'GENEL') as proje_kodu,
