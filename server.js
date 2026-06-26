@@ -3447,53 +3447,111 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
 
 // Teknik şartname PDF üret ve indir
 const { renderToPDF } = require('./lib/pdf-generator');
-const SABLON_HARITASI = {
-    'Prefabrik': 'prefabrik'
-    // İleride: 'Konteyner': 'konteyner', 'Hafif Çelik': 'hafif-celik', ...
-};
+// Teknik şartnameyi form tanımları + seçenek metni kütüphanesinden DİNAMİK üretir.
+// Her bina türü için ayrı şablon gerekmez — form_tanimlari neyse PDF onu yansıtır.
+function teknikSartnameHTML(t, ft) {
+    const ek = t.ek_veriler || {};
+    const veri = {
+        ...ek,
+        'Bina Adı': t.bina_adi, 'Bina Tipi': t.bina_tipi, 'Kat Adedi': t.kat_adedi,
+        'Kat Yüksekliği (mm)': t.kat_yuksekligi, 'Büyüklük': t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '',
+        'Bina Yeri': t.bina_yeri, 'Proje No': t.proje_kodu, 'Müşteri Adı': t.musteri_adi,
+        'Proje Adı': t.proje_adi, 'Nakliye': t.nakliye
+    };
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const trTarih = d => { const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
+    // Formdaki SORU_GIZLE koşulu (alan gizlenmeli mi?)
+    const gizliMi = kosul => !kosul ? false : kosul.split('||').map(x => x.trim()).some(x => {
+        const m = x.match(/^(.+?)=(.+?)→SORU_GIZLE$/); if (!m) return false;
+        const g = veri[m[1].trim()], b = m[2].trim();
+        return Array.isArray(g) ? g.includes(b) : String(g || '').trim() === b;
+    });
+    // Ham cevap yerine şartname cümlesi (kütüphaneden), yoksa cevabın kendisi
+    const metinAl = (a, deger) => {
+        const sm = a.secenek_metinleri;
+        return (sm && typeof sm === 'object' && sm[deger]) ? sm[deger] : deger;
+    };
+
+    const bolumler = []; const map = {};
+    ft.forEach(a => { if (!map[a.bolum_adi]) { map[a.bolum_adi] = { ad: a.bolum_adi, alanlar: [] }; bolumler.push(map[a.bolum_adi]); } map[a.bolum_adi].alanlar.push(a); });
+
+    let bolumHtml = '';
+    bolumler.forEach(b => {
+        const ana = b.alanlar.find(a => a.soru === b.ad);
+        if (ana && String(veri[b.ad] || '').trim() === 'Yok') return; // bölüm "Yok" → atla
+        let satir = '';
+        b.alanlar.forEach(a => {
+            if (a.soru === b.ad || gizliMi(a.kosullar)) return;
+            const v = veri[a.soru];
+            if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) return;
+            const icerik = Array.isArray(v)
+                ? '<ul class="ml">' + v.map(md => `<li>${esc(metinAl(a, md))}</li>`).join('') + '</ul>'
+                : esc(metinAl(a, v));
+            satir += `<tr><td class="s">${esc(a.soru)}</td><td class="d">${icerik}</td></tr>`;
+        });
+        if (!satir) return;
+        bolumHtml += `<div class="bolum"><h2>${esc(b.ad)}</h2><table>${satir}</table></div>`;
+    });
+
+    return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><style>
+      @page { margin: 12mm; size: A4; }
+      * { box-sizing: border-box; }
+      body { font-family:'Arial','Helvetica',sans-serif; font-size:10pt; color:#1a1a1a; margin:0; }
+      .ust { display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid #ff4c00; padding-bottom:10px; margin-bottom:14px; }
+      .ust img { height:42px; }
+      .ust .bilgi { text-align:right; }
+      .ust .t { font-size:15pt; font-weight:800; letter-spacing:.5px; }
+      .ust .s2 { font-size:10pt; color:#6c757d; }
+      .proje { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; }
+      .proje > div { border:1px solid #e9ecef; border-radius:5px; padding:7px 10px; }
+      .proje span { display:block; font-size:8pt; color:#6c757d; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
+      .proje b { font-size:10pt; }
+      .bolum { margin-bottom:12px; page-break-inside:avoid; }
+      .bolum h2 { font-size:11pt; color:#fff; background:#ff4c00; padding:5px 10px; border-radius:3px; margin:0 0 6px; }
+      .bolum table { width:100%; border-collapse:collapse; font-size:9.5pt; }
+      .bolum td { padding:5px 8px; border-bottom:1px solid #eee; vertical-align:top; line-height:1.45; }
+      .bolum tr:last-child td { border-bottom:none; }
+      .bolum td.s { color:#6c757d; width:32%; font-weight:600; padding-right:12px; }
+      .bolum ul.ml { margin:0; padding-left:16px; }
+      .footer { margin-top:18px; padding-top:8px; border-top:1px solid #e9ecef; font-size:7.5pt; color:#adb5bd; text-align:center; }
+    </style></head><body>
+      <div class="ust"><img src="images/siparis_logo.png" alt="ATERKO"><div class="bilgi"><div class="t">TEKNİK ŞARTNAME</div><div class="s2">${esc(t.bina_turu || '')} • ${trTarih(new Date())}</div></div></div>
+      <div class="proje">
+        <div><span>Proje</span><b>${esc(t.proje_kodu || '-')} — ${esc(t.proje_adi || '')}</b></div>
+        <div><span>Müşteri</span><b>${esc(t.musteri_adi || '-')}</b></div>
+        <div><span>Bina</span><b>${esc(t.bina_adi || '-')}${t.bina_tipi ? ' (' + esc(t.bina_tipi) + ')' : ''}</b></div>
+        <div><span>Kat / Büyüklük</span><b>${esc(t.kat_adedi || '-')} kat • ${esc(t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '-')}</b></div>
+      </div>
+      ${bolumHtml || '<div style="color:#888;padding:20px;text-align:center;">Bu teslimatta doldurulmuş şartname verisi yok.</div>'}
+      <div class="footer">Aterko Workspace • ${esc(t.proje_kodu)}-${t.id} • ${trTarih(new Date())}</div>
+    </body></html>`;
+}
+
 app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, next) => {
     try {
         const { teslimatId } = req.params;
         const r = await pool.query(`
             SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye
-            FROM proje_teslimatlari pt
-            JOIN projeler p ON pt.proje_id = p.id
+            FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id = p.id
             WHERE pt.id = $1
         `, [teslimatId]);
         if (r.rowCount === 0) return res.status(404).json({ ok: false, hata: 'Teslimat bulunamadı.' });
         const t = r.rows[0];
-        const sablonAdi = SABLON_HARITASI[t.bina_turu];
-        if (!sablonAdi) return res.status(400).json({ ok: false, hata: `${t.bina_turu} için PDF şablonu tanımlı değil.` });
-
-        // Şablon için tüm değerleri hazırla
-        const degerler = {
-            // Proje bilgileri
-            'Proje No': t.proje_kodu,
-            'Müşteri Adı': t.musteri_adi,
-            'Proje Adı': t.proje_adi,
-            'Bina Yeri': t.bina_yeri || '',
-            'Nakliye': t.nakliye || '',
-            // Teslimat bilgileri
-            'Bina Adı': t.bina_adi || '',
-            'Bina Tipi': t.bina_tipi || '',
-            'Kat Yüksekliği': t.kat_yuksekligi || '',
-            'Kat Adedi': t.kat_adedi || '',
-            'Büyüklük': t.buyukluk_m2 ? `${t.buyukluk_m2} m²` : '',
-            // Sistem
-            'TARİH': new Date().toLocaleDateString('tr-TR'),
-            'DÜZENLEYEN': req.user.adSoyad || '',
-            'KOD': `${t.proje_kodu}-${t.id}`,
-            // Form verisi (ek_veriler içindeki tüm alanlar — Dış Duvar Kalınlığı (mm), İç Cephe Boyası vb.)
-            ...(t.ek_veriler || {})
-        };
-
-        const pdfBuffer = await renderToPDF(sablonAdi, degerler);
+        const ftR = await pool.query(`
+            SELECT bolum_adi, bolum_sirasi, soru, soru_sirasi, giris_tipi, kosullar, secenek_metinleri
+            FROM form_tanimlari WHERE bina_turu = $1 ORDER BY bolum_sirasi, soru_sirasi
+        `, [t.bina_turu]);
+        if (ftR.rowCount === 0) {
+            return res.status(400).json({ ok: false, hata: `"${t.bina_turu}" bina türü için form tanımı yok. Yönetim → Form Tanımları'ndan ekleyebilirsiniz.` });
+        }
+        const { htmlToPDF } = require('./lib/pdf-generator');
+        const pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows));
         const dosyaAdi = `${t.proje_kodu}-${t.bina_adi}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${dosyaAdi}"`);
         res.send(pdfBuffer);
     } catch (error) {
-        console.error('🔥 PDF Hatası:', error);
+        console.error('🔥 Teknik şartname PDF Hatası:', error);
         res.status(500).json({ ok: false, hata: error.message });
     }
 });
