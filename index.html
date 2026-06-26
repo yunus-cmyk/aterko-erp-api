@@ -8013,7 +8013,7 @@ async function satinalmaTimelineYukle(tur, id, containerId) {
                 <span class="text-muted" style="font-size:0.74rem;">${tarihStr}</span>
             </div>
             ${o.ozet ? `<div class="text-secondary" style="font-size:0.76rem;">${esc(o.ozet)}</div>` : ''}
-            <div class="text-muted" style="font-size:0.72rem;"><i class="bi bi-person me-1"></i>${esc(o.kullanici_adsoyad || o.kullanici_email || 'Bilinmiyor')}</div>
+            <div class="text-muted" style="font-size:0.72rem;"><i class="bi bi-person me-1"></i>${esc(o.kullanici_adsoyad || o.kullanici_email || (o.sentetik ? 'geçmiş kayıt' : 'Bilinmiyor'))}</div>
         </div>`;
     }).join('');
     cont.innerHTML = `<div class="card border-0 shadow-sm">
@@ -8619,6 +8619,19 @@ async function openFiyatGecmisiModal(stokKartId, urunAdi) {
         </div>`;
         document.body.appendChild(div.firstElementChild);
         modal = document.getElementById('modalFiyatGecmisi');
+        // İç içe modal düzeltmesi: bu modal (detay modalı üstünde açılır) kapanınca
+        // alttaki modal hâlâ açıksa body'nin modal-open'ını koru; hiç modal kalmadıysa
+        // olası kalıntı backdrop'ları temizle (ekran "takılı" kalmasın).
+        modal.addEventListener('hidden.bs.modal', () => {
+            if (document.querySelector('.modal.show')) {
+                document.body.classList.add('modal-open');
+            } else {
+                document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            }
+        });
     }
     document.getElementById('fiyatGecmisiBody').innerHTML = html;
     new bootstrap.Modal(modal).show();

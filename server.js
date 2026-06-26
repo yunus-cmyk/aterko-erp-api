@@ -3691,15 +3691,46 @@ app.get('/api/audit-log', yetkiKontrol, async (req, res, next) => {
 // (audit_log'dan; satınalmaya erişimi olan herkes görebilir — şeffaflık/suistimal önleme)
 app.get('/api/satinalma-timeline/:tur/:id', yetkiKontrol, async (req, res, next) => {
     try {
-        const tablo = req.params.tur === 'siparis' ? 'satinalma_siparisleri'
-                    : req.params.tur === 'talep' ? 'satinalma_talepleri' : null;
+        const tur = req.params.tur;
+        const id = parseInt(req.params.id);
+        const tablo = tur === 'siparis' ? 'satinalma_siparisleri'
+                    : tur === 'talep' ? 'satinalma_talepleri' : null;
         if (!tablo) return res.json({ ok: false, hata: 'Geçersiz tür.' });
-        const r = await pool.query(`
+
+        const auditR = await pool.query(`
             SELECT eylem, ozet, kullanici_adsoyad, kullanici_email, kayit_tarihi
             FROM audit_log WHERE tablo=$1 AND kayit_id=$2
             ORDER BY kayit_tarihi ASC, id ASC
-        `, [tablo, parseInt(req.params.id)]);
-        res.json({ ok: true, data: r.rows });
+        `, [tablo, id]);
+        const olaylar = auditR.rows.map(r => ({ ...r, sentetik: false }));
+        const varEylem = new Set(olaylar.map(o => o.eylem));
+        // Tablo tarih damgalarından eksik aşamaları doldur (audit öncesi/geçmiş kayıtlar için)
+        const ekle = (eylem, tarih, ozet) => {
+            if (tarih && !varEylem.has(eylem)) {
+                olaylar.push({ eylem, ozet, kullanici_adsoyad: null, kullanici_email: null, kayit_tarihi: tarih, sentetik: true });
+                varEylem.add(eylem);
+            }
+        };
+        if (tur === 'siparis') {
+            const s = (await pool.query(`
+                SELECT s.siparis_tarihi, s.onaylanma_tarihi, s.gonderim_tarihi,
+                       (SELECT MAX(son_teslim_tarihi) FROM siparis_kalemleri WHERE siparis_id=s.id) as teslim_tarihi
+                FROM satinalma_siparisleri s WHERE s.id=$1`, [id])).rows[0];
+            if (s) {
+                ekle('CREATE',  s.siparis_tarihi,    'Sipariş oluşturuldu');
+                ekle('APPROVE', s.onaylanma_tarihi,  'Sipariş onaylandı');
+                ekle('SEND',    s.gonderim_tarihi,   'Tedarikçiye gönderildi');
+                ekle('RECEIVE', s.teslim_tarihi,     'Mal kabul yapıldı');
+            }
+        } else {
+            const t = (await pool.query(`SELECT kayit_tarihi, onay_tarihi FROM satinalma_talepleri WHERE id=$1`, [id])).rows[0];
+            if (t) {
+                ekle('CREATE',  t.kayit_tarihi, 'Talep oluşturuldu');
+                ekle('APPROVE', t.onay_tarihi,  'Talep onaylandı');
+            }
+        }
+        olaylar.sort((a, b) => new Date(a.kayit_tarihi) - new Date(b.kayit_tarihi));
+        res.json({ ok: true, data: olaylar });
     } catch (e) { next(e); }
 });
 
