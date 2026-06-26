@@ -4492,7 +4492,7 @@ function izinGerekli(modulKod, gerekliSeviye = 'OKUMA') {
 // İlk eşleşen kural uygulanır. Eşleşmeyen endpoint'ler için kontrol yok (örn. /me/izinler).
 const ENDPOINT_IZIN_KURALLARI = [
     // Yönetim — sadece ADMIN (route handler'da zaten kontrol var, çift kontrol için bunlar burada)
-    { pattern: /^\/api\/(kullanicilar|kullanici-|roller|rol-|modul-katalog|form-tanim|audit-log)/, modul: 'yonetim.kullanicilar', seviye: 'TAM' },
+    { pattern: /^\/api\/(kullanicilar|kullanici-|roller|rol-|modul-katalog|form-tanimi-|audit-log)/, modul: 'yonetim.kullanicilar', seviye: 'TAM' },
     // Bildirimler — herkes kendi bildirimlerini görür
     { pattern: /^\/api\/bildirim/, modul: 'anasayfa', seviye: 'OKUMA' },
     // Dashboard
