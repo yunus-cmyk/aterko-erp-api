@@ -4725,11 +4725,12 @@ app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
     try {
         const {
             id, bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
-            giris_tipi, secenekler, zorunlu, kurallar, kosullar
+            giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri
         } = req.body;
         if (!bina_turu || !bolum_adi || !soru) {
             return res.json({ ok: false, hata: 'Bina türü, bölüm adı ve soru metni zorunlu.' });
         }
+        const metinJson = (secenek_metinleri && Object.keys(secenek_metinleri).length) ? JSON.stringify(secenek_metinleri) : null;
 
         let eski = null;
         if (id) {
@@ -4738,11 +4739,11 @@ app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
             await pool.query(`
                 UPDATE form_tanimlari
                 SET bina_turu=$1, bolum_sirasi=$2, bolum_adi=$3, soru_sirasi=$4, soru=$5,
-                    giris_tipi=$6, secenekler=$7, zorunlu=$8, kurallar=$9, kosullar=$10
-                WHERE id=$11
+                    giris_tipi=$6, secenekler=$7, zorunlu=$8, kurallar=$9, kosullar=$10, secenek_metinleri=$11
+                WHERE id=$12
             `, [bina_turu, bolum_sirasi || 1, bolum_adi, soru_sirasi || 1, soru,
                 giris_tipi || 'TEXT', secenekler ? JSON.stringify(secenekler) : null,
-                !!zorunlu, kurallar || null, kosullar || null, id]);
+                !!zorunlu, kurallar || null, kosullar || null, metinJson, id]);
             await auditLogla(req, {
                 eylem: 'UPDATE', tablo: 'form_tanimlari', kayit_id: id,
                 ozet: `Form sorusu güncellendi: ${soru.substring(0,60)}`,
@@ -4751,11 +4752,11 @@ app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
         } else {
             const r = await pool.query(`
                 INSERT INTO form_tanimlari (bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
-                                            giris_tipi, secenekler, zorunlu, kurallar, kosullar)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id
+                                            giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id
             `, [bina_turu, bolum_sirasi || 1, bolum_adi, soru_sirasi || 1, soru,
                 giris_tipi || 'TEXT', secenekler ? JSON.stringify(secenekler) : null,
-                !!zorunlu, kurallar || null, kosullar || null]);
+                !!zorunlu, kurallar || null, kosullar || null, metinJson]);
             await auditLogla(req, {
                 eylem: 'CREATE', tablo: 'form_tanimlari', kayit_id: r.rows[0].id,
                 ozet: `Form sorusu eklendi: ${soru.substring(0,60)}`, yeni_veri: req.body

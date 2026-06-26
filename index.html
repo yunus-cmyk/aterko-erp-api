@@ -1369,8 +1369,13 @@
                         </div>
                         <div class="col-md-12" id="ftSecenekAlani" style="display:none;">
                             <label class="form-label small fw-bold text-muted mb-1">Seçenekler</label>
-                            <textarea id="ftSecenekler" class="form-control form-control-sm" rows="4" placeholder="Her satıra bir seçenek yaz..."></textarea>
+                            <textarea id="ftSecenekler" class="form-control form-control-sm" rows="4" placeholder="Her satıra bir seçenek yaz..." oninput="ftMetinListeRender()"></textarea>
                             <small class="text-muted">Her satıra bir seçenek (Radio / Checkbox / Dropdown için).</small>
+                        </div>
+                        <div class="col-md-12" id="ftMetinAlani" style="display:none;">
+                            <label class="form-label small fw-bold text-muted mb-1"><i class="bi bi-file-text me-1 text-primary"></i>Şartname Metinleri <span class="text-muted fw-normal">(PDF'te seçeneğin yerine yazılacak profesyonel cümle)</span></label>
+                            <div id="ftMetinListe"></div>
+                            <small class="text-muted">Her seçenek için teknik şartname PDF'inde görünecek cümle. Boş bırakılırsa seçeneğin adı yazılır.</small>
                         </div>
                         <div class="col-md-12">
                             <label class="form-label small fw-bold text-muted mb-1">Kurallar (opsiyonel)</label>
@@ -3841,7 +3846,7 @@ function formTanimlariRender() {
             <td class="small">${esc(f.soru)}</td>
             <td class="text-center small"><span class="badge bg-light text-dark">${tipMap[f.giris_tipi] || f.giris_tipi || '-'}</span></td>
             <td class="text-center">${f.zorunlu ? '<i class="bi bi-check-circle-fill text-danger" title="Zorunlu"></i>' : '<span class="text-muted">—</span>'}</td>
-            <td class="small text-muted" title="${esc(sec.join(', '))}">${esc(secStr)}</td>
+            <td class="small text-muted" title="${esc(sec.join(', '))}">${esc(secStr)}${(f.secenek_metinleri && Object.keys(f.secenek_metinleri).length) ? ` <span class="badge bg-light text-info border border-info" title="${Object.keys(f.secenek_metinleri).length} şartname metni tanımlı"><i class="bi bi-file-text"></i> ${Object.keys(f.secenek_metinleri).length}</span>` : ''}</td>
             <td class="text-center">
                 <button class="btn btn-sm btn-outline-primary py-0" onclick="formTanimiDuzenle(${f.id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
                 <button class="btn btn-sm btn-outline-danger py-0" onclick="formTanimiSil(${f.id})" title="Sil"><i class="bi bi-trash"></i></button>
@@ -3865,6 +3870,7 @@ function openFormTanimiModal(data) {
     document.getElementById('ftSecenekler').value = sec.join('\n');
     document.getElementById('ftKurallar').value = d.kurallar || '';
     document.getElementById('ftKosullar').value = d.kosullar || '';
+    window._ftMetinler = (d.secenek_metinleri && typeof d.secenek_metinleri === 'object') ? d.secenek_metinleri : {};
     ftSecenekAlaniGoster();
     new bootstrap.Modal(document.getElementById('modalFormTanimi')).show();
 }
@@ -3873,6 +3879,26 @@ function ftSecenekAlaniGoster() {
     const tip = document.getElementById('ftGirisTipi').value;
     const goster = ['TEK','ÇOK','DROPDOWN'].includes(tip);
     document.getElementById('ftSecenekAlani').style.display = goster ? '' : 'none';
+    document.getElementById('ftMetinAlani').style.display = goster ? '' : 'none';
+    if (goster) ftMetinListeRender();
+}
+
+// Seçeneklere göre şartname metni alanlarını çiz (mevcut metinleri ve anlık girilenleri korur)
+function ftMetinListeRender() {
+    const liste = document.getElementById('ftMetinListe');
+    if (!liste) return;
+    const secenekler = (document.getElementById('ftSecenekler').value || '').split('\n').map(s => s.trim()).filter(Boolean);
+    const mevcut = window._ftMetinler || {};
+    const aninda = {};
+    liste.querySelectorAll('textarea[data-secenek]').forEach(t => { aninda[t.dataset.secenek] = t.value; });
+    if (secenekler.length === 0) { liste.innerHTML = '<div class="text-muted small fst-italic">Önce seçenek ekleyin.</div>'; return; }
+    liste.innerHTML = secenekler.map(sec => {
+        const val = (sec in aninda) ? aninda[sec] : (mevcut[sec] || '');
+        return `<div class="mb-2 ps-2" style="border-left:2px solid #e2e5e9;">
+            <div class="small fw-bold text-dark mb-1">${esc(sec)}</div>
+            <textarea class="form-control form-control-sm" data-secenek="${esc(sec)}" rows="2" placeholder="(boş bırakılırsa &quot;${esc(sec)}&quot; yazılır)">${esc(val)}</textarea>
+        </div>`;
+    }).join('');
 }
 
 function formTanimiDuzenle(id) {
@@ -3900,9 +3926,16 @@ async function formTanimiKaydet() {
         ? secekenler.split('\n').map(s => s.trim()).filter(Boolean)
         : null;
 
+    // Şartname metinleri (yalnız dolu olanlar) — { seçenek: cümle }
+    const secenek_metinleri = {};
+    document.querySelectorAll('#ftMetinListe textarea[data-secenek]').forEach(t => {
+        const v = t.value.trim();
+        if (v) secenek_metinleri[t.dataset.secenek] = v;
+    });
+
     const r = await secureFetch('/form-tanimi-kaydet', { method:'POST', body: JSON.stringify({
         id, bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
-        giris_tipi, secenekler, zorunlu, kurallar, kosullar
+        giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri
     }) });
     if (r.ok) {
         bootstrap.Modal.getInstance(document.getElementById('modalFormTanimi'))?.hide();
