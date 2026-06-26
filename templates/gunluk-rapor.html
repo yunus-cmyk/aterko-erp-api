@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Günlük Satınalma Raporu — {{TARIH}}</title>
+<style>
+  @page { margin: 12mm; size: A4; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Arial', 'Helvetica', sans-serif; font-size: 10pt; color: #1a1a1a; margin: 0; }
+  .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #ff4c00; padding-bottom: 10px; margin-bottom: 6px; }
+  .header img { height: 40px; }
+  .header .baslik { text-align: right; }
+  .header .baslik h1 { font-size: 15pt; margin: 0; color: #1a1a1a; }
+  .header .baslik .tarih { font-size: 10pt; color: #6c757d; }
+
+  .ozet { display: flex; gap: 8px; margin: 14px 0 18px; }
+  .ozet .kutu { flex: 1; border: 1px solid #e9ecef; border-radius: 6px; padding: 8px 10px; text-align: center; }
+  .ozet .kutu .sayi { font-size: 18pt; font-weight: 800; line-height: 1; }
+  .ozet .kutu .etiket { font-size: 7.5pt; color: #6c757d; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 4px; }
+  .kutu.kirmizi .sayi { color: #dc3545; }
+  .kutu.turuncu .sayi { color: #fd7e14; }
+  .kutu.mavi .sayi { color: #0d6efd; }
+  .kutu.mor .sayi { color: #6f42c1; }
+  .kutu.gri .sayi { color: #6c757d; }
+
+  section { margin-bottom: 16px; }
+  section h2 { font-size: 11pt; margin: 0 0 6px; padding: 5px 10px; border-radius: 4px; background: #f6f7f9; color: #1a1a1a; }
+  section.kritik h2 { background: #fdecea; color: #a32d2d; }
+  section.uyari h2 { background: #fff5e6; color: #8a5300; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 8.5pt; }
+  th { background: #1a1a1a; color: #fff; padding: 5px 7px; text-align: left; font-weight: 600; }
+  td { padding: 4px 7px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .text-end { text-align: right; }
+  .text-center { text-align: center; }
+  .gun-gecti { color: #dc3545; font-weight: 700; }
+  .gun-yakin { color: #fd7e14; font-weight: 700; }
+  .bos { color: #6c757d; font-style: italic; padding: 6px 2px; font-size: 9pt; }
+
+  .footer { margin-top: 20px; padding-top: 8px; border-top: 1px solid #e9ecef; font-size: 7.5pt; color: #adb5bd; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <img src="images/siparis_logo.png" alt="ATERKO">
+    <div class="baslik">
+      <h1>Günlük Satınalma Raporu</h1>
+      <div class="tarih">{{TARIH}}</div>
+    </div>
+  </div>
+
+  <div class="ozet">
+    <div class="kutu kirmizi"><div class="sayi">{{KPI_GECIKEN}}</div><div class="etiket">Termini Geçen</div></div>
+    <div class="kutu turuncu"><div class="sayi">{{KPI_YAKLASAN}}</div><div class="etiket">Termin Yaklaşan</div></div>
+    <div class="kutu mor"><div class="sayi">{{KPI_BEKLEYEN_SIPARIS}}</div><div class="etiket">Onay Bekleyen Sipariş</div></div>
+    <div class="kutu mavi"><div class="sayi">{{KPI_ACIK_TALEP}}</div><div class="etiket">Açık Talep</div></div>
+    <div class="kutu gri"><div class="sayi">{{KPI_KRITIK_STOK}}</div><div class="etiket">Kritik Stok</div></div>
+  </div>
+
+  <section class="kritik">
+    <h2>🔴 Termini Geçen Siparişler</h2>
+    {{TABLO_GECIKEN}}
+  </section>
+
+  <section class="uyari">
+    <h2>⏰ Termini Yaklaşan Siparişler (7 gün)</h2>
+    {{TABLO_YAKLASAN}}
+  </section>
+
+  <section>
+    <h2>🧾 Onay Bekleyen Siparişler</h2>
+    {{TABLO_BEKLEYEN_SIPARIS}}
+  </section>
+
+  <section>
+    <h2>📌 Bekleyen Talepler (onay/işlem bekleyen)</h2>
+    {{TABLO_BEKLEYEN_TALEP}}
+  </section>
+
+  <section class="uyari">
+    <h2>📦 Kritik Stok Seviyesi</h2>
+    {{TABLO_KRITIK_STOK}}
+  </section>
+
+  <div class="footer">Bu rapor Aterko Workspace tarafından otomatik üretilmiştir — {{URETIM_ZAMANI}}</div>
+</body>
+</html>

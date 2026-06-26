@@ -4940,6 +4940,140 @@ app.post('/api/bildirim-otomatik-tetikle', yetkiKontrol, async (req, res, next) 
 });
 
 // ============================================================================
+// GÜNLÜK SATINALMA RAPORU (PDF) — otomatik mail (Satınalma yetkilileri + Admin)
+// ============================================================================
+async function gunlukRaporVerisi() {
+    const [geciken, yaklasan, bekleyenSiparis, bekleyenTalep, kritikStok, acikTalepC] = await Promise.all([
+        pool.query(`SELECT s.siparis_no, COALESCE(t.firma_adi,'-') as tedarikci, s.termin_tarihi, s.durum,
+                (CURRENT_DATE - s.termin_tarihi)::int as gun_gecti
+            FROM satinalma_siparisleri s LEFT JOIN tedarikciler t ON s.tedarikci_id=t.id
+            WHERE s.termin_tarihi < CURRENT_DATE
+              AND s.durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV','TAM TESLİM')
+              AND COALESCE(s.arsiv,false)=false ORDER BY s.termin_tarihi ASC`),
+        pool.query(`SELECT s.siparis_no, COALESCE(t.firma_adi,'-') as tedarikci, s.termin_tarihi, s.durum,
+                (s.termin_tarihi - CURRENT_DATE)::int as kalan_gun
+            FROM satinalma_siparisleri s LEFT JOIN tedarikciler t ON s.tedarikci_id=t.id
+            WHERE s.termin_tarihi BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+              AND s.durum NOT IN ('TAMAMLANDI','İPTAL','TAMAMLANDI ARŞİV','TAM TESLİM')
+              AND COALESCE(s.arsiv,false)=false ORDER BY s.termin_tarihi ASC`),
+        pool.query(`SELECT s.siparis_no, COALESCE(t.firma_adi,'-') as tedarikci, s.siparis_tarihi
+            FROM satinalma_siparisleri s LEFT JOIN tedarikciler t ON s.tedarikci_id=t.id
+            WHERE s.durum='SİPARİŞ OLUŞTURULDU' AND COALESCE(s.arsiv,false)=false
+            ORDER BY s.siparis_tarihi ASC`),
+        pool.query(`SELECT talep_no, COALESCE(talep_eden,'-') as talep_eden, durum,
+                EXTRACT(DAY FROM (NOW()-kayit_tarihi))::int as gun
+            FROM satinalma_talepleri
+            WHERE durum IN ('ONAY BEKLİYOR','ONAYLANDI') AND COALESCE(arsiv,false)=false
+            ORDER BY kayit_tarihi ASC`),
+        pool.query(`SELECT stok_kodu, stok_adi, guncel_stok_miktari, kritik_stok_miktari, birim
+            FROM stok_kartlari
+            WHERE kritik_stok_miktari IS NOT NULL AND kritik_stok_miktari>0
+              AND guncel_stok_miktari < kritik_stok_miktari AND stok_tipi != 'Ürün'
+            ORDER BY (guncel_stok_miktari::numeric/NULLIF(kritik_stok_miktari,0)) ASC`),
+        pool.query(`SELECT COUNT(*)::int as n FROM satinalma_talepleri
+            WHERE durum NOT IN ('TAMAMLANDI','REDDEDİLDİ','İPTAL','TAMAMLANDI ARŞİV') AND COALESCE(arsiv,false)=false`)
+    ]);
+    return { geciken: geciken.rows, yaklasan: yaklasan.rows, bekleyenSiparis: bekleyenSiparis.rows,
+             bekleyenTalep: bekleyenTalep.rows, kritikStok: kritikStok.rows, acikTalep: acikTalepC.rows[0].n };
+}
+
+async function gunlukRaporPDF() {
+    const v = await gunlukRaporVerisi();
+    const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const trTarih = d => { if(!d) return '-'; const dt=new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
+    const trNum = n => { const x=parseFloat(n)||0; return (x===Math.floor(x))?String(x):x.toFixed(2).replace('.',','); };
+    const bos = m => `<div class="bos">✓ ${m}</div>`;
+    const tablo = (rows, basliklar, satirFn, bosMsg) => rows.length
+        ? `<table><thead><tr>${basliklar.map(b=>`<th${b.cls?` class="${b.cls}"`:''}>${b.t}</th>`).join('')}</tr></thead><tbody>${rows.map(satirFn).join('')}</tbody></table>`
+        : bos(bosMsg);
+
+    const tGeciken = tablo(v.geciken,
+        [{t:'Sipariş'},{t:'Tedarikçi'},{t:'Termin'},{t:'Gecikme',cls:'text-center'},{t:'Durum'}],
+        r=>`<tr><td>${esc(r.siparis_no)}</td><td>${esc(r.tedarikci)}</td><td>${trTarih(r.termin_tarihi)}</td><td class="text-center gun-gecti">${r.gun_gecti} gün</td><td>${esc(r.durum)}</td></tr>`,
+        'Termini geçen sipariş yok.');
+    const tYaklasan = tablo(v.yaklasan,
+        [{t:'Sipariş'},{t:'Tedarikçi'},{t:'Termin'},{t:'Kalan',cls:'text-center'},{t:'Durum'}],
+        r=>`<tr><td>${esc(r.siparis_no)}</td><td>${esc(r.tedarikci)}</td><td>${trTarih(r.termin_tarihi)}</td><td class="text-center gun-yakin">${r.kalan_gun<=0?'bugün':r.kalan_gun+' gün'}</td><td>${esc(r.durum)}</td></tr>`,
+        'Termini yaklaşan sipariş yok.');
+    const tBekleyenSip = tablo(v.bekleyenSiparis,
+        [{t:'Sipariş'},{t:'Tedarikçi'},{t:'Tarih'}],
+        r=>`<tr><td>${esc(r.siparis_no)}</td><td>${esc(r.tedarikci)}</td><td>${trTarih(r.siparis_tarihi)}</td></tr>`,
+        'Onay bekleyen sipariş yok.');
+    const tBekleyenTalep = tablo(v.bekleyenTalep,
+        [{t:'Talep'},{t:'Talep Eden'},{t:'Durum'},{t:'Bekleme',cls:'text-center'}],
+        r=>`<tr><td>${esc(r.talep_no)}</td><td>${esc(r.talep_eden)}</td><td>${esc(r.durum)}</td><td class="text-center${r.gun>=7?' gun-gecti':''}">${r.gun} gün</td></tr>`,
+        'Bekleyen talep yok.');
+    const tKritik = tablo(v.kritikStok,
+        [{t:'Kod'},{t:'Stok'},{t:'Mevcut',cls:'text-end'},{t:'Kritik',cls:'text-end'}],
+        r=>`<tr><td>${esc(r.stok_kodu)}</td><td>${esc(r.stok_adi)}</td><td class="text-end gun-gecti">${trNum(r.guncel_stok_miktari)} ${esc(r.birim||'')}</td><td class="text-end">${trNum(r.kritik_stok_miktari)} ${esc(r.birim||'')}</td></tr>`,
+        'Kritik stok yok.');
+
+    const simdi = new Date();
+    const degerler = {
+        'TARIH': trTarih(simdi),
+        'URETIM_ZAMANI': `${trTarih(simdi)} ${String(simdi.getHours()).padStart(2,'0')}:${String(simdi.getMinutes()).padStart(2,'0')}`,
+        'KPI_GECIKEN': String(v.geciken.length),
+        'KPI_YAKLASAN': String(v.yaklasan.length),
+        'KPI_BEKLEYEN_SIPARIS': String(v.bekleyenSiparis.length),
+        'KPI_ACIK_TALEP': String(v.acikTalep),
+        'KPI_KRITIK_STOK': String(v.kritikStok.length)
+    };
+    const fs = require('fs'); const path = require('path');
+    let html = fs.readFileSync(path.join(__dirname, 'templates', 'gunluk-rapor.html'), 'utf8');
+    html = html.replace('{{TABLO_GECIKEN}}', tGeciken).replace('{{TABLO_YAKLASAN}}', tYaklasan)
+               .replace('{{TABLO_BEKLEYEN_SIPARIS}}', tBekleyenSip).replace('{{TABLO_BEKLEYEN_TALEP}}', tBekleyenTalep)
+               .replace('{{TABLO_KRITIK_STOK}}', tKritik);
+    const tempName = `__gunluk_rapor_${Date.now()}`;
+    fs.writeFileSync(path.join(__dirname, 'templates', tempName + '.html'), html);
+    const pdf = await pdfRender(tempName, degerler);
+    try { fs.unlinkSync(path.join(__dirname, 'templates', tempName + '.html')); } catch (e) {}
+    return { pdf, ozet: degerler };
+}
+
+async function gunlukRaporGonder(testEmail) {
+    if (!mailTransporter) { console.log('⚠️ Günlük rapor: mail kapalı'); return; }
+    const { pdf, ozet } = await gunlukRaporPDF();
+    let alicilar;
+    if (testEmail) {
+        alicilar = [testEmail];
+    } else {
+        const r = await pool.query(`SELECT email FROM kullanicilar
+            WHERE rol IN ('SATINALMA','ADMIN') AND durum='AKTIF' AND email IS NOT NULL`);
+        alicilar = [...new Set(r.rows.map(x => x.email))];
+    }
+    if (!alicilar.length) { console.log('⚠️ Günlük rapor: alıcı yok'); return; }
+    const bugun = ozet.TARIH;
+    await mailTransporter.sendMail({
+        from: `"Aterko Workspace" <${MAIL_FROM_EMAIL}>`,
+        to: alicilar.join(', '),
+        subject: `Günlük Satınalma Raporu — ${bugun}`,
+        html: `<div style="font-family:Arial,sans-serif;color:#212529;">
+            <p>Merhaba,</p>
+            <p>${bugun} tarihli günlük satınalma raporu ektedir.</p>
+            <table style="border-collapse:collapse;font-size:14px;margin:10px 0;">
+                <tr><td style="padding:3px 12px 3px 0;color:#dc3545;">Termini geçen sipariş:</td><td><strong>${ozet.KPI_GECIKEN}</strong></td></tr>
+                <tr><td style="padding:3px 12px 3px 0;color:#fd7e14;">Termini yaklaşan:</td><td><strong>${ozet.KPI_YAKLASAN}</strong></td></tr>
+                <tr><td style="padding:3px 12px 3px 0;color:#6f42c1;">Onay bekleyen sipariş:</td><td><strong>${ozet.KPI_BEKLEYEN_SIPARIS}</strong></td></tr>
+                <tr><td style="padding:3px 12px 3px 0;color:#0d6efd;">Açık talep:</td><td><strong>${ozet.KPI_ACIK_TALEP}</strong></td></tr>
+                <tr><td style="padding:3px 12px 3px 0;color:#6c757d;">Kritik stok:</td><td><strong>${ozet.KPI_KRITIK_STOK}</strong></td></tr>
+            </table>
+            <p style="color:#6c757d;font-size:12px;margin-top:16px;">Aterko Workspace — otomatik günlük rapor</p>
+        </div>`,
+        attachments: [{ filename: `Gunluk-Satinalma-Raporu-${bugun}.pdf`, content: pdf }]
+    });
+    console.log(`🗓️ Günlük satınalma raporu gönderildi → ${alicilar.length} alıcı${testEmail ? ' (TEST)' : ''}`);
+}
+
+// Manuel test (ADMIN) — raporu yalnızca isteyen kişiye gönderir
+app.post('/api/gunluk-rapor-test', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.status(403).json({ ok:false, hata:'Sadece ADMIN.' });
+    try {
+        await gunlukRaporGonder(req.user.email);
+        res.json({ ok: true, mesaj: `Test raporu ${req.user.email} adresine gönderildi.` });
+    } catch (e) { res.status(500).json({ ok:false, hata: e.message }); }
+});
+
+// ============================================================================
 // DASHBOARD (D-3) — Tek endpoint, tüm KPI'lar
 // ============================================================================
 app.get('/api/dashboard', yetkiKontrol, async (req, res, next) => {
@@ -6056,4 +6190,10 @@ app.listen(PORT, async () => {
     // Bildirim otomasyonu: server'ın 10 saniye sonra ilk kontrolü, sonra her saat
     setTimeout(() => bildirimleriOtomatikUret().catch(()=>{}), 10 * 1000);
     setInterval(() => bildirimleriOtomatikUret().catch(()=>{}), 60 * 60 * 1000);
+    // Günlük satınalma raporu (PDF) — her gün 08:00 Türkiye saati, Satınalma yetkilileri + Admin'e
+    const cron = require('node-cron');
+    cron.schedule('0 8 * * *', () => {
+        gunlukRaporGonder().catch(e => console.error('🗓️ Günlük rapor hatası:', e.message));
+    }, { timezone: 'Europe/Istanbul' });
+    console.log('🗓️ Günlük satınalma raporu zamanlandı: her gün 08:00 (TR)');
 });
