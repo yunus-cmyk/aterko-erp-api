@@ -6158,6 +6158,10 @@ async function semaGuvence() {
                 ADD COLUMN IF NOT EXISTS olusturan_email TEXT
         `);
 
+        // Teknik şartname seçenek metinleri (PDF'te ham cevap yerine profesyonel şartname cümlesi)
+        // Yapı: { "seçenek değeri": "şartname cümlesi", ... } — TEK ve ÇOK sorular için
+        await pool.query(`ALTER TABLE form_tanimlari ADD COLUMN IF NOT EXISTS secenek_metinleri JSONB`);
+
         // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS bildirim_kurallari (
