@@ -2470,6 +2470,8 @@ STK-002		50	adet
                         </div>
                     </div>
 
+                    <div id="saTimeline_talep" class="mt-3"></div>
+
                 </div>
             </div>
         </div>
@@ -6995,6 +6997,8 @@ async function openTalepDetayModal(talepId, talepNo) {
 
     const myModal = new bootstrap.Modal(document.getElementById('modalTalepDetay'));
     myModal.show();
+    // Durum zaman çizelgesi
+    satinalmaTimelineYukle('talep', talepId, 'saTimeline_talep');
 }
 
 // Talep başlığındaki talep-geneli işlemler: SADECE Düzenle + Arşivle.
@@ -7971,6 +7975,53 @@ async function arsivdenCikar(tur, id) {
 }
 
 // 2. Sipariş Verilerini Supabase'den Çeker
+// Audit eylemi → Türkçe etiket + ikon + renk (durum zaman çizelgesi için)
+const SA_TIMELINE_META = {
+    CREATE:  { etiket: 'Oluşturuldu',           ikon: 'bi-plus-circle-fill',       renk: '#0d6efd' },
+    APPROVE: { etiket: 'Onaylandı',             ikon: 'bi-check-circle-fill',      renk: '#198754' },
+    SEND:    { etiket: 'Tedarikçiye gönderildi', ikon: 'bi-send-fill',             renk: '#6f42c1' },
+    RECEIVE: { etiket: 'Mal kabul yapıldı',     ikon: 'bi-box-seam-fill',          renk: '#198754' },
+    REVERT:  { etiket: 'Geri alındı',           ikon: 'bi-arrow-counterclockwise', renk: '#fd7e14' },
+    UPDATE:  { etiket: 'Güncellendi',           ikon: 'bi-pencil-fill',            renk: '#0dcaf0' },
+    CANCEL:  { etiket: 'İptal edildi',          ikon: 'bi-x-circle-fill',          renk: '#dc3545' },
+    ARCHIVE: { etiket: 'Arşivlendi',            ikon: 'bi-archive-fill',           renk: '#6c757d' }
+};
+
+// Sipariş/talep detayında durum zaman çizelgesini (kim, ne zaman, ne yaptı) yükler ve çizer
+async function satinalmaTimelineYukle(tur, id, containerId) {
+    const cont = document.getElementById(containerId);
+    if (!cont) return;
+    cont.innerHTML = '<div class="text-muted small px-1"><div class="spinner-border spinner-border-sm me-2"></div>Zaman çizelgesi yükleniyor...</div>';
+    const r = await secureFetch(`/satinalma-timeline/${tur}/${id}`).catch(() => null);
+    if (!r || !r.ok) { cont.innerHTML = ''; return; }
+    const olaylar = r.data || [];
+    if (olaylar.length === 0) { cont.innerHTML = ''; return; }
+    const satirlar = olaylar.map((o, i) => {
+        const m = SA_TIMELINE_META[o.eylem] || { etiket: o.eylem, ikon: 'bi-circle-fill', renk: '#6c757d' };
+        const dt = o.kayit_tarihi ? new Date(o.kayit_tarihi) : null;
+        const tarihStr = dt ? `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}` : '';
+        const son = i === olaylar.length - 1;
+        return `<div style="position:relative;padding-left:30px;${son ? '' : 'padding-bottom:14px;'}">
+            ${son ? '' : `<span style="position:absolute;left:9px;top:20px;bottom:0;width:2px;background:#e9ecef;"></span>`}
+            <span style="position:absolute;left:0;top:1px;width:20px;height:20px;border-radius:50%;background:${m.renk}22;display:inline-flex;align-items:center;justify-content:center;">
+                <i class="bi ${m.ikon}" style="color:${m.renk};font-size:0.68rem;"></i>
+            </span>
+            <div class="d-flex justify-content-between gap-2 flex-wrap">
+                <span class="fw-semibold" style="font-size:0.84rem;color:${m.renk};">${m.etiket}</span>
+                <span class="text-muted" style="font-size:0.74rem;">${tarihStr}</span>
+            </div>
+            ${o.ozet ? `<div class="text-secondary" style="font-size:0.76rem;">${esc(o.ozet)}</div>` : ''}
+            <div class="text-muted" style="font-size:0.72rem;"><i class="bi bi-person me-1"></i>${esc(o.kullanici_adsoyad || o.kullanici_email || 'Bilinmiyor')}</div>
+        </div>`;
+    }).join('');
+    cont.innerHTML = `<div class="card border-0 shadow-sm">
+        <div class="card-body p-3">
+            <h6 class="fw-bold text-secondary mb-3" style="font-size:0.85rem;"><i class="bi bi-clock-history me-2"></i>Durum Geçmişi</h6>
+            ${satirlar}
+        </div>
+    </div>`;
+}
+
 // İşlem sonrası ortak davranış (Projeler modülü yöntemi): açık detay/işlem modallarını
 // kapatır, O AN AÇIK satınalma alt-sekmesini yeniler ve — istenirse — ilgili kaydın
 // DETAY modalını güncel veriyle yeniden açar (ekran "kapanıp güncel detaya düşer").
@@ -8415,6 +8466,9 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
 
     // Notları async yükle
     siparisNotlariYukle(siparisId);
+    // Durum zaman çizelgesi
+    document.getElementById('siparisDetayBody').insertAdjacentHTML('beforeend', `<div id="saTimeline_siparis" class="mt-4"></div>`);
+    satinalmaTimelineYukle('siparis', siparisId, 'saTimeline_siparis');
 }
 
 async function siparisNotlariYukle(siparisId) {

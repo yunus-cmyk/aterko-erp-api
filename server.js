@@ -1088,6 +1088,7 @@ app.post('/api/yeni-talep', yetkiKontrol, async (req, res, next) => {
         }
 
         await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'satinalma_talepleri', kayit_id: yeniTalepId, kayit_no: talep_no, ozet: `Talep oluşturuldu — ${(kalemler || []).length} kalem` });
         // Bildirim: onaylayacak role + talebi açana
         await bildirimGonder('TALEP_ONAYA_GONDERILDI', {
             talepId: yeniTalepId,
@@ -1187,6 +1188,9 @@ app.post('/api/talep-durum-guncelle', yetkiKontrol, async (req, res, next) => {
         }
 
         await client.query('COMMIT');
+        for (const row of talepRes.rows) {
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'satinalma_talepleri', kayit_id: row.talep_id, ozet: `Kalem durumu → ${yeni_durum}` });
+        }
         // Bildirim: yalnızca İŞLEME ALINDI geçişinde, her etkilenen talebin sahibine
         if (yeni_durum === 'İŞLEME ALINDI') {
             for (const row of talepRes.rows) {
@@ -2538,6 +2542,7 @@ app.post('/api/talep-gerial', yetkiKontrol, async (req, res, next) => {
         const yeniDurum = hedef_durum || 'ONAY BEKLİYOR';
         await pool.query("UPDATE talep_urunleri SET durum=$1 WHERE talep_id=$2", [yeniDurum, talep_id]);
         await pool.query("UPDATE satinalma_talepleri SET durum=$1, arsiv=false WHERE id=$2", [yeniDurum, talep_id]);
+        await auditLogla(req, { eylem: 'REVERT', tablo: 'satinalma_talepleri', kayit_id: parseInt(talep_id), ozet: `Geri alındı → ${yeniDurum}` });
         res.json({ ok: true, mesaj: 'Talep geri alındı.' });
     } catch (e) { next(e); }
 });
@@ -2594,6 +2599,7 @@ app.post('/api/siparis-gonder', yetkiKontrol, async (req, res, next) => {
 
         // 1) Sipariş durumunu güncelle
         await pool.query("UPDATE satinalma_siparisleri SET durum='SİPARİŞ GÖNDERİLDİ', gonderim_tarihi=NOW() WHERE id=$1", [siparis_id]);
+        await auditLogla(req, { eylem: 'SEND', tablo: 'satinalma_siparisleri', kayit_id: parseInt(siparis_id), kayit_no: sip.siparis_no, ozet: `Tedarikçiye gönderildi: ${sip.firma_adi || '-'}` });
 
         // 2) Mail gönder (varsa)
         let mailDurum = 'gönderilmedi';
@@ -2977,6 +2983,7 @@ app.post('/api/siparis-gerial', yetkiKontrol, async (req, res, next) => {
         } else {
             await pool.query("UPDATE satinalma_siparisleri SET durum=$1 WHERE id=$2", [hedef, siparis_id]);
         }
+        await auditLogla(req, { eylem: 'REVERT', tablo: 'satinalma_siparisleri', kayit_id: parseInt(siparis_id), ozet: `Geri alındı → ${hedef}` });
         res.json({ ok: true, mesaj: 'Sipariş geri alındı.' });
     } catch (e) { next(e); }
 });
@@ -3189,6 +3196,7 @@ app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
             [yeniSiparisDurum, siparis_id]);
 
         await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'RECEIVE', tablo: 'satinalma_siparisleri', kayit_id: parseInt(siparis_id), kayit_no: siparisBilgi.siparis_no, ozet: `Mal kabul (${yeniSiparisDurum}) — ${kalemler.length} kalem` });
         // Bildirim: MUHASEBE'ye + malı bekleyen talep sahibine
         const teR = await pool.query(`SELECT DISTINCT t.talep_eden FROM siparis_kalemleri sk
             JOIN talep_urunleri tu ON sk.talep_urun_id=tu.id JOIN satinalma_talepleri t ON tu.talep_id=t.id
@@ -3642,6 +3650,22 @@ app.get('/api/audit-log', yetkiKontrol, async (req, res, next) => {
             ORDER BY kayit_tarihi DESC, id DESC
             LIMIT ${lim}
         `, params);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Satınalma durum zaman çizelgesi (timeline) — sipariş/talep detayında "kim, ne zaman, ne yaptı"
+// (audit_log'dan; satınalmaya erişimi olan herkes görebilir — şeffaflık/suistimal önleme)
+app.get('/api/satinalma-timeline/:tur/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const tablo = req.params.tur === 'siparis' ? 'satinalma_siparisleri'
+                    : req.params.tur === 'talep' ? 'satinalma_talepleri' : null;
+        if (!tablo) return res.json({ ok: false, hata: 'Geçersiz tür.' });
+        const r = await pool.query(`
+            SELECT eylem, ozet, kullanici_adsoyad, kullanici_email, kayit_tarihi
+            FROM audit_log WHERE tablo=$1 AND kayit_id=$2
+            ORDER BY kayit_tarihi ASC, id ASC
+        `, [tablo, parseInt(req.params.id)]);
         res.json({ ok: true, data: r.rows });
     } catch (e) { next(e); }
 });
