@@ -4057,11 +4057,9 @@ function tsSatirSec(id) {
     let html = `<div class="mb-3"><div class="fw-bold">${s.soru ? tsEsc(s.soru) : '(başlıksız satır)'}</div>
         <div class="small text-muted">[${String(s.bolum_no).padStart(2,'0')}] ${tsEsc(s.bolum_adi)}</div></div>`;
     if (s.tip === 'basit') {
-        html += `<div class="small text-muted mb-2">"<b>${tsEsc(s.karar)}</b>" seçimine göre yazılacak metinler:</div>`;
-        Object.entries(s.secenekler).forEach(([sec, metin]) => {
-            html += `<div class="mb-2"><label class="small fw-semibold d-block">${tsEsc(sec)}</label>
-                <textarea class="form-control form-control-sm ts-sec" data-sec="${tsEscAttr(sec)}" rows="2">${tsEsc(metin)}</textarea></div>`;
-        });
+        html += `<div class="small text-muted mb-2">"<b>${tsEsc(s.karar)}</b>" seçimine göre yazılacak metinler. Seçenek adını ve metnini düzenleyebilir, ekleyip silebilirsiniz.</div>`;
+        html += `<div id="tsSecListe">` + Object.entries(s.secenekler).map(([sec, metin]) => tsSecSatirHTML(sec, metin)).join('') + `</div>`;
+        html += `<button class="btn btn-sm btn-outline-secondary" onclick="tsSecekEkle()"><i class="bi bi-plus-lg me-1"></i>Seçenek ekle</button>`;
     } else if (s.tip === 'sabit') {
         html += `<div class="small text-muted mb-2">Bu satır her zaman aynı metni yazar:</div>
             <textarea id="tsMetin" class="form-control form-control-sm" rows="4">${tsEsc(s.metin || '')}</textarea>`;
@@ -4079,7 +4077,11 @@ async function tsSatirKaydet(id) {
     const govde = { id, tip: s.tip };
     if (s.tip === 'basit') {
         govde.karar = s.karar; govde.secenekler = {};
-        document.querySelectorAll('#tsEditor .ts-sec').forEach(t => govde.secenekler[t.dataset.sec] = t.value);
+        document.querySelectorAll('#tsEditor .ts-sec-satir').forEach(row => {
+            const ad = row.querySelector('.ts-sec-ad').value.trim();
+            if (ad) govde.secenekler[ad] = row.querySelector('.ts-sec-metin').value;
+        });
+        if (Object.keys(govde.secenekler).length === 0) { showToast('En az bir seçenek gerekli.', 'error'); return; }
     } else if (s.tip === 'sabit') {
         govde.metin = document.getElementById('tsMetin').value;
     } else {
@@ -4088,6 +4090,20 @@ async function tsSatirKaydet(id) {
     const r = await secureFetch('/teknik-sartname-sablonu-kaydet', { method:'POST', body: JSON.stringify(govde) });
     if (r && r.ok) { showToast('Kaydedildi', 'success'); await tsSablonYukle(); tsSatirSec(id); }
     else showToast((r && r.hata) || 'Kayıt hatası', 'error');
+}
+
+// Seçenek (basit satır) düzenleme satırı — ad + metin + sil
+function tsSecSatirHTML(sec, metin) {
+    return `<div class="ts-sec-satir border rounded p-2 mb-2 bg-white">
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <input class="form-control form-control-sm ts-sec-ad fw-semibold" value="${tsEscAttr(sec)}" placeholder="Seçenek adı (örn. Monoblok Konteyner)">
+            <button class="btn btn-sm btn-outline-danger px-2" onclick="this.closest('.ts-sec-satir').remove()" title="Bu seçeneği sil"><i class="bi bi-trash"></i></button>
+        </div>
+        <textarea class="form-control form-control-sm ts-sec-metin" rows="2" placeholder="Bu seçim yapılınca yazılacak metin">${tsEsc(metin)}</textarea>
+    </div>`;
+}
+function tsSecekEkle() {
+    document.getElementById('tsSecListe').insertAdjacentHTML('beforeend', tsSecSatirHTML('', ''));
 }
 
 // ============================================================================
