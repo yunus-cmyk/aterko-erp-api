@@ -4987,6 +4987,34 @@ app.delete('/api/form-tanimi-sil/:id', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// Form sorusunu aynı bölümde yukarı/aşağı taşı (komşuyla soru_sirasi swap)
+app.post('/api/form-tanimi-tasi', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
+    const { id, yon } = req.body;
+    try {
+        const sR = await pool.query("SELECT * FROM form_tanimlari WHERE id=$1", [id]);
+        if (!sR.rowCount) return res.status(404).json({ ok: false, hata: 'Soru bulunamadı.' });
+        const s = sR.rows[0];
+        const op = yon === 'yukari' ? '<' : '>';
+        const ord = yon === 'yukari' ? 'DESC' : 'ASC';
+        const komsu = await pool.query(
+            `SELECT id,soru_sirasi FROM form_tanimlari WHERE bina_turu=$1 AND bolum_sirasi=$2 AND soru_sirasi ${op} $3 ORDER BY soru_sirasi ${ord}, id ${ord} LIMIT 1`,
+            [s.bina_turu, s.bolum_sirasi, s.soru_sirasi]);
+        if (!komsu.rowCount) return res.json({ ok: true, mesaj: 'Zaten sınırda.' });
+        const k = komsu.rows[0];
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            // Aynı soru_sirasi ise (çakışma) deterministik sıra ver
+            const yeniS = k.soru_sirasi === s.soru_sirasi ? (yon === 'yukari' ? s.soru_sirasi - 1 : s.soru_sirasi + 1) : k.soru_sirasi;
+            await client.query("UPDATE form_tanimlari SET soru_sirasi=$1 WHERE id=$2", [yeniS, id]);
+            if (k.soru_sirasi !== s.soru_sirasi) await client.query("UPDATE form_tanimlari SET soru_sirasi=$1 WHERE id=$2", [s.soru_sirasi, k.id]);
+            await client.query('COMMIT');
+        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
 // Audit log özet (admin için)
 app.get('/api/audit-log-ozet', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Yetki yok.' });

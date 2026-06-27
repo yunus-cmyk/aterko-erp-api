@@ -100,6 +100,15 @@
       color: white !important;
       border-color: var(--aterko-primary) !important;
     }
+    /* Teknik şartname formu: belirgin seçim kartları */
+    .ts-secim-lbl {
+      display: inline-block; padding: 5px 12px; font-size: 13px; cursor: pointer;
+      border: 1.5px solid #d0d5dd; border-radius: 8px; background: #fff; color: #344054;
+      transition: all .12s; user-select: none; margin: 0;
+    }
+    .ts-secim-lbl:hover { border-color: #ff4c00; background: #fff7f4; }
+    .ts-secim:checked + .ts-secim-lbl { background: #ff4c00; border-color: #ff4c00; color: #fff; font-weight: 600; }
+    .ts-secim:disabled + .ts-secim-lbl { opacity: .5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -3908,7 +3917,9 @@ function formTanimlariRender() {
             <td class="text-center small"><span class="badge bg-light text-dark">${tipMap[f.giris_tipi] || f.giris_tipi || '-'}</span></td>
             <td class="text-center">${f.zorunlu ? '<i class="bi bi-check-circle-fill text-danger" title="Zorunlu"></i>' : '<span class="text-muted">—</span>'}</td>
             <td class="small text-muted" title="${esc(sec.join(', '))}">${esc(secStr)}${(f.secenek_metinleri && Object.keys(f.secenek_metinleri).length) ? ` <span class="badge bg-light text-info border border-info" title="${Object.keys(f.secenek_metinleri).length} şartname metni tanımlı"><i class="bi bi-file-text"></i> ${Object.keys(f.secenek_metinleri).length}</span>` : ''}</td>
-            <td class="text-center">
+            <td class="text-center text-nowrap">
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="formTanimiTasi(${f.id},'yukari')" title="Yukarı taşı"><i class="bi bi-arrow-up"></i></button>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="formTanimiTasi(${f.id},'asagi')" title="Aşağı taşı"><i class="bi bi-arrow-down"></i></button>
                 <button class="btn btn-sm btn-outline-primary py-0" onclick="formTanimiDuzenle(${f.id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
                 <button class="btn btn-sm btn-outline-danger py-0" onclick="formTanimiSil(${f.id})" title="Sil"><i class="bi bi-trash"></i></button>
             </td>
@@ -4012,6 +4023,11 @@ async function formTanimiSil(id) {
     const r = await secureFetch('/form-tanimi-sil/' + id, { method:'DELETE' });
     if (r.ok) { showToast(r.mesaj, 'success'); formTanimlariYukle(); }
     else showToast(r.hata, 'error');
+}
+async function formTanimiTasi(id, yon) {
+    const r = await secureFetch('/form-tanimi-tasi', { method:'POST', body: JSON.stringify({ id, yon }) });
+    if (r && r.ok) formTanimlariYukle();
+    else showToast((r && r.hata) || 'Taşıma hatası', 'error');
 }
 
 // ============================================================================
@@ -10344,10 +10360,6 @@ function tsKosullariCalistir() {
 function buildFormField(alan, deger) {
     const safeId = 'ts_' + alan.id;
     const zorunluMark = alan.zorunlu ? '<span class="text-danger ms-1">*</span>' : '';
-    // METIN_UZUN ve ÇOK seçim alanları geniş yer kaplar → tek sütun
-    // Diğerleri yan yana iki sütun (sol soru, sağ alan)
-    const tamGenislik = (alan.giris_tipi === 'METIN_UZUN' || alan.giris_tipi === 'ÇOK');
-    const colCls = tamGenislik ? 'col-12' : 'col-md-6';
     const saltOkunur = (alan.kurallar || '').includes('SALT_OKUNUR');
     const kilitMark = saltOkunur ? '<i class="bi bi-lock-fill text-secondary ms-1" title="Bu alan proje kayıt formundan gelir, buradan değiştirilemez"></i>' : '';
     const disabledAttr = saltOkunur ? 'disabled' : '';
@@ -10359,15 +10371,13 @@ function buildFormField(alan, deger) {
 
     if (tip === 'TEK') {
         if (saltOkunur) {
-            // Salt-okunur ise sadece değer kutusu göster
             girisHTML = `<input type="text" class="form-control form-control-sm ts-input bg-light text-muted" data-soru="${esc(alan.soru)}" value="${esc(deger || '')}" readonly>`;
-        } else if (secenekler.length <= 4) {
-            girisHTML = secenekler.map(s =>
-                `<div class="form-check form-check-inline">
-                    <input class="form-check-input ts-input" type="radio" name="${safeId}" data-soru="${esc(alan.soru)}" value="${esc(s)}" id="${safeId}_${esc(s)}" ${deger === s ? 'checked' : ''}>
-                    <label class="form-check-label small" for="${safeId}_${esc(s)}">${esc(s)}</label>
-                </div>`
-            ).join('');
+        } else if (secenekler.length <= 6) {
+            // Belirgin seçim kartları (radio) — seçili olan turuncu
+            girisHTML = '<div class="d-flex flex-wrap gap-2">' + secenekler.map(s =>
+                `<input type="radio" class="btn-check ts-input ts-secim" name="${safeId}" data-soru="${esc(alan.soru)}" value="${esc(s)}" id="${safeId}_${esc(s)}" ${deger === s ? 'checked' : ''} autocomplete="off">
+                 <label class="ts-secim-lbl" for="${safeId}_${esc(s)}">${esc(s)}</label>`
+            ).join('') + '</div>';
         } else {
             girisHTML = `<select class="form-select form-select-sm ts-input" data-soru="${esc(alan.soru)}">
                 <option value="">-- Seçiniz --</option>
@@ -10376,11 +10386,9 @@ function buildFormField(alan, deger) {
         }
     } else if (tip === 'ÇOK') {
         const mevcutDizi = Array.isArray(deger) ? deger : (deger ? String(deger).split(',').map(x => x.trim()) : []);
-        girisHTML = '<div class="d-flex flex-wrap gap-3">' + secenekler.map(s =>
-            `<div class="form-check">
-                <input class="form-check-input ts-input ts-cok" type="checkbox" data-soru="${esc(alan.soru)}" value="${esc(s)}" id="${safeId}_${esc(s)}" ${mevcutDizi.includes(s) ? 'checked' : ''} ${disabledAttr}>
-                <label class="form-check-label small" for="${safeId}_${esc(s)}">${esc(s)}</label>
-            </div>`
+        girisHTML = '<div class="d-flex flex-wrap gap-2">' + secenekler.map(s =>
+            `<input type="checkbox" class="btn-check ts-input ts-cok ts-secim" data-soru="${esc(alan.soru)}" value="${esc(s)}" id="${safeId}_${esc(s)}" ${mevcutDizi.includes(s) ? 'checked' : ''} ${disabledAttr} autocomplete="off">
+             <label class="ts-secim-lbl" for="${safeId}_${esc(s)}">${esc(s)}</label>`
         ).join('') + '</div>';
     } else if (tip === 'SAYI') {
         girisHTML = `<input type="number" class="form-control form-control-sm ts-input ${saltOkunur ? 'bg-light text-muted' : ''}" data-soru="${esc(alan.soru)}" value="${esc(deger || '')}" step="0.01" ${readonlyAttr}>`;
@@ -10392,19 +10400,10 @@ function buildFormField(alan, deger) {
         girisHTML = `<input type="text" class="form-control form-control-sm ts-input ${saltOkunur ? 'bg-light text-muted' : ''}" data-soru="${esc(alan.soru)}" value="${esc(deger || '')}" ${readonlyAttr}>`;
     }
 
-    // ÇOK ve METIN_UZUN için üst-alt (geniş alanlar için label üstte)
-    if (tamGenislik) {
-        return `<div class="${colCls} ts-alan">
-            <label class="small fw-bold text-muted mb-1 d-block">${esc(alan.soru)}${zorunluMark}${kilitMark}</label>
-            ${girisHTML}
-        </div>`;
-    }
-    // İki sütun: soru solda (sola dayalı), alan sağda
-    return `<div class="${colCls} ts-alan">
-        <div class="row align-items-center g-2">
-            <label class="col-5 small fw-bold text-muted mb-0">${esc(alan.soru)}${zorunluMark}${kilitMark}</label>
-            <div class="col-7">${girisHTML}</div>
-        </div>
+    // Tek sütun, soru üstte (kalın) — cevap altta
+    return `<div class="col-12 ts-alan pb-1 border-bottom border-light">
+        <label class="small fw-bold text-dark mb-1 d-block">${esc(alan.soru)}${zorunluMark}${kilitMark}</label>
+        ${girisHTML}
     </div>`;
 }
 
