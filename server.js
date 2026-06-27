@@ -3498,12 +3498,12 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
 
         // 1) Panelden yönetilen DB şablonu (teknik_sartname_sablonu) varsa → dinamik üret
         const tsSab = await pool.query(
-            "SELECT bolum_no,bolum_adi,bolum_gizle,bolum_aciklama,soru,cevap_sablonu,yeni_tablo FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
+            "SELECT bolum_no,bolum_adi,bolum_gizle,bolum_aciklama,soru,cevap_sablonu,yeni_tablo,baslik_gizle FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
             [t.bina_turu]);
         if (tsSab.rowCount) {
             const ft = tsSab.rows.map(x => ({
                 bolum_adi: x.bolum_adi, bolum_sirasi: x.bolum_no, soru: x.soru, cevap_sablonu: x.cevap_sablonu,
-                bolum_aciklama: x.bolum_aciklama, yeni_tablo: x.yeni_tablo,
+                bolum_aciklama: x.bolum_aciklama, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle,
                 bolum_gizle: x.bolum_gizle ? { alan: x.bolum_gizle.split('=')[0], deger: x.bolum_gizle.split('=')[1] } : null
             }));
             pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ft, req.user.adSoyad), pdfOpts);
@@ -4773,11 +4773,11 @@ app.get('/api/teknik-sartname-sablonu/:binaTuru', yetkiKontrol, async (req, res,
     try {
         const { ayristir } = require('./lib/sartname-ayristir');
         const r = await pool.query(
-            "SELECT id,bolum_no,bolum_adi,bolum_gizle,soru,satir_sira,cevap_sablonu,yeni_tablo FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
+            "SELECT id,bolum_no,bolum_adi,bolum_gizle,soru,satir_sira,cevap_sablonu,yeni_tablo,baslik_gizle FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
             [req.params.binaTuru]);
         const satirlar = r.rows.map(x => ({
             id: x.id, bolum_no: x.bolum_no, bolum_adi: x.bolum_adi, bolum_gizle: x.bolum_gizle,
-            soru: x.soru, yeni_tablo: x.yeni_tablo, ...ayristir(x.cevap_sablonu)
+            soru: x.soru, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle, ...ayristir(x.cevap_sablonu)
         }));
         res.json({ ok: true, satirlar });
     } catch (e) { next(e); }
@@ -4789,14 +4789,16 @@ app.post('/api/teknik-sartname-sablonu-kaydet', yetkiKontrol, async (req, res, n
     }
     try {
         const { kur } = require('./lib/sartname-ayristir');
-        const { id, tip, karar, secenekler, metin, ham, yeni_tablo } = req.body;
+        const { id, tip, karar, secenekler, metin, ham, yeni_tablo, baslik_gizle } = req.body;
         let cevap_sablonu;
         if (tip === 'basit') cevap_sablonu = kur(karar, secenekler || {});
         else if (tip === 'sabit') cevap_sablonu = String(metin == null ? '' : metin);
         else cevap_sablonu = String(ham == null ? '' : ham);
         const r = await pool.query(
-            "UPDATE teknik_sartname_sablonu SET cevap_sablonu=$1, yeni_tablo=$2, guncelleme=now() WHERE id=$3 RETURNING id,soru",
-            [cevap_sablonu, !!yeni_tablo, id]);
+            "UPDATE teknik_sartname_sablonu SET cevap_sablonu=$1, yeni_tablo=$2, baslik_gizle=$3, guncelleme=now() WHERE id=$4 RETURNING id,soru,bina_turu,bolum_no",
+            [cevap_sablonu, !!yeni_tablo, !!baslik_gizle, id]);
+        // baslik_gizle bölüm geneli — aynı bölümün tüm satırlarına yansıt
+        if (r.rowCount) await pool.query("UPDATE teknik_sartname_sablonu SET baslik_gizle=$1 WHERE bina_turu=$2 AND bolum_no=$3", [!!baslik_gizle, r.rows[0].bina_turu, r.rows[0].bolum_no]);
         if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Satır bulunamadı.' });
         res.json({ ok: true, satir: r.rows[0] });
     } catch (e) { next(e); }
@@ -4844,8 +4846,8 @@ app.post('/api/teknik-sartname-sablonu-ekle', yetkiKontrol, async (req, res, nex
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN ekleyebilir.' });
     try {
         const { kur } = require('./lib/sartname-ayristir');
-        const { bina_turu, bolum_no, bolum_adi, bolum_gizle, soru, tip, karar, secenekler, metin, ham, yeni_tablo } = req.body;
-        if (!bina_turu || !bolum_adi || bolum_no == null || bolum_no === '') return res.json({ ok: false, hata: 'Bina türü, bölüm no ve bölüm adı zorunlu.' });
+        const { bina_turu, bolum_no, bolum_adi, bolum_gizle, soru, tip, karar, secenekler, metin, ham, yeni_tablo, baslik_gizle } = req.body;
+        if (!bina_turu || bolum_no == null || bolum_no === '') return res.json({ ok: false, hata: 'Bina türü ve bölüm no zorunlu.' });
         let cevap_sablonu;
         if (tip === 'basit') cevap_sablonu = kur(karar, secenekler || {});
         else if (tip === 'sabit') cevap_sablonu = String(metin == null ? '' : metin);
@@ -4853,8 +4855,8 @@ app.post('/api/teknik-sartname-sablonu-ekle', yetkiKontrol, async (req, res, nex
         // satır sırası: o bölümün son sırası + 1
         const sr = await pool.query("SELECT COALESCE(MAX(satir_sira),-1)+1 AS s FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2", [bina_turu, bolum_no]);
         const r = await pool.query(
-            "INSERT INTO teknik_sartname_sablonu (bina_turu,bolum_no,bolum_adi,bolum_gizle,soru,satir_sira,cevap_sablonu,yeni_tablo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id",
-            [bina_turu, bolum_no, bolum_adi, bolum_gizle || null, soru || '', sr.rows[0].s, cevap_sablonu, !!yeni_tablo]);
+            "INSERT INTO teknik_sartname_sablonu (bina_turu,bolum_no,bolum_adi,bolum_gizle,soru,satir_sira,cevap_sablonu,yeni_tablo,baslik_gizle) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id",
+            [bina_turu, bolum_no, bolum_adi || '', bolum_gizle || null, soru || '', sr.rows[0].s, cevap_sablonu, !!yeni_tablo, !!baslik_gizle]);
         res.json({ ok: true, id: r.rows[0].id, mesaj: 'Satır eklendi.' });
     } catch (e) { next(e); }
 });
@@ -4880,6 +4882,42 @@ app.delete('/api/teknik-sartname-sablonu-sil/:id', yetkiKontrol, async (req, res
         const r = await pool.query("DELETE FROM teknik_sartname_sablonu WHERE id=$1 RETURNING soru", [req.params.id]);
         if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Satır bulunamadı.' });
         res.json({ ok: true, mesaj: 'Satır silindi.' });
+    } catch (e) { next(e); }
+});
+
+// Satırı taşı: aynı bölümde yukarı/aşağı (komşuyla sıra değiş) VEYA başka bölüme (hedef_bolum_no)
+app.post('/api/teknik-sartname-sablonu-tasi', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
+    const { id, yon, hedef_bolum_no, hedef_bolum_adi } = req.body;
+    try {
+        const sR = await pool.query("SELECT * FROM teknik_sartname_sablonu WHERE id=$1", [id]);
+        if (!sR.rowCount) return res.status(404).json({ ok: false, hata: 'Satır bulunamadı.' });
+        const s = sR.rows[0];
+        // Başka bölüme taşı
+        if (hedef_bolum_no != null && hedef_bolum_no !== '') {
+            const sr = await pool.query("SELECT COALESCE(MAX(satir_sira),-1)+1 AS m FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2", [s.bina_turu, hedef_bolum_no]);
+            // hedef bölümün adı/gizle/no — mevcut bir satırdan al (yoksa gönderilen ad)
+            const hb = await pool.query("SELECT bolum_adi,baslik_gizle FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2 LIMIT 1", [s.bina_turu, hedef_bolum_no]);
+            const yeniAd = hb.rowCount ? hb.rows[0].bolum_adi : (hedef_bolum_adi || s.bolum_adi);
+            await pool.query("UPDATE teknik_sartname_sablonu SET bolum_no=$1, bolum_adi=$2, satir_sira=$3 WHERE id=$4", [hedef_bolum_no, yeniAd, sr.rows[0].m, id]);
+            return res.json({ ok: true });
+        }
+        // Aynı bölümde yukarı/aşağı: komşuyla satir_sira değiştir
+        const op = yon === 'yukari' ? '<' : '>';
+        const ord = yon === 'yukari' ? 'DESC' : 'ASC';
+        const komsu = await pool.query(
+            `SELECT id,satir_sira FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2 AND satir_sira ${op} $3 ORDER BY satir_sira ${ord} LIMIT 1`,
+            [s.bina_turu, s.bolum_no, s.satir_sira]);
+        if (!komsu.rowCount) return res.json({ ok: true, mesaj: 'Zaten sınırda.' });
+        const k = komsu.rows[0];
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            await client.query("UPDATE teknik_sartname_sablonu SET satir_sira=$1 WHERE id=$2", [k.satir_sira, id]);
+            await client.query("UPDATE teknik_sartname_sablonu SET satir_sira=$1 WHERE id=$2", [s.satir_sira, k.id]);
+            await client.query('COMMIT');
+        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+        res.json({ ok: true });
     } catch (e) { next(e); }
 });
 
@@ -6329,6 +6367,7 @@ async function semaGuvence() {
         await pool.query(`ALTER TABLE form_tanimlari ADD COLUMN IF NOT EXISTS secenek_metinleri JSONB`);
         await pool.query(`ALTER TABLE form_tanimlari ADD COLUMN IF NOT EXISTS kaynak_kolon TEXT`);
         await pool.query(`ALTER TABLE teknik_sartname_sablonu ADD COLUMN IF NOT EXISTS yeni_tablo BOOLEAN DEFAULT false`);
+        await pool.query(`ALTER TABLE teknik_sartname_sablonu ADD COLUMN IF NOT EXISTS baslik_gizle BOOLEAN DEFAULT false`);
 
         // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
         await pool.query(`

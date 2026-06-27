@@ -4095,8 +4095,17 @@ function tsSatirSec(id) {
     tsSablonRender();
     const s = tsSablonCache.find(x => x.id === id);
     if (!s) return;
-    let html = `<div class="mb-3"><div class="fw-bold">${s.soru ? tsEsc(s.soru) : '(başlıksız satır)'}</div>
-        <div class="small text-muted">[${String(s.bolum_no).padStart(2,'0')}] ${tsEsc(s.bolum_adi)}</div></div>`;
+    let html = `<div class="mb-2"><div class="fw-bold">${s.soru ? tsEsc(s.soru) : '(başlıksız satır)'}</div>
+        <div class="small text-muted">[${String(s.bolum_no).padStart(2,'0')}] ${tsEsc(s.bolum_adi) || '(başlıksız)'}</div></div>`;
+    const _bol = [...new Map(tsSablonCache.map(x => [x.bolum_no, x.bolum_adi])).entries()].sort((a, b) => a[0] - b[0]);
+    const _bolOpt = _bol.map(([no, ad]) => `<option value="${no}" ${no === s.bolum_no ? 'selected' : ''}>[${String(no).padStart(2, '0')}] ${tsEsc(ad) || '(başlıksız)'}</option>`).join('');
+    html += `<div class="d-flex align-items-center flex-wrap gap-2 mb-3 p-2 rounded" style="background:#fff;border:0.5px solid #dee2e6">
+        <span class="small text-muted">Sıra:</span>
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="tsSatirTasi(${id},{yon:'yukari'})" title="Yukarı taşı"><i class="bi bi-arrow-up"></i></button>
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="tsSatirTasi(${id},{yon:'asagi'})" title="Aşağı taşı"><i class="bi bi-arrow-down"></i></button>
+        <span class="small text-muted ms-2">Bölüm:</span>
+        <select class="form-select form-select-sm" style="width:auto" onchange="tsSatirTasi(${id},{bolum:this.value})">${_bolOpt}</select>
+    </div>`;
     if (s.tip === 'basit') {
         html += `<div class="small text-muted mb-2">"<b>${tsEsc(s.karar)}</b>" seçimine göre yazılacak metinler. Seçenek adını ve metnini düzenleyebilir, ekleyip silebilirsiniz.</div>`;
         html += `<div id="tsSecListe">` + Object.entries(s.secenekler).map(([sec, metin]) => tsSecSatirHTML(sec, metin)).join('') + `</div>`;
@@ -4109,6 +4118,7 @@ function tsSatirSec(id) {
             <textarea id="tsHam" class="form-control form-control-sm font-monospace" rows="6">${tsEsc(s.ham || '')}</textarea>`;
     }
     html += `<div class="form-check mt-3 mb-1"><input class="form-check-input" type="checkbox" id="tsYeniTabloChk" ${s.yeni_tablo ? 'checked' : ''}><label class="form-check-label small" for="tsYeniTabloChk">Bu satırdan itibaren ayrı (başlıksız) tablo başlasın</label></div>`;
+    html += `<div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="tsBaslikGizleChk" ${s.baslik_gizle ? 'checked' : ''}><label class="form-check-label small" for="tsBaslikGizleChk">Bu bölümün başlığını gizle (tüm bölümü etkiler)</label></div>`;
     html += `<div class="mt-2 d-flex justify-content-between"><button class="btn btn-sm btn-outline-danger" onclick="tsSatirSil(${id})"><i class="bi bi-trash me-1"></i>Sil</button><button class="btn btn-sm btn-dark fw-bold px-4" onclick="tsSatirKaydet(${id})"><i class="bi bi-save me-1"></i>Kaydet</button></div>`;
     document.getElementById('tsEditor').innerHTML = html;
 }
@@ -4116,7 +4126,7 @@ function tsSatirSec(id) {
 async function tsSatirKaydet(id) {
     const s = tsSablonCache.find(x => x.id === id);
     if (!s) return;
-    const govde = { id, tip: s.tip, yeni_tablo: document.getElementById('tsYeniTabloChk')?.checked || false };
+    const govde = { id, tip: s.tip, yeni_tablo: document.getElementById('tsYeniTabloChk')?.checked || false, baslik_gizle: document.getElementById('tsBaslikGizleChk')?.checked || false };
     if (s.tip === 'basit') {
         govde.karar = s.karar; govde.secenekler = {};
         document.querySelectorAll('#tsEditor .ts-sec-satir').forEach(row => {
@@ -4160,9 +4170,12 @@ function tsYeniSatir() {
             <select id="tsYeniBolum" class="form-select form-select-sm" onchange="tsYeniBolumDegis()">
                 ${bolumOpt}<option value="__yeni__">+ Yeni Bölüm…</option>
             </select></div>
-        <div id="tsYeniBolumAlani" class="row g-2 mb-2 d-none">
-            <div class="col-4"><input id="tsYeniBolumNo" type="number" class="form-control form-control-sm" placeholder="Sıra (örn 1)"></div>
-            <div class="col-8"><input id="tsYeniBolumAd" class="form-control form-control-sm" placeholder="Bölüm adı"></div>
+        <div id="tsYeniBolumAlani" class="mb-2 d-none">
+            <div class="row g-2">
+                <div class="col-4"><input id="tsYeniBolumNo" type="number" class="form-control form-control-sm" placeholder="Sıra (örn 1)"></div>
+                <div class="col-8"><input id="tsYeniBolumAd" class="form-control form-control-sm" placeholder="Bölüm adı (boş = başlıksız)"></div>
+            </div>
+            <div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="tsYeniBaslikGizle"><label class="form-check-label small" for="tsYeniBaslikGizle">Bölüm başlığını gizle (başlıksız tablo)</label></div>
         </div>
         <div class="mb-2"><label class="small fw-semibold d-block">Satır başlığı</label>
             <input id="tsYeniSoru" class="form-control form-control-sm" placeholder="örn. Rüzgar Yükü"></div>
@@ -4201,19 +4214,20 @@ function tsYeniTipDegis() {
 async function tsYeniKaydet() {
     const bt = document.getElementById('tsBinaTur').value;
     const bolSel = document.getElementById('tsYeniBolum').value;
-    let bolum_no, bolum_adi, bolum_gizle = null;
+    let bolum_no, bolum_adi, bolum_gizle = null, baslik_gizle = false;
     if (bolSel === '__yeni__') {
         bolum_no = parseInt(document.getElementById('tsYeniBolumNo').value);
         bolum_adi = document.getElementById('tsYeniBolumAd').value.trim();
-        if (isNaN(bolum_no) || !bolum_adi) return showToast('Yeni bölüm için sıra no ve ad gerekli.', 'error');
+        baslik_gizle = document.getElementById('tsYeniBaslikGizle').checked || !bolum_adi;
+        if (isNaN(bolum_no)) return showToast('Yeni bölüm için sıra no gerekli.', 'error');
     } else {
         bolum_no = parseInt(bolSel);
         const m = tsSablonCache.find(s => s.bolum_no === bolum_no);
-        bolum_adi = m ? m.bolum_adi : ''; bolum_gizle = m ? m.bolum_gizle : null;
+        bolum_adi = m ? m.bolum_adi : ''; bolum_gizle = m ? m.bolum_gizle : null; baslik_gizle = m ? !!m.baslik_gizle : false;
     }
     const soru = document.getElementById('tsYeniSoru').value.trim();
     const tip = document.getElementById('tsYeniTip').value;
-    const govde = { bina_turu: bt, bolum_no, bolum_adi, bolum_gizle, soru, tip, yeni_tablo: document.getElementById('tsYeniTablo')?.checked || false };
+    const govde = { bina_turu: bt, bolum_no, bolum_adi, bolum_gizle, soru, tip, baslik_gizle, yeni_tablo: document.getElementById('tsYeniTablo')?.checked || false };
     if (tip === 'sabit') govde.metin = document.getElementById('tsYeniMetin').value;
     else {
         govde.karar = (document.getElementById('tsYeniKarar').value || '').trim();
@@ -4234,6 +4248,19 @@ async function tsSatirSil(id) {
     const r = await secureFetch('/teknik-sartname-sablonu-sil/' + id, { method: 'DELETE' });
     if (r && r.ok) { showToast('Satır silindi', 'success'); tsSablonYukle(); }
     else showToast((r && r.hata) || 'Silme hatası', 'error');
+}
+async function tsSatirTasi(id, opts) {
+    const govde = { id };
+    if (opts.yon) govde.yon = opts.yon;
+    if (opts.bolum != null && opts.bolum !== '') {
+        const hedef = parseInt(opts.bolum);
+        const s = tsSablonCache.find(x => x.id === id);
+        if (s && hedef === s.bolum_no) return;   // aynı bölüm — değişiklik yok
+        govde.hedef_bolum_no = hedef;
+    }
+    const r = await secureFetch('/teknik-sartname-sablonu-tasi', { method: 'POST', body: JSON.stringify(govde) });
+    if (r && r.ok) { await tsSablonYukle(); tsSatirSec(id); }
+    else showToast((r && r.hata) || 'Taşıma hatası', 'error');
 }
 
 // ===== Kullanılabilir alanlar ({{ }} ile) =====
