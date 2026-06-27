@@ -3546,6 +3546,12 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
         const sablon = SABLON_HARITASI[t.bina_turu];
         const { renderToPDF, htmlToPDF } = require('./lib/pdf-generator');
         let pdfBuffer;
+        // Her sayfa sağ altına proje künyesi (gri italik)
+        const fesc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const pdfOpts = {
+            margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' },
+            footerTemplate: `<div style="width:100%;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;text-align:right;">${fesc(t.proje_kodu)} / ${fesc(t.musteri_adi)} - ${fesc(t.proje_adi)} [ ${fesc(t.bina_adi)} ]</div>`
+        };
 
         // 1) Panelden yönetilen DB şablonu (teknik_sartname_sablonu) varsa → dinamik üret
         const tsSab = await pool.query(
@@ -3557,7 +3563,7 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
                 bolum_aciklama: x.bolum_aciklama,
                 bolum_gizle: x.bolum_gizle ? { alan: x.bolum_gizle.split('=')[0], deger: x.bolum_gizle.split('=')[1] } : null
             }));
-            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ft, req.user.adSoyad), { margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' } });
+            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ft, req.user.adSoyad), pdfOpts);
         } else if (sablon && fs.existsSync(path.join(__dirname, 'templates', sablon + '.html'))) {
             const trTarih = d => { const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
             const degerler = {
@@ -3585,7 +3591,7 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
             if (ftR.rowCount === 0) {
                 return res.status(400).json({ ok: false, hata: `"${t.bina_turu}" bina türü için şablon veya form tanımı yok.` });
             }
-            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, req.user.adSoyad), { margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' } });
+            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, req.user.adSoyad), pdfOpts);
         }
         const dosyaAdi = `${t.proje_kodu}-${t.bina_adi}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
         res.setHeader('Content-Type', 'application/pdf');
