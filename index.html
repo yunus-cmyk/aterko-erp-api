@@ -1399,6 +1399,24 @@
                                 <label class="form-check-label small" for="ftZorunlu">Bu soru zorunlu olarak doldurulsun</label>
                             </div>
                         </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold text-muted mb-1">Otomatik Dolum Kaynağı (Salt Okunur)</label>
+                            <select id="ftKaynakKolon" class="form-select form-select-sm">
+                                <option value="">— Manuel (kullanıcı doldurur) —</option>
+                                <option value="bina_tipi">Bina Tipi</option>
+                                <option value="kat_adedi">Kat Adedi</option>
+                                <option value="kat_yuksekligi">Kat Yüksekliği</option>
+                                <option value="bina_adedi">Bina Adedi</option>
+                                <option value="konteyner_ebadi">Konteyner Ebadı</option>
+                                <option value="konteyner_miktari">Konteyner Miktarı</option>
+                                <option value="dis_duvar_kesiti">Dış Duvar Kesiti</option>
+                                <option value="ic_duvar_kesiti">İç Duvar Kesiti</option>
+                                <option value="buyukluk_m2">Büyüklük (m²)</option>
+                                <option value="bina_yeri">Bina Yeri</option>
+                                <option value="bina_adi">Bina Adı</option>
+                            </select>
+                            <div class="form-text small">Seçilirse alan proje/bina bilgisinden otomatik dolar, kullanıcı değiştiremez.</div>
+                        </div>
                         <div class="col-md-12" id="ftSecenekAlani" style="display:none;">
                             <label class="form-label small fw-bold text-muted mb-1">Seçenekler</label>
                             <textarea id="ftSecenekler" class="form-control form-control-sm" rows="4" placeholder="Her satıra bir seçenek yaz..." oninput="ftMetinListeRender()"></textarea>
@@ -3903,6 +3921,7 @@ function openFormTanimiModal(data) {
     document.getElementById('ftSecenekler').value = sec.join('\n');
     document.getElementById('ftKurallar').value = d.kurallar || '';
     document.getElementById('ftKosullar').value = d.kosullar || '';
+    document.getElementById('ftKaynakKolon').value = d.kaynak_kolon || '';
     window._ftMetinler = (d.secenek_metinleri && typeof d.secenek_metinleri === 'object') ? d.secenek_metinleri : {};
     ftSecenekAlaniGoster();
     new bootstrap.Modal(document.getElementById('modalFormTanimi')).show();
@@ -3952,6 +3971,7 @@ async function formTanimiKaydet() {
     const secekenler = document.getElementById('ftSecenekler').value;
     const kurallar = document.getElementById('ftKurallar').value.trim();
     const kosullar = document.getElementById('ftKosullar').value.trim();
+    const kaynak_kolon = document.getElementById('ftKaynakKolon').value || null;
 
     if (!bolum_adi || !soru) return showToast('Bölüm adı ve soru metni zorunlu.', 'error');
 
@@ -3968,7 +3988,7 @@ async function formTanimiKaydet() {
 
     const r = await secureFetch('/form-tanimi-kaydet', { method:'POST', body: JSON.stringify({
         id, bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
-        giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri
+        giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri, kaynak_kolon
     }) });
     if (r.ok) {
         bootstrap.Modal.getInstance(document.getElementById('modalFormTanimi'))?.hide();

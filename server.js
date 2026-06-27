@@ -3279,25 +3279,42 @@ app.get('/api/form-tanimlari/:binaTuru', yetkiKontrol, async (req, res, next) =>
     } catch (error) { next(error); }
 });
 
+// Teknik şartname salt-okunur alanlarının bağlanabileceği teslimat (bina bilgisi) kolonları
+const BILGI_ALANLARI = {
+    'bina_tipi': 'Bina Tipi',
+    'kat_adedi': 'Kat Adedi',
+    'kat_yuksekligi': 'Kat Yüksekliği',
+    'bina_adedi': 'Bina Adedi',
+    'konteyner_ebadi': 'Konteyner Ebadı',
+    'konteyner_miktari': 'Konteyner Miktarı',
+    'dis_duvar_kesiti': 'Dış Duvar Kesiti',
+    'ic_duvar_kesiti': 'İç Duvar Kesiti',
+    'buyukluk_m2': 'Büyüklük (m²)',
+    'bina_yeri': 'Bina Yeri',
+    'bina_adi': 'Bina Adı'
+};
+// Bir teslimat için form_tanimlari'nda kaynak_kolon tanımlı salt-okunur alanların değerleri (soru → değer)
+async function otomatikAlanDegerleri(t) {
+    const r = await pool.query(
+        "SELECT DISTINCT soru, kaynak_kolon FROM form_tanimlari WHERE bina_turu=$1 AND kaynak_kolon IS NOT NULL AND kaynak_kolon<>''",
+        [t.bina_turu]);
+    const o = {};
+    r.rows.forEach(({ soru, kaynak_kolon }) => {
+        if (BILGI_ALANLARI[kaynak_kolon] && t[kaynak_kolon] != null && t[kaynak_kolon] !== '')
+            o[soru] = String(t[kaynak_kolon]);
+    });
+    return o;
+}
+
 // Teslimatın mevcut teknik şartname verisini getir
 app.get('/api/teknik-sartname/:teslimatId', yetkiKontrol, async (req, res, next) => {
     try {
         const { teslimatId } = req.params;
-        const result = await pool.query(`
-            SELECT id, bina_adi, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
-                   bina_adedi, buyukluk_m2, bina_yeri, ek_veriler
-            FROM proje_teslimatlari WHERE id = $1
-        `, [teslimatId]);
+        const result = await pool.query(`SELECT * FROM proje_teslimatlari WHERE id = $1`, [teslimatId]);
         if (result.rowCount === 0) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
         const t = result.rows[0];
-        // SALT_OKUNUR alanlar için otomatik değerler — kullanıcı kayıtta girmiş olanlardan gelir
-        const otomatikDegerler = {
-            'Bina Tipi': t.bina_tipi || '',
-            'Kat Adedi': t.kat_adedi || '',
-            'Kat Yüksekliği (mm)': t.kat_yuksekligi || '',
-            'Konteyner Ebadı': t.konteyner_ebadi || '',
-            'Konteyner Miktarı': t.konteyner_miktari != null ? String(t.konteyner_miktari) : ''
-        };
+        // SALT_OKUNUR alanlar için otomatik değerler — kaynak_kolon eşleştirmesinden (panelden yönetilir)
+        const otomatikDegerler = await otomatikAlanDegerleri(t);
         res.json({
             ok: true,
             teslimat: t,
@@ -3501,6 +3518,8 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
                 'TARİH': trTarih(new Date()), 'DÜZENLEYEN': req.user.adSoyad || '', 'KOD': `${t.proje_kodu}-${t.id}`,
                 ...(t.ek_veriler || {}) // form cevapları (Dış Duvar Kalınlığı (mm), Bina Tipi vb.)
             };
+            // Salt-okunur alanlar (kaynak_kolon eşleştirmesi) teslimattan güncel gelsin (ek_veriler'i ezer)
+            Object.assign(degerler, await otomatikAlanDegerleri(t));
             // Boş bırakılan GİRİŞ (serbest metin) alanlarına "-" koy
             const girisR = await pool.query("SELECT soru FROM form_tanimlari WHERE bina_turu=$1 AND giris_tipi='GİRİŞ'", [t.bina_turu]);
             girisR.rows.forEach(({ soru }) => {
@@ -4827,7 +4846,7 @@ app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
     try {
         const {
             id, bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
-            giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri
+            giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri, kaynak_kolon
         } = req.body;
         if (!bina_turu || !bolum_adi || !soru) {
             return res.json({ ok: false, hata: 'Bina türü, bölüm adı ve soru metni zorunlu.' });
@@ -4841,11 +4860,11 @@ app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
             await pool.query(`
                 UPDATE form_tanimlari
                 SET bina_turu=$1, bolum_sirasi=$2, bolum_adi=$3, soru_sirasi=$4, soru=$5,
-                    giris_tipi=$6, secenekler=$7, zorunlu=$8, kurallar=$9, kosullar=$10, secenek_metinleri=$11
-                WHERE id=$12
+                    giris_tipi=$6, secenekler=$7, zorunlu=$8, kurallar=$9, kosullar=$10, secenek_metinleri=$11, kaynak_kolon=$12
+                WHERE id=$13
             `, [bina_turu, bolum_sirasi || 1, bolum_adi, soru_sirasi || 1, soru,
                 giris_tipi || 'TEXT', secenekler ? JSON.stringify(secenekler) : null,
-                !!zorunlu, kurallar || null, kosullar || null, metinJson, id]);
+                !!zorunlu, kurallar || null, kosullar || null, metinJson, kaynak_kolon || null, id]);
             await auditLogla(req, {
                 eylem: 'UPDATE', tablo: 'form_tanimlari', kayit_id: id,
                 ozet: `Form sorusu güncellendi: ${soru.substring(0,60)}`,
@@ -4854,11 +4873,11 @@ app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
         } else {
             const r = await pool.query(`
                 INSERT INTO form_tanimlari (bina_turu, bolum_sirasi, bolum_adi, soru_sirasi, soru,
-                                            giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id
+                                            giris_tipi, secenekler, zorunlu, kurallar, kosullar, secenek_metinleri, kaynak_kolon)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id
             `, [bina_turu, bolum_sirasi || 1, bolum_adi, soru_sirasi || 1, soru,
                 giris_tipi || 'TEXT', secenekler ? JSON.stringify(secenekler) : null,
-                !!zorunlu, kurallar || null, kosullar || null, metinJson]);
+                !!zorunlu, kurallar || null, kosullar || null, metinJson, kaynak_kolon || null]);
             await auditLogla(req, {
                 eylem: 'CREATE', tablo: 'form_tanimlari', kayit_id: r.rows[0].id,
                 ozet: `Form sorusu eklendi: ${soru.substring(0,60)}`, yeni_veri: req.body
@@ -6264,6 +6283,7 @@ async function semaGuvence() {
         // Teknik şartname seçenek metinleri (PDF'te ham cevap yerine profesyonel şartname cümlesi)
         // Yapı: { "seçenek değeri": "şartname cümlesi", ... } — TEK ve ÇOK sorular için
         await pool.query(`ALTER TABLE form_tanimlari ADD COLUMN IF NOT EXISTS secenek_metinleri JSONB`);
+        await pool.query(`ALTER TABLE form_tanimlari ADD COLUMN IF NOT EXISTS kaynak_kolon TEXT`);
 
         // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
         await pool.query(`
