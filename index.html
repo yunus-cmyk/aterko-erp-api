@@ -10243,6 +10243,8 @@ async function openTeknikSartname(teslimatId) {
     Object.keys(otomatik).forEach(k => {
         if (otomatik[k]) mevcutVeri[k] = otomatik[k];
     });
+    // Projede montaj gerekli değilse Montaj bölümü tümüyle gizlenir
+    if (teslimat.montaj_gerekli === false) mevcutVeri['Montaj'] = 'Yok';
 
     document.getElementById("tsModalBaslik").innerHTML = `<i class="bi bi-file-earmark-text me-2"></i>Teknik Şartname — ${esc(teslimat.bina_adi)} (${esc(teslimat.bina_turu)})`;
 
@@ -10276,6 +10278,8 @@ function renderTeknikSartnameForm(alanlar, mevcutVeri) {
 
     let html = '';
     sirali.forEach(b => {
+        // Projede montaj gerekli değilse Montaj bölümünü hiç gösterme
+        if (/^montaj$/i.test((b.ad || '').trim()) && mevcutVeri['Montaj'] === 'Yok') return;
         html += `<div class="card border-0 shadow-sm mb-3 rounded-3 ts-bolum">
             <div class="card-header bg-white border-bottom pt-3 pb-2">
                 <h6 class="fw-bold text-secondary mb-0"><i class="bi bi-collection me-2"></i>${esc(b.ad)}</h6>
