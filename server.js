@@ -3294,7 +3294,9 @@ app.get('/api/teknik-sartname/:teslimatId', yetkiKontrol, async (req, res, next)
         const otomatikDegerler = {
             'Bina Tipi': t.bina_tipi || '',
             'Kat Adedi': t.kat_adedi || '',
-            'Kat Yüksekliği (mm)': t.kat_yuksekligi || ''
+            'Kat Yüksekliği (mm)': t.kat_yuksekligi || '',
+            'Konteyner Ebadı': t.konteyner_ebadi || '',
+            'Konteyner Miktarı': t.konteyner_miktari != null ? String(t.konteyner_miktari) : ''
         };
         res.json({
             ok: true,
