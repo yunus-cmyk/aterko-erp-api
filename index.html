@@ -4095,8 +4095,12 @@ function tsSatirSec(id) {
     tsSablonRender();
     const s = tsSablonCache.find(x => x.id === id);
     if (!s) return;
-    let html = `<div class="mb-2"><div class="fw-bold">${s.soru ? tsEsc(s.soru) : '(başlıksız satır)'}</div>
-        <div class="small text-muted">[${String(s.bolum_no).padStart(2,'0')}] ${tsEsc(s.bolum_adi) || '(başlıksız)'}</div></div>`;
+    let html = `<div class="row g-2 mb-2">
+        <div class="col-md-6"><label class="small fw-semibold d-block">Satır başlığı</label>
+            <input id="tsDuzenleSoru" class="form-control form-control-sm" value="${tsEscAttr(s.soru || '')}" placeholder="(boş bırakılabilir)"></div>
+        <div class="col-md-6"><label class="small fw-semibold d-block">Bölüm adı <span class="text-muted fw-normal">[${String(s.bolum_no).padStart(2,'0')}] · tüm bölümü etkiler</span></label>
+            <input id="tsDuzenleBolumAd" class="form-control form-control-sm" value="${tsEscAttr(s.bolum_adi || '')}" placeholder="(başlıksız için boş)"></div>
+    </div>`;
     const _bol = [...new Map(tsSablonCache.map(x => [x.bolum_no, x.bolum_adi])).entries()].sort((a, b) => a[0] - b[0]);
     const _bolOpt = _bol.map(([no, ad]) => `<option value="${no}" ${no === s.bolum_no ? 'selected' : ''}>[${String(no).padStart(2, '0')}] ${tsEsc(ad) || '(başlıksız)'}</option>`).join('');
     html += `<div class="d-flex align-items-center flex-wrap gap-2 mb-3 p-2 rounded" style="background:#fff;border:0.5px solid #dee2e6">
@@ -4126,7 +4130,7 @@ function tsSatirSec(id) {
 async function tsSatirKaydet(id) {
     const s = tsSablonCache.find(x => x.id === id);
     if (!s) return;
-    const govde = { id, tip: s.tip, yeni_tablo: document.getElementById('tsYeniTabloChk')?.checked || false, baslik_gizle: document.getElementById('tsBaslikGizleChk')?.checked || false };
+    const govde = { id, tip: s.tip, yeni_tablo: document.getElementById('tsYeniTabloChk')?.checked || false, baslik_gizle: document.getElementById('tsBaslikGizleChk')?.checked || false, soru: document.getElementById('tsDuzenleSoru')?.value || '', bolum_adi: document.getElementById('tsDuzenleBolumAd')?.value };
     if (s.tip === 'basit') {
         govde.karar = s.karar; govde.secenekler = {};
         document.querySelectorAll('#tsEditor .ts-sec-satir').forEach(row => {
