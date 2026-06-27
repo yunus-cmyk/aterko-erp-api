@@ -3563,7 +3563,17 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
             girisR.rows.forEach(({ soru }) => {
                 if (degerler[soru] == null || String(degerler[soru]).trim() === '') degerler[soru] = '-';
             });
-            pdfBuffer = await renderToPDF(sablon, degerler);
+            // Üst bilgi (ATERKO antet) her sayfada görünsün
+            let teknikOpts = {};
+            const antetYol = path.join(__dirname, 'templates', 'images', 'image36.png');
+            if (fs.existsSync(antetYol)) {
+                const antetB64 = 'data:image/png;base64,' + fs.readFileSync(antetYol).toString('base64');
+                teknikOpts = {
+                    headerTemplate: `<div style="width:100%;padding:2mm 12mm 0;box-sizing:border-box;"><img src="${antetB64}" style="width:100%"></div>`,
+                    margin: { top: '26mm', bottom: '10mm', left: '10mm', right: '10mm' }
+                };
+            }
+            pdfBuffer = await renderToPDF(sablon, degerler, teknikOpts);
         } else {
             // Özel şablonu olmayan türler için form tanımlarından dinamik üretim
             const ftR = await pool.query(`
