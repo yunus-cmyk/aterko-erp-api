@@ -3558,22 +3558,8 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
                 'TARİH': trTarih(new Date()), 'DÜZENLEYEN': req.user.adSoyad || '', 'KOD': `${t.proje_kodu}-${t.id}`,
                 ...(t.ek_veriler || {}) // form cevapları (Dış Duvar Kalınlığı (mm), Bina Tipi vb.)
             };
-            // Boş bırakılan GİRİŞ (serbest metin) alanlarına "-" koy
-            const girisR = await pool.query("SELECT soru FROM form_tanimlari WHERE bina_turu=$1 AND giris_tipi='GİRİŞ'", [t.bina_turu]);
-            girisR.rows.forEach(({ soru }) => {
-                if (degerler[soru] == null || String(degerler[soru]).trim() === '') degerler[soru] = '-';
-            });
-            // Üst bilgi (ATERKO antet) her sayfada görünsün
-            let teknikOpts = {};
-            const antetYol = path.join(__dirname, 'templates', 'images', 'image36.png');
-            if (fs.existsSync(antetYol)) {
-                const antetB64 = 'data:image/png;base64,' + fs.readFileSync(antetYol).toString('base64');
-                teknikOpts = {
-                    headerTemplate: `<div style="width:100%;padding:2mm 12mm 0;box-sizing:border-box;"><img src="${antetB64}" style="width:100%"></div>`,
-                    margin: { top: '26mm', bottom: '10mm', left: '10mm', right: '10mm' }
-                };
-            }
-            pdfBuffer = await renderToPDF(sablon, degerler, teknikOpts);
+            // Antet sadece ilk sayfada (şablonun başında) — her sayfada tekrar etmez
+            pdfBuffer = await renderToPDF(sablon, degerler);
         } else {
             // Özel şablonu olmayan türler için form tanımlarından dinamik üretim
             const ftR = await pool.query(`
