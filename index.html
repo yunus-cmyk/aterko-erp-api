@@ -1320,6 +1320,9 @@
             <div class="d-flex align-items-center gap-2">
                 <select id="tsBinaTur" class="form-select form-select-sm" style="width:auto" onchange="tsSablonYukle()">
                     <option value="Prefabrik">Prefabrik</option>
+                    <option value="Konteyner">Konteyner</option>
+                    <option value="Hafif Çelik">Hafif Çelik</option>
+                    <option value="Yapısal Çelik">Yapısal Çelik</option>
                 </select>
                 <span id="tsDurum" class="small text-muted"></span>
             </div>
@@ -3995,8 +3998,33 @@ async function tsSablonYukle() {
     tsSablonCache = (r && r.satirlar) || [];
     document.getElementById('tsDurum').textContent = tsSablonCache.length + ' satır';
     tsSeciliId = null;
+    // Boş tür → çoğaltma arayüzü
+    if (tsSablonCache.length === 0) {
+        document.getElementById('tsListe').innerHTML = '<div class="text-muted text-center p-4">Bu tür henüz boş</div>';
+        const turler = ['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik'].filter(x => x !== bt);
+        document.getElementById('tsEditor').innerHTML =
+            `<div class="text-center p-4">
+                <i class="bi bi-files text-secondary" style="font-size:2.5rem"></i>
+                <p class="mt-2 mb-1"><b>${bt}</b> türü henüz boş.</p>
+                <p class="small text-muted mb-3">Mevcut bir türden çoğaltarak başlayın, sonra farklılıkları düzenleyin.</p>
+                <div class="d-flex justify-content-center align-items-center gap-2">
+                    <select id="tsKaynak" class="form-select form-select-sm" style="width:auto">${turler.map(t => `<option value="${t}">${t}</option>`).join('')}</select>
+                    <span class="text-muted">→ ${bt}</span>
+                    <button class="btn btn-sm btn-dark" onclick="tsCogalt('${bt}')"><i class="bi bi-files me-1"></i>Çoğalt</button>
+                </div>
+            </div>`;
+        return;
+    }
     document.getElementById('tsEditor').innerHTML = '<div class="text-muted text-center p-5"><i class="bi bi-arrow-left me-1"></i>Soldan bir satır seçin</div>';
     tsSablonRender();
+}
+
+async function tsCogalt(hedef) {
+    const kaynak = document.getElementById('tsKaynak').value;
+    if (!confirm(`"${kaynak}" türündeki tüm form soruları ve teknik şartname şablonu "${hedef}" türüne kopyalanacak. Devam edilsin mi?`)) return;
+    const r = await secureFetch('/teknik-sartname-cogalt', { method: 'POST', body: JSON.stringify({ kaynak, hedef }) });
+    if (r && r.ok) { showToast(r.mesaj, 'success'); tsSablonYukle(); }
+    else showToast((r && r.hata) || 'Çoğaltma hatası', 'error');
 }
 
 function tsSablonRender() {

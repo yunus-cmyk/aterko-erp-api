@@ -4860,6 +4860,43 @@ app.post('/api/teknik-sartname-sablonu-kaydet', yetkiKontrol, async (req, res, n
     } catch (e) { next(e); }
 });
 
+// Bir tablodaki bir bina türünün satırlarını başka türe kopyalar (id/guncelleme hariç, bina_turu hedefle)
+async function _binaTuruTabloCogalt(client, tablo, kaynak, hedef) {
+    const r = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name=$1 AND column_name NOT IN ('id','guncelleme') ORDER BY ordinal_position`,
+        [tablo]);
+    const cols = r.rows.map(x => `"${x.column_name}"`);
+    const sel = r.rows.map(x => x.column_name === 'bina_turu' ? '$2' : `"${x.column_name}"`);
+    return client.query(`INSERT INTO ${tablo} (${cols.join(',')}) SELECT ${sel.join(',')} FROM ${tablo} WHERE bina_turu=$1`, [kaynak, hedef]);
+}
+
+// Bina türü çoğalt: form_tanimlari + teknik_sartname_sablonu birlikte (transaction)
+app.post('/api/teknik-sartname-cogalt', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN çoğaltabilir.' });
+    }
+    const { kaynak, hedef } = req.body;
+    if (!kaynak || !hedef || kaynak === hedef) return res.json({ ok: false, hata: 'Geçerli bir kaynak ve farklı bir hedef gerekli.' });
+    try {
+        // Hedef boş olmalı (üzerine yazma)
+        const dolu = await pool.query(
+            "SELECT (SELECT count(*) FROM form_tanimlari WHERE bina_turu=$1)::int f, (SELECT count(*) FROM teknik_sartname_sablonu WHERE bina_turu=$1)::int t", [hedef]);
+        if (dolu.rows[0].f > 0 || dolu.rows[0].t > 0)
+            return res.json({ ok: false, hata: `"${hedef}" zaten dolu (form ${dolu.rows[0].f}, şablon ${dolu.rows[0].t} satır). Önce boşaltılmalı.` });
+        const kay = await pool.query("SELECT (SELECT count(*) FROM teknik_sartname_sablonu WHERE bina_turu=$1)::int t", [kaynak]);
+        if (kay.rows[0].t === 0) return res.json({ ok: false, hata: `Kaynak "${kaynak}" şablonu boş.` });
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const f = await _binaTuruTabloCogalt(client, 'form_tanimlari', kaynak, hedef);
+            const s = await _binaTuruTabloCogalt(client, 'teknik_sartname_sablonu', kaynak, hedef);
+            await client.query('COMMIT');
+            res.json({ ok: true, mesaj: `"${kaynak}" → "${hedef}" çoğaltıldı (${f.rowCount} form sorusu, ${s.rowCount} şablon satırı).`, form: f.rowCount, sablon: s.rowCount });
+        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    } catch (e) { next(e); }
+});
+
 app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
         return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
