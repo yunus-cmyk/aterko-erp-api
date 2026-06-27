@@ -1343,6 +1343,13 @@
                 <div id="tsEditor" class="border rounded p-3" style="background:#fafafa;min-height:300px">
                     <div class="text-muted text-center p-5"><i class="bi bi-arrow-left me-1"></i>Soldan bir satır seçin</div>
                 </div>
+                <div class="border rounded p-2 mt-2" style="background:#fafafa">
+                    <div class="d-flex justify-content-between align-items-center gap-2">
+                        <span class="small fw-semibold text-nowrap"><i class="bi bi-braces me-1"></i>Kullanılabilir Alanlar <span class="text-muted fw-normal">(tıkla → metne ekle)</span></span>
+                        <input id="tsAlanAra" class="form-control form-control-sm" style="max-width:160px" placeholder="ara..." oninput="tsAlanlarRender()">
+                    </div>
+                    <div id="tsAlanListe" class="mt-2 d-flex flex-wrap gap-1" style="max-height:130px;overflow:auto"><span class="text-muted small">Yükleniyor…</span></div>
+                </div>
             </div>
         </div>
     </div>
@@ -4017,6 +4024,16 @@ const tsEscAttr = s => tsEsc(s).replace(/"/g,'&quot;');
 
 async function tsSablonYukle() {
     const bt = document.getElementById('tsBinaTur').value;
+    // Aktif metin kutusu takibi (bir kez) — alan ekleme bunu hedefler
+    if (!tsFocusKurulu) {
+        document.getElementById('tsEditor').addEventListener('focusin', e => { if (e.target.tagName === 'TEXTAREA') tsAktifInput = e.target; });
+        tsFocusKurulu = true;
+    }
+    // Kullanılabilir alanları çek (bina türüne göre)
+    secureFetch('/teknik-sartname-alanlar/' + encodeURIComponent(bt)).then(ar => {
+        tsAlanlar = (ar && ar.ok) ? { form: ar.form || [], sistem: ar.sistem || [] } : { form: [], sistem: [] };
+        tsAlanlarRender();
+    });
     document.getElementById('tsListe').innerHTML = '<div class="text-muted text-center p-4">Yükleniyor...</div>';
     const r = await secureFetch('/teknik-sartname-sablonu/' + encodeURIComponent(bt));
     tsSablonCache = (r && r.satirlar) || [];
@@ -4217,6 +4234,33 @@ async function tsSatirSil(id) {
     const r = await secureFetch('/teknik-sartname-sablonu-sil/' + id, { method: 'DELETE' });
     if (r && r.ok) { showToast('Satır silindi', 'success'); tsSablonYukle(); }
     else showToast((r && r.hata) || 'Silme hatası', 'error');
+}
+
+// ===== Kullanılabilir alanlar ({{ }} ile) =====
+let tsAlanlar = { form: [], sistem: [] };
+let tsAktifInput = null;
+let tsFocusKurulu = false;
+function tsAlanlarRender() {
+    const arEl = document.getElementById('tsAlanAra');
+    const ara = (arEl ? arEl.value : '').toLocaleLowerCase('tr');
+    const chip = (alan, sistem) => {
+        if (ara && !alan.toLocaleLowerCase('tr').includes(ara)) return '';
+        const safe = alan.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        return `<button type="button" class="btn btn-sm ${sistem ? 'btn-outline-info' : 'btn-outline-secondary'} py-0 px-1" style="font-size:11px" onclick="tsAlanEkle('${safe}')" title="{{${tsEsc(alan)}}} ekle">${tsEsc(alan)}</button>`;
+    };
+    const html = tsAlanlar.sistem.map(a => chip(a, true)).join('') + tsAlanlar.form.map(a => chip(a, false)).join('');
+    const liste = document.getElementById('tsAlanListe');
+    if (liste) liste.innerHTML = html || '<span class="text-muted small">Eşleşen alan yok</span>';
+}
+function tsAlanEkle(alan) {
+    const ta = tsAktifInput;
+    if (!ta || !document.body.contains(ta)) { showToast('Önce eklemek istediğin metin kutusuna tıkla.', 'error'); return; }
+    const ek = '{{' + alan + '}}';
+    const s = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
+    const e = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
+    ta.value = ta.value.slice(0, s) + ek + ta.value.slice(e);
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = s + ek.length;
 }
 
 // ============================================================================

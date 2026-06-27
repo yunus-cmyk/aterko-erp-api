@@ -4859,6 +4859,20 @@ app.post('/api/teknik-sartname-sablonu-ekle', yetkiKontrol, async (req, res, nex
     } catch (e) { next(e); }
 });
 
+// Teknik şartname içeriğinde {{}} ile kullanılabilecek alanlar (form soruları + sistem)
+app.get('/api/teknik-sartname-alanlar/:binaTuru', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(
+            "SELECT DISTINCT soru FROM form_tanimlari WHERE bina_turu=$1 AND soru IS NOT NULL AND soru<>'' ORDER BY soru",
+            [req.params.binaTuru]);
+        res.json({
+            ok: true,
+            form: r.rows.map(x => x.soru),
+            sistem: ['Proje No', 'Müşteri Adı', 'Proje Adı', 'Bina Yeri', 'Nakliye', 'Bina Adı', 'Bina Tipi', 'Kat Yüksekliği', 'Kat Adedi', 'Büyüklük', 'TARİH', 'DÜZENLEYEN', 'KOD']
+        });
+    } catch (e) { next(e); }
+});
+
 // Teknik şartname şablonundan satır sil
 app.delete('/api/teknik-sartname-sablonu-sil/:id', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
