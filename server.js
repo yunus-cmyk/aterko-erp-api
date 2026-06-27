@@ -3558,6 +3558,11 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
                 'TARİH': trTarih(new Date()), 'DÜZENLEYEN': req.user.adSoyad || '', 'KOD': `${t.proje_kodu}-${t.id}`,
                 ...(t.ek_veriler || {}) // form cevapları (Dış Duvar Kalınlığı (mm), Bina Tipi vb.)
             };
+            // Boş bırakılan GİRİŞ (serbest metin) alanlarına "-" koy
+            const girisR = await pool.query("SELECT soru FROM form_tanimlari WHERE bina_turu=$1 AND giris_tipi='GİRİŞ'", [t.bina_turu]);
+            girisR.rows.forEach(({ soru }) => {
+                if (degerler[soru] == null || String(degerler[soru]).trim() === '') degerler[soru] = '-';
+            });
             // Antet sadece ilk sayfada (şablonun başında) — her sayfada tekrar etmez
             pdfBuffer = await renderToPDF(sablon, degerler);
         } else {
