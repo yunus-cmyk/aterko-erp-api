@@ -171,6 +171,7 @@
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('kullanicilar')"><i class="bi bi-people me-2"></i>Kullanıcılar</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('roller')"><i class="bi bi-person-badge me-2"></i>Roller &amp; İzinler</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('formtanim')"><i class="bi bi-ui-checks me-2"></i>Form Tanımları</a></li>
+          <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('tssablon')"><i class="bi bi-file-earmark-text me-2"></i>Teknik Şartname Şablonu</a></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); setTab('bildirimayar')"><i class="bi bi-bell me-2"></i>Bildirim Yönetimi</a></li>
           <li><hr class="dropdown-divider"></li>
           <li><a class="dropdown-item" href="#" onclick="event.preventDefault(); openSimulasyonModal()"><i class="bi bi-incognito me-2"></i>Rol Simülasyonu</a></li>
@@ -1308,6 +1309,33 @@
                         <tr><td colspan="9" class="text-center text-muted p-4">Yükleniyor...</td></tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TEKNİK ŞARTNAME ŞABLONU PANELİ -->
+    <div id="tssablonArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-file-earmark-text me-2 text-secondary"></i>Teknik Şartname Şablonu</h5>
+            <div class="d-flex align-items-center gap-2">
+                <select id="tsBinaTur" class="form-select form-select-sm" style="width:auto" onchange="tsSablonYukle()">
+                    <option value="Prefabrik">Prefabrik</option>
+                </select>
+                <span id="tsDurum" class="small text-muted"></span>
+            </div>
+        </div>
+        <div class="alert alert-info py-2 small mb-3"><i class="bi bi-info-circle me-1"></i>Bir satır seçin, müşteri seçimine göre çıkacak metinleri düzenleyin. Değişiklik kaydedince yeni üretilen tüm PDF'lere yansır.</div>
+        <div class="row g-3">
+            <div class="col-md-5">
+                <input id="tsArama" class="form-control form-control-sm mb-2" placeholder="Bölüm veya satır ara..." oninput="tsSablonRender()">
+                <div id="tsListe" class="border rounded" style="max-height:68vh;overflow:auto">
+                    <div class="text-muted text-center p-4">Yükleniyor...</div>
+                </div>
+            </div>
+            <div class="col-md-7">
+                <div id="tsEditor" class="border rounded p-3" style="background:#fafafa;min-height:300px">
+                    <div class="text-muted text-center p-5"><i class="bi bi-arrow-left me-1"></i>Soldan bir satır seçin</div>
+                </div>
             </div>
         </div>
     </div>
@@ -3281,6 +3309,7 @@ function sekmeGuard(tab) {
         'ozet':         'rapor.ozet',
         'audit':        'yonetim.audit_log',
         'formtanim':    'yonetim.form_tanimi',
+        'tssablon':     'yonetim.form_tanimi',
         'kullanicilar': 'yonetim.kullanicilar',
         'roller':       'yonetim.roller'
     };
@@ -3952,6 +3981,88 @@ async function formTanimiSil(id) {
 }
 
 // ============================================================================
+// TEKNİK ŞARTNAME ŞABLONU PANELİ
+// ============================================================================
+let tsSablonCache = [];
+let tsSeciliId = null;
+const tsEsc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const tsEscAttr = s => tsEsc(s).replace(/"/g,'&quot;');
+
+async function tsSablonYukle() {
+    const bt = document.getElementById('tsBinaTur').value;
+    document.getElementById('tsListe').innerHTML = '<div class="text-muted text-center p-4">Yükleniyor...</div>';
+    const r = await secureFetch('/teknik-sartname-sablonu/' + encodeURIComponent(bt));
+    tsSablonCache = (r && r.satirlar) || [];
+    document.getElementById('tsDurum').textContent = tsSablonCache.length + ' satır';
+    tsSeciliId = null;
+    document.getElementById('tsEditor').innerHTML = '<div class="text-muted text-center p-5"><i class="bi bi-arrow-left me-1"></i>Soldan bir satır seçin</div>';
+    tsSablonRender();
+}
+
+function tsSablonRender() {
+    const ara = (document.getElementById('tsArama').value || '').toLocaleLowerCase('tr');
+    const tipRozet = {
+        basit:    '<span class="badge bg-success-subtle text-success border border-success-subtle">seçenekli</span>',
+        sabit:    '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">sabit</span>',
+        karmasik: '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">gelişmiş</span>'
+    };
+    let html = '', sonBolum = null;
+    tsSablonCache.forEach(s => {
+        const eslesme = (s.soru||'').toLocaleLowerCase('tr').includes(ara) || (s.bolum_adi||'').toLocaleLowerCase('tr').includes(ara);
+        if (ara && !eslesme) return;
+        if (s.bolum_no !== sonBolum) {
+            sonBolum = s.bolum_no;
+            html += `<div class="px-2 py-1 fw-bold small bg-light border-top border-bottom">[${String(s.bolum_no).padStart(2,'0')}] ${tsEsc(s.bolum_adi)}</div>`;
+        }
+        const aktif = s.id === tsSeciliId ? 'bg-primary-subtle' : '';
+        html += `<a href="#" class="d-flex justify-content-between align-items-center px-3 py-2 small text-decoration-none border-bottom ${aktif}" onclick="event.preventDefault();tsSatirSec(${s.id})">
+            <span class="text-dark">${s.soru ? tsEsc(s.soru) : '<em class="text-muted">(başlıksız)</em>'}</span> ${tipRozet[s.tip]||''}</a>`;
+    });
+    document.getElementById('tsListe').innerHTML = html || '<div class="text-muted text-center p-4">Sonuç yok</div>';
+}
+
+function tsSatirSec(id) {
+    tsSeciliId = id;
+    tsSablonRender();
+    const s = tsSablonCache.find(x => x.id === id);
+    if (!s) return;
+    let html = `<div class="mb-3"><div class="fw-bold">${s.soru ? tsEsc(s.soru) : '(başlıksız satır)'}</div>
+        <div class="small text-muted">[${String(s.bolum_no).padStart(2,'0')}] ${tsEsc(s.bolum_adi)}</div></div>`;
+    if (s.tip === 'basit') {
+        html += `<div class="small text-muted mb-2">"<b>${tsEsc(s.karar)}</b>" seçimine göre yazılacak metinler:</div>`;
+        Object.entries(s.secenekler).forEach(([sec, metin]) => {
+            html += `<div class="mb-2"><label class="small fw-semibold d-block">${tsEsc(sec)}</label>
+                <textarea class="form-control form-control-sm ts-sec" data-sec="${tsEscAttr(sec)}" rows="2">${tsEsc(metin)}</textarea></div>`;
+        });
+    } else if (s.tip === 'sabit') {
+        html += `<div class="small text-muted mb-2">Bu satır her zaman aynı metni yazar:</div>
+            <textarea id="tsMetin" class="form-control form-control-sm" rows="4">${tsEsc(s.metin || '')}</textarea>`;
+    } else {
+        html += `<div class="alert alert-warning py-2 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Gelişmiş satır (hesap veya çoklu koşul içerir). {{...}} kodlarına dokunmadan sadece metinleri değiştirin.</div>
+            <textarea id="tsHam" class="form-control form-control-sm font-monospace" rows="6">${tsEsc(s.ham || '')}</textarea>`;
+    }
+    html += `<div class="mt-3 d-flex justify-content-end"><button class="btn btn-sm btn-dark fw-bold px-4" onclick="tsSatirKaydet(${id})"><i class="bi bi-save me-1"></i>Kaydet</button></div>`;
+    document.getElementById('tsEditor').innerHTML = html;
+}
+
+async function tsSatirKaydet(id) {
+    const s = tsSablonCache.find(x => x.id === id);
+    if (!s) return;
+    const govde = { id, tip: s.tip };
+    if (s.tip === 'basit') {
+        govde.karar = s.karar; govde.secenekler = {};
+        document.querySelectorAll('#tsEditor .ts-sec').forEach(t => govde.secenekler[t.dataset.sec] = t.value);
+    } else if (s.tip === 'sabit') {
+        govde.metin = document.getElementById('tsMetin').value;
+    } else {
+        govde.ham = document.getElementById('tsHam').value;
+    }
+    const r = await secureFetch('/teknik-sartname-sablonu-kaydet', { method:'POST', body: JSON.stringify(govde) });
+    if (r && r.ok) { showToast('Kaydedildi', 'success'); await tsSablonYukle(); tsSatirSec(id); }
+    else showToast((r && r.hata) || 'Kayıt hatası', 'error');
+}
+
+// ============================================================================
 // KULLANICILAR YÖNETİMİ
 // ============================================================================
 let kullanicilarCache = [];
@@ -4400,7 +4511,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','kullanicilarArea','rollerArea','bildirimAyarArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -4416,6 +4527,9 @@ function setTab(tab) {
     } else if (tab === 'formtanim') {
         document.getElementById("formtanimArea").classList.remove("d-none");
         formTanimlariYukle();
+    } else if (tab === 'tssablon') {
+        document.getElementById("tssablonArea").classList.remove("d-none");
+        tsSablonYukle();
     } else if (tab === 'kullanicilar') {
         document.getElementById("kullanicilarArea").classList.remove("d-none");
         kullanicilariYukle();

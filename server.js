@@ -3447,9 +3447,9 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
 
 // Teknik şartname PDF üret ve indir
 const { renderToPDF } = require('./lib/pdf-generator');
-// Teknik şartnameyi form tanımları + seçenek metni kütüphanesinden DİNAMİK üretir.
-// Her bina türü için ayrı şablon gerekmez — form_tanimlari neyse PDF onu yansıtır.
-function teknikSartnameHTML(t, ft, kullaniciAd) {
+// Dinamik üretici lib/teknik-sartname-dinamik.js'e taşındı (test edilebilirlik için)
+const { teknikSartnameHTML } = require('./lib/teknik-sartname-dinamik');
+function _teknikSartnameHTML_ESKI(t, ft, kullaniciAd) {
     const ek = t.ek_veriler || {};
     const veri = {
         ...ek,
@@ -3547,7 +3547,18 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
         const { renderToPDF, htmlToPDF } = require('./lib/pdf-generator');
         let pdfBuffer;
 
-        if (sablon && fs.existsSync(path.join(__dirname, 'templates', sablon + '.html'))) {
+        // 1) Panelden yönetilen DB şablonu (teknik_sartname_sablonu) varsa → dinamik üret
+        const tsSab = await pool.query(
+            "SELECT bolum_no,bolum_adi,bolum_gizle,bolum_aciklama,soru,cevap_sablonu FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
+            [t.bina_turu]);
+        if (tsSab.rowCount) {
+            const ft = tsSab.rows.map(x => ({
+                bolum_adi: x.bolum_adi, bolum_sirasi: x.bolum_no, soru: x.soru, cevap_sablonu: x.cevap_sablonu,
+                bolum_aciklama: x.bolum_aciklama,
+                bolum_gizle: x.bolum_gizle ? { alan: x.bolum_gizle.split('=')[0], deger: x.bolum_gizle.split('=')[1] } : null
+            }));
+            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ft, req.user.adSoyad), { margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' } });
+        } else if (sablon && fs.existsSync(path.join(__dirname, 'templates', sablon + '.html'))) {
             const trTarih = d => { const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
             const degerler = {
                 'Proje No': t.proje_kodu, 'Müşteri Adı': t.musteri_adi, 'Proje Adı': t.proje_adi,
@@ -3574,7 +3585,7 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
             if (ftR.rowCount === 0) {
                 return res.status(400).json({ ok: false, hata: `"${t.bina_turu}" bina türü için şablon veya form tanımı yok.` });
             }
-            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, req.user.adSoyad));
+            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, req.user.adSoyad), { margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' } });
         }
         const dosyaAdi = `${t.proje_kodu}-${t.bina_adi}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
         res.setHeader('Content-Type', 'application/pdf');
@@ -4803,6 +4814,40 @@ app.get('/api/form-tanimlari', yetkiKontrol, async (req, res, next) => {
         sql += ` ORDER BY bina_turu, bolum_sirasi, soru_sirasi`;
         const r = await pool.query(sql, params);
         res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// ---- TEKNİK ŞARTNAME ŞABLONU (panel: bölüm/satır + seçenek→metin editörü) ----
+app.get('/api/teknik-sartname-sablonu/:binaTuru', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { ayristir } = require('./lib/sartname-ayristir');
+        const r = await pool.query(
+            "SELECT id,bolum_no,bolum_adi,bolum_gizle,soru,satir_sira,cevap_sablonu FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
+            [req.params.binaTuru]);
+        const satirlar = r.rows.map(x => ({
+            id: x.id, bolum_no: x.bolum_no, bolum_adi: x.bolum_adi, bolum_gizle: x.bolum_gizle,
+            soru: x.soru, ...ayristir(x.cevap_sablonu)
+        }));
+        res.json({ ok: true, satirlar });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/teknik-sartname-sablonu-kaydet', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
+    }
+    try {
+        const { kur } = require('./lib/sartname-ayristir');
+        const { id, tip, karar, secenekler, metin, ham } = req.body;
+        let cevap_sablonu;
+        if (tip === 'basit') cevap_sablonu = kur(karar, secenekler || {});
+        else if (tip === 'sabit') cevap_sablonu = String(metin == null ? '' : metin);
+        else cevap_sablonu = String(ham == null ? '' : ham);
+        const r = await pool.query(
+            "UPDATE teknik_sartname_sablonu SET cevap_sablonu=$1, guncelleme=now() WHERE id=$2 RETURNING id,soru",
+            [cevap_sablonu, id]);
+        if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Satır bulunamadı.' });
+        res.json({ ok: true, satir: r.rows[0] });
     } catch (e) { next(e); }
 });
 
