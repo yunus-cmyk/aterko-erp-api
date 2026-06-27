@@ -1331,7 +1331,10 @@
         <div class="alert alert-info py-2 small mb-3"><i class="bi bi-info-circle me-1"></i>Bir satır seçin, müşteri seçimine göre çıkacak metinleri düzenleyin. Değişiklik kaydedince yeni üretilen tüm PDF'lere yansır.</div>
         <div class="row g-3">
             <div class="col-md-5">
-                <input id="tsArama" class="form-control form-control-sm mb-2" placeholder="Bölüm veya satır ara..." oninput="tsSablonRender()">
+                <div class="d-flex gap-2 mb-2">
+                    <input id="tsArama" class="form-control form-control-sm" placeholder="Bölüm veya satır ara..." oninput="tsSablonRender()">
+                    <button class="btn btn-sm btn-dark flex-shrink-0" onclick="tsYeniSatir()" title="Yeni satır / bölüm ekle"><i class="bi bi-plus-lg"></i> Yeni</button>
+                </div>
                 <div id="tsListe" class="border rounded" style="max-height:68vh;overflow:auto">
                     <div class="text-muted text-center p-4">Yükleniyor...</div>
                 </div>
@@ -4088,7 +4091,7 @@ function tsSatirSec(id) {
         html += `<div class="alert alert-warning py-2 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Gelişmiş satır (hesap veya çoklu koşul içerir). {{...}} kodlarına dokunmadan sadece metinleri değiştirin.</div>
             <textarea id="tsHam" class="form-control form-control-sm font-monospace" rows="6">${tsEsc(s.ham || '')}</textarea>`;
     }
-    html += `<div class="mt-3 d-flex justify-content-end"><button class="btn btn-sm btn-dark fw-bold px-4" onclick="tsSatirKaydet(${id})"><i class="bi bi-save me-1"></i>Kaydet</button></div>`;
+    html += `<div class="mt-3 d-flex justify-content-between"><button class="btn btn-sm btn-outline-danger" onclick="tsSatirSil(${id})"><i class="bi bi-trash me-1"></i>Sil</button><button class="btn btn-sm btn-dark fw-bold px-4" onclick="tsSatirKaydet(${id})"><i class="bi bi-save me-1"></i>Kaydet</button></div>`;
     document.getElementById('tsEditor').innerHTML = html;
 }
 
@@ -4125,6 +4128,93 @@ function tsSecSatirHTML(sec, metin) {
 }
 function tsSecekEkle() {
     document.getElementById('tsSecListe').insertAdjacentHTML('beforeend', tsSecSatirHTML('', ''));
+}
+
+// ===== Yeni satır / bölüm ekleme =====
+function tsYeniSatir() {
+    if (!tsSablonCache) return;
+    tsSeciliId = null; tsSablonRender();
+    const bolumler = [...new Map(tsSablonCache.map(s => [s.bolum_no, s.bolum_adi])).entries()].sort((a, b) => a[0] - b[0]);
+    const bolumOpt = bolumler.map(([no, ad]) => `<option value="${no}">[${String(no).padStart(2, '0')}] ${tsEsc(ad)}</option>`).join('');
+    document.getElementById('tsEditor').innerHTML =
+        `<div class="fw-bold mb-3"><i class="bi bi-plus-circle me-1"></i>Yeni Satır Ekle</div>
+        <div class="mb-2"><label class="small fw-semibold d-block">Bölüm</label>
+            <select id="tsYeniBolum" class="form-select form-select-sm" onchange="tsYeniBolumDegis()">
+                ${bolumOpt}<option value="__yeni__">+ Yeni Bölüm…</option>
+            </select></div>
+        <div id="tsYeniBolumAlani" class="row g-2 mb-2 d-none">
+            <div class="col-4"><input id="tsYeniBolumNo" type="number" class="form-control form-control-sm" placeholder="Sıra (örn 1)"></div>
+            <div class="col-8"><input id="tsYeniBolumAd" class="form-control form-control-sm" placeholder="Bölüm adı"></div>
+        </div>
+        <div class="mb-2"><label class="small fw-semibold d-block">Satır başlığı</label>
+            <input id="tsYeniSoru" class="form-control form-control-sm" placeholder="örn. Rüzgar Yükü"></div>
+        <div class="mb-2"><label class="small fw-semibold d-block">Tip</label>
+            <select id="tsYeniTip" class="form-select form-select-sm" onchange="tsYeniTipDegis()">
+                <option value="sabit">Sabit metin (her zaman aynı)</option>
+                <option value="basit">Seçenekli (seçime göre)</option>
+            </select></div>
+        <div id="tsYeniIcerik"></div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <button class="btn btn-sm btn-outline-secondary" onclick="tsSablonYukle()">İptal</button>
+            <button class="btn btn-sm btn-dark" onclick="tsYeniKaydet()"><i class="bi bi-plus-lg me-1"></i>Ekle</button>
+        </div>`;
+    tsYeniTipDegis();
+}
+function tsYeniBolumDegis() {
+    const yeni = document.getElementById('tsYeniBolum').value === '__yeni__';
+    document.getElementById('tsYeniBolumAlani').classList.toggle('d-none', !yeni);
+}
+function tsYeniTipDegis() {
+    const tip = document.getElementById('tsYeniTip').value;
+    const c = document.getElementById('tsYeniIcerik');
+    if (tip === 'sabit') {
+        c.innerHTML = `<label class="small fw-semibold d-block">Metin</label>
+            <textarea id="tsYeniMetin" class="form-control form-control-sm" rows="3" placeholder="Bu satırda her zaman görünecek metin"></textarea>`;
+    } else {
+        c.innerHTML = `<div class="mb-2"><label class="small fw-semibold d-block">Hangi soruya göre?</label>
+            <input id="tsYeniKarar" class="form-control form-control-sm" placeholder="örn. Bina Tipi"></div>
+            <label class="small fw-semibold d-block mb-1">Seçenekler</label>
+            <div id="tsSecListe"></div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="tsSecekEkle()"><i class="bi bi-plus-lg me-1"></i>Seçenek ekle</button>`;
+        tsSecekEkle();
+    }
+}
+async function tsYeniKaydet() {
+    const bt = document.getElementById('tsBinaTur').value;
+    const bolSel = document.getElementById('tsYeniBolum').value;
+    let bolum_no, bolum_adi, bolum_gizle = null;
+    if (bolSel === '__yeni__') {
+        bolum_no = parseInt(document.getElementById('tsYeniBolumNo').value);
+        bolum_adi = document.getElementById('tsYeniBolumAd').value.trim();
+        if (isNaN(bolum_no) || !bolum_adi) return showToast('Yeni bölüm için sıra no ve ad gerekli.', 'error');
+    } else {
+        bolum_no = parseInt(bolSel);
+        const m = tsSablonCache.find(s => s.bolum_no === bolum_no);
+        bolum_adi = m ? m.bolum_adi : ''; bolum_gizle = m ? m.bolum_gizle : null;
+    }
+    const soru = document.getElementById('tsYeniSoru').value.trim();
+    const tip = document.getElementById('tsYeniTip').value;
+    const govde = { bina_turu: bt, bolum_no, bolum_adi, bolum_gizle, soru, tip };
+    if (tip === 'sabit') govde.metin = document.getElementById('tsYeniMetin').value;
+    else {
+        govde.karar = (document.getElementById('tsYeniKarar').value || '').trim();
+        if (!govde.karar) return showToast('Seçenekli satır için "hangi soruya göre" gerekli.', 'error');
+        govde.secenekler = {};
+        document.querySelectorAll('#tsYeniIcerik .ts-sec-satir').forEach(row => {
+            const ad = row.querySelector('.ts-sec-ad').value.trim();
+            if (ad) govde.secenekler[ad] = row.querySelector('.ts-sec-metin').value;
+        });
+    }
+    const r = await secureFetch('/teknik-sartname-sablonu-ekle', { method: 'POST', body: JSON.stringify(govde) });
+    if (r && r.ok) { showToast(r.mesaj || 'Eklendi', 'success'); await tsSablonYukle(); tsSatirSec(r.id); }
+    else showToast((r && r.hata) || 'Ekleme hatası', 'error');
+}
+async function tsSatirSil(id) {
+    const s = tsSablonCache.find(x => x.id === id);
+    if (!confirm(`"${s ? s.soru : 'Bu satır'}" silinecek. Devam edilsin mi?`)) return;
+    const r = await secureFetch('/teknik-sartname-sablonu-sil/' + id, { method: 'DELETE' });
+    if (r && r.ok) { showToast('Satır silindi', 'success'); tsSablonYukle(); }
+    else showToast((r && r.hata) || 'Silme hatası', 'error');
 }
 
 // ============================================================================

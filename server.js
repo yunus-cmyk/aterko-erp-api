@@ -4839,6 +4839,36 @@ app.post('/api/teknik-sartname-cogalt', yetkiKontrol, async (req, res, next) => 
     } catch (e) { next(e); }
 });
 
+// Teknik şartname şablonuna yeni satır (ve gerekirse yeni bölüm) ekle
+app.post('/api/teknik-sartname-sablonu-ekle', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN ekleyebilir.' });
+    try {
+        const { kur } = require('./lib/sartname-ayristir');
+        const { bina_turu, bolum_no, bolum_adi, bolum_gizle, soru, tip, karar, secenekler, metin, ham } = req.body;
+        if (!bina_turu || !bolum_adi || bolum_no == null || bolum_no === '') return res.json({ ok: false, hata: 'Bina türü, bölüm no ve bölüm adı zorunlu.' });
+        let cevap_sablonu;
+        if (tip === 'basit') cevap_sablonu = kur(karar, secenekler || {});
+        else if (tip === 'sabit') cevap_sablonu = String(metin == null ? '' : metin);
+        else cevap_sablonu = String(ham == null ? '' : ham);
+        // satır sırası: o bölümün son sırası + 1
+        const sr = await pool.query("SELECT COALESCE(MAX(satir_sira),-1)+1 AS s FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2", [bina_turu, bolum_no]);
+        const r = await pool.query(
+            "INSERT INTO teknik_sartname_sablonu (bina_turu,bolum_no,bolum_adi,bolum_gizle,soru,satir_sira,cevap_sablonu) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id",
+            [bina_turu, bolum_no, bolum_adi, bolum_gizle || null, soru || '', sr.rows[0].s, cevap_sablonu]);
+        res.json({ ok: true, id: r.rows[0].id, mesaj: 'Satır eklendi.' });
+    } catch (e) { next(e); }
+});
+
+// Teknik şartname şablonundan satır sil
+app.delete('/api/teknik-sartname-sablonu-sil/:id', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
+    try {
+        const r = await pool.query("DELETE FROM teknik_sartname_sablonu WHERE id=$1 RETURNING soru", [req.params.id]);
+        if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Satır bulunamadı.' });
+        res.json({ ok: true, mesaj: 'Satır silindi.' });
+    } catch (e) { next(e); }
+});
+
 app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
         return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
