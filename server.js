@@ -3550,7 +3550,10 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
         const fesc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const pdfOpts = {
             margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' },
-            footerTemplate: `<div style="width:100%;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;text-align:right;">${fesc(t.proje_kodu)} / ${fesc(t.musteri_adi)} - ${fesc(t.proje_adi)} [ ${fesc(t.bina_adi)} ]</div>`
+            footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
+                `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
+                `<span>${fesc(t.proje_kodu)} / ${fesc(t.musteri_adi)} - ${fesc(t.proje_adi)} [ ${fesc(t.bina_adi)} ]</span>` +
+                `</div>`
         };
 
         // 1) Panelden yönetilen DB şablonu (teknik_sartname_sablonu) varsa → dinamik üret
