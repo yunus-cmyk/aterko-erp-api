@@ -4818,6 +4818,23 @@ async function _binaTuruTabloCogalt(client, tablo, kaynak, hedef) {
 }
 
 // Bina türü çoğalt: form_tanimlari + teknik_sartname_sablonu birlikte (transaction)
+// Bir bina türünü sıfırla: form_tanimlari + teknik_sartname_sablonu satırlarını siler (yeniden çoğaltmak için)
+app.delete('/api/teknik-sartname-turu-sifirla/:binaTuru', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN sıfırlayabilir.' });
+    const bt = req.params.binaTuru;
+    if (bt === 'Prefabrik') return res.json({ ok: false, hata: 'Prefabrik ana şablondur, sıfırlanamaz.' });
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const f = await client.query("DELETE FROM form_tanimlari WHERE bina_turu=$1", [bt]);
+            const s = await client.query("DELETE FROM teknik_sartname_sablonu WHERE bina_turu=$1", [bt]);
+            await client.query('COMMIT');
+            res.json({ ok: true, mesaj: `"${bt}" sıfırlandı (${f.rowCount} form sorusu, ${s.rowCount} şablon satırı silindi). Artık yeniden çoğaltabilirsiniz.` });
+        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+    } catch (e) { next(e); }
+});
+
 app.post('/api/teknik-sartname-cogalt', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
         return res.json({ ok: false, hata: 'Sadece ADMIN çoğaltabilir.' });

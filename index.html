@@ -1363,6 +1363,7 @@
                     <option value="Yapısal Çelik">Yapısal Çelik</option>
                 </select>
                 <span id="tsDurum" class="small text-muted"></span>
+                <button id="tsSifirlaBtn" class="btn btn-sm btn-outline-danger d-none" onclick="tsTurSifirla()" title="Bu türü temizle, yeniden çoğaltabilmek için"><i class="bi bi-arrow-counterclockwise me-1"></i>Sıfırla</button>
             </div>
         </div>
         <div class="alert alert-info py-2 small mb-3"><i class="bi bi-info-circle me-1"></i>Bir satır seçin, müşteri seçimine göre çıkacak metinleri düzenleyin. Değişiklik kaydedince yeni üretilen tüm PDF'lere yansır.</div>
@@ -4082,6 +4083,8 @@ async function tsSablonYukle() {
     const r = await secureFetch('/teknik-sartname-sablonu/' + encodeURIComponent(bt));
     tsSablonCache = (r && r.satirlar) || [];
     document.getElementById('tsDurum').textContent = tsSablonCache.length + ' satır';
+    const sbtn = document.getElementById('tsSifirlaBtn');
+    if (sbtn) sbtn.classList.toggle('d-none', !(bt !== 'Prefabrik' && tsSablonCache.length > 0));
     tsSeciliId = null;
     // Boş tür → çoğaltma arayüzü
     if (tsSablonCache.length === 0) {
@@ -4104,6 +4107,14 @@ async function tsSablonYukle() {
     tsSablonRender();
 }
 
+async function tsTurSifirla() {
+    const bt = document.getElementById('tsBinaTur').value;
+    if (!confirm(`"${bt}" türündeki TÜM form soruları ve teknik şartname şablonu silinecek. Sonrasında Prefabrik'ten yeniden çoğaltabilirsiniz.\n\nDevam edilsin mi?`)) return;
+    if (!confirm(`Son onay: "${bt}" içeriği tamamen silinecek (geri alınamaz).`)) return;
+    const r = await secureFetch('/teknik-sartname-turu-sifirla/' + encodeURIComponent(bt), { method: 'DELETE' });
+    if (r && r.ok) { showToast(r.mesaj || 'Sıfırlandı', 'success'); tsSablonYukle(); }
+    else showToast((r && r.hata) || 'Sıfırlama hatası', 'error');
+}
 async function tsCogalt(hedef) {
     const kaynak = document.getElementById('tsKaynak').value;
     if (!confirm(`"${kaynak}" türündeki tüm form soruları ve teknik şartname şablonu "${hedef}" türüne kopyalanacak. Devam edilsin mi?`)) return;
