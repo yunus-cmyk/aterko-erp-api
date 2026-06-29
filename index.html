@@ -7799,6 +7799,8 @@ function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
 
 // Sipariş düzenleme tetikleyici
 async function openSiparisDuzenle(siparisId) {
+    // Detay modalı açıksa kapat — düzenle modalı üstüne/altına binmesin
+    bootstrap.Modal.getInstance(document.getElementById('modalSiparisDetay'))?.hide();
     showLoading();
     // Sipariş başlık bilgisini cache'den al
     const sip = (window.siparislerGlobal || []).find(s => s.id === siparisId);
@@ -8764,8 +8766,9 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
         return;
     }
     const kalemler = detayR.data || [];
-    const kdv = parseInt(sip?.kdv_orani) || 20;
-    const para = sip?.para_birimi || 'TL';
+    // Para birimi/KDV güncel DB değerinden (endpoint başlığı) — cache (sip) güvenilmez olabilir
+    const kdv = parseInt(detayR.siparis?.kdv_orani ?? sip?.kdv_orani) || 20;
+    const para = detayR.siparis?.para_birimi || sip?.para_birimi || 'TL';
     let araToplam = 0;
     kalemler.forEach(k => { araToplam += parseFloat(k.siparis_miktari || 0) * parseFloat(k.birim_fiyat || 0); });
     const kdvTutar = araToplam * (kdv / 100);

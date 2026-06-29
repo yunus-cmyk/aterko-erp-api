@@ -1873,7 +1873,8 @@ app.get('/api/siparis-detay/:siparisId', yetkiKontrol, async (req, res, next) =>
             ORDER BY sk.id ASC
         `;
         const result = await pool.query(query, [siparisId]);
-        res.json({ ok: true, data: result.rows });
+        const bas = await pool.query("SELECT para_birimi, kdv_orani, durum, siparis_no FROM satinalma_siparisleri WHERE id=$1", [siparisId]);
+        res.json({ ok: true, data: result.rows, siparis: bas.rows[0] || null });
     } catch (error) { next(error); }
 });
 
