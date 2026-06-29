@@ -5296,6 +5296,10 @@ async function gunlukRaporPDF() {
     return { pdf, ozet: degerler };
 }
 
+async function gunlukRaporAyarOku() {
+    const r = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='gunluk_rapor'");
+    return r.rowCount ? r.rows[0].deger : { aktif: true, saat: '08:00', ek_alicilar: '' };
+}
 async function gunlukRaporGonder(testEmail) {
     if (!mailTransporter) { console.log('⚠️ Günlük rapor: mail kapalı'); return; }
     const { pdf, ozet } = await gunlukRaporPDF();
@@ -5305,7 +5309,10 @@ async function gunlukRaporGonder(testEmail) {
     } else {
         const r = await pool.query(`SELECT email FROM kullanicilar
             WHERE rol IN ('SATINALMA','ADMIN') AND durum='AKTIF' AND email IS NOT NULL`);
-        alicilar = [...new Set(r.rows.map(x => x.email))];
+        alicilar = r.rows.map(x => x.email);
+        const ayar = await gunlukRaporAyarOku();
+        if (ayar.ek_alicilar) String(ayar.ek_alicilar).split(/[,;\s]+/).filter(Boolean).forEach(e => alicilar.push(e));
+        alicilar = [...new Set(alicilar)];
     }
     if (!alicilar.length) { console.log('⚠️ Günlük rapor: alıcı yok'); return; }
     const bugun = ozet.TARIH;
@@ -5330,6 +5337,21 @@ async function gunlukRaporGonder(testEmail) {
     console.log(`🗓️ Günlük satınalma raporu gönderildi → ${alicilar.length} alıcı${testEmail ? ' (TEST)' : ''}`);
 }
 
+// Günlük rapor cron'unu panel ayarına göre (saat/aktif) kurar/yeniden kurar — yalnızca production
+let raporCronTask = null;
+async function raporCronKur() {
+    if (!(process.env.RENDER || process.env.NODE_ENV === 'production')) return;
+    const cronLib = require('node-cron');
+    if (raporCronTask) { raporCronTask.stop(); raporCronTask = null; }
+    const ayar = await gunlukRaporAyarOku();
+    if (!ayar.aktif) { console.log('🗓️ Günlük rapor KAPALI (panel ayarı).'); return; }
+    const [h, m] = (ayar.saat || '08:00').split(':').map(Number);
+    raporCronTask = cronLib.schedule(`${m} ${h} * * *`, () => {
+        gunlukRaporGonder().catch(e => console.error('🗓️ Günlük rapor hatası:', e.message));
+    }, { timezone: 'Europe/Istanbul' });
+    console.log(`🗓️ Günlük satınalma raporu zamanlandı: her gün ${ayar.saat} (TR)`);
+}
+
 // Manuel test (ADMIN) — raporu yalnızca isteyen kişiye gönderir
 app.post('/api/gunluk-rapor-test', yetkiKontrol, async (req, res, next) => {
     if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.status(403).json({ ok:false, hata:'Sadece ADMIN.' });
@@ -5337,6 +5359,31 @@ app.post('/api/gunluk-rapor-test', yetkiKontrol, async (req, res, next) => {
         await gunlukRaporGonder(req.user.email);
         res.json({ ok: true, mesaj: `Test raporu ${req.user.email} adresine gönderildi.` });
     } catch (e) { res.status(500).json({ ok:false, hata: e.message }); }
+});
+
+// Günlük rapor ayarı: oku
+app.get('/api/gunluk-rapor-ayar', yetkiKontrol, async (req, res, next) => {
+    try {
+        const ayar = await gunlukRaporAyarOku();
+        // Rol bazlı alıcı sayısını da bilgi olarak ver
+        const r = await pool.query("SELECT count(*)::int n FROM kullanicilar WHERE rol IN ('SATINALMA','ADMIN') AND durum='AKTIF' AND email IS NOT NULL");
+        res.json({ ok: true, ayar, rolAliciSayisi: r.rows[0].n });
+    } catch (e) { next(e); }
+});
+
+// Günlük rapor ayarı: kaydet (ADMIN) + cron'u yeniden kur
+app.post('/api/gunluk-rapor-ayar', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN değiştirebilir.' });
+    try {
+        const { aktif, saat, ek_alicilar } = req.body;
+        const saatGecerli = /^([01]\d|2[0-3]):[0-5]\d$/.test(saat || '');
+        const yeni = { aktif: !!aktif, saat: saatGecerli ? saat : '08:00', ek_alicilar: String(ek_alicilar || '').trim() };
+        await pool.query(
+            "INSERT INTO sistem_ayarlari (anahtar,deger,guncelleme) VALUES ('gunluk_rapor',$1,now()) ON CONFLICT (anahtar) DO UPDATE SET deger=$1, guncelleme=now()",
+            [JSON.stringify(yeni)]);
+        if (typeof raporCronKur === 'function') await raporCronKur();
+        res.json({ ok: true, ayar: yeni });
+    } catch (e) { next(e); }
 });
 
 // ============================================================================
@@ -6399,6 +6446,8 @@ async function semaGuvence() {
         await pool.query(`ALTER TABLE form_tanimlari ADD COLUMN IF NOT EXISTS kaynak_kolon TEXT`);
         await pool.query(`ALTER TABLE teknik_sartname_sablonu ADD COLUMN IF NOT EXISTS yeni_tablo BOOLEAN DEFAULT false`);
         await pool.query(`ALTER TABLE teknik_sartname_sablonu ADD COLUMN IF NOT EXISTS baslik_gizle BOOLEAN DEFAULT false`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS sistem_ayarlari (anahtar TEXT PRIMARY KEY, deger JSONB, guncelleme TIMESTAMPTZ DEFAULT now())`);
+        await pool.query(`INSERT INTO sistem_ayarlari (anahtar,deger) VALUES ('gunluk_rapor',$1) ON CONFLICT (anahtar) DO NOTHING`, [JSON.stringify({ aktif: true, saat: '08:00', ek_alicilar: '' })]);
 
         // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
         await pool.query(`
@@ -6465,12 +6514,8 @@ app.listen(PORT, async () => {
     if (process.env.RENDER || process.env.NODE_ENV === 'production') {
         setTimeout(() => bildirimleriOtomatikUret().catch(()=>{}), 10 * 1000);
         setInterval(() => bildirimleriOtomatikUret().catch(()=>{}), 60 * 60 * 1000);
-        // Günlük satınalma raporu (PDF) — her gün 08:00 Türkiye saati, Satınalma yetkilileri + Admin'e
-        const cron = require('node-cron');
-        cron.schedule('0 8 * * *', () => {
-            gunlukRaporGonder().catch(e => console.error('🗓️ Günlük rapor hatası:', e.message));
-        }, { timezone: 'Europe/Istanbul' });
-        console.log('🗓️ Günlük satınalma raporu zamanlandı: her gün 08:00 (TR)');
+        // Günlük satınalma raporu (PDF) — panel ayarına göre (saat/aktif), Satınalma yetkilileri + Admin'e
+        raporCronKur().catch(e => console.error('🗓️ Günlük rapor cron kurulamadı:', e.message));
     } else {
         console.log('🗓️ Zamanlanmış işler lokalde atlandı (yalnızca production çalışır).');
     }

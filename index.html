@@ -1237,6 +1237,34 @@
             <span class="badge bg-secondary">Hazırlanıyor</span> olanlar henüz sisteme bağlanmadı (yakında).
             Alıcı: rol seç (o roldeki herkese gider), <span class="badge bg-warning text-dark">⚡ Talebi açan kişi</span> (olaya özel), veya ekstra e-posta ekle.
         </div>
+        <!-- Günlük Satınalma Raporu kartı -->
+        <div class="card border shadow-sm mb-4">
+            <div class="card-header bg-white fw-bold"><i class="bi bi-envelope-paper me-2 text-primary"></i>Günlük Satınalma Raporu (PDF e-posta)</div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-auto">
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="grAktif">
+                            <label class="form-check-label small" for="grAktif">Otomatik gönderim açık</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label class="small fw-semibold d-block mb-1">Gönderim saati</label>
+                        <input type="time" id="grSaat" class="form-control form-control-sm" style="width:130px">
+                    </div>
+                    <div class="col-12 col-md">
+                        <label class="small fw-semibold d-block mb-1">Ek alıcılar <span class="text-muted fw-normal">(virgülle; rol dışı ekstra e-posta)</span></label>
+                        <input id="grEkAlicilar" class="form-control form-control-sm" placeholder="ornek@aterko.com, bir@aterko.com">
+                    </div>
+                </div>
+                <div class="small text-muted mt-2" id="grBilgi"></div>
+                <div class="d-flex gap-2 mt-3 flex-wrap">
+                    <button class="btn btn-sm btn-dark fw-bold" onclick="grAyarKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="grTestGonder()"><i class="bi bi-send me-1"></i>Şimdi bana test gönder</button>
+                </div>
+            </div>
+        </div>
+        <h6 class="fw-bold text-secondary mb-2"><i class="bi bi-bell me-2"></i>Olay Bildirimleri</h6>
         <div id="bildirimAyarListe"><div class="text-center text-muted p-4"><div class="spinner-border text-warning"></div></div></div>
     </div>
 
@@ -4580,6 +4608,33 @@ async function bildirimAyarYukle() {
     window.bildirimRoller = r.roller || [];
     window.bildirimKurallari = r.kurallar || [];
     renderBildirimAyar();
+    grAyarYukle();
+}
+
+// ---- Günlük Satınalma Raporu ayarı ----
+async function grAyarYukle() {
+    const r = await secureFetch('/gunluk-rapor-ayar');
+    if (!r || !r.ok) return;
+    document.getElementById('grAktif').checked = !!r.ayar.aktif;
+    document.getElementById('grSaat').value = r.ayar.saat || '08:00';
+    document.getElementById('grEkAlicilar').value = r.ayar.ek_alicilar || '';
+    document.getElementById('grBilgi').innerHTML = `<i class="bi bi-people me-1"></i>Rol bazlı alıcı (SATINALMA + ADMIN, aktif): <b>${r.rolAliciSayisi}</b> kişi — bunlara her zaman gider; yukarıya ekstra e-posta ekleyebilirsiniz.`;
+}
+async function grAyarKaydet() {
+    const govde = {
+        aktif: document.getElementById('grAktif').checked,
+        saat: document.getElementById('grSaat').value || '08:00',
+        ek_alicilar: document.getElementById('grEkAlicilar').value || ''
+    };
+    const r = await secureFetch('/gunluk-rapor-ayar', { method: 'POST', body: JSON.stringify(govde) });
+    if (r && r.ok) { showToast('Günlük rapor ayarı kaydedildi', 'success'); grAyarYukle(); }
+    else showToast((r && r.hata) || 'Kayıt hatası', 'error');
+}
+async function grTestGonder() {
+    showToast('Test raporu hazırlanıyor…', 'info');
+    const r = await secureFetch('/gunluk-rapor-test', { method: 'POST' });
+    if (r && r.ok) showToast(r.mesaj || 'Test gönderildi', 'success');
+    else showToast((r && r.hata) || 'Test hatası', 'error');
 }
 
 function renderBildirimAyar() {
