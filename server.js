@@ -6461,12 +6461,17 @@ app.listen(PORT, async () => {
     console.log(`🚀 API Sunucusu ${PORT} portunda Korumalı modda çalışıyor!`);
     await semaGuvence();
     // Bildirim otomasyonu: server'ın 10 saniye sonra ilk kontrolü, sonra her saat
-    setTimeout(() => bildirimleriOtomatikUret().catch(()=>{}), 10 * 1000);
-    setInterval(() => bildirimleriOtomatikUret().catch(()=>{}), 60 * 60 * 1000);
-    // Günlük satınalma raporu (PDF) — her gün 08:00 Türkiye saati, Satınalma yetkilileri + Admin'e
-    const cron = require('node-cron');
-    cron.schedule('0 8 * * *', () => {
-        gunlukRaporGonder().catch(e => console.error('🗓️ Günlük rapor hatası:', e.message));
-    }, { timezone: 'Europe/Istanbul' });
-    console.log('🗓️ Günlük satınalma raporu zamanlandı: her gün 08:00 (TR)');
+    // Zamanlanmış işler YALNIZCA production'da (Render). Lokal nodemon mükerrer mail/bildirim üretmesin.
+    if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+        setTimeout(() => bildirimleriOtomatikUret().catch(()=>{}), 10 * 1000);
+        setInterval(() => bildirimleriOtomatikUret().catch(()=>{}), 60 * 60 * 1000);
+        // Günlük satınalma raporu (PDF) — her gün 08:00 Türkiye saati, Satınalma yetkilileri + Admin'e
+        const cron = require('node-cron');
+        cron.schedule('0 8 * * *', () => {
+            gunlukRaporGonder().catch(e => console.error('🗓️ Günlük rapor hatası:', e.message));
+        }, { timezone: 'Europe/Istanbul' });
+        console.log('🗓️ Günlük satınalma raporu zamanlandı: her gün 08:00 (TR)');
+    } else {
+        console.log('🗓️ Zamanlanmış işler lokalde atlandı (yalnızca production çalışır).');
+    }
 });
