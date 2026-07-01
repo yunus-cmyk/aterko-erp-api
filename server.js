@@ -1694,6 +1694,93 @@ async function talepBol(client, orijinalTalepId, kalanKalemler) {
     return { yeniTalepId, yeniTalepNo, altSira: yeniAltSira };
 }
 
+// Sipariş düzenlemede kalem miktarı değişince farkı "kalan alt-talep" ile dengeler (TOPLAM KORUNUR).
+//  • Azaltma → serbest kalan miktarı MEVCUT kalan alt-talebe ekler (aynı ürün satırına); o üründe/altta
+//    açık kalan yoksa yeni alt-talep açar (talepBol). Yeni alt-talep GEREKSİZ yere çoğalmaz.
+//  • Artırma → kalandan düşer (üst sınır = sipariş edilen + kalan; onaylı toplamı aşamaz).
+async function kalemMiktarSenkronla(client, siparisKalemId, yeniMiktar) {
+    // Sipariş kaleminin bağlı olduğu (sipariş edilen) talep ürünü A
+    const aR = await client.query(`
+        SELECT sk.siparis_miktari AS eski, tu.id AS a_id, tu.talep_id,
+               tu.stok_kart_id, tu.ozel_urun_adi, tu.ozel_urun_birim, tu.aciklama
+        FROM siparis_kalemleri sk JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+        WHERE sk.id = $1`, [siparisKalemId]);
+    if (aR.rowCount === 0) return { hata: 'Sipariş kalemi bulunamadı.' };
+    const A = aR.rows[0];
+    const eski = parseFloat(A.eski) || 0;
+    const delta = yeniMiktar - eski;
+
+    // Root talep (parent yoksa kendisi)
+    const tR = await client.query('SELECT parent_talep_id, id FROM satinalma_talepleri WHERE id=$1', [A.talep_id]);
+    const root = tR.rows[0].parent_talep_id || tR.rows[0].id;
+
+    // Aynı ürünün AÇIK (henüz sipariş edilmemiş) kalan kalemi — aile içinde, A hariç
+    const urunSql = A.stok_kart_id != null ? 'tu.stok_kart_id = $3' : 'tu.ozel_urun_adi = $3';
+    const urunVal = A.stok_kart_id != null ? A.stok_kart_id : A.ozel_urun_adi;
+    const rR = await client.query(`
+        SELECT tu.id, tu.miktar, tu.talep_id FROM talep_urunleri tu
+        JOIN satinalma_talepleri t ON tu.talep_id = t.id
+        WHERE (t.id = $1 OR t.parent_talep_id = $1) AND tu.id <> $2
+          AND ${urunSql}
+          AND tu.durum IN ('ONAY BEKLİYOR','ONAYLANDI','İŞLEME ALINDI','TEKLİF İSTENDİ')
+        ORDER BY t.id DESC LIMIT 1`, [root, A.a_id, urunVal]);
+    const R = rR.rows[0] || null;
+    const kalanMiktar = R ? (parseFloat(R.miktar) || 0) : 0;
+
+    // Üst sınır: sipariş edilen + kalan (onaylı toplam korunur)
+    const capToplam = eski + kalanMiktar;
+    if (yeniMiktar > capToplam + 0.001) {
+        return { hata: `Kalem miktarı toplam talep miktarını (${capToplam}) aşamaz.` };
+    }
+
+    // Sipariş kalemini + sipariş edilen talep ürününü yeni miktara ayarla (senkron)
+    await client.query('UPDATE siparis_kalemleri SET siparis_miktari=$1 WHERE id=$2', [yeniMiktar, siparisKalemId]);
+    await client.query('UPDATE talep_urunleri SET miktar=$1 WHERE id=$2', [yeniMiktar, A.a_id]);
+
+    const etkilenen = new Set([A.talep_id]);
+
+    if (delta < -0.001) {
+        // AZALTMA: serbest kalan miktarı kalan alt-talebe EKLE
+        const serbest = -delta;
+        if (R) {
+            await client.query('UPDATE talep_urunleri SET miktar = COALESCE(miktar,0) + $1 WHERE id=$2', [serbest, R.id]);
+            etkilenen.add(R.talep_id);
+        } else {
+            // Aynı ürün yoksa: açık bir kalan alt-talep var mı? Varsa oraya yeni satır ekle
+            const sib = await client.query(`
+                SELECT t.id FROM satinalma_talepleri t
+                WHERE t.parent_talep_id = $1 AND COALESCE(t.durum,'') <> 'İPTAL'
+                  AND EXISTS (SELECT 1 FROM talep_urunleri x WHERE x.talep_id=t.id
+                              AND x.durum IN ('ONAY BEKLİYOR','ONAYLANDI','İŞLEME ALINDI','TEKLİF İSTENDİ'))
+                ORDER BY t.id DESC LIMIT 1`, [root]);
+            if (sib.rowCount) {
+                await client.query(`INSERT INTO talep_urunleri
+                    (talep_id, stok_kart_id, ozel_urun_adi, ozel_urun_birim, miktar, aciklama, durum)
+                    VALUES ($1,$2,$3,$4,$5,$6,'İŞLEME ALINDI')`,
+                    [sib.rows[0].id, A.stok_kart_id, A.ozel_urun_adi, A.ozel_urun_birim, serbest, A.aciklama]);
+                etkilenen.add(sib.rows[0].id);
+            } else {
+                // Hiç kalan alt-talep yok → yeni alt-talep aç
+                const bi = await talepBol(client, A.talep_id, [{
+                    stok_kart_id: A.stok_kart_id, ozel_urun_adi: A.ozel_urun_adi, ozel_urun_birim: A.ozel_urun_birim,
+                    miktar: serbest, aciklama: A.aciklama, durum: 'İŞLEME ALINDI'
+                }]);
+                if (bi) etkilenen.add(bi.yeniTalepId);
+            }
+        }
+    } else if (delta > 0.001 && R) {
+        // ARTIRMA: kalandan DÜŞ (cap kontrolü R'nin yeterli olduğunu garanti eder)
+        const kalanYeni = kalanMiktar - delta;
+        if (kalanYeni <= 0.001) await client.query('DELETE FROM talep_urunleri WHERE id=$1', [R.id]);
+        else await client.query('UPDATE talep_urunleri SET miktar=$1 WHERE id=$2', [kalanYeni, R.id]);
+        etkilenen.add(R.talep_id);
+    }
+
+    // Etkilenen taleplerin başlık durumunu kalemlerinden yeniden türet
+    for (const tid of etkilenen) await talepBaslikDurumGuncelle(client, tid);
+    return { ok: true };
+}
+
 // KDV oranını normalize eder: 0 (KDV muafiyeti) geçerli bir değerdir; eski `kdv_orani || 20`
 // kalıbı 0'ı yanlışlıkla %20 yapıyordu. Geçersiz/boş değerde %20 varsayılır.
 function normKdv(v) { const n = parseInt(v); return Number.isNaN(n) ? 20 : n; }
@@ -2259,24 +2346,15 @@ app.post('/api/siparis-guncelle', yetkiKontrol, async (req, res, next) => {
             teslim_adresi || null, siparis_notu || null, para_birimi || 'TL', normKdv(kdv_orani), id
         ]);
 
-        // Sipariş kalemlerini güncelle (birim_fiyat, siparis_miktari değişebilir)
+        // Sipariş kalemlerini güncelle: fiyat + miktar. Miktar değişimi kalan alt-talebe yansır (toplam korunur).
         for (const k of (kalemler || [])) {
             if (!k.siparis_kalem_id) continue;
             const yeniMiktar = parseFloat(k.siparis_miktari) || 0;
             const yeniFiyat = parseFloat(k.birim_fiyat) || 0;
             if (yeniMiktar <= 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem miktarı 0\'dan büyük olmalı.' }); }
-            // Onaylı talep miktarının üzerine çıkılamaz (siparişi şişirme engeli)
-            const tuR = await client.query('SELECT tu.miktar FROM siparis_kalemleri sk JOIN talep_urunleri tu ON sk.talep_urun_id=tu.id WHERE sk.id=$1', [k.siparis_kalem_id]);
-            const talepMiktar = parseFloat(tuR.rows[0]?.miktar);
-            if (!isNaN(talepMiktar) && yeniMiktar > talepMiktar + 0.001) {
-                await client.query('ROLLBACK');
-                return res.json({ ok: false, hata: `Kalem miktarı (${yeniMiktar}) talep miktarını (${talepMiktar}) aşamaz.` });
-            }
-            await client.query(`
-                UPDATE siparis_kalemleri
-                SET birim_fiyat=$1, siparis_miktari=$2
-                WHERE id=$3
-            `, [yeniFiyat, yeniMiktar, k.siparis_kalem_id]);
+            await client.query('UPDATE siparis_kalemleri SET birim_fiyat=$1 WHERE id=$2', [yeniFiyat, k.siparis_kalem_id]);
+            const sonuc = await kalemMiktarSenkronla(client, k.siparis_kalem_id, yeniMiktar);
+            if (sonuc.hata) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: sonuc.hata }); }
         }
 
         await client.query('COMMIT');
