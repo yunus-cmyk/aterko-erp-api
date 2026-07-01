@@ -1446,6 +1446,30 @@
                         <li><b>Alan otomatik dolsun:</b> Form Tanımları > soru > Otomatik Dolum Kaynağı.</li>
                     </ol>
 
+                    <h6 class="fw-bold text-dark border-bottom pb-1"><i class="bi bi-arrow-left-right me-1"></i>"Seçenekli" mi, "Gelişmiş" mi?</h6>
+                    <p class="mb-1">İkisi de <b>aynı şeyin iki yüzü</b> — arka planda aynı yapıda saklanır, sadece görünüm farklı. <b>Sistem otomatik seçer</b>, sen seçmezsin:</p>
+                    <ul class="mb-2">
+                        <li><b>Seçenekli</b> → satır tek bir soruya bağlı ve her seçenek düz metin ise (kolay, kutu kutu)</li>
+                        <li><b>Gelişmiş</b> → hesap, birden çok koşul veya sabit+değişken metin karışıksa (ham <code>{{ }}</code>)</li>
+                    </ul>
+                    <p class="mb-2 small text-muted">Basit bir satırı zorla "gelişmiş" yapmak yerine sistem onu kolay gösterir; hesap içeren bir satır ise "seçenekli" kalıba sığmadığı için gelişmiş görünür. İkisi de gerekli.</p>
+
+                    <h6 class="fw-bold text-info border-bottom pb-1"><i class="bi bi-calculator me-1"></i>Formül Referansı</h6>
+                    <p class="mb-1"><b>Form Tanımları → Koşullar</b> (soruyu gizleme):</p>
+                    <ul class="mb-2 small">
+                        <li><code>Alan = Değer → SORU_GIZLE</code> — o cevap verilince soruyu gizler</li>
+                        <li>Birden fazlası <code>||</code> ile (herhangi biri): <code>Kat Adedi=1→SORU_GIZLE||Dış Merdiven=Yok→SORU_GIZLE</code></li>
+                    </ul>
+                    <p class="mb-1"><b>Teknik Şartname Şablonu → Gelişmiş</b> (<code>{{ }}</code> ile):</p>
+                    <ul class="mb-2 small">
+                        <li><b>Düz değer:</b> <code>{{Müşteri Adı}}</code> → alanın cevabını yazar</li>
+                        <li><b>Koşullu metin:</b> <code>{{EGER:Alan operatör Değer:yazılacak metin}}</code><br>
+                            operatörler: <code>=</code> eşit · <code>!=</code> değil · <code>~=</code> içerir (çoklu seçim) · <code>!~</code> içermez</li>
+                        <li><b>Hesap:</b> <code>{{HESAP:Alan-20:SONUC}}</code> → 80 &nbsp;·&nbsp; <code>:DENKLEM</code> → 100-20=80 (operatörler + − × ÷)</li>
+                        <li><b>Bölüm gizleme (nadir):</b> <code>{{HARICI:Alan=Yok}}</code></li>
+                    </ul>
+                    <div class="alert alert-light border py-2 small mb-3"><b>İpucu:</b> Alan adlarını ezberlemene gerek yok — Gelişmiş satırda metin kutusuna tıkla, alttaki <b>"Kullanılabilir Alanlar"</b> çiplerinden birine bas, <code>{{Alan}}</code> otomatik eklensin.</div>
+
                     <h6 class="fw-bold text-danger border-bottom pb-1"><i class="bi bi-star me-1"></i>Altın Kurallar</h6>
                     <ol class="mb-0">
                         <li><b>Metin mi?</b> → Şablon. <b>Soru/seçenek yapısı mı?</b> → Form Tanımları.</li>
