@@ -3594,7 +3594,7 @@ function bildirimRender(liste, okunmamis) {
         const okundu = b.okundu ? 'bg-white' : 'bg-light';
         const tarih = bildirimGoreceTarih(b.kayit_tarihi);
         const linkBtn = b.link
-            ? `<a href="${esc(b.link)}" class="stretched-link" onclick="bildirimTikla(${b.id}, '${esc(b.link)}', event)"></a>`
+            ? `<a href="${esc(b.link)}" class="stretched-link" onclick="bildirimTikla(${b.id}, '${escJs(b.link)}', event)"></a>`
             : `<a href="#" class="stretched-link" onclick="event.preventDefault(); bildirimOkundu([${b.id}]);"></a>`;
         return `<div class="dropdown-item-text position-relative px-3 py-2 border-bottom ${okundu}" style="cursor:pointer; white-space:normal;">
             <div class="d-flex gap-2">
@@ -5864,7 +5864,7 @@ function renderUretimPlan() {
                 'REDDEDİLDİ': 'danger', 'İPTAL': 'secondary'
             }[u.bagli_talep_durum] || 'secondary';
             baglıTalep = `
-                <a href="#" class="text-decoration-none" onclick="event.preventDefault(); setTab('satinalma'); setTimeout(()=>{switchSatinalmaSubTab('talepler'); setTimeout(()=>openTalepDetayModal(0, '${esc(u.bagli_talep_no)}'), 200);}, 200);"
+                <a href="#" class="text-decoration-none" onclick="event.preventDefault(); setTab('satinalma'); setTimeout(()=>{switchSatinalmaSubTab('talepler'); setTimeout(()=>openTalepDetayModal(0, '${escJs(u.bagli_talep_no)}'), 200);}, 200);"
                    title="Satınalma sekmesinde aç">
                     <span class="badge bg-info text-dark">${esc(u.bagli_talep_no)}</span>
                     ${u.bagli_talep_durum ? `<br><span class="badge bg-${talepDurumCls} mt-1" style="font-size:0.65rem;">${esc(u.bagli_talep_durum)}</span>` : ''}
@@ -6745,7 +6745,25 @@ function showToast(msg, type) {
     // Süre: hata 5sn, başarı 3sn
     setTimeout(() => toastEl.remove(), isError ? 5000 : 3000);
 }
-function esc(str) { const div = document.createElement("div"); div.textContent = str; return div.innerHTML; }
+// HTML kaçış: metin VE çift-tırnaklı öznitelik bağlamı için güvenli (& < > " ' hepsi kaçışlanır).
+function esc(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// Inline handler — onclick="foo('...')" içindeki tek-tırnaklı JS string argümanı için.
+// esc()'in yetmediği ' vektörünü de kapatır (HTML decode sonrası \' olarak kalır).
+function escJs(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/[\r\n]+/g, ' ');
+}
+// KDV oranı: 0 (KDV muafiyeti) geçerli bir değerdir; eski `|| 20` kalıbı 0'ı yanlışlıkla %20 yapıyordu.
+function normKdv(v) { const n = parseInt(v); return isNaN(n) ? 20 : n; }
 
 // --- YENİ NESİL SATINALMA FORM MOTORU ---
 
@@ -6928,7 +6946,7 @@ function renderTalepTable(talepler) {
               </div>
               <div class="d-flex align-items-center gap-3">
                 ${getSatinalmaDurumBadge(t.durum)}
-                <a href="#" onclick="event.preventDefault();openTalepDetayModal(${t.id},'${esc(t.talep_no)}')" class="fw-semibold text-decoration-none" style="white-space:nowrap;">İncele <i class="bi bi-chevron-right"></i></a>
+                <a href="#" onclick="event.preventDefault();openTalepDetayModal(${t.id},'${escJs(t.talep_no)}')" class="fw-semibold text-decoration-none" style="white-space:nowrap;">İncele <i class="bi bi-chevron-right"></i></a>
               </div>
             </div>
             <div class="d-flex flex-wrap align-items-center gap-3 text-secondary my-2" style="font-size:0.82rem;">
@@ -7489,13 +7507,18 @@ async function ntBekleyenDosyalariYukle(talepId) {
     const bekleyen = window.ntBekleyenDosyalar || [];
     if (!bekleyen.length || !talepId) return;
     const token = localStorage.getItem('aterko_token');
+    const basarisiz = [];
     for (const f of bekleyen) {
         try {
             const fd = new FormData(); fd.append('dosya', f);
-            await fetch(`${API_URL}/talep-dosya-yukle/${talepId}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd });
-        } catch (_) {}
+            const r = await fetch(`${API_URL}/talep-dosya-yukle/${talepId}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd });
+            if (!r.ok) basarisiz.push(f);
+        } catch (_) { basarisiz.push(f); }
     }
-    window.ntBekleyenDosyalar = [];
+    window.ntBekleyenDosyalar = basarisiz;   // başarısızları kuyrukta tut — sessizce kaybolmasın
+    if (basarisiz.length) {
+        showToast(`${basarisiz.length} dosya yüklenemedi. Talebi "Düzenle"den tekrar yükleyebilirsiniz.`, 'error');
+    }
 }
 
 async function openTalepDetayModal(talepId, talepNo) {
@@ -7638,7 +7661,7 @@ function renderTalepDetayLines(kalemler) {
                 <td>
                     ${isOzel ? '<span class="badge bg-light text-warning border border-warning me-1" style="font-size:0.65rem;">Özel Ürün</span>' : ''}
                     <span class="fw-bold text-dark">${esc(urunAdi)}</span>
-                    ${isOzel ? '' : `<button class="btn btn-sm btn-link p-0 ms-1 align-baseline" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${esc(urunAdi)}')" title="Tedarikçi fiyat karşılaştırması / geçmişi"><i class="bi bi-graph-up text-info"></i></button>`}
+                    ${isOzel ? '' : `<button class="btn btn-sm btn-link p-0 ms-1 align-baseline" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${escJs(urunAdi)}')" title="Tedarikçi fiyat karşılaştırması / geçmişi"><i class="bi bi-graph-up text-info"></i></button>`}
                     <span class="text-muted small d-block">${isOzel ? '-' : esc(k.stok_kodu)}</span>
                 </td>
                 <td class="text-center fw-bold text-primary">${formatTR(k.miktar)} <small class="text-muted fw-normal">${birim}</small></td>
@@ -7672,7 +7695,7 @@ async function sonAlisBilgisiYukle(stokKartId, hedefId, urunAdi) {
             <div class="fw-bold text-success small">${formatTR(son.birim_fiyat)} ${esc(son.para_birimi || '')}</div>
             <small class="text-muted">${esc(son.tedarikci_adi || '-')}</small>
             <small class="text-muted d-block">${tarih}</small>
-            <a href="#" class="small" onclick="event.preventDefault(); openFiyatGecmisiModal(${stokKartId}, '${esc(urunAdi || '').replace(/'/g, '\\\'')}');"><i class="bi bi-graph-up me-1"></i>Karşılaştır</a>
+            <a href="#" class="small" onclick="event.preventDefault(); openFiyatGecmisiModal(${stokKartId}, '${escJs(urunAdi || '').replace(/'/g, '\\\'')}');"><i class="bi bi-graph-up me-1"></i>Karşılaştır</a>
         `;
     } catch (e) {
         const el = document.getElementById(hedefId);
@@ -7843,6 +7866,10 @@ function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
     document.getElementById("soNakliye").value = s.teslim_nakliye || '';
     document.getElementById("soAdres").value = s.teslim_adresi || '';
     document.getElementById("soNot").value = s.siparis_notu || '';
+    // Para birimi + KDV: düzenlemede mevcut siparişten yükle, yeni siparişte varsayılana sıfırla.
+    // (Aksi halde select önceki değeri korur → USD/%10 sipariş yanlışlıkla TL/%20'ye dönerdi.)
+    document.getElementById("soPara").value = isEdit ? (s.para_birimi || 'TL') : 'TL';
+    document.getElementById("soKdv").value  = isEdit ? String(s.kdv_orani ?? 20) : '20';
 
     // Tedarikçileri yükle
     const tSelect = document.getElementById("soTedarikci");
@@ -7883,6 +7910,7 @@ async function openSiparisDuzenle(siparisId) {
 function renderSiparisFormLines(kalemler) {
     const tbody = document.getElementById("siparisKalemTableBody");
     tbody.innerHTML = "";
+    const pBirimi = (document.getElementById("soPara")?.value) || 'TL';
 
     kalemler.forEach(k => {
         const fiyat = k.birim_fiyat != null ? k.birim_fiyat : 0;
@@ -7902,10 +7930,10 @@ function renderSiparisFormLines(kalemler) {
                 <td width="180">
                     <div class="input-group input-group-sm">
                         <input type="number" class="form-control text-end so-f" value="${fiyat}" step="0.01" oninput="calculateSiparisRowTotal(this)">
-                        <span class="input-group-text currency-lbl">TL</span>
+                        <span class="input-group-text currency-lbl">${pBirimi}</span>
                     </div>
                 </td>
-                <td class="text-end p-3 fw-bold text-dark line-total" width="150">${formatTR(fiyat * k.miktar)} TL</td>
+                <td class="text-end p-3 fw-bold text-dark line-total" width="150">${formatTR(fiyat * k.miktar)} ${pBirimi}</td>
             </tr>
         `;
     });
@@ -8190,7 +8218,7 @@ function renderTeklifHavuzu(kalemler) {
                     <div class="d-flex align-items-start gap-2">
                         <input type="checkbox" class="teklif-chk form-check-input mt-1" data-talep-id="${k.talep_id}" value="${k.id}" onchange="teklifSecimGuncelle()">
                         <div>
-                            <div class="fw-semibold" style="font-size:0.85rem;">${urunKod}${esc(urunAd)}${k.stok_kart_id ? `<button class="btn btn-sm btn-link p-0 ms-1 align-baseline" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${esc(urunAd)}')" title="Tedarikçi fiyat karşılaştırması / geçmişi"><i class="bi bi-graph-up text-info"></i></button>` : ''}</div>
+                            <div class="fw-semibold" style="font-size:0.85rem;">${urunKod}${esc(urunAd)}${k.stok_kart_id ? `<button class="btn btn-sm btn-link p-0 ms-1 align-baseline" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${escJs(urunAd)}')" title="Tedarikçi fiyat karşılaştırması / geçmişi"><i class="bi bi-graph-up text-info"></i></button>` : ''}</div>
                             <div class="d-flex flex-wrap gap-3 mt-1" style="font-size:0.75rem;color:#8a8f96;">
                                 <span><i class="bi bi-box-seam"></i> ${formatTR(parseFloat(k.miktar))} ${esc(birim)}</span>
                                 <span><i class="bi bi-calendar3"></i> ${renderTerminTarihi(k.istenen_tarih)}</span>
@@ -8200,10 +8228,10 @@ function renderTeklifHavuzu(kalemler) {
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
                         ${getSatinalmaDurumBadge(k.durum)}
-                        <button class="btn btn-sm btn-outline-info py-0 px-2" onclick="openTeklifKayitlariModal(${k.id}, '${esc(urunAd)}')" title="Teklif kayıtlarını gör/yönet">
+                        <button class="btn btn-sm btn-outline-info py-0 px-2" onclick="openTeklifKayitlariModal(${k.id}, '${escJs(urunAd)}')" title="Teklif kayıtlarını gör/yönet">
                             <i class="bi bi-card-list me-1"></i><span id="teklifSay-${k.id}">…</span>
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="teklifKalemGeriAl(${k.id}, '${esc(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="teklifKalemGeriAl(${k.id}, '${escJs(urunAd)}')" title="Bu kalemi Onaylandı'ya geri çek (Talep Havuzu'na döner)"><i class="bi bi-arrow-counterclockwise"></i></button>
                     </div>
                 </div>
             </div>`;
@@ -8221,7 +8249,7 @@ function renderTeklifHavuzu(kalemler) {
                   <div class="text-secondary" style="font-size:0.85rem;">${proje}</div>
                 </div>
               </div>
-              <a href="#" onclick="event.preventDefault();openTalepDetayModal(${t.talep_id},'${esc(t.talep_no)}')" class="fw-semibold text-decoration-none" style="white-space:nowrap;">İncele <i class="bi bi-chevron-right"></i></a>
+              <a href="#" onclick="event.preventDefault();openTalepDetayModal(${t.talep_id},'${escJs(t.talep_no)}')" class="fw-semibold text-decoration-none" style="white-space:nowrap;">İncele <i class="bi bi-chevron-right"></i></a>
             </div>
             <div style="background:#f6f7f9;border-radius:8px;padding:2px 14px;margin-top:10px;">
               ${kalemHtml}
@@ -8363,7 +8391,7 @@ async function teklifKayitlariYukle() {
             <td class="small text-muted" style="max-width:200px;">${esc(t.yorum || '-')}</td>
             <td class="text-center"><span class="badge bg-${dc}">${dt}</span></td>
             <td class="text-center">
-                <button class="btn btn-sm btn-outline-primary py-0" onclick='teklifDuzenle(${JSON.stringify(t)})' title="Düzenle"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-sm btn-outline-primary py-0" onclick='teklifDuzenle(${JSON.stringify(t).replace(/'/g, "&apos;")})' title="Düzenle"><i class="bi bi-pencil"></i></button>
                 <button class="btn btn-sm btn-outline-danger py-0" onclick="teklifSil(${t.id})" title="Sil"><i class="bi bi-trash"></i></button>
             </td>
         </tr>`;
@@ -8474,7 +8502,7 @@ function renderArsivSiparisleri(siparisler) {
     }
     tb.innerHTML = siparisler.map(s => {
         const araToplam = parseFloat(s.ara_toplam || 0);
-        const kdv = parseInt(s.kdv_orani) || 20;
+        const kdv = normKdv(s.kdv_orani);
         const genel = araToplam * (1 + kdv / 100);
         return `<tr>
             <td class="fw-bold text-success">${esc(s.siparis_no)}</td>
@@ -8830,7 +8858,7 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
     }
     const kalemler = detayR.data || [];
     // Para birimi/KDV güncel DB değerinden (endpoint başlığı) — cache (sip) güvenilmez olabilir
-    const kdv = parseInt(detayR.siparis?.kdv_orani ?? sip?.kdv_orani) || 20;
+    const kdv = normKdv(detayR.siparis?.kdv_orani ?? sip?.kdv_orani);
     const para = detayR.siparis?.para_birimi || sip?.para_birimi || 'TL';
     let araToplam = 0;
     kalemler.forEach(k => { araToplam += parseFloat(k.siparis_miktari || 0) * parseFloat(k.birim_fiyat || 0); });
@@ -8842,7 +8870,7 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
         const sip2 = parseFloat(k.siparis_miktari) || 0;
         const tutar = sip2 * (parseFloat(k.birim_fiyat) || 0);
         const fiyatBtn = k.stok_kart_id
-            ? `<button class="btn btn-sm btn-link p-0 ms-1" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${esc(k.urun_adi)}')" title="Tedarikçi fiyat karşılaştırması"><i class="bi bi-graph-up text-info"></i></button>`
+            ? `<button class="btn btn-sm btn-link p-0 ms-1" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${escJs(k.urun_adi)}')" title="Tedarikçi fiyat karşılaştırması"><i class="bi bi-graph-up text-info"></i></button>`
             : '';
         return `<tr>
             <td class="small">${esc(k.stok_kodu)} ${fiyatBtn}<br><span class="text-muted">${esc(k.urun_adi)}</span></td>
@@ -8986,7 +9014,7 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
                                 <span class="fw-bold">${esc(d.dosya_adi)}</span>
                                 <span class="text-muted ms-2">${formatDosyaBoyut(d.boyut)} • ${esc(d.yukleyen_adsoyad || '-')} • ${formatTarihTR(d.kayit_tarihi)}</span>
                             </a>
-                            <button class="btn btn-sm btn-outline-danger py-0" onclick="deleteSiparisDosya(${d.id}, ${siparisId}, '${esc(siparisNo)}')" title="Sil"><i class="bi bi-trash"></i></button>
+                            <button class="btn btn-sm btn-outline-danger py-0" onclick="deleteSiparisDosya(${d.id}, ${siparisId}, '${escJs(siparisNo)}')" title="Sil"><i class="bi bi-trash"></i></button>
                         </div>
                     `).join('')
                 }
@@ -9214,7 +9242,7 @@ function renderSiparisTable(siparisler) {
     }
     cont.innerHTML = siparisler.map(s => {
         const araToplam = parseFloat(s.ara_toplam || 0);
-        const kdvOrani = parseInt(s.kdv_orani || 20);
+        const kdvOrani = normKdv(s.kdv_orani);
         const genelToplam = araToplam * (1 + kdvOrani / 100);
         const proje = s.proje ? `${esc(s.proje.kodu || '')}${s.proje.musteri ? ' / ' + esc(s.proje.musteri) : ''}${s.proje.adi ? ' - ' + esc(s.proje.adi) : ''}` : '';
         const kategoriChip = s.kategoriler
@@ -9236,7 +9264,7 @@ function renderSiparisTable(siparisler) {
               </div>
               <div class="d-flex align-items-center gap-3">
                 ${getSatinalmaDurumBadge(s.durum)}
-                <a href="#" onclick="event.preventDefault();openSiparisDetayModal(${s.id},'${esc(s.siparis_no)}')" class="fw-semibold text-decoration-none text-success" style="white-space:nowrap;">İncele <i class="bi bi-chevron-right"></i></a>
+                <a href="#" onclick="event.preventDefault();openSiparisDetayModal(${s.id},'${escJs(s.siparis_no)}')" class="fw-semibold text-decoration-none text-success" style="white-space:nowrap;">İncele <i class="bi bi-chevron-right"></i></a>
               </div>
             </div>
             <div class="d-flex flex-wrap align-items-center gap-3 text-secondary my-2" style="font-size:0.82rem;">
@@ -11200,7 +11228,7 @@ function renderGenelBakisAcikTalep(bilgi, container) {
         return;
     }
     const taleplerHtml = bilgi.talepler.map(t => {
-        return `<a href="#" class="badge bg-warning text-dark text-decoration-none me-1" onclick="event.preventDefault(); switchSatinalmaSubTab('talepler'); setTimeout(()=>openTalepDetayModal(${t.talep_id}, '${esc(t.talep_no)}'), 300);">${esc(t.talep_no)} (${t.kalem_sayisi} kalem)</a>`;
+        return `<a href="#" class="badge bg-warning text-dark text-decoration-none me-1" onclick="event.preventDefault(); switchSatinalmaSubTab('talepler'); setTimeout(()=>openTalepDetayModal(${t.talep_id}, '${escJs(t.talep_no)}'), 300);">${esc(t.talep_no)} (${t.kalem_sayisi} kalem)</a>`;
     }).join(' ');
     container.innerHTML = `<div class="alert alert-warning py-2 small mb-3">
         <i class="bi bi-hourglass-split me-1"></i><strong>Bu projede ${bilgi.talep_sayisi} açık talep var (${bilgi.toplam_kalem} kalem henüz siparişe alınmadı):</strong>
@@ -11219,7 +11247,7 @@ function renderGenelBakisSiparisler(liste, body) {
         const rowStyle = s.arsiv ? 'cursor:pointer; opacity:0.7; background:rgba(0,0,0,0.02);' : 'cursor:pointer;';
         const sipTarih = s.siparis_tarihi ? new Date(s.siparis_tarihi).toLocaleDateString('tr-TR') : '-';
         const termTarih = s.termin_tarihi ? new Date(s.termin_tarihi).toLocaleDateString('tr-TR') : '-';
-        return `<tr style="${rowStyle}" onclick="switchSatinalmaSubTab('${s.arsiv ? 'arsiv' : 'siparisler'}'); setTimeout(()=>openSiparisDetayModal(${s.id}, '${esc(s.siparis_no)}'), 300);">
+        return `<tr style="${rowStyle}" onclick="switchSatinalmaSubTab('${s.arsiv ? 'arsiv' : 'siparisler'}'); setTimeout(()=>openSiparisDetayModal(${s.id}, '${escJs(s.siparis_no)}'), 300);">
             <td class="fw-bold text-success">${esc(s.siparis_no)}${arsivRoz}</td>
             <td class="small">${esc(s.proje_kodu)}${s.musteri_adi ? ' / ' + esc(s.musteri_adi) : ''}<br><span class="text-muted">${esc(s.proje_adi)}</span></td>
             <td class="small">${esc(s.tedarikci_adi)}</td>

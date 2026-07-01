@@ -19,6 +19,16 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const pdfsDir = path.join(__dirname, 'pdfs');
 if (!fs.existsSync(pdfsDir)) fs.mkdirSync(pdfsDir);
 app.use('/pdfs', express.static(pdfsDir));
+// Kaynak kod / hassas dosyaların statik servis edilmesini engelle (express.static'ten ÖNCE).
+// Tarayıcı yalnızca inline + CDN script kullanır; hiçbir yerel .js/.csv'ye ihtiyaç yok.
+app.use((req, res, next) => {
+    const p = req.path.toLowerCase();
+    const blok = p.endsWith('.js') || p.endsWith('.csv')
+        || p === '/package.json' || p === '/package-lock.json' || p === '/render.yaml'
+        || p.startsWith('/lib/') || p.startsWith('/node_modules/') || p.startsWith('/.');
+    if (blok) return res.status(404).send('Not found');
+    next();
+});
 app.use(express.static(__dirname));
 
 // Gmail SMTP transporter (sipariş bildirimi için)
@@ -54,9 +64,16 @@ const pool = new Pool({
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "147823112806-t1er1p9uka98t04i26riqp5mtpp2ejri.apps.googleusercontent.com";
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
-const JWT_SECRET = process.env.JWT_SECRET || "aterko-gizli-anahtar-2026";
-if (!process.env.JWT_SECRET) {
-    console.warn("⚠️  JWT_SECRET ortam değişkeni tanımlı değil — fallback değer kullanılıyor. Üretim ortamında MUTLAKA ayarla!");
+// JWT_SECRET zorunlu — kaynak koda gömülü sabit anahtar YOK (ifşa riski).
+// Üretimde tanımlı değilse başlatma; geliştirmede oturumluk rastgele anahtar üret.
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+        console.error("❌ JWT_SECRET ortam değişkeni tanımlı değil — üretimde çalışılamaz. Sunucu durduruluyor.");
+        process.exit(1);
+    }
+    JWT_SECRET = require('crypto').randomBytes(32).toString('hex');
+    console.warn("⚠️  JWT_SECRET yok — geliştirme için oturumluk rastgele anahtar üretildi (her yeniden başlatmada değişir).");
 }
 // Üretim ortamında kritik ortam değişkenleri kontrolü
 ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_KEY'].forEach(k => {
@@ -265,6 +282,7 @@ app.post('/api/stok-hareket-kaydet', yetkiKontrol, async (req, res, next) => {
         await client.query('ROLLBACK');
         next(e);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -275,8 +293,12 @@ app.post('/api/stok-hareket-guncelle', yetkiKontrol, izinGerekli('stok', 'TAM'),
     try {
         await client.query('BEGIN');
         const { id, stok_kart_id, tip, miktar, proje_id, depo_id, aciklama } = req.body;
+        // Doğrulama (stok-hareket-kaydet ile simetri): miktar pozitif, tip yalnızca Giriş/Çıkış
+        const yeniMiktar = parseFloat(miktar);
+        if (isNaN(yeniMiktar) || yeniMiktar <= 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Miktar 0\'dan büyük olmalıdır.' }); }
+        if (tip !== 'Giriş' && tip !== 'Çıkış') { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Geçersiz hareket tipi (Giriş/Çıkış olmalı).' }); }
         const eskiR = await client.query('SELECT stok_kart_id, tip, miktar FROM stok_hareketleri WHERE id=$1', [id]);
-        if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Hareket bulunamadı.' });
+        if (eskiR.rowCount === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Hareket bulunamadı.' }); }
         const eski = eskiR.rows[0];
 
         // Eski etkiyi geri al
@@ -285,7 +307,6 @@ app.post('/api/stok-hareket-guncelle', yetkiKontrol, izinGerekli('stok', 'TAM'),
             [eskiDelta, eski.stok_kart_id]);
 
         // Yeni etkiyi uygula
-        const yeniMiktar = parseFloat(miktar);
         const yeniDelta = tip === 'Giriş' ? yeniMiktar : -yeniMiktar;
         await client.query('UPDATE stok_kartlari SET guncel_stok_miktari = COALESCE(guncel_stok_miktari,0) + $1 WHERE id=$2',
             [yeniDelta, stok_kart_id]);
@@ -304,6 +325,7 @@ app.post('/api/stok-hareket-guncelle', yetkiKontrol, izinGerekli('stok', 'TAM'),
         await client.query('ROLLBACK');
         next(e);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -328,6 +350,7 @@ app.delete('/api/stok-hareket-sil/:id', yetkiKontrol, izinGerekli('stok', 'TAM')
         await client.query('ROLLBACK');
         next(e);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -395,6 +418,7 @@ app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
         await client.query('ROLLBACK');
         next(error);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -567,6 +591,7 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
         await client.query('ROLLBACK');
         next(error);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -914,7 +939,7 @@ app.post('/api/teslimat-urun-talep-olustur', yetkiKontrol, async (req, res, next
             talep_no, talep_id: yeniTalepId
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Teslimat ürün listesinden ürün sil
@@ -1103,6 +1128,7 @@ app.post('/api/yeni-talep', yetkiKontrol, async (req, res, next) => {
         await client.query('ROLLBACK');
         next(error);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -1161,14 +1187,18 @@ async function talepBaslikDurumGuncelle(client, talepId) {
 }
 
 app.post('/api/talep-durum-guncelle', yetkiKontrol, async (req, res, next) => {
+    const { kalem_idler, yeni_durum } = req.body; // kalem_idler bir dizi (array) olacak
+    // Durum whitelist — serbest metin yerine yalnızca geçerli talep durumları kabul edilir
+    const GECERLI_DURUMLAR = ['ONAY BEKLİYOR', 'ONAYLANDI', 'İŞLEME ALINDI', 'TEKLİF İSTENDİ', 'İPTAL'];
+    if (!kalem_idler || kalem_idler.length === 0) {
+        return res.json({ ok: false, hata: "İşlem yapılacak ürün seçilmedi." });
+    }
+    if (!GECERLI_DURUMLAR.includes(yeni_durum)) {
+        return res.json({ ok: false, hata: `Geçersiz durum değeri: ${yeni_durum}` });
+    }
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const { kalem_idler, yeni_durum } = req.body; // kalem_idler bir dizi (array) olacak
-
-        if (!kalem_idler || kalem_idler.length === 0) {
-            return res.json({ ok: false, hata: "İşlem yapılacak ürün seçilmedi." });
-        }
 
         // Etkilenen talepleri bul (başlık durumunu sonra güncellemek için)
         const talepRes = await client.query(
@@ -1210,6 +1240,7 @@ app.post('/api/talep-durum-guncelle', yetkiKontrol, async (req, res, next) => {
         await client.query('ROLLBACK');
         next(error);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -1336,11 +1367,13 @@ async function getDovizKurlari() {
     try {
         const https = require('https');
         const xml = await new Promise((resolve, reject) => {
-            https.get('https://www.tcmb.gov.tr/kurlar/today.xml', (res) => {
+            const r = https.get('https://www.tcmb.gov.tr/kurlar/today.xml', (res) => {
                 let buf = '';
                 res.on('data', c => buf += c);
                 res.on('end', () => resolve(buf));
-            }).on('error', reject);
+            });
+            r.on('error', reject);
+            r.setTimeout(8000, () => r.destroy(new Error('TCMB zaman aşımı')));  // askıda kalmayı önle
         });
         // Basit regex parser (USD, EUR, GBP için <ForexSelling> ve <BanknoteSelling>)
         const parse = (currCode) => {
@@ -1525,28 +1558,42 @@ app.get('/api/satinalma-genel-ozet', yetkiKontrol, async (req, res, next) => {
             LEFT JOIN projeler p ON t.proje_id = p.id
             LEFT JOIN tedarikciler tdr ON s.tedarikci_id = tdr.id
             LEFT JOIN stok_kartlari skart ON tu.stok_kart_id = skart.id`;
+        // NOT: Tutar grafikleri farklı para birimlerini KARIŞTIRMAMALI. Her satır siparişin
+        // para birimiyle gelir; para birimi bazında toplanıp JS'te TL'ye çevrilir (tek ölçek = TL).
         const [durumDag, tedarikciDag, kategoriDag, aylikDag] = await Promise.all([
-            // Durum dağılımı (sipariş adedi)
+            // Durum dağılımı (sipariş adedi — para birimi bağımsız)
             pool.query(`SELECT COALESCE(s.durum,'-') as ad, COUNT(DISTINCT s.id)::int as deger
                 ${JOINS} WHERE ${where} GROUP BY s.durum ORDER BY deger DESC`, params),
-            // Tedarikçi dağılımı (tutar, ilk 8)
-            pool.query(`SELECT COALESCE(tdr.firma_adi,'-') as ad,
+            // Tedarikçi dağılımı (tutar — para birimi bazında ayrı, JS'te TL'ye çevrilir)
+            pool.query(`SELECT COALESCE(tdr.firma_adi,'-') as ad, COALESCE(s.para_birimi,'TL') as pb,
                 SUM(COALESCE(sk.siparis_miktari,0)*COALESCE(sk.birim_fiyat,0))::numeric as deger
-                ${JOINS} WHERE ${where} GROUP BY tdr.firma_adi ORDER BY deger DESC NULLS LAST LIMIT 8`, params),
-            // Kategori dağılımı (tutar, ilk 8)
-            pool.query(`SELECT COALESCE(NULLIF(TRIM(skart.kategori),''),'Diğer') as ad,
+                ${JOINS} WHERE ${where} GROUP BY tdr.firma_adi, s.para_birimi`, params),
+            // Kategori dağılımı (tutar)
+            pool.query(`SELECT COALESCE(NULLIF(TRIM(skart.kategori),''),'Diğer') as ad, COALESCE(s.para_birimi,'TL') as pb,
                 SUM(COALESCE(sk.siparis_miktari,0)*COALESCE(sk.birim_fiyat,0))::numeric as deger
-                ${JOINS} WHERE ${where} GROUP BY 1 ORDER BY deger DESC NULLS LAST LIMIT 8`, params),
+                ${JOINS} WHERE ${where} GROUP BY 1, s.para_birimi`, params),
             // Aylık harcama (tutar, kronolojik)
-            pool.query(`SELECT TO_CHAR(DATE_TRUNC('month', s.siparis_tarihi),'YYYY-MM') as ad,
+            pool.query(`SELECT TO_CHAR(DATE_TRUNC('month', s.siparis_tarihi),'YYYY-MM') as ad, COALESCE(s.para_birimi,'TL') as pb,
                 SUM(COALESCE(sk.siparis_miktari,0)*COALESCE(sk.birim_fiyat,0))::numeric as deger
-                ${JOINS} WHERE ${where} AND s.siparis_tarihi IS NOT NULL GROUP BY 1 ORDER BY 1 ASC`, params)
+                ${JOINS} WHERE ${where} AND s.siparis_tarihi IS NOT NULL GROUP BY 1, s.para_birimi`, params)
         ]);
+        // Para birimi satırlarını TL'ye çevirip 'ad' bazında birleştir (limit varsa en büyük N)
+        const tlTopla = (rows, limit) => {
+            const m = new Map();
+            rows.forEach(r => {
+                const tl = parseFloat(r.deger || 0) * (kurlar[r.pb] || 1);
+                m.set(r.ad, (m.get(r.ad) || 0) + tl);
+            });
+            let arr = [...m.entries()].map(([ad, deger]) => ({ ad, deger }));
+            arr.sort((a, b) => b.deger - a.deger);
+            return limit ? arr.slice(0, limit) : arr;
+        };
+        const aylikTL = tlTopla(aylikDag.rows, 0).sort((a, b) => a.ad < b.ad ? -1 : (a.ad > b.ad ? 1 : 0));
         const grafikler = {
             durum:     durumDag.rows.map(r => ({ ad: r.ad, deger: r.deger })),
-            tedarikci: tedarikciDag.rows.map(r => ({ ad: r.ad, deger: parseFloat(r.deger || 0) })),
-            kategori:  kategoriDag.rows.map(r => ({ ad: r.ad, deger: parseFloat(r.deger || 0) })),
-            aylik:     aylikDag.rows.map(r => ({ ad: r.ad, deger: parseFloat(r.deger || 0) }))
+            tedarikci: tlTopla(tedarikciDag.rows, 8),
+            kategori:  tlTopla(kategoriDag.rows, 8),
+            aylik:     aylikTL
         };
 
         res.json({ ok: true, siparisler, para_birimi_ozet, tl_toplam, kurlar, acik_talep_bilgisi, grafikler });
@@ -1647,6 +1694,10 @@ async function talepBol(client, orijinalTalepId, kalanKalemler) {
     return { yeniTalepId, yeniTalepNo, altSira: yeniAltSira };
 }
 
+// KDV oranını normalize eder: 0 (KDV muafiyeti) geçerli bir değerdir; eski `kdv_orani || 20`
+// kalıbı 0'ı yanlışlıkla %20 yapıyordu. Geçersiz/boş değerde %20 varsayılır.
+function normKdv(v) { const n = parseInt(v); return Number.isNaN(n) ? 20 : n; }
+
 app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
     const client = await pool.connect();
     try {
@@ -1696,6 +1747,8 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
             // Örn: 72738-T-5851 → 72738-S-5851
             const enKucukRootNo = (baseR.rows[0]?.root_no || baseR.rows[0]?.talep_no || '');
             const baseSiparisNo = enKucukRootNo.replace('-T-', '-S-');
+            // Eşzamanlı aynı-base sipariş oluşturmayı serileştir (çift sipariş_no önlenir)
+            await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [baseSiparisNo]);
             const c = await client.query(
                 `SELECT COUNT(*)::int as n FROM satinalma_siparisleri WHERE siparis_no = $1 OR siparis_no LIKE $1 || '-%'`,
                 [baseSiparisNo]
@@ -1704,6 +1757,7 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
             siparis_no = adet === 0 ? baseSiparisNo : `${baseSiparisNo}-${adet + 1}`;
         } else {
             // Fallback (talep yoksa eski format)
+            await client.query("SELECT pg_advisory_xact_lock(hashtext('SAT-S'))");
             const countRes = await client.query('SELECT COUNT(*) FROM satinalma_siparisleri');
             siparis_no = `SAT-S-${1001 + parseInt(countRes.rows[0].count)}`;
         }
@@ -1712,7 +1766,7 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
         const siparisInsert = await client.query(`
             INSERT INTO satinalma_siparisleri (siparis_no, tedarikci_id, siparis_tarihi, termin_tarihi, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi, kdv_orani, olusturan_adsoyad, olusturan_email)
             VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
-        `, [siparis_no, tedarikci_id, termin_tarihi || null, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi || 'TL', kdv_orani || 20, req.user.adSoyad || null, req.user.email || null]);
+        `, [siparis_no, tedarikci_id, termin_tarihi || null, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, para_birimi || 'TL', normKdv(kdv_orani), req.user.adSoyad || null, req.user.email || null]);
 
         const yeniSiparisId = siparisInsert.rows[0].id;
 
@@ -1812,6 +1866,7 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
         await client.query('ROLLBACK'); // En ufak hatada şantiyeyi ve talepleri eski haline döndür
         next(error);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -2057,7 +2112,7 @@ app.post('/api/talep-onayla', yetkiKontrol, async (req, res, next) => {
         });
         res.json({ ok: true, mesaj: 'Talep onaylandı.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Talebi reddet (gerekçeyle) — geriye dönük uyumluluk için
@@ -2175,7 +2230,7 @@ app.post('/api/talep-guncelle', yetkiKontrol, async (req, res, next) => {
         await client.query('COMMIT');
         res.json({ ok: true, mesaj: 'Talep güncellendi.', silinen_kalem: silinecek.length });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Sipariş düzenleme — sadece SİPARİŞ OLUŞTURULDU durumunda
@@ -2201,23 +2256,33 @@ app.post('/api/siparis-guncelle', yetkiKontrol, async (req, res, next) => {
             WHERE id=$9
         `, [
             tedarikci_id || null, termin_tarihi || null, odeme_vade || null, teslim_nakliye || null,
-            teslim_adresi || null, siparis_notu || null, para_birimi || 'TL', parseInt(kdv_orani) || 20, id
+            teslim_adresi || null, siparis_notu || null, para_birimi || 'TL', normKdv(kdv_orani), id
         ]);
 
         // Sipariş kalemlerini güncelle (birim_fiyat, siparis_miktari değişebilir)
         for (const k of (kalemler || [])) {
             if (!k.siparis_kalem_id) continue;
+            const yeniMiktar = parseFloat(k.siparis_miktari) || 0;
+            const yeniFiyat = parseFloat(k.birim_fiyat) || 0;
+            if (yeniMiktar <= 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem miktarı 0\'dan büyük olmalı.' }); }
+            // Onaylı talep miktarının üzerine çıkılamaz (siparişi şişirme engeli)
+            const tuR = await client.query('SELECT tu.miktar FROM siparis_kalemleri sk JOIN talep_urunleri tu ON sk.talep_urun_id=tu.id WHERE sk.id=$1', [k.siparis_kalem_id]);
+            const talepMiktar = parseFloat(tuR.rows[0]?.miktar);
+            if (!isNaN(talepMiktar) && yeniMiktar > talepMiktar + 0.001) {
+                await client.query('ROLLBACK');
+                return res.json({ ok: false, hata: `Kalem miktarı (${yeniMiktar}) talep miktarını (${talepMiktar}) aşamaz.` });
+            }
             await client.query(`
                 UPDATE siparis_kalemleri
                 SET birim_fiyat=$1, siparis_miktari=$2
                 WHERE id=$3
-            `, [parseFloat(k.birim_fiyat) || 0, parseFloat(k.siparis_miktari) || 0, k.siparis_kalem_id]);
+            `, [yeniFiyat, yeniMiktar, k.siparis_kalem_id]);
         }
 
         await client.query('COMMIT');
         res.json({ ok: true, mesaj: 'Sipariş güncellendi.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // ============================================================================
@@ -2646,7 +2711,7 @@ app.post('/api/siparis-gonder', yetkiKontrol, async (req, res, next) => {
                 const trNum = n => { const v = parseFloat(n) || 0; const p = v.toFixed(2).split('.'); return p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + p[1]; };
                 const trTarih = d => { if (!d) return '-'; const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
                 const para = sip.para_birimi || 'TL';
-                const kdv = parseInt(sip.kdv_orani) || 20;
+                const kdv = normKdv(sip.kdv_orani);
                 const kgR = await pool.query(`
                     SELECT sk.siparis_miktari, sk.birim_fiyat,
                            COALESCE(sc.stok_adi, tu.ozel_urun_adi) as urun_adi,
@@ -2758,7 +2823,7 @@ async function siparisPDFUret(siparisId, user) {
     };
 
     const para = s.para_birimi || 'TL';
-    const kdv = parseInt(s.kdv_orani) || 20;
+    const kdv = normKdv(s.kdv_orani);
     let araToplam = 0;
     const kalemSatirlari = kR.rows.map((k, i) => {
         const tutar = parseFloat(k.siparis_miktari) * parseFloat(k.birim_fiyat);
@@ -2845,7 +2910,7 @@ app.post('/api/siparis-iptal', yetkiKontrol, async (req, res, next) => {
         });
         res.json({ ok: true, mesaj: 'Sipariş iptal edildi, talepler geri alındı.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // ============================================================================
@@ -2945,12 +3010,14 @@ app.get('/api/urun-fiyat-gecmisi/:stokKartId', yetkiKontrol, async (req, res, ne
         // Tedarikçi başına özet de hesapla
         const tedarikciOzet = {};
         r.rows.forEach(row => {
-            const k = row.tedarikci_id || 0;
+            const pb = row.para_birimi || 'TL';
+            // Aynı tedarikçinin farklı para birimindeki fiyatları KARIŞTIRILMAMALI
+            const k = (row.tedarikci_id || 0) + '|' + pb;
             if (!tedarikciOzet[k]) {
                 tedarikciOzet[k] = {
                     tedarikci_id: row.tedarikci_id,
                     tedarikci_adi: row.tedarikci_adi || '-',
-                    para_birimi: row.para_birimi,
+                    para_birimi: pb,
                     son_fiyat: parseFloat(row.birim_fiyat),
                     son_tarih: row.siparis_tarihi,
                     fiyatlar: [],
@@ -3000,7 +3067,7 @@ app.post('/api/siparis-arsivle', yetkiKontrol, async (req, res, next) => {
                 : 'Sipariş arşivlendi.'
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 app.post('/api/siparis-gerial', yetkiKontrol, async (req, res, next) => {
@@ -3090,7 +3157,7 @@ app.post('/api/siparis-tamamen-sil', yetkiKontrol, async (req, res, next) => {
             mesaj: `Sipariş silindi. Talep ve kalemler İŞLEME ALINDI durumuna döndü${birlesen > 0 ? ` ve ${birlesen} bölünmüş kalem birleştirildi` : ''}.`
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // MAL KABUL: Otomatik Stok Hareketi + Kısmi Teslim + Tam Teslim Otomasyonu
@@ -3123,6 +3190,7 @@ app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
             WHERE s.id = $1 LIMIT 1
         `, [siparis_id]);
         const projeId = projeR.rows[0]?.proje_id || null;
+        const etkilenenTalepUrun = new Set();   // mal kabul sonrası talep başlık durumunu güncellemek için
 
         // Her kalemi işle
         for (const kalem of kalemler) {
@@ -3136,9 +3204,16 @@ app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
             `, [kalem.siparis_kalem_id]);
             if (skR.rowCount === 0) continue;
             const sk = skR.rows[0];
+            etkilenenTalepUrun.add(sk.talep_urun_id);
             const eskiTeslim = parseFloat(sk.teslim_alinan_miktar) || 0;
-            const yeniToplamTeslim = eskiTeslim + teslimMiktar;
             const siparisMiktari = parseFloat(sk.siparis_miktari) || 0;
+            const kalan = siparisMiktari - eskiTeslim;
+            // Fazla teslim engeli: girilen miktar kalan miktarı aşamaz (stok/maliyet şişmesin)
+            if (teslimMiktar > kalan + 0.001) {
+                await client.query('ROLLBACK');
+                return res.json({ ok: false, hata: `Teslim miktarı sipariş kalanını aşamaz (kalem kalan: ${kalan}, girilen: ${teslimMiktar}).` });
+            }
+            const yeniToplamTeslim = eskiTeslim + teslimMiktar;
             const tamMi = yeniToplamTeslim >= siparisMiktari;
 
             await client.query(`
@@ -3229,6 +3304,12 @@ app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
         await client.query('UPDATE satinalma_siparisleri SET durum = $1 WHERE id = $2',
             [yeniSiparisDurum, siparis_id]);
 
+        // Etkilenen taleplerin başlık durumunu kalemlerinden yeniden türet (mal kabul sonrası bayat kalmasın)
+        if (etkilenenTalepUrun.size) {
+            const tgR = await client.query('SELECT DISTINCT talep_id FROM talep_urunleri WHERE id = ANY($1::integer[])', [[...etkilenenTalepUrun]]);
+            for (const row of tgR.rows) await talepBaslikDurumGuncelle(client, row.talep_id);
+        }
+
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'RECEIVE', tablo: 'satinalma_siparisleri', kayit_id: parseInt(siparis_id), kayit_no: siparisBilgi.siparis_no, ozet: `Mal kabul (${yeniSiparisDurum}) — ${kalemler.length} kalem` });
         // Bildirim: MUHASEBE'ye + malı bekleyen talep sahibine
@@ -3257,6 +3338,7 @@ app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
         console.error('🔥 Mal Kabul Hatası:', error);
         next(error);
     } finally {
+        try { await client.query('ROLLBACK'); } catch (_) {}
         client.release();
     }
 });
@@ -3976,7 +4058,7 @@ app.post('/api/urun-listesi-kopyala', yetkiKontrol, async (req, res, next) => {
             mesaj: `${eklendi} kalem kopyalandı.` + (yayinda ? ' Yayında olduğu için ek ürün olarak işaretlendi, ADMIN onayını bekliyor.' : '')
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Teslimatı şablon olarak işaretle / kaldır
@@ -4054,7 +4136,7 @@ app.post('/api/urun-listesi-import', yetkiKontrol, async (req, res, next) => {
             basarili, eslesmeyen, eslesmeyenler
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Versiyon snapshot al (manuel veya otomatik tetikleyici çağırır)
@@ -4477,7 +4559,7 @@ app.post('/api/rol-izinleri-kaydet', yetkiKontrol, async (req, res, next) => {
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'rol_izinleri', ozet: `İzin matrisi güncellendi: ${n} hücre` });
         res.json({ ok: true, mesaj: `${n} izin kaydı güncellendi.` });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Kullanıcı modülü için rol listesi (DB'den)
@@ -4544,6 +4626,8 @@ function izinGerekli(modulKod, gerekliSeviye = 'OKUMA') {
 const ENDPOINT_IZIN_KURALLARI = [
     // Yönetim — sadece ADMIN (route handler'da zaten kontrol var, çift kontrol için bunlar burada)
     { pattern: /^\/api\/(kullanicilar|kullanici-|roller|rol-|modul-katalog|form-tanimi-|audit-log)/, modul: 'yonetim.kullanicilar', seviye: 'TAM' },
+    // Bildirim otomatik tetikleme — yönetim işi (genel bildirim kuralından ÖNCE)
+    { pattern: /^\/api\/bildirim-otomatik-tetikle/, modul: 'yonetim.kullanicilar', seviye: 'TAM' },
     // Bildirimler — herkes kendi bildirimlerini görür
     { pattern: /^\/api\/bildirim/, modul: 'anasayfa', seviye: 'OKUMA' },
     // Dashboard
@@ -4600,7 +4684,25 @@ const ENDPOINT_IZIN_KURALLARI = [
 
     // Teknik şartname / form
     { pattern: /^\/api\/teknik-sartname/, modul: 'projeler', seviye: 'YAZMA' },
-    { pattern: /^\/api\/form-tanimlari/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' }
+    { pattern: /^\/api\/form-tanimlari/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
+
+    // --- FAIL-OPEN KAPATMA: önceden hiçbir kurala uymayan yazma uçları ---
+    // Talepler (yeni-talep + dosya = YAZMA; durum/geri-al/arşiv/teklif yönetimi = TAM)
+    { pattern: /^\/api\/yeni-talep/, modul: 'satinalma.talepler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/talep-dosya-(yukle|sil)/, modul: 'satinalma.talepler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/(talep-durum-guncelle|talep-gerial|arsivden-cikar|teklif-kaydet|teklif-sil)/, modul: 'satinalma.talepler', seviye: 'TAM' },
+    // Siparişler (silme/fatura onayı = TAM; not = OKUMA)
+    { pattern: /^\/api\/(siparis-tamamen-sil|siparis-fatura-onayla)/, modul: 'satinalma.siparisler', seviye: 'TAM' },
+    { pattern: /^\/api\/siparis-not-sil/, modul: 'satinalma.siparisler', seviye: 'OKUMA' },
+    { pattern: /^\/api\/siparis\/[0-9]+\/not-ekle/, modul: 'satinalma.siparisler', seviye: 'OKUMA' },
+    // Mal Kabul (siparis-teslim-al = mal kabul işlemidir)
+    { pattern: /^\/api\/siparis-teslim-al/, modul: 'satinalma.mal_kabul', seviye: 'YAZMA' },
+    // Projeler
+    { pattern: /^\/api\/proje-guncelle/, modul: 'projeler', seviye: 'YAZMA' },
+    // Bina Listeleri
+    { pattern: /^\/api\/teslimat-sablon-isaretle/, modul: 'bina_listeleri', seviye: 'YAZMA' },
+    // Günlük rapor ayarları (yönetim)
+    { pattern: /^\/api\/gunluk-rapor/, modul: 'yonetim.kullanicilar', seviye: 'TAM' }
 ];
 
 // Global izin middleware — tüm /api endpoint'lerine uygulanır
@@ -4611,7 +4713,7 @@ async function genelIzinMiddleware(req, res, next) {
     if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return next();
 
     // /me/izinler ve auth gibi her zaman erişilebilir olmalı
-    if (req.path === '/me/izinler' || req.path === '/durum-guncelle') return next();
+    if (req.path === '/api/me/izinler' || req.path === '/api/durum-guncelle') return next();
 
     // Eşleşen ilk kural uygulanır
     for (const k of ENDPOINT_IZIN_KURALLARI) {
@@ -4630,7 +4732,11 @@ async function genelIzinMiddleware(req, res, next) {
         }
         return next();
     }
-    // Hiçbir kural eşleşmediyse erişim ver (whitelist olmadığı için)
+    // Hiçbir kural eşleşmediyse: YAZMA metodları (POST/PUT/PATCH/DELETE) REDDEDİLİR (deny-by-default),
+    // OKUMA (GET/HEAD) serbest bırakılır. Böylece kurala bağlanmamış yeni yazma uçları açıkta kalmaz.
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        return res.status(403).json({ ok: false, hata: 'Bu işlem için yetkiniz yok (tanımsız uç).', izin_hatasi: true });
+    }
     next();
 }
 
@@ -4832,7 +4938,7 @@ app.delete('/api/teknik-sartname-turu-sifirla/:binaTuru', yetkiKontrol, async (r
             const s = await client.query("DELETE FROM teknik_sartname_sablonu WHERE bina_turu=$1", [bt]);
             await client.query('COMMIT');
             res.json({ ok: true, mesaj: `"${bt}" sıfırlandı (${f.rowCount} form sorusu, ${s.rowCount} şablon satırı silindi). Artık yeniden çoğaltabilirsiniz.` });
-        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
     } catch (e) { next(e); }
 });
 
@@ -4858,7 +4964,7 @@ app.post('/api/teknik-sartname-cogalt', yetkiKontrol, async (req, res, next) => 
             const s = await _binaTuruTabloCogalt(client, 'teknik_sartname_sablonu', kaynak, hedef);
             await client.query('COMMIT');
             res.json({ ok: true, mesaj: `"${kaynak}" → "${hedef}" çoğaltıldı (${f.rowCount} form sorusu, ${s.rowCount} şablon satırı).`, form: f.rowCount, sablon: s.rowCount });
-        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
     } catch (e) { next(e); }
 });
 
@@ -4869,6 +4975,12 @@ app.post('/api/teknik-sartname-sablonu-ekle', yetkiKontrol, async (req, res, nex
         const { kur } = require('./lib/sartname-ayristir');
         const { bina_turu, bolum_no, bolum_adi, bolum_gizle, soru, tip, karar, secenekler, metin, ham, yeni_tablo, baslik_gizle } = req.body;
         if (!bina_turu || bolum_no == null || bolum_no === '') return res.json({ ok: false, hata: 'Bina türü ve bölüm no zorunlu.' });
+        // Çakışma kontrolü: bu bölüm no zaten FARKLI adlı bir bölüme aitse reddet (PDF'te birleşmesinler)
+        if (bolum_adi && String(bolum_adi).trim()) {
+            const vc = await pool.query("SELECT DISTINCT bolum_adi FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2 AND COALESCE(bolum_adi,'')<>''", [bina_turu, bolum_no]);
+            const farkli = vc.rows.find(x => (x.bolum_adi || '').trim() !== String(bolum_adi).trim());
+            if (farkli) return res.json({ ok: false, hata: `Bölüm no ${bolum_no} zaten "${farkli.bolum_adi}" bölümüne ait. Farklı bir bölüm için başka numara seçin (aksi halde PDF'te birleşirler).` });
+        }
         let cevap_sablonu;
         if (tip === 'basit') cevap_sablonu = kur(karar, secenekler || {});
         else if (tip === 'sabit') cevap_sablonu = String(metin == null ? '' : metin);
@@ -4925,7 +5037,9 @@ app.post('/api/teknik-sartname-sablonu-tasi', yetkiKontrol, async (req, res, nex
             // hedef bölümün adı/gizle/no — mevcut bir satırdan al (yoksa gönderilen ad)
             const hb = await pool.query("SELECT bolum_adi,baslik_gizle FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2 LIMIT 1", [s.bina_turu, hedef_bolum_no]);
             const yeniAd = hb.rowCount ? hb.rows[0].bolum_adi : (hedef_bolum_adi || s.bolum_adi);
-            await pool.query("UPDATE teknik_sartname_sablonu SET bolum_no=$1, bolum_adi=$2, satir_sira=$3 WHERE id=$4", [hedef_bolum_no, yeniAd, sr.rows[0].m, id]);
+            // Hedef bölümün başlık-gizle durumunu satıra yansıt (aksi halde kaynak bölümün bayrağı hedef başlığını gizler)
+            const yeniGizle = hb.rowCount ? hb.rows[0].baslik_gizle : false;
+            await pool.query("UPDATE teknik_sartname_sablonu SET bolum_no=$1, bolum_adi=$2, satir_sira=$3, baslik_gizle=$4 WHERE id=$5", [hedef_bolum_no, yeniAd, sr.rows[0].m, yeniGizle, id]);
             return res.json({ ok: true });
         }
         // Aynı bölümde yukarı/aşağı: komşuyla satir_sira değiştir
@@ -4942,7 +5056,7 @@ app.post('/api/teknik-sartname-sablonu-tasi', yetkiKontrol, async (req, res, nex
             await client.query("UPDATE teknik_sartname_sablonu SET satir_sira=$1 WHERE id=$2", [k.satir_sira, id]);
             await client.query("UPDATE teknik_sartname_sablonu SET satir_sira=$1 WHERE id=$2", [s.satir_sira, k.id]);
             await client.query('COMMIT');
-        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
         res.json({ ok: true });
     } catch (e) { next(e); }
 });
@@ -5034,7 +5148,7 @@ app.post('/api/form-tanimi-tasi', yetkiKontrol, async (req, res, next) => {
             await client.query("UPDATE form_tanimlari SET soru_sirasi=$1 WHERE id=$2", [yeniS, id]);
             if (k.soru_sirasi !== s.soru_sirasi) await client.query("UPDATE form_tanimlari SET soru_sirasi=$1 WHERE id=$2", [s.soru_sirasi, k.id]);
             await client.query('COMMIT');
-        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+        } catch (e) { await client.query('ROLLBACK'); throw e; } finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
         res.json({ ok: true });
     } catch (e) { next(e); }
 });
@@ -5637,7 +5751,7 @@ app.post('/api/uretim-is-emri-olustur', yetkiKontrol, async (req, res, next) => 
         });
         res.json({ ok: true, mesaj: `${emir_no} oluşturuldu, ${gecerli.length} kalem atandı.`, emir_no, is_emri_id: ieId });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // İş emirleri listesi (özetli)
@@ -5736,7 +5850,7 @@ app.post('/api/uretim-is-emri-tamamla', yetkiKontrol, async (req, res, next) => 
         await client.query('COMMIT');
         res.json({ ok: true, mesaj: 'İş emri güncellendi.', durum: yeniDurum });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Üretim Planı'ndan seçili kalemleri stoktan karşıla (manuel rezervasyon)
@@ -5769,8 +5883,9 @@ app.post('/api/uretim-stoktan-karsila', yetkiKontrol, async (req, res, next) => 
 
             if (!row.stok_kart_id) { hatalar.push(`${row.ozel_urun_adi || 'Özel ürün'} stoktan karşılanamaz — stok kartı yok`); continue; }
 
-            // Stok kontrolü
-            const mevcutStok = parseFloat(row.guncel_stok_miktari) || 0;
+            // Stok kontrolü — satırı KİLİTLE (FOR UPDATE): eşzamanlı istekler/aynı üründe negatif stok önlenir
+            const lockR = await client.query('SELECT COALESCE(guncel_stok_miktari,0) AS m FROM stok_kartlari WHERE id=$1 FOR UPDATE', [row.stok_kart_id]);
+            const mevcutStok = parseFloat(lockR.rows[0]?.m) || 0;
             if (mevcutStok < miktar) {
                 hatalar.push(`${row.stok_adi}: stokta ${mevcutStok} ${row.birim} var, ${miktar} istendi — yetersiz`);
                 continue;
@@ -5809,7 +5924,7 @@ app.post('/api/uretim-stoktan-karsila', yetkiKontrol, async (req, res, next) => 
             hatalar: hatalar
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Üretim Planı'ndan seçili kalemler için cross-teslimat satınalma talebi oluştur
@@ -5883,7 +5998,7 @@ app.post('/api/uretim-satinalma-talebi-olustur', yetkiKontrol, async (req, res, 
             talepler: olusturulanTalepler
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // ============================================================================
@@ -6030,7 +6145,7 @@ app.post('/api/montaj-uygulama-kaydet', yetkiKontrol, async (req, res, next) => 
             hatalar
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Müşteri teslimi — teslimatın tüm uygulanan miktarları teslim_edilen'e geçer
@@ -6081,7 +6196,7 @@ app.post('/api/montaj-musteri-teslim', yetkiKontrol, async (req, res, next) => {
         });
         res.json({ ok: true, mesaj: `${kayit} kalem müşteriye teslim edildi.` });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Montaj hareketleri log'u (bir teslimat için)
@@ -6215,7 +6330,7 @@ app.post('/api/sevkiyat-belgesi-olustur', yetkiKontrol, async (req, res, next) =
             hatalar
         });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Sevkiyat belgeleri listesi
@@ -6327,7 +6442,7 @@ app.post('/api/sevkiyat-durum-guncelle', yetkiKontrol, async (req, res, next) =>
         });
         res.json({ ok: true, mesaj });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // Sevkiyat iptal et — sevk_edilen_miktar geri çekilir
@@ -6379,7 +6494,7 @@ app.post('/api/sevkiyat-iptal/:id', yetkiKontrol, async (req, res, next) => {
         await client.query('COMMIT');
         res.json({ ok: true, mesaj: 'Sevkiyat iptal edildi, miktarlar geri çekildi.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 // İş emri iptal et — atanan miktarlar serbest bırakılır (henüz tamamlanmamış olanlar)
@@ -6403,12 +6518,15 @@ app.post('/api/uretim-is-emri-iptal/:id', yetkiKontrol, async (req, res, next) =
         await client.query('COMMIT');
         res.json({ ok: true, mesaj: 'İş emri iptal edildi.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
-    finally { client.release(); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
 
 app.use((err, req, res, next) => {
-    console.error("🔥 Hata:", err.message);
-    res.status(500).json({ ok: false, hata: err.message });
+    console.error("🔥 Hata:", err);
+    // pg/sistem hataları (err.code var) iç şema detayı sızdırabilir → istemciye genel mesaj.
+    // Uygulama içi throw new Error('...') mesajları (code yok) kullanıcıya gösterilir.
+    const musteriMesaj = err.code ? 'Sunucu hatası oluştu. Lütfen tekrar deneyin.' : (err.message || 'Sunucu hatası.');
+    res.status(500).json({ ok: false, hata: musteriMesaj });
 });
 
 // ============================================================================
