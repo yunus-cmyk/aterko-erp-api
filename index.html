@@ -1301,7 +1301,8 @@
     <div id="formtanimArea" class="d-none p-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
-                <h5 class="fw-bold text-dark mb-0"><i class="bi bi-ui-checks me-2 text-secondary"></i>Form Tanımları (Teknik Şartname Soruları)</h5>
+                <h5 class="fw-bold text-dark mb-0"><i class="bi bi-ui-checks me-2 text-secondary"></i>Form Tanımları (Teknik Şartname Soruları)
+                    <button class="btn btn-sm btn-outline-info ms-2 align-middle" data-bs-toggle="modal" data-bs-target="#modalTsYardim"><i class="bi bi-question-circle me-1"></i>Kullanım Kılavuzu</button></h5>
                 <small class="text-muted">Teknik şartname modalında görünen formları buradan düzenlersin. Bina türü bazında bölümler ve sorular tanımlanır.</small>
             </div>
             <button class="btn btn-sm btn-primary" onclick="openFormTanimiModal()"><i class="bi bi-plus-circle me-1"></i> Yeni Soru</button>
@@ -1354,7 +1355,8 @@
     <!-- TEKNİK ŞARTNAME ŞABLONU PANELİ -->
     <div id="tssablonArea" class="d-none p-3">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-file-earmark-text me-2 text-secondary"></i>Teknik Şartname Şablonu</h5>
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-file-earmark-text me-2 text-secondary"></i>Teknik Şartname Şablonu
+                <button class="btn btn-sm btn-outline-info ms-2 align-middle" data-bs-toggle="modal" data-bs-target="#modalTsYardim"><i class="bi bi-question-circle me-1"></i>Kullanım Kılavuzu</button></h5>
             <div class="d-flex align-items-center gap-2">
                 <select id="tsBinaTur" class="form-select form-select-sm" style="width:auto" onchange="tsSablonYukle()">
                     <option value="Prefabrik">Prefabrik</option>
@@ -1393,6 +1395,74 @@
     </div>
 
     <!-- Form Tanımı Ekle/Düzenle Modal -->
+    <!-- Teknik Şartname Kullanım Kılavuzu Modal -->
+    <div class="modal fade" id="modalTsYardim" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-book me-2"></i>Kullanım Kılavuzu — Teknik Şartname Yönetimi</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="font-size:0.92rem; line-height:1.6;">
+                    <div class="alert alert-primary py-2">
+                        <b>Tek cümlede:</b><br>
+                        <span class="badge bg-primary">Form Tanımları</span> = "Kullanıcıya <b>ne sorulacak</b>?" &nbsp;·&nbsp;
+                        <span class="badge bg-success">Teknik Şartname Şablonu</span> = "Cevaba göre PDF'te <b>ne yazılacak</b>?"
+                    </div>
+                    <p class="text-muted mb-3"><b>Örnek akış:</b> Form Tanımları'nda <i>"Dış kapı modeli"</i> sorusu + seçenekleri (Çelik, PVC...) tanımlarsın → kullanıcı formda <b>Çelik</b> seçer → Teknik Şartname Şablonu'nda yazdığın metin (<i>"Silindirik kilit, 3 menteşe..."</i>) PDF'e basılır.</p>
+
+                    <h6 class="fw-bold text-primary border-bottom pb-1"><i class="bi bi-ui-checks me-1"></i>A) Form Tanımları</h6>
+                    <p class="mb-1"><b>Görevi:</b> Projede açılan teknik şartname <b>giriş formunu</b> tanımlar (sorular, seçenekler, kurallar).</p>
+                    <ul class="mb-2">
+                        <li><b>Bina türü, bölüm, soru, sıra</b> — sorunun yeri ve metni</li>
+                        <li><b>Giriş tipi</b> — kısa metin, sayı, tarih, tek/çoklu seçim, dropdown</li>
+                        <li><b>Seçenekler</b> — tek/çoklu seçimde sunulacak şıklar</li>
+                        <li><b>Koşullar</b> — bir cevaba göre soruyu gizle (örn. "Kat Adedi=1 → gizle")</li>
+                        <li><b>Otomatik Dolum Kaynağı</b> — alan proje bilgisinden otomatik dolsun (salt okunur)</li>
+                        <li><b>↑ ↓</b> butonlarıyla soruların sırasını taşırsın</li>
+                    </ul>
+                    <div class="alert alert-warning py-2 small">Burada artık "seçeneğe göre PDF metni" <b>yoktur</b> — o iş Teknik Şartname Şablonu'na taşındı.</div>
+
+                    <h6 class="fw-bold text-success border-bottom pb-1"><i class="bi bi-file-earmark-text me-1"></i>B) Teknik Şartname Şablonu</h6>
+                    <p class="mb-1"><b>Görevi:</b> PDF çıktısının <b>içeriğini</b> tanımlar (bölüm/satır, seçime göre metin).</p>
+                    <p class="mb-1"><b>Satır tipleri:</b></p>
+                    <ul class="mb-2">
+                        <li>🟢 <b>Seçenekli</b> — bir soruya bağlı, her seçenek için ayrı metin</li>
+                        <li>⚪ <b>Sabit</b> — her zaman aynı metin (örn. rüzgar yükü açıklaması)</li>
+                        <li>🟡 <b>Gelişmiş</b> — içinde <code>{{ }}</code> kodu/hesap olan satırlar (dikkatli düzenle)</li>
+                    </ul>
+                    <p class="mb-1"><b>Yapabildiklerin:</b> satır başlığı/bölüm adını değiştir · seçenek ekle/sil/yeniden adlandır · sıra & bölüm taşıma · bölüm başlığını gizle · ayrı tablo başlat · <b>{{ }} Kullanılabilir Alanlar</b> (metne tıkla → alan çipine tıkla → otomatik eklenir).</p>
+                    <p class="mb-2"><b>Tür yönetimi (sağ üst):</b> boş türde <b>Çoğalt</b> (Prefabrik'ten), dolu türde <b>Sıfırla</b> (temizle → yeniden çoğalt).</p>
+
+                    <h6 class="fw-bold text-dark border-bottom pb-1"><i class="bi bi-link-45deg me-1"></i>İkisi Nasıl Bağlanır?</h6>
+                    <div class="alert alert-info py-2 small"><b>En kritik kural:</b> Form Tanımları'ndaki <b>soru adı</b> ve <b>seçenek adları</b>, Teknik Şartname Şablonu'ndakiyle <b>birebir aynı</b> olmalı. Uyuşmazsa kullanıcı seçim yapar ama PDF'te karşılığı boş çıkar.</div>
+
+                    <h6 class="fw-bold text-dark border-bottom pb-1"><i class="bi bi-list-check me-1"></i>Tipik Senaryolar</h6>
+                    <ol class="mb-2">
+                        <li><b>Bir PDF metnini değiştir:</b> Sadece Teknik Şartname Şablonu > satır > düzenle.</li>
+                        <li><b>Yeni soru + PDF karşılığı:</b> Önce Form Tanımları'nda soruyu ekle, sonra Şablon'da satırını + metnini ekle.</li>
+                        <li><b>Yeni bina türü:</b> Şablon > türü seç > Çoğalt > "Bina Tipi"ne bağlı bölümleri düzenle.</li>
+                        <li><b>Bir türü güncelle:</b> Şablon > tür > Sıfırla > Çoğalt.</li>
+                        <li><b>Alan otomatik dolsun:</b> Form Tanımları > soru > Otomatik Dolum Kaynağı.</li>
+                    </ol>
+
+                    <h6 class="fw-bold text-danger border-bottom pb-1"><i class="bi bi-star me-1"></i>Altın Kurallar</h6>
+                    <ol class="mb-0">
+                        <li><b>Metin mi?</b> → Şablon. <b>Soru/seçenek yapısı mı?</b> → Form Tanımları.</li>
+                        <li><b>İki sıra ayrıdır:</b> Form sırası formu, Şablon sırası PDF'i belirler.</li>
+                        <li><b>Değişiklikler anında geçerli</b> — kaydedince sonraki PDF'lere yansır.</li>
+                        <li><b>Alan/seçenek adları birebir aynı</b> olmalı (form ↔ şablon).</li>
+                        <li><b>"Sıfırla" geri alınamaz</b> — çift onay ister.</li>
+                        <li><b>Prefabrik ana şablondur</b>, sıfırlanamaz; diğerleri ondan çoğaltılır.</li>
+                    </ol>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-dark" data-bs-dismiss="modal">Anladım</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="modalFormTanimi" tabindex="-1" data-bs-backdrop="static">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
