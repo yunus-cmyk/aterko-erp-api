@@ -4882,16 +4882,21 @@ app.post('/api/teknik-sartname-sablonu-ekle', yetkiKontrol, async (req, res, nex
     } catch (e) { next(e); }
 });
 
-// Teknik şartname içeriğinde {{}} ile kullanılabilecek alanlar (form soruları + sistem)
+// Teknik şartname içeriğinde {{}} ile kullanılabilecek alanlar (o türe göre)
 app.get('/api/teknik-sartname-alanlar/:binaTuru', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query(
-            "SELECT DISTINCT soru FROM form_tanimlari WHERE bina_turu=$1 AND soru IS NOT NULL AND soru<>'' ORDER BY soru",
+            "SELECT DISTINCT soru, kaynak_kolon FROM form_tanimlari WHERE bina_turu=$1 AND soru IS NOT NULL AND soru<>'' ORDER BY soru",
             [req.params.binaTuru]);
+        // Proje'den otomatik dolan (kaynak_kolon dolu) alanlar → "proje" (mavi); diğerleri kullanıcı girişi → "form" (gri)
+        const projeSoru = r.rows.filter(x => x.kaynak_kolon).map(x => x.soru);
+        const formSoru = r.rows.filter(x => !x.kaynak_kolon).map(x => x.soru);
+        // Her türde ortak sistem alanları (form sorusu olmayan proje/sistem verileri)
+        const genel = ['Proje No', 'Müşteri Adı', 'Proje Adı', 'Bina Yeri', 'Nakliye', 'Bina Adı', 'Büyüklük', 'TARİH', 'DÜZENLEYEN', 'KOD'];
         res.json({
             ok: true,
-            form: r.rows.map(x => x.soru),
-            sistem: ['Proje No', 'Müşteri Adı', 'Proje Adı', 'Bina Yeri', 'Nakliye', 'Bina Adı', 'Bina Tipi', 'Kat Yüksekliği', 'Kat Adedi', 'Büyüklük', 'TARİH', 'DÜZENLEYEN', 'KOD']
+            form: formSoru,
+            sistem: [...new Set([...genel, ...projeSoru])]
         });
     } catch (e) { next(e); }
 });
