@@ -4963,7 +4963,8 @@ app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
             await pool.query(`
                 UPDATE form_tanimlari
                 SET bina_turu=$1, bolum_sirasi=$2, bolum_adi=$3, soru_sirasi=$4, soru=$5,
-                    giris_tipi=$6, secenekler=$7, zorunlu=$8, kurallar=$9, kosullar=$10, secenek_metinleri=$11, kaynak_kolon=$12
+                    giris_tipi=$6, secenekler=$7, zorunlu=$8, kurallar=$9, kosullar=$10,
+                    secenek_metinleri=COALESCE($11, secenek_metinleri), kaynak_kolon=$12
                 WHERE id=$13
             `, [bina_turu, bolum_sirasi || 1, bolum_adi, soru_sirasi || 1, soru,
                 giris_tipi || 'TEXT', secenekler ? JSON.stringify(secenekler) : null,
