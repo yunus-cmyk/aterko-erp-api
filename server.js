@@ -3628,7 +3628,7 @@ app.get('/api/siparis-pdf/:siparisId', yetkiKontrol, async (req, res, next) => {
 // Teknik şartname PDF üret ve indir
 const { renderToPDF } = require('./lib/pdf-generator');
 // Dinamik üretici lib/teknik-sartname-dinamik.js'e taşındı (test edilebilirlik için)
-const { teknikSartnameHTML } = require('./lib/teknik-sartname-dinamik');
+const { teknikSartnameHTML, teslimatVeri, cevapBicim, motorIsle } = require('./lib/teknik-sartname-dinamik');
 
 app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, next) => {
     try {
@@ -3707,6 +3707,69 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
         console.error('🔥 Teknik şartname PDF Hatası:', error);
         res.status(500).json({ ok: false, hata: error.message });
     }
+});
+
+// Panelde önizleme/örnek PDF için temsili teslimat üretir (her form alanının İLK seçeneğiyle)
+async function ornekTeslimat(binaTuru) {
+    const ff = await pool.query("SELECT soru, giris_tipi, secenekler FROM form_tanimlari WHERE bina_turu=$1", [binaTuru]);
+    const ek = {};
+    ff.rows.forEach(f => {
+        const sec = Array.isArray(f.secenekler) ? f.secenekler : [];
+        const tip = (f.giris_tipi || '').toUpperCase();
+        if ((tip === 'TEK' || tip === 'ÇOK' || tip === 'COK') && sec.length) ek[f.soru] = sec[0];
+        else if (tip === 'GİRİŞ' || tip === 'GIRIS') ek[f.soru] = '(örnek)';
+    });
+    return {
+        bina_turu: binaTuru, proje_kodu: 'ÖRNEK', musteri_adi: 'Örnek Müşteri',
+        proje_adi: 'Örnek Proje', nakliye: 'Alıcıya aittir', bina_adi: 'Örnek Bina',
+        bina_tipi: ek['Bina Tipi'] || '', kat_adedi: ek['Kat Adedi'] || 1,
+        kat_yuksekligi: ek['Kat Yüksekliği (mm)'] || 3000, buyukluk_m2: 100,
+        bina_yeri: 'Örnek Şantiye', montaj_gerekli: true, ek_veriler: ek
+    };
+}
+
+// #3 — Panelden örnek PDF (temsili verilerle tam şablon)
+app.get('/api/teknik-sartname-ornek-pdf/:binaTuru', yetkiKontrol, async (req, res, next) => {
+    try {
+        const binaTuru = req.params.binaTuru;
+        const tsSab = await pool.query(
+            "SELECT bolum_no,bolum_adi,bolum_gizle,bolum_aciklama,soru,cevap_sablonu,yeni_tablo,baslik_gizle FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
+            [binaTuru]);
+        if (!tsSab.rowCount) return res.status(400).json({ ok: false, hata: `"${binaTuru}" için şablon yok.` });
+        const t = await ornekTeslimat(binaTuru);
+        const ft = tsSab.rows.map(x => ({
+            bolum_adi: x.bolum_adi, bolum_sirasi: x.bolum_no, soru: x.soru, cevap_sablonu: x.cevap_sablonu,
+            bolum_aciklama: x.bolum_aciklama, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle,
+            bolum_gizle: x.bolum_gizle ? { alan: x.bolum_gizle.split('=')[0], deger: x.bolum_gizle.split('=')[1] } : null
+        }));
+        const { htmlToPDF } = require('./lib/pdf-generator');
+        const pdf = await htmlToPDF(teknikSartnameHTML(t, ft, req.user.adSoyad),
+            { margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' } });
+        const ad = `ORNEK-${binaTuru}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${ad}"`);
+        res.send(pdf);
+    } catch (error) { console.error('🔥 Örnek PDF Hatası:', error); next(error); }
+});
+
+// #1 — Canlı önizleme: kaydetmeden, editördeki içeriğin çıktı görünümünü döndür
+app.post('/api/teknik-sartname-onizle', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { bina_turu, tip, karar, secenekler, metin, ham } = req.body;
+        const { kur } = require('./lib/sartname-ayristir');
+        let cevap_sablonu;
+        if (tip === 'basit') cevap_sablonu = kur(karar, secenekler || {});
+        else if (tip === 'sabit') cevap_sablonu = String(metin == null ? '' : metin);
+        else cevap_sablonu = String(ham == null ? '' : ham);
+        const t = await ornekTeslimat(bina_turu);
+        const veri = teslimatVeri(t, req.user.adSoyad);
+        const bicimle = v => { const r = cevapBicim(motorIsle(cevap_sablonu, v)); return r.trim() ? r : '<span class="text-muted fst-italic">(boş)</span>'; };
+        if (tip === 'basit' && karar) {
+            const onizleme = Object.keys(secenekler || {}).map(s => ({ secenek: s, html: bicimle({ ...veri, [karar]: s }) }));
+            return res.json({ ok: true, tip, karar, onizleme });
+        }
+        return res.json({ ok: true, tip, html: bicimle(veri) });
+    } catch (error) { next(error); }
 });
 
 // Teknik şartname formunu kaydet (ek_veriler JSONB'ye yaz)
@@ -4960,11 +5023,20 @@ app.get('/api/teknik-sartname-sablonu/:binaTuru', yetkiKontrol, async (req, res,
         const r = await pool.query(
             "SELECT id,bolum_no,bolum_adi,bolum_gizle,soru,satir_sira,cevap_sablonu,yeni_tablo,baslik_gizle FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
             [req.params.binaTuru]);
-        const satirlar = r.rows.map(x => ({
-            id: x.id, bolum_no: x.bolum_no, bolum_adi: x.bolum_adi, bolum_gizle: x.bolum_gizle,
-            soru: x.soru, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle, ...ayristir(x.cevap_sablonu)
-        }));
-        res.json({ ok: true, satirlar });
+        // Form alanlarının seçenek haritası — "seçenek eşleştirme yardımı" için
+        const ff = await pool.query("SELECT soru, secenekler FROM form_tanimlari WHERE bina_turu=$1", [req.params.binaTuru]);
+        const formSecMap = {};
+        ff.rows.forEach(f => { if (Array.isArray(f.secenekler) && f.secenekler.length) formSecMap[f.soru] = f.secenekler; });
+        const satirlar = r.rows.map(x => {
+            const ay = ayristir(x.cevap_sablonu);
+            const row = {
+                id: x.id, bolum_no: x.bolum_no, bolum_adi: x.bolum_adi, bolum_gizle: x.bolum_gizle,
+                soru: x.soru, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle, ...ay
+            };
+            if (ay.tip === 'basit' && ay.karar) row.form_secenekler = formSecMap[ay.karar] || null;
+            return row;
+        });
+        res.json({ ok: true, satirlar, form_secenek_map: formSecMap });
     } catch (e) { next(e); }
 });
 
@@ -5136,6 +5208,40 @@ app.post('/api/teknik-sartname-sablonu-tasi', yetkiKontrol, async (req, res, nex
             await client.query('COMMIT');
         } catch (e) { await client.query('ROLLBACK'); throw e; } finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
         res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// #4 — Bölümü bir üst/alt bölümle sıra takası yap (bina türü içinde)
+app.post('/api/teknik-sartname-bolum-tasi', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
+    const { bina_turu, bolum_no, yon } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const op = yon === 'yukari' ? '<' : '>';
+        const ord = yon === 'yukari' ? 'DESC' : 'ASC';
+        const komsu = await client.query(
+            `SELECT DISTINCT bolum_no FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no ${op} $2 ORDER BY bolum_no ${ord} LIMIT 1`,
+            [bina_turu, bolum_no]);
+        if (!komsu.rowCount) { await client.query('ROLLBACK'); return res.json({ ok: true, mesaj: 'Zaten sınırda.' }); }
+        const komsuNo = komsu.rows[0].bolum_no;
+        const gecici = -999999;   // geçici no ile takas (çakışma olmasın)
+        await client.query("UPDATE teknik_sartname_sablonu SET bolum_no=$1 WHERE bina_turu=$2 AND bolum_no=$3", [gecici, bina_turu, bolum_no]);
+        await client.query("UPDATE teknik_sartname_sablonu SET bolum_no=$1 WHERE bina_turu=$2 AND bolum_no=$3", [bolum_no, bina_turu, komsuNo]);
+        await client.query("UPDATE teknik_sartname_sablonu SET bolum_no=$1 WHERE bina_turu=$2 AND bolum_no=$3", [komsuNo, bina_turu, gecici]);
+        await client.query('COMMIT');
+        res.json({ ok: true });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
+});
+
+// #4 — Bölümü tüm satırlarıyla sil
+app.post('/api/teknik-sartname-bolum-sil', yetkiKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
+    const { bina_turu, bolum_no } = req.body;
+    try {
+        const r = await pool.query("DELETE FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2", [bina_turu, bolum_no]);
+        res.json({ ok: true, silinen: r.rowCount });
     } catch (e) { next(e); }
 });
 
