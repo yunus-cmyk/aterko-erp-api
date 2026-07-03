@@ -3665,7 +3665,7 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
             const ft = tsSab.rows.map(x => ({
                 bolum_adi: x.bolum_adi, bolum_sirasi: x.bolum_no, soru: x.soru, cevap_sablonu: x.cevap_sablonu,
                 bolum_aciklama: x.bolum_aciklama, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle,
-                bolum_gizle: x.bolum_gizle ? { alan: x.bolum_gizle.split('=')[0], deger: x.bolum_gizle.split('=')[1] } : null
+                bolum_gizle: x.bolum_gizle || null
             }));
             pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ft, req.user.adSoyad), pdfOpts);
         } else if (sablon && fs.existsSync(path.join(__dirname, 'templates', sablon + '.html'))) {
@@ -3740,7 +3740,7 @@ app.get('/api/teknik-sartname-ornek-pdf/:binaTuru', yetkiKontrol, async (req, re
         const ft = tsSab.rows.map(x => ({
             bolum_adi: x.bolum_adi, bolum_sirasi: x.bolum_no, soru: x.soru, cevap_sablonu: x.cevap_sablonu,
             bolum_aciklama: x.bolum_aciklama, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle,
-            bolum_gizle: x.bolum_gizle ? { alan: x.bolum_gizle.split('=')[0], deger: x.bolum_gizle.split('=')[1] } : null
+            bolum_gizle: x.bolum_gizle || null
         }));
         const { htmlToPDF } = require('./lib/pdf-generator');
         const pdf = await htmlToPDF(teknikSartnameHTML(t, ft, req.user.adSoyad),
