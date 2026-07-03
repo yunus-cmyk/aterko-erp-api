@@ -1467,7 +1467,7 @@
                         <li><b>Koşullu metin:</b> <code>{{EGER:Alan operatör Değer:yazılacak metin}}</code><br>
                             operatörler: <code>=</code> eşit · <code>!=</code> değil · <code>~=</code> içerir (çoklu seçim) · <code>!~</code> içermez</li>
                         <li><b>Hesap:</b> <code>{{HESAP:Alan-20:SONUC}}</code> → 80 &nbsp;·&nbsp; <code>:DENKLEM</code> → 100-20=80 (operatörler + − × ÷)</li>
-                        <li><b>Bölüm gizleme (nadir):</b> <code>{{HARICI:Alan=Yok}}</code></li>
+                        <li><b>Bölüm gizleme:</b> Formül yazmana gerek yok — bir satır seç, editörün altındaki <b>"Bölümü koşullu gizle"</b> menüsünden alanı seç. Seçilen alan projede boş/"Yok" ise o bölüm PDF'e hiç yazılmaz. (Eski adı <code>{{HARICI:Alan=Yok}}</code> idi.)</li>
                     </ul>
                     <div class="alert alert-light border py-2 small mb-3"><b>İpucu:</b> Alan adlarını ezberlemene gerek yok — Gelişmiş satırda metin kutusuna tıkla, alttaki <b>"Kullanılabilir Alanlar"</b> çiplerinden birine bas, <code>{{Alan}}</code> otomatik eklensin.</div>
 
@@ -4332,6 +4332,17 @@ function tsSatirSec(id) {
     }
     html += `<div class="form-check mt-3 mb-1"><input class="form-check-input" type="checkbox" id="tsYeniTabloChk" ${s.yeni_tablo ? 'checked' : ''}><label class="form-check-label small" for="tsYeniTabloChk">Bu satırdan itibaren ayrı (başlıksız) tablo başlasın</label></div>`;
     html += `<div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="tsBaslikGizleChk" ${s.baslik_gizle ? 'checked' : ''}><label class="form-check-label small" for="tsBaslikGizleChk">Bu bölümün başlığını gizle (tüm bölümü etkiler)</label></div>`;
+    // Bölüm koşullu gizleme (eski adı HARİCİ) — bölüm geneli: seçilen alan boş/"Yok" ise bölüm PDF'e yazılmaz
+    const _gizleAlan = s.bolum_gizle ? String(s.bolum_gizle).split('=')[0].trim() : '';
+    const _gAlanlar = [...new Set([...(((tsAlanlar || {}).form) || []), ...(((tsAlanlar || {}).sistem) || [])])].sort((a, b) => a.localeCompare(b, 'tr'));
+    if (_gizleAlan && !_gAlanlar.includes(_gizleAlan)) _gAlanlar.unshift(_gizleAlan);
+    html += `<div class="mt-2 mb-1 p-2 rounded" style="background:#fff;border:0.5px solid #dee2e6">
+        <label class="small fw-semibold d-block mb-1"><i class="bi bi-eye-slash me-1"></i>Bölümü koşullu gizle <span class="text-muted fw-normal">(tüm bölümü etkiler)</span></label>
+        <div class="small text-muted mb-1">Seçilen alan projede boş ya da "Yok" ise bu bölüm PDF'e hiç yazılmaz.</div>
+        <select id="tsBolumGizleAlan" class="form-select form-select-sm">
+            <option value="">— Gizleme yok (her zaman göster) —</option>
+            ${_gAlanlar.map(a => `<option value="${tsEscAttr(a)}" ${a === _gizleAlan ? 'selected' : ''}>${tsEsc(a)} boşsa gizle</option>`).join('')}
+        </select></div>`;
     html += `<div class="mt-2 d-flex justify-content-between"><button class="btn btn-sm btn-outline-danger" onclick="tsSatirSil(${id})"><i class="bi bi-trash me-1"></i>Sil</button><button class="btn btn-sm btn-dark fw-bold px-4" onclick="tsSatirKaydet(${id})"><i class="bi bi-save me-1"></i>Kaydet</button></div>`;
     html += `<div class="mt-3 border-top pt-2">
         <div class="small fw-semibold text-muted mb-1"><i class="bi bi-eye me-1"></i>Önizleme <span class="fw-normal">(örnek verilerle — PDF'teki görünüm)</span></div>
@@ -4345,6 +4356,8 @@ async function tsSatirKaydet(id) {
     const s = tsSablonCache.find(x => x.id === id);
     if (!s) return;
     const govde = { id, tip: s.tip, yeni_tablo: document.getElementById('tsYeniTabloChk')?.checked || false, baslik_gizle: document.getElementById('tsBaslikGizleChk')?.checked || false, soru: document.getElementById('tsDuzenleSoru')?.value || '', bolum_adi: document.getElementById('tsDuzenleBolumAd')?.value };
+    const _bgAlan = document.getElementById('tsBolumGizleAlan')?.value || '';
+    govde.bolum_gizle = _bgAlan ? `${_bgAlan}=Yok` : null;   // bölüm koşullu gizleme (HARİCİ) — bölüm geneli
     if (s.tip === 'basit') {
         govde.karar = s.karar; govde.secenekler = {};
         document.querySelectorAll('#tsEditor .ts-sec-satir').forEach(row => {

@@ -5046,7 +5046,7 @@ app.post('/api/teknik-sartname-sablonu-kaydet', yetkiKontrol, async (req, res, n
     }
     try {
         const { kur } = require('./lib/sartname-ayristir');
-        const { id, tip, karar, secenekler, metin, ham, yeni_tablo, baslik_gizle, soru, bolum_adi } = req.body;
+        const { id, tip, karar, secenekler, metin, ham, yeni_tablo, baslik_gizle, soru, bolum_adi, bolum_gizle } = req.body;
         let cevap_sablonu;
         if (tip === 'basit') cevap_sablonu = kur(karar, secenekler || {});
         else if (tip === 'sabit') cevap_sablonu = String(metin == null ? '' : metin);
@@ -5058,6 +5058,8 @@ app.post('/api/teknik-sartname-sablonu-kaydet', yetkiKontrol, async (req, res, n
             // baslik_gizle + bolum_adi bölüm geneli — aynı bölümün tüm satırlarına yansıt
             await pool.query("UPDATE teknik_sartname_sablonu SET baslik_gizle=$1 WHERE bina_turu=$2 AND bolum_no=$3", [!!baslik_gizle, r.rows[0].bina_turu, r.rows[0].bolum_no]);
             if (bolum_adi !== undefined) await pool.query("UPDATE teknik_sartname_sablonu SET bolum_adi=$1 WHERE bina_turu=$2 AND bolum_no=$3", [String(bolum_adi || ''), r.rows[0].bina_turu, r.rows[0].bolum_no]);
+            // bolum_gizle (koşullu bölüm gizleme / HARİCİ) — bölüm geneli
+            if (bolum_gizle !== undefined) await pool.query("UPDATE teknik_sartname_sablonu SET bolum_gizle=$1 WHERE bina_turu=$2 AND bolum_no=$3", [bolum_gizle || null, r.rows[0].bina_turu, r.rows[0].bolum_no]);
         }
         if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Satır bulunamadı.' });
         res.json({ ok: true, satir: r.rows[0] });
