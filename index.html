@@ -7326,9 +7326,9 @@ function addNewReqRow(data) {
 
     // Stok kartlarını cache'le, sonra dropdown'u doldur
     const fillRow = () => {
-        // Kategori dropdown'unu cache'ten benzersiz kategorilerle doldur (Hammadde varsayılan filtresine göre)
-        ntKategoriDropdownDoldur(rowDiv);
-        // Stok kart listesi
+        // Kategori dropdown'unu doldur + düzenlemede kalemin kategorisini geri yükle
+        ntKategoriDropdownDoldur(rowDiv, d);
+        // Stok kart listesi (geri yüklenen kategori filtresine göre → ürün seçili gelir)
         ntDropdownDoldur(rowDiv, d);
     };
 
@@ -7347,7 +7347,7 @@ function ntFiltreUygula(el) {
     ntDropdownDoldur(row);
 }
 
-function ntKategoriDropdownDoldur(row) {
+function ntKategoriDropdownDoldur(row, mevcutData) {
     // Sadece Hammadde tipindeki ürünlerin benzersiz kategorileri
     const kategoriler = [...new Set(
         stokKatalogListesi
@@ -7355,10 +7355,15 @@ function ntKategoriDropdownDoldur(row) {
             .map(s => s.kategori).filter(Boolean)
     )].sort();
     const sel = row.querySelector('.nt-kategori');
-    const mevcutSecim = sel.value;
+    let hedefKat = sel.value;
+    // Düzenleme: kalemin kategorisini stok kartından türetip geri yükle (yoksa gelen kategori)
+    if (mevcutData && mevcutData.stok_kart_id) {
+        const sk = stokKatalogListesi.find(s => String(s.id) === String(mevcutData.stok_kart_id));
+        hedefKat = (sk && sk.kategori) || mevcutData.kategori || hedefKat;
+    }
     sel.innerHTML = '<option value="">Tüm Kategoriler</option>' +
         kategoriler.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
-    if (kategoriler.includes(mevcutSecim)) sel.value = mevcutSecim;
+    if (hedefKat && kategoriler.includes(hedefKat)) sel.value = hedefKat;
 }
 
 function ntDropdownDoldur(row, mevcutData) {
