@@ -4298,6 +4298,7 @@ function tsGizleAlanSecenekleri(secili) {
     return '<option value="">— alan seç —</option>' + alanlar.map(a => `<option value="${tsEscAttr(a)}" ${a === secili ? 'selected' : ''}>${tsEsc(a)}</option>`).join('');
 }
 function tsGizleDegerListe(alan) {
+    if (alan === 'Sahada Montaj') return ['Var', 'Yok'];   // proje alanı — Var/Yok
     const secs = (tsFormSecMap && tsFormSecMap[alan]) ? tsFormSecMap[alan] : [];
     return ['Yok', ...secs];
 }
@@ -10561,6 +10562,7 @@ async function openTeknikSartname(teslimatId) {
         if (otomatik[k]) mevcutVeri[k] = otomatik[k];
     });
     // Projede montaj gerekli değilse Montaj bölümü tümüyle gizlenir
+    mevcutVeri['Sahada Montaj'] = teslimat.montaj_gerekli ? 'Var' : 'Yok';   // koşullarda kullanılabilir alan
     if (teslimat.montaj_gerekli === false) mevcutVeri['Montaj'] = 'Yok';
 
     document.getElementById("tsModalBaslik").innerHTML = `<i class="bi bi-file-earmark-text me-2"></i>Teknik Şartname — ${esc(teslimat.bina_adi)} (${esc(teslimat.bina_turu)})`;

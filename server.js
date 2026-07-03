@@ -5156,7 +5156,7 @@ app.get('/api/teknik-sartname-alanlar/:binaTuru', yetkiKontrol, async (req, res,
         const projeSoru = r.rows.filter(x => x.kaynak_kolon).map(x => x.soru);
         const formSoru = r.rows.filter(x => !x.kaynak_kolon).map(x => x.soru);
         // Her türde ortak sistem alanları (form sorusu olmayan proje/sistem verileri)
-        const genel = ['Proje No', 'Müşteri Adı', 'Proje Adı', 'Bina Yeri', 'Nakliye', 'Bina Adı', 'Büyüklük', 'TARİH', 'DÜZENLEYEN', 'KOD'];
+        const genel = ['Proje No', 'Müşteri Adı', 'Proje Adı', 'Bina Yeri', 'Nakliye', 'Sahada Montaj', 'Bina Adı', 'Büyüklük', 'TARİH', 'DÜZENLEYEN', 'KOD'];
         res.json({
             ok: true,
             form: formSoru,
