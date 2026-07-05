@@ -220,6 +220,7 @@
       <li class="nav-item"><a class="nav-link" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-2"></i>Sevkiyat</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-montaj" onclick="setTab('montaj')" style="color:#6f42c1;"><i class="bi bi-wrench-adjustable me-2"></i>Montaj</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Rapor</a></li>
+      <li class="nav-item d-none" id="nav-gorevler-wrap"><a class="nav-link" id="nav-gorevler" onclick="setTab('gorevler')" style="color:#0d6efd;"><i class="bi bi-check2-square me-2"></i>Görevler</a></li>
       <!-- Tedarikçi sekmesi Satınalma alt sekmesine taşındı, doğrudan link kaldırıldı -->
       <li class="nav-item d-none"><a id="nav-tedarikci" onclick="setTab('tedarikci')"></a></li>
       <!-- Audit ve Form Tanımları "Yönetim" dropdown'ına taşındı -->
@@ -1611,6 +1612,44 @@
     </div>
 
     <!-- AUDIT LOG (sadece ADMIN) -->
+    <div id="gorevlerArea" class="d-none p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-check2-square me-2 text-primary"></i>Görev Takip <span class="text-muted small fw-normal">— Çekirdek yönetim ekibi</span></h5>
+            <div class="btn-group btn-group-sm">
+                <button id="grvBtnListe" class="btn btn-primary" onclick="gorevGorunum('liste')"><i class="bi bi-list-ul me-1"></i>Liste</button>
+                <button id="grvBtnPazartesi" class="btn btn-outline-primary" onclick="gorevGorunum('pazartesi')"><i class="bi bi-calendar-week me-1"></i>Pazartesi</button>
+            </div>
+        </div>
+
+        <!-- Hızlı ekleme -->
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4"><label class="form-label small fw-semibold m-0">Görev</label><input id="grvBaslik" class="form-control form-control-sm" placeholder="Ne yapılacak?"></div>
+                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Sahip <span class="text-danger">*</span></label><select id="grvSahip" class="form-select form-select-sm"></select></div>
+                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Bitiş <span class="text-danger">*</span></label><input id="grvBitis" type="date" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Alan</label><select id="grvAlan" class="form-select form-select-sm"><option value="GENEL">Genel</option><option value="SATIS">Satış</option><option value="MALI">Mali</option><option value="IDARI">İdari</option><option value="ORTAKLAR">Ortaklar</option></select></div>
+                <div class="col-md-1"><label class="form-label small fw-semibold m-0">Öncelik</label><select id="grvOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
+                <div class="col-md-1"><button class="btn btn-primary btn-sm w-100" onclick="gorevHizliEkle()" title="Görev ekle"><i class="bi bi-plus-lg"></i></button></div>
+            </div>
+            <div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="grvTaahhut"><label class="form-check-label small" for="grvTaahhut">Taahhüt (30/90 gün yönetim taahhüdü)</label></div>
+        </div></div>
+
+        <!-- LİSTE görünümü -->
+        <div id="grvListeGorunum">
+            <div class="d-flex gap-2 flex-wrap mb-2 align-items-center">
+                <select id="grvFilSahip" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm sahipler</option></select>
+                <select id="grvFilDurum" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm durumlar</option><option value="ACIK">Açık</option><option value="DEVAM">Devam</option><option value="TAMAMLANDI">Tamamlandı</option><option value="IPTAL">İptal</option></select>
+                <select id="grvFilAlan" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm alanlar</option><option value="GENEL">Genel</option><option value="SATIS">Satış</option><option value="MALI">Mali</option><option value="IDARI">İdari</option><option value="ORTAKLAR">Ortaklar</option></select>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="grvFilTaahhut" onchange="gorevListeYukle()"><label class="form-check-label small" for="grvFilTaahhut">Taahhütler</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="grvFilGecikmis" onchange="gorevListeYukle()"><label class="form-check-label small text-danger fw-semibold" for="grvFilGecikmis">Sadece gecikenler</label></div>
+            </div>
+            <div id="grvListe"><div class="text-muted text-center p-4">Yükleniyor…</div></div>
+        </div>
+
+        <!-- PAZARTESİ görünümü -->
+        <div id="grvPazartesiGorunum" class="d-none"></div>
+    </div>
+
     <div id="auditArea" class="d-none p-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="fw-bold text-dark mb-0"><i class="bi bi-shield-check me-2 text-secondary"></i>Audit Log — Sistem Aktivitesi</h5>
@@ -3324,6 +3363,7 @@ async function izinHaritasiYukle() {
     const r = await secureFetch(url).catch(() => null);
     if (!r || !r.ok) return; // banner zaten gösterildi → çıkış garantili
     window.kullaniciIzinleri = r.izinler || {};
+    window.cekirdekEkip = !!r.cekirdek_ekip;
 
     if (r.simulasyon) {
         // Etkin yetkiyi override et (sekmeGorunur ADMIN bypass'ını devre dışı bırak)
@@ -3436,6 +3476,10 @@ function izinleriUygula() {
         adminMenu.style.display = (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') ? '' : 'none';
     }
 
+    // Görevler sekmesi — yalnızca çekirdek yönetim ekibi (cekirdek_ekip)
+    const grvWrap = document.getElementById('nav-gorevler-wrap');
+    if (grvWrap) grvWrap.classList.toggle('d-none', !window.cekirdekEkip);
+
     // Satınalma alt sekmeleri (Yönetim panel olmayan, modül bazlı)
     const altSekmeMap = {
         'btnSubGenelBakis':   'satinalma.siparisler',
@@ -3457,6 +3501,10 @@ function izinleriUygula() {
 
 // setTab guard: izin yoksa erişimi engelle (setTab içinde çağrılır)
 function sekmeGuard(tab) {
+    if (tab === 'gorevler') {
+        if (!window.cekirdekEkip) { if (typeof showToast === 'function') showToast('Bu sayfaya erişim yetkiniz yok.', 'error'); return false; }
+        return true;
+    }
     const guardMap = {
         'anasayfa':     'anasayfa',
         'projeler':     'projeler',
@@ -5028,6 +5076,135 @@ async function auditOzetYukle() {
     `).join('');
 }
 
+// ===== GÖREV TAKİP MODÜLÜ (çekirdek yönetim ekibi) =====
+window.grvEkip = [];
+const GRV_ALAN_AD = { SATIS: 'Satış', MALI: 'Mali', IDARI: 'İdari', ORTAKLAR: 'Ortaklar', GENEL: 'Genel' };
+const GRV_DURUM_AD = { ACIK: 'Açık', DEVAM: 'Devam', TAMAMLANDI: 'Tamamlandı', IPTAL: 'İptal' };
+const GRV_DURUM_BADGE = { ACIK: 'bg-secondary', DEVAM: 'bg-primary', TAMAMLANDI: 'bg-success', IPTAL: 'bg-dark' };
+const GRV_ONCELIK_BADGE = { KRITIK: 'bg-danger', YUKSEK: 'bg-warning text-dark', NORMAL: 'bg-light text-dark border' };
+
+function gorevGorunum(v) {
+    document.getElementById('grvListeGorunum').classList.toggle('d-none', v !== 'liste');
+    document.getElementById('grvPazartesiGorunum').classList.toggle('d-none', v !== 'pazartesi');
+    document.getElementById('grvBtnListe').className = 'btn ' + (v === 'liste' ? 'btn-primary' : 'btn-outline-primary');
+    document.getElementById('grvBtnPazartesi').className = 'btn ' + (v === 'pazartesi' ? 'btn-primary' : 'btn-outline-primary');
+    if (v === 'pazartesi') gorevPazartesiYukle(); else gorevListeYukle();
+}
+
+async function gorevSekmeInit() {
+    if (!window.grvEkip.length) {
+        const r = await secureFetch('/gorev-ekip').catch(() => null);
+        window.grvEkip = (r && r.ok) ? r.ekip : [];
+    }
+    const opts = window.grvEkip.map(u => `<option value="${u.id}">${esc(u.ad_soyad)}</option>`).join('');
+    const sahipSel = document.getElementById('grvSahip'); if (sahipSel) sahipSel.innerHTML = opts;
+    const filSahip = document.getElementById('grvFilSahip'); if (filSahip) filSahip.innerHTML = '<option value="">Tüm sahipler</option>' + opts;
+    gorevGorunum('liste');
+}
+
+function gorevKartHTML(g) {
+    const gec = g.gecikmis === true;
+    const notlar = Array.isArray(g.notlar) ? g.notlar : [];
+    const tarih = g.bitis_tarihi ? new Date(g.bitis_tarihi).toLocaleDateString('tr-TR') : '-';
+    const durumSel = ['ACIK', 'DEVAM', 'TAMAMLANDI', 'IPTAL'].map(d => `<option value="${d}" ${g.durum === d ? 'selected' : ''}>${GRV_DURUM_AD[d]}</option>`).join('');
+    const notHTML = notlar.length ? `<div class="mt-2 border-top pt-1">${notlar.map(n => `<div class="small text-muted"><i class="bi bi-chat-left-text me-1"></i><b>${esc(n.yazan)}</b>: ${esc(n.not_metni)} <span class="text-muted">· ${new Date(n.tarih).toLocaleDateString('tr-TR')}</span></div>`).join('')}</div>` : '';
+    return `<div class="card border-0 shadow-sm mb-2 ${gec ? 'border-start border-danger border-3' : ''}"><div class="card-body py-2">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="flex-grow-1">
+            <div class="fw-semibold">${esc(g.baslik)} ${g.taahhut ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1">Taahhüt</span>' : ''}</div>
+            <div class="small text-muted mt-1">
+              <i class="bi bi-person me-1"></i>${esc(g.sahip_ad)} ·
+              <span class="${gec ? 'text-danger fw-bold' : ''}"><i class="bi bi-calendar-event me-1"></i>${tarih}${gec ? ' — GECİKTİ' : ''}</span> ·
+              <span class="badge ${GRV_ONCELIK_BADGE[g.oncelik] || ''}">${g.oncelik}</span>
+              <span class="badge bg-light text-dark border">${GRV_ALAN_AD[g.alan] || g.alan}</span>
+            </div>
+            ${g.aciklama ? `<div class="small mt-1">${esc(g.aciklama)}</div>` : ''}
+            ${notHTML}
+          </div>
+          <div class="text-end" style="min-width:135px">
+            <span class="badge ${GRV_DURUM_BADGE[g.durum] || 'bg-secondary'} mb-1 d-block">${GRV_DURUM_AD[g.durum] || g.durum}</span>
+            <select class="form-select form-select-sm mb-1" onchange="gorevDurumDegis(${g.id}, this.value)">${durumSel}</select>
+            <button class="btn btn-sm btn-outline-secondary w-100" onclick="gorevNotEkle(${g.id})"><i class="bi bi-chat-left-text me-1"></i>Not</button>
+          </div>
+        </div></div></div>`;
+}
+
+async function gorevListeYukle() {
+    const p = new URLSearchParams();
+    const fs = document.getElementById('grvFilSahip')?.value; if (fs) p.set('sahip_id', fs);
+    const fd = document.getElementById('grvFilDurum')?.value; if (fd) p.set('durum', fd);
+    const fa = document.getElementById('grvFilAlan')?.value; if (fa) p.set('alan', fa);
+    if (document.getElementById('grvFilTaahhut')?.checked) p.set('taahhut', '1');
+    if (document.getElementById('grvFilGecikmis')?.checked) p.set('gecikmis', '1');
+    const r = await secureFetch('/gorevler?' + p.toString()).catch(() => null);
+    const box = document.getElementById('grvListe');
+    if (!r || !r.ok) { box.innerHTML = '<div class="text-danger p-3">Yüklenemedi.</div>'; return; }
+    box.innerHTML = r.gorevler.length ? r.gorevler.map(gorevKartHTML).join('') : '<div class="text-muted text-center p-4">Görev yok.</div>';
+}
+
+async function gorevHizliEkle() {
+    const govde = {
+        baslik: document.getElementById('grvBaslik').value.trim(),
+        sahip_id: document.getElementById('grvSahip').value,
+        bitis_tarihi: document.getElementById('grvBitis').value,
+        alan: document.getElementById('grvAlan').value,
+        oncelik: document.getElementById('grvOncelik').value,
+        taahhut: document.getElementById('grvTaahhut').checked
+    };
+    if (!govde.baslik) return showToast('Görev başlığı girin.', 'error');
+    if (!govde.sahip_id || !govde.bitis_tarihi) return showToast('Sahip ve bitiş tarihi zorunlu.', 'error');
+    const r = await secureFetch('/gorev-kaydet', { method: 'POST', body: JSON.stringify(govde) });
+    if (r && r.ok) {
+        showToast('Görev eklendi', 'success');
+        document.getElementById('grvBaslik').value = '';
+        document.getElementById('grvBitis').value = '';
+        document.getElementById('grvTaahhut').checked = false;
+        gorevListeYukle();
+    } else showToast((r && r.hata) || 'Kayıt hatası', 'error');
+}
+
+async function gorevDurumDegis(id, durum) {
+    if (durum === 'IPTAL') {
+        const not = prompt('İptal nedeni (not zorunlu):');
+        if (!not || !not.trim()) { showToast('İptal için not zorunludur.', 'error'); gorevListeYukle(); return; }
+        await secureFetch('/gorev-not', { method: 'POST', body: JSON.stringify({ gorev_id: id, not_metni: 'İPTAL: ' + not.trim() }) });
+    }
+    const r = await secureFetch('/gorev-durum', { method: 'POST', body: JSON.stringify({ id, durum }) });
+    if (r && r.ok) showToast('Durum güncellendi', 'success'); else showToast((r && r.hata) || 'Hata', 'error');
+    gorevListeYukle();
+}
+
+async function gorevNotEkle(id) {
+    const not = prompt('Not ekle:');
+    if (!not || !not.trim()) return;
+    const r = await secureFetch('/gorev-not', { method: 'POST', body: JSON.stringify({ gorev_id: id, not_metni: not.trim() }) });
+    if (r && r.ok) { showToast('Not eklendi', 'success'); gorevListeYukle(); } else showToast((r && r.hata) || 'Hata', 'error');
+}
+
+async function gorevPazartesiYukle() {
+    const box = document.getElementById('grvPazartesiGorunum');
+    box.innerHTML = '<div class="text-muted p-3">Yükleniyor…</div>';
+    const r = await secureFetch('/gorevler/pazartesi').catch(() => null);
+    if (!r || !r.ok) { box.innerHTML = '<div class="text-danger p-3">Yüklenemedi.</div>'; return; }
+    const t = g => g.bitis_tarihi ? new Date(g.bitis_tarihi).toLocaleDateString('tr-TR') : '';
+    const satir = g => `<li class="d-flex justify-content-between small py-1 border-bottom"><span>${esc(g.baslik)} ${g.taahhut ? '<span class="badge bg-info-subtle text-info-emphasis">T</span>' : ''}</span><span class="text-muted ms-2 text-nowrap">${esc(g.sahip_ad)} · ${t(g)}</span></li>`;
+    const grup = arr => {
+        const m = {}; arr.forEach(g => { (m[g.sahip_ad] = m[g.sahip_ad] || []).push(g); });
+        return Object.keys(m).length ? Object.entries(m).map(([ad, gs]) => `<div class="mb-2"><div class="fw-semibold small text-dark">${esc(ad)}</div><ul class="list-unstyled ms-2 mb-0">${gs.map(satir).join('')}</ul></div>`).join('') : '<div class="text-muted small">— yok —</div>';
+    };
+    const duz = arr => arr.length ? '<ul class="list-unstyled mb-0">' + arr.map(satir).join('') + '</ul>' : '<div class="text-muted small">— yok —</div>';
+    const blok = (renk, ikon, baslik, ic) => `<div class="card border-0 shadow-sm mb-3"><div class="card-header ${renk} fw-bold py-2"><i class="bi ${ikon} me-2"></i>${baslik}</div><div class="card-body py-2">${ic}</div></div>`;
+    const ozet = r.sahip_ozeti.map(s => `<tr><td>${esc(s.sahip_ad)}</td><td class="text-center">${s.acik}</td><td class="text-center ${s.geciken > 0 ? 'text-danger fw-bold' : ''}">${s.geciken}</td><td class="text-center text-success">${s.bu_ay_tamamlanan}</td></tr>`).join('');
+    box.innerHTML = `
+      <div class="d-flex justify-content-end mb-2"><button class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Yazdır</button></div>
+      ${blok('bg-danger-subtle text-danger-emphasis', 'bi-exclamation-triangle-fill', `Geciken Görevler (${r.gecikenler.length})`, grup(r.gecikenler))}
+      ${blok('bg-primary-subtle text-primary-emphasis', 'bi-calendar-week', `Bu Hafta (${r.bu_hafta.length})`, grup(r.bu_hafta))}
+      ${blok('bg-success-subtle text-success-emphasis', 'bi-check-circle-fill', `Geçen Hafta Tamamlananlar (${r.gecen_hafta_bitenler.length})`, duz(r.gecen_hafta_bitenler))}
+      ${blok('bg-info-subtle text-info-emphasis', 'bi-flag-fill', `Taahhütler (${r.taahhutler.length})`, r.taahhutler.length ? '<ul class="list-unstyled mb-0">' + r.taahhutler.map(g => `<li class="d-flex justify-content-between small py-1 border-bottom"><span>${esc(g.baslik)} — ${esc(g.sahip_ad)}</span><span class="badge ${GRV_DURUM_BADGE[g.durum] || 'bg-secondary'}">${GRV_DURUM_AD[g.durum] || g.durum}</span></li>`).join('') + '</ul>' : '<div class="text-muted small">— yok —</div>')}
+      ${blok('bg-light', 'bi-people-fill', 'Kişi Özeti', `<table class="table table-sm mb-0"><thead><tr><th>Kişi</th><th class="text-center">Açık</th><th class="text-center">Geciken</th><th class="text-center">Bu ay biten</th></tr></thead><tbody>${ozet}</tbody></table>`)}
+    `;
+}
+
 function setTab(tab) {
     // 0. İzin kontrolü — yoksa anasayfa'ya yönlendir
     if (typeof sekmeGuard === 'function' && !sekmeGuard(tab)) {
@@ -5041,7 +5218,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea','gorevlerArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -5069,6 +5246,9 @@ function setTab(tab) {
     } else if (tab === 'bildirimayar') {
         document.getElementById("bildirimAyarArea").classList.remove("d-none");
         bildirimAyarYukle();
+    } else if (tab === 'gorevler') {
+        document.getElementById("gorevlerArea").classList.remove("d-none");
+        gorevSekmeInit();
     } else if (tab === 'projeler') {
         document.getElementById("projeArea").classList.remove("d-none");
         fetchProjeler();
