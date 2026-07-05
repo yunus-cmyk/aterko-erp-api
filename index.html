@@ -1141,6 +1141,12 @@
                                 <option value="PASIF">Pasif (giriş yapamaz)</option>
                             </select>
                         </div>
+                        <div class="col-md-12">
+                            <div class="form-check border rounded p-2 bg-white">
+                                <input class="form-check-input" type="checkbox" id="kulCekirdek">
+                                <label class="form-check-label small fw-semibold" for="kulCekirdek"><i class="bi bi-check2-square me-1 text-primary"></i>Çekirdek Ekip <span class="text-muted fw-normal">— Görev Takip modülüne (Pazartesi masası) erişir. Rol/izinden bağımsız.</span></label>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer bg-white">
@@ -4698,7 +4704,7 @@ function renderKullanicilar() {
         const kayit = u.kayit_tarihi ? new Date(u.kayit_tarihi).toLocaleDateString('tr-TR') : '-';
         const durumBadge = u.durum === 'AKTIF' ? '<span class="badge bg-success">AKTİF</span>' : '<span class="badge bg-secondary">PASİF</span>';
         return `<tr>
-            <td class="fw-bold">${esc(u.ad_soyad)}</td>
+            <td class="fw-bold">${esc(u.ad_soyad)}${u.cekirdek_ekip ? ' <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle" title="Görev Takip / Pazartesi masası"><i class="bi bi-check2-square"></i> Çekirdek</span>' : ''}</td>
             <td><code class="small">${esc(u.email)}</code></td>
             <td class="text-center"><span class="badge bg-${renk}">${esc(u.rol)}</span></td>
             <td class="text-center">${durumBadge}</td>
@@ -4728,6 +4734,7 @@ function openKullaniciModal(data) {
     kulRolDegisti();
 
     document.getElementById('kulDurum').value = d.durum || 'AKTIF';
+    document.getElementById('kulCekirdek').checked = !!d.cekirdek_ekip;
 
     // Silme butonu sadece düzenlemede (ve kendi olmayanda)
     const silBtn = document.getElementById('kulSilBtn');
@@ -4757,7 +4764,8 @@ async function kullaniciKaydet() {
         ad_soyad: document.getElementById('kulAdSoyad').value.trim(),
         email: document.getElementById('kulEmail').value.trim().toLowerCase(),
         rol: document.getElementById('kulRol').value,
-        durum: document.getElementById('kulDurum').value
+        durum: document.getElementById('kulDurum').value,
+        cekirdek_ekip: document.getElementById('kulCekirdek').checked
     };
     if (!payload.ad_soyad) return showToast('Ad Soyad zorunlu.', 'error');
     if (!payload.email) return showToast('E-posta zorunlu.', 'error');

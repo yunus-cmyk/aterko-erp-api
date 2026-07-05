@@ -4543,8 +4543,8 @@ const MODUL_KATALOG = [
     { kod: 'yonetim.kullanicilar',ad: 'Kullanıcılar',        grup: 'Yönetim' },
     { kod: 'yonetim.roller',      ad: 'Roller',              grup: 'Yönetim' },
     { kod: 'yonetim.form_tanimi', ad: 'Form Tanımları',      grup: 'Yönetim' },
-    { kod: 'yonetim.audit_log',   ad: 'Audit Log',           grup: 'Yönetim' },
-    { kod: 'yonetim.gorevler',    ad: 'Görevler',            grup: 'Yönetim' }
+    { kod: 'yonetim.audit_log',   ad: 'Audit Log',           grup: 'Yönetim' }
+    // Not: Görev Takip modülü izin matrisi ile YÖNETİLMEZ — erişim kullanicilar.cekirdek_ekip (kişi bazlı)
 ];
 const IZIN_SEVIYELERI = ['YOK', 'OKUMA', 'YAZMA', 'TAM'];
 
@@ -5062,7 +5062,7 @@ app.get('/api/kullanicilar', yetkiKontrol, async (req, res, next) => {
     }
     try {
         const r = await pool.query(`
-            SELECT id, email, ad_soyad, rol, durum, son_giris, kayit_tarihi
+            SELECT id, email, ad_soyad, rol, durum, son_giris, kayit_tarihi, cekirdek_ekip
             FROM kullanicilar ORDER BY id ASC
         `);
         const roller = await getKullaniciRolleri();
@@ -5075,7 +5075,7 @@ app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
         return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
     }
     try {
-        const { id, email, ad_soyad, rol, durum } = req.body;
+        const { id, email, ad_soyad, rol, durum, cekirdek_ekip } = req.body;
         const emailNorm = (email || '').trim().toLowerCase();
         const adSoyadNorm = (ad_soyad || '').trim();
         const rolNorm = (rol || 'KULLANICI').trim().toUpperCase();
@@ -5098,8 +5098,8 @@ app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
                 return res.json({ ok: false, hata: 'Kendi ADMIN yetkinizi kaldıramazsınız.' });
             }
             await pool.query(`
-                UPDATE kullanicilar SET email=$1, ad_soyad=$2, rol=$3, durum=$4 WHERE id=$5
-            `, [emailNorm, adSoyadNorm, rolNorm, durumNorm, id]);
+                UPDATE kullanicilar SET email=$1, ad_soyad=$2, rol=$3, durum=$4, cekirdek_ekip=$5 WHERE id=$6
+            `, [emailNorm, adSoyadNorm, rolNorm, durumNorm, !!cekirdek_ekip, id]);
             await auditLogla(req, {
                 eylem: 'UPDATE', tablo: 'kullanicilar', kayit_id: id,
                 ozet: `Kullanıcı güncellendi: ${emailNorm} (rol: ${rolNorm}, durum: ${durumNorm})`,
@@ -5110,8 +5110,8 @@ app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
             const x = await pool.query('SELECT id FROM kullanicilar WHERE LOWER(email)=$1', [emailNorm]);
             if (x.rowCount > 0) return res.json({ ok: false, hata: 'Bu e-posta zaten kayıtlı.' });
             const ins = await pool.query(`
-                INSERT INTO kullanicilar (email, ad_soyad, rol, durum) VALUES ($1,$2,$3,$4) RETURNING id
-            `, [emailNorm, adSoyadNorm, rolNorm, durumNorm]);
+                INSERT INTO kullanicilar (email, ad_soyad, rol, durum, cekirdek_ekip) VALUES ($1,$2,$3,$4,$5) RETURNING id
+            `, [emailNorm, adSoyadNorm, rolNorm, durumNorm, !!cekirdek_ekip]);
             await auditLogla(req, {
                 eylem: 'CREATE', tablo: 'kullanicilar', kayit_id: ins.rows[0].id,
                 ozet: `Yeni kullanıcı: ${emailNorm} (${rolNorm})`, yeni_veri: req.body
