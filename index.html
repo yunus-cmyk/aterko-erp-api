@@ -1623,15 +1623,19 @@
 
         <!-- Hızlı ekleme -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
+            <div class="small text-muted mb-2"><i class="bi bi-funnel me-1"></i><b>Görev mi?</b> Ölçülebilir (bitti/bitmedi net) · tarihli · rutin dışı · Pazartesi masasına değer. Değilse kişisel ajandada kalmalı — sürekli sorumluluk görev değildir.</div>
             <div class="row g-2 align-items-end">
-                <div class="col-md-4"><label class="form-label small fw-semibold m-0">Görev</label><input id="grvBaslik" class="form-control form-control-sm" placeholder="Ne yapılacak?"></div>
+                <div class="col-md-4"><label class="form-label small fw-semibold m-0">Görev</label><input id="grvBaslik" class="form-control form-control-sm" placeholder="Net çıktı — örn. 'En büyük 10 alacağın arama planı'"></div>
                 <div class="col-md-2"><label class="form-label small fw-semibold m-0">Sahip <span class="text-danger">*</span></label><select id="grvSahip" class="form-select form-select-sm"></select></div>
                 <div class="col-md-2"><label class="form-label small fw-semibold m-0">Bitiş <span class="text-danger">*</span></label><input id="grvBitis" type="date" class="form-control form-control-sm"></div>
-                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Alan</label><select id="grvAlan" class="form-select form-select-sm"><option value="GENEL">Genel</option><option value="SATIS">Satış</option><option value="MALI">Mali</option><option value="IDARI">İdari</option><option value="ORTAKLAR">Ortaklar</option></select></div>
+                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Alan</label><select id="grvAlan" class="form-select form-select-sm"><option value="GENEL">Genel</option><option value="TAAHHUT">30/90 Taahhüt</option><option value="NAKIT">Nakit Seferberliği</option><option value="YENIDEN_YAPILANMA">Yeniden Yapılanma</option><option value="KOMISER">Komiser Hazırlığı</option><option value="PZT_KARAR">Pazartesi Kararı</option></select></div>
                 <div class="col-md-1"><label class="form-label small fw-semibold m-0">Öncelik</label><select id="grvOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
                 <div class="col-md-1"><button class="btn btn-primary btn-sm w-100" onclick="gorevHizliEkle()" title="Görev ekle"><i class="bi bi-plus-lg"></i></button></div>
             </div>
-            <div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="grvTaahhut"><label class="form-check-label small" for="grvTaahhut">Taahhüt (30/90 gün yönetim taahhüdü)</label></div>
+            <div class="d-flex align-items-center gap-3 mt-2">
+                <div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="grvTaahhut" onchange="grvVadeToggle('grvTaahhut','grvVadeWrap')"><label class="form-check-label small" for="grvTaahhut">Taahhüt (30/90 gün yönetim taahhüdü)</label></div>
+                <div id="grvVadeWrap" class="d-none"><select id="grvVade" class="form-select form-select-sm py-0" style="width:auto"><option value="30">30 gün</option><option value="90">90 gün</option></select></div>
+            </div>
         </div></div>
 
         <!-- LİSTE görünümü -->
@@ -1639,7 +1643,7 @@
             <div class="d-flex gap-2 flex-wrap mb-2 align-items-center">
                 <select id="grvFilSahip" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm sahipler</option></select>
                 <select id="grvFilDurum" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm durumlar</option><option value="ACIK">Açık</option><option value="DEVAM">Devam</option><option value="TAMAMLANDI">Tamamlandı</option><option value="IPTAL">İptal</option></select>
-                <select id="grvFilAlan" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm alanlar</option><option value="GENEL">Genel</option><option value="SATIS">Satış</option><option value="MALI">Mali</option><option value="IDARI">İdari</option><option value="ORTAKLAR">Ortaklar</option></select>
+                <select id="grvFilAlan" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm alanlar</option><option value="GENEL">Genel</option><option value="TAAHHUT">30/90 Taahhüt</option><option value="NAKIT">Nakit Seferberliği</option><option value="YENIDEN_YAPILANMA">Yeniden Yapılanma</option><option value="KOMISER">Komiser Hazırlığı</option><option value="PZT_KARAR">Pazartesi Kararı</option></select>
                 <div class="form-check"><input class="form-check-input" type="checkbox" id="grvFilTaahhut" onchange="gorevListeYukle()"><label class="form-check-label small" for="grvFilTaahhut">Taahhütler</label></div>
                 <div class="form-check"><input class="form-check-input" type="checkbox" id="grvFilGecikmis" onchange="gorevListeYukle()"><label class="form-check-label small text-danger fw-semibold" for="grvFilGecikmis">Sadece gecikenler</label></div>
             </div>
@@ -1649,6 +1653,28 @@
         <!-- PAZARTESİ görünümü -->
         <div id="grvPazartesiGorunum" class="d-none"></div>
     </div>
+
+    <!-- Görev Düzenle Modal -->
+    <div class="modal fade" id="modalGorevDuzenle" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Görev Düzenle</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <input type="hidden" id="gdId">
+            <div class="mb-2"><label class="form-label small fw-semibold">Görev</label><input id="gdBaslik" class="form-control form-control-sm"></div>
+            <div class="mb-2"><label class="form-label small fw-semibold">Açıklama</label><textarea id="gdAciklama" class="form-control form-control-sm" rows="2"></textarea></div>
+            <div class="row g-2">
+                <div class="col-6"><label class="form-label small fw-semibold">Sahip</label><select id="gdSahip" class="form-select form-select-sm"></select></div>
+                <div class="col-6"><label class="form-label small fw-semibold">Bitiş</label><input id="gdBitis" type="date" class="form-control form-control-sm"></div>
+                <div class="col-6"><label class="form-label small fw-semibold">Alan</label><select id="gdAlan" class="form-select form-select-sm"><option value="GENEL">Genel</option><option value="TAAHHUT">30/90 Taahhüt</option><option value="NAKIT">Nakit Seferberliği</option><option value="YENIDEN_YAPILANMA">Yeniden Yapılanma</option><option value="KOMISER">Komiser Hazırlığı</option><option value="PZT_KARAR">Pazartesi Kararı</option></select></div>
+                <div class="col-6"><label class="form-label small fw-semibold">Öncelik</label><select id="gdOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
+            </div>
+            <div class="d-flex align-items-center gap-3 mt-2">
+                <div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="gdTaahhut" onchange="grvVadeToggle('gdTaahhut','gdVadeWrap')"><label class="form-check-label small" for="gdTaahhut">Taahhüt</label></div>
+                <div id="gdVadeWrap" class="d-none"><select id="gdVade" class="form-select form-select-sm py-0" style="width:auto"><option value="30">30 gün</option><option value="90">90 gün</option></select></div>
+            </div>
+            <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Bitiş tarihini değiştirirsen ledger izi için otomatik not düşülür.</div>
+        </div>
+        <div class="modal-footer py-2"><button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">İptal</button><button class="btn btn-sm btn-primary" onclick="gorevDuzenleKaydet()">Kaydet</button></div>
+    </div></div></div>
 
     <div id="auditArea" class="d-none p-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -5078,7 +5104,7 @@ async function auditOzetYukle() {
 
 // ===== GÖREV TAKİP MODÜLÜ (çekirdek yönetim ekibi) =====
 window.grvEkip = [];
-const GRV_ALAN_AD = { SATIS: 'Satış', MALI: 'Mali', IDARI: 'İdari', ORTAKLAR: 'Ortaklar', GENEL: 'Genel' };
+const GRV_ALAN_AD = { TAAHHUT: '30/90 Taahhüt', NAKIT: 'Nakit Seferberliği', YENIDEN_YAPILANMA: 'Yeniden Yapılanma', KOMISER: 'Komiser Hazırlığı', PZT_KARAR: 'Pazartesi Kararı', GENEL: 'Genel' };
 const GRV_DURUM_AD = { ACIK: 'Açık', DEVAM: 'Devam', TAMAMLANDI: 'Tamamlandı', IPTAL: 'İptal' };
 const GRV_DURUM_BADGE = { ACIK: 'bg-secondary', DEVAM: 'bg-primary', TAMAMLANDI: 'bg-success', IPTAL: 'bg-dark' };
 const GRV_ONCELIK_BADGE = { KRITIK: 'bg-danger', YUKSEK: 'bg-warning text-dark', NORMAL: 'bg-light text-dark border' };
@@ -5098,6 +5124,7 @@ async function gorevSekmeInit() {
     }
     const opts = window.grvEkip.map(u => `<option value="${u.id}">${esc(u.ad_soyad)}</option>`).join('');
     const sahipSel = document.getElementById('grvSahip'); if (sahipSel) sahipSel.innerHTML = opts;
+    const gdSahip = document.getElementById('gdSahip'); if (gdSahip) gdSahip.innerHTML = opts;
     const filSahip = document.getElementById('grvFilSahip'); if (filSahip) filSahip.innerHTML = '<option value="">Tüm sahipler</option>' + opts;
     gorevGorunum('liste');
 }
@@ -5111,7 +5138,7 @@ function gorevKartHTML(g) {
     return `<div class="card border-0 shadow-sm mb-2 ${gec ? 'border-start border-danger border-3' : ''}"><div class="card-body py-2">
         <div class="d-flex justify-content-between align-items-start gap-2">
           <div class="flex-grow-1">
-            <div class="fw-semibold">${esc(g.baslik)} ${g.taahhut ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1">Taahhüt</span>' : ''}</div>
+            <div class="fw-semibold">${esc(g.baslik)} ${g.taahhut ? `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1">Taahhüt${g.taahhut_vade ? ' ' + g.taahhut_vade + 'g' : ''}</span>` : ''}</div>
             <div class="small text-muted mt-1">
               <i class="bi bi-person me-1"></i>${esc(g.sahip_ad)} ·
               <span class="${gec ? 'text-danger fw-bold' : ''}"><i class="bi bi-calendar-event me-1"></i>${tarih}${gec ? ' — GECİKTİ' : ''}</span> ·
@@ -5124,6 +5151,7 @@ function gorevKartHTML(g) {
           <div class="text-end" style="min-width:135px">
             <span class="badge ${GRV_DURUM_BADGE[g.durum] || 'bg-secondary'} mb-1 d-block">${GRV_DURUM_AD[g.durum] || g.durum}</span>
             <select class="form-select form-select-sm mb-1" onchange="gorevDurumDegis(${g.id}, this.value)">${durumSel}</select>
+            <button class="btn btn-sm btn-outline-primary w-100 mb-1" onclick="gorevDuzenleAc(${g.id})"><i class="bi bi-pencil me-1"></i>Düzenle</button>
             <button class="btn btn-sm btn-outline-secondary w-100" onclick="gorevNotEkle(${g.id})"><i class="bi bi-chat-left-text me-1"></i>Not</button>
           </div>
         </div></div></div>`;
@@ -5139,28 +5167,105 @@ async function gorevListeYukle() {
     const r = await secureFetch('/gorevler?' + p.toString()).catch(() => null);
     const box = document.getElementById('grvListe');
     if (!r || !r.ok) { box.innerHTML = '<div class="text-danger p-3">Yüklenemedi.</div>'; return; }
+    window.grvSonListe = r.gorevler;
     box.innerHTML = r.gorevler.length ? r.gorevler.map(gorevKartHTML).join('') : '<div class="text-muted text-center p-4">Görev yok.</div>';
 }
 
 async function gorevHizliEkle() {
+    const taahhut = document.getElementById('grvTaahhut').checked;
     const govde = {
         baslik: document.getElementById('grvBaslik').value.trim(),
         sahip_id: document.getElementById('grvSahip').value,
         bitis_tarihi: document.getElementById('grvBitis').value,
         alan: document.getElementById('grvAlan').value,
         oncelik: document.getElementById('grvOncelik').value,
-        taahhut: document.getElementById('grvTaahhut').checked
+        taahhut,
+        taahhut_vade: taahhut ? document.getElementById('grvVade').value : null
     };
     if (!govde.baslik) return showToast('Görev başlığı girin.', 'error');
     if (!govde.sahip_id || !govde.bitis_tarihi) return showToast('Sahip ve bitiş tarihi zorunlu.', 'error');
+    if (!gorevGranularOnay(govde.bitis_tarihi)) return;
     const r = await secureFetch('/gorev-kaydet', { method: 'POST', body: JSON.stringify(govde) });
     if (r && r.ok) {
         showToast('Görev eklendi', 'success');
         document.getElementById('grvBaslik').value = '';
         document.getElementById('grvBitis').value = '';
         document.getElementById('grvTaahhut').checked = false;
+        document.getElementById('grvVadeWrap').classList.add('d-none');
         gorevListeYukle();
     } else showToast((r && r.hata) || 'Kayıt hatası', 'error');
+}
+
+function grvVadeToggle(chkId, wrapId) {
+    document.getElementById(wrapId).classList.toggle('d-none', !document.getElementById(chkId).checked);
+}
+
+// Granülarite rehberi: <1 gün → kişisel ajanda; >6 hafta → parçala (nazik onay, engellemez)
+function gorevGranularOnay(bitis) {
+    if (!bitis) return true;
+    const gun = Math.round((new Date(bitis) - new Date(new Date().toDateString())) / 86400000);
+    if (gun < 1) return confirm('Bu iş bir günden kısa görünüyor.\nBir günden kısa işler kişisel ajandada kalmalı — yine de görev olarak eklensin mi?');
+    if (gun > 42) return confirm('Bu iş 6 haftadan uzun (>42 gün).\nUzun işleri kilometre taşlarına bölmek önerilir — yine de tek görev olarak eklensin mi?');
+    return true;
+}
+
+function gorevDuzenleAc(id) {
+    const g = (window.grvSonListe || []).find(x => x.id === id);
+    if (!g) return;
+    document.getElementById('gdId').value = g.id;
+    document.getElementById('gdBaslik').value = g.baslik || '';
+    document.getElementById('gdAciklama').value = g.aciklama || '';
+    document.getElementById('gdSahip').value = g.sahip_id;
+    document.getElementById('gdBitis').value = (g.bitis_tarihi || '').slice(0, 10);
+    document.getElementById('gdAlan').value = g.alan || 'GENEL';
+    document.getElementById('gdOncelik').value = g.oncelik || 'NORMAL';
+    document.getElementById('gdTaahhut').checked = !!g.taahhut;
+    document.getElementById('gdVade').value = g.taahhut_vade || 30;
+    document.getElementById('gdVadeWrap').classList.toggle('d-none', !g.taahhut);
+    new bootstrap.Modal(document.getElementById('modalGorevDuzenle')).show();
+}
+
+async function gorevDuzenleKaydet() {
+    const taahhut = document.getElementById('gdTaahhut').checked;
+    const govde = {
+        id: document.getElementById('gdId').value,
+        baslik: document.getElementById('gdBaslik').value.trim(),
+        aciklama: document.getElementById('gdAciklama').value.trim(),
+        sahip_id: document.getElementById('gdSahip').value,
+        bitis_tarihi: document.getElementById('gdBitis').value,
+        alan: document.getElementById('gdAlan').value,
+        oncelik: document.getElementById('gdOncelik').value,
+        taahhut,
+        taahhut_vade: taahhut ? document.getElementById('gdVade').value : null
+    };
+    if (!govde.baslik) return showToast('Görev başlığı girin.', 'error');
+    if (!govde.sahip_id || !govde.bitis_tarihi) return showToast('Sahip ve bitiş tarihi zorunlu.', 'error');
+    if (!gorevGranularOnay(govde.bitis_tarihi)) return;
+    const r = await secureFetch('/gorev-kaydet', { method: 'POST', body: JSON.stringify(govde) });
+    if (r && r.ok) {
+        showToast('Görev güncellendi', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('modalGorevDuzenle'))?.hide();
+        gorevListeYukle();
+    } else showToast((r && r.hata) || 'Hata', 'error');
+}
+
+// Pazartesi ekranından anında toplantı kararı ekle (sahip + tarih, alan=Pazartesi Kararı)
+async function gorevKararEkle() {
+    const govde = {
+        baslik: document.getElementById('grvKararBaslik').value.trim(),
+        sahip_id: document.getElementById('grvKararSahip').value,
+        bitis_tarihi: document.getElementById('grvKararBitis').value,
+        alan: 'PZT_KARAR', oncelik: 'NORMAL'
+    };
+    if (!govde.baslik) return showToast('Karar metni girin.', 'error');
+    if (!govde.sahip_id || !govde.bitis_tarihi) return showToast('Sahip ve tarih zorunlu.', 'error');
+    const r = await secureFetch('/gorev-kaydet', { method: 'POST', body: JSON.stringify(govde) });
+    if (r && r.ok) {
+        showToast('Karar eklendi', 'success');
+        document.getElementById('grvKararBaslik').value = '';
+        document.getElementById('grvKararBitis').value = '';
+        gorevPazartesiYukle();
+    } else showToast((r && r.hata) || 'Hata', 'error');
 }
 
 async function gorevDurumDegis(id, durum) {
@@ -5194,13 +5299,33 @@ async function gorevPazartesiYukle() {
     };
     const duz = arr => arr.length ? '<ul class="list-unstyled mb-0">' + arr.map(satir).join('') + '</ul>' : '<div class="text-muted small">— yok —</div>';
     const blok = (renk, ikon, baslik, ic) => `<div class="card border-0 shadow-sm mb-3"><div class="card-header ${renk} fw-bold py-2"><i class="bi ${ikon} me-2"></i>${baslik}</div><div class="card-body py-2">${ic}</div></div>`;
-    const ozet = r.sahip_ozeti.map(s => `<tr><td>${esc(s.sahip_ad)}</td><td class="text-center">${s.acik}</td><td class="text-center ${s.geciken > 0 ? 'text-danger fw-bold' : ''}">${s.geciken}</td><td class="text-center text-success">${s.bu_ay_tamamlanan}</td></tr>`).join('');
+    // Kişi özeti + 3-7 hijyen uyarısı (7'yi aşan açık = liste kabarmış, araç anlamını yitirir)
+    const ozet = r.sahip_ozeti.map(s => `<tr><td>${esc(s.sahip_ad)}</td><td class="text-center">${s.acik}${s.acik > 7 ? ' <span class="badge bg-danger" title="Kişi başı 3-7 önerilir">fazla</span>' : ''}</td><td class="text-center ${s.geciken > 0 ? 'text-danger fw-bold' : ''}">${s.geciken}</td><td class="text-center text-success">${s.bu_ay_tamamlanan}</td></tr>`).join('');
+    // Taahhüt Tutarlılığı Karnesi (son 90 gün) — zamanında / geç / kaçan + tutarlılık %
+    const karneRow = s => {
+        const toplam = s.zamaninda + s.gec + s.kacan;
+        const yuzde = toplam ? Math.round(100 * s.zamaninda / toplam) : null;
+        const renk = yuzde === null ? 'text-muted' : yuzde >= 80 ? 'text-success' : yuzde >= 50 ? 'text-warning' : 'text-danger';
+        return `<tr><td>${esc(s.sahip_ad)}</td><td class="text-center text-success">${s.zamaninda}</td><td class="text-center">${s.gec}</td><td class="text-center text-danger">${s.kacan}</td><td class="text-center fw-bold ${renk}">${yuzde === null ? '—' : '%' + yuzde}</td></tr>`;
+    };
+    const karneTablo = `<table class="table table-sm mb-0"><thead><tr><th>Kişi</th><th class="text-center">Zamanında</th><th class="text-center">Geç</th><th class="text-center">Kaçan</th><th class="text-center">Tutarlılık</th></tr></thead><tbody>${(r.karne || []).map(karneRow).join('')}</tbody></table><div class="small text-muted mt-1">Son 90 gün · sözünü zamanında tutma oranı (90 gün değerlendirmesinin verisi kendiliğinden birikir)</div>`;
+    // Toplantı kararı hızlı girişi (yazdırmada gizli)
+    const kararForm = `<div class="card border-0 shadow-sm mb-3 d-print-none"><div class="card-body py-2">
+        <div class="small fw-semibold mb-1"><i class="bi bi-lightning-charge me-1"></i>Toplantı kararı ekle — anında sahip + tarih (tutanağın yerini tutar)</div>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-5"><input id="grvKararBaslik" class="form-control form-control-sm" placeholder="Alınan karar / aksiyon"></div>
+          <div class="col-md-3"><select id="grvKararSahip" class="form-select form-select-sm">${(window.grvEkip || []).map(u => `<option value="${u.id}">${esc(u.ad_soyad)}</option>`).join('')}</select></div>
+          <div class="col-md-3"><input id="grvKararBitis" type="date" class="form-control form-control-sm"></div>
+          <div class="col-md-1"><button class="btn btn-primary btn-sm w-100" onclick="gorevKararEkle()"><i class="bi bi-plus-lg"></i></button></div>
+        </div></div></div>`;
     box.innerHTML = `
-      <div class="d-flex justify-content-end mb-2"><button class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Yazdır</button></div>
+      <div class="d-flex justify-content-end mb-2 d-print-none"><button class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Yazdır</button></div>
+      ${kararForm}
       ${blok('bg-danger-subtle text-danger-emphasis', 'bi-exclamation-triangle-fill', `Geciken Görevler (${r.gecikenler.length})`, grup(r.gecikenler))}
       ${blok('bg-primary-subtle text-primary-emphasis', 'bi-calendar-week', `Bu Hafta (${r.bu_hafta.length})`, grup(r.bu_hafta))}
       ${blok('bg-success-subtle text-success-emphasis', 'bi-check-circle-fill', `Geçen Hafta Tamamlananlar (${r.gecen_hafta_bitenler.length})`, duz(r.gecen_hafta_bitenler))}
       ${blok('bg-info-subtle text-info-emphasis', 'bi-flag-fill', `Taahhütler (${r.taahhutler.length})`, r.taahhutler.length ? '<ul class="list-unstyled mb-0">' + r.taahhutler.map(g => `<li class="d-flex justify-content-between small py-1 border-bottom"><span>${esc(g.baslik)} — ${esc(g.sahip_ad)}</span><span class="badge ${GRV_DURUM_BADGE[g.durum] || 'bg-secondary'}">${GRV_DURUM_AD[g.durum] || g.durum}</span></li>`).join('') + '</ul>' : '<div class="text-muted small">— yok —</div>')}
+      ${blok('bg-warning-subtle text-warning-emphasis', 'bi-award-fill', 'Taahhüt Tutarlılığı Karnesi', karneTablo)}
       ${blok('bg-light', 'bi-people-fill', 'Kişi Özeti', `<table class="table table-sm mb-0"><thead><tr><th>Kişi</th><th class="text-center">Açık</th><th class="text-center">Geciken</th><th class="text-center">Bu ay biten</th></tr></thead><tbody>${ozet}</tbody></table>`)}
     `;
 }

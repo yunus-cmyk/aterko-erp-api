@@ -48,6 +48,8 @@ async function main() {
         await client.query("CREATE INDEX IF NOT EXISTS idx_gorev_sahip ON yonetim_gorevleri(sahip_id)");
         await client.query("CREATE INDEX IF NOT EXISTS idx_gorev_durum ON yonetim_gorevleri(durum)");
         await client.query("CREATE INDEX IF NOT EXISTS idx_gorev_bitis ON yonetim_gorevleri(bitis_tarihi)");
+        // Taahhüt vadesi (30 / 90 gün) — yalnızca taahhut=TRUE görevlerde anlamlı
+        await client.query("ALTER TABLE yonetim_gorevleri ADD COLUMN IF NOT EXISTS taahhut_vade INTEGER");
 
         // 3) gorev_notlari
         await client.query(`

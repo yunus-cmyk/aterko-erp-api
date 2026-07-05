@@ -4910,7 +4910,7 @@ async function cekirdekEkipKontrol(req, res, next) {
         return res.status(403).json({ ok: false, hata: 'Bu modüle erişiminiz yok (çekirdek yönetim ekibi).' });
     } catch (e) { next(e); }
 }
-const GOREV_ALANLAR = ['SATIS', 'MALI', 'IDARI', 'ORTAKLAR', 'GENEL'];
+const GOREV_ALANLAR = ['TAAHHUT', 'NAKIT', 'YENIDEN_YAPILANMA', 'KOMISER', 'PZT_KARAR', 'GENEL'];
 const GOREV_ONCELIKLER = ['KRITIK', 'YUKSEK', 'NORMAL'];
 const GOREV_DURUMLAR = ['ACIK', 'DEVAM', 'TAMAMLANDI', 'IPTAL'];
 const gorevOrtakMi = req => ['yunus@aterko.com', 'yakup@aterko.com'].includes((req.user.email || '').toLowerCase());
@@ -4940,7 +4940,17 @@ app.get('/api/gorevler/pazartesi', yetkiKontrol, cekirdekEkipKontrol, async (req
             FROM kullanicilar sh LEFT JOIN yonetim_gorevleri g ON g.sahip_id=sh.id
             WHERE sh.cekirdek_ekip=TRUE
             GROUP BY sh.id, sh.ad_soyad ORDER BY geciken DESC, acik DESC`);
-        res.json({ ok: true, gecikenler, bu_hafta, gecen_hafta_bitenler, taahhutler, sahip_ozeti });
+        // Taahhüt Tutarlılığı Karnesi — son 90 gün (bitiş tarihine göre): zamanında / geç / kaçan
+        const karne = await q(`
+            SELECT sh.id AS sahip_id, sh.ad_soyad AS sahip_ad,
+                   COUNT(g.id) FILTER (WHERE g.durum='TAMAMLANDI' AND g.tamamlanma_tarihi::date <= g.bitis_tarihi)::int AS zamaninda,
+                   COUNT(g.id) FILTER (WHERE g.durum='TAMAMLANDI' AND g.tamamlanma_tarihi::date > g.bitis_tarihi)::int AS gec,
+                   COUNT(g.id) FILTER (WHERE g.durum IN ('ACIK','DEVAM') AND g.bitis_tarihi < CURRENT_DATE)::int AS kacan
+            FROM kullanicilar sh
+            LEFT JOIN yonetim_gorevleri g ON g.sahip_id=sh.id AND g.bitis_tarihi >= CURRENT_DATE - INTERVAL '90 days'
+            WHERE sh.cekirdek_ekip=TRUE
+            GROUP BY sh.id, sh.ad_soyad ORDER BY sh.ad_soyad`);
+        res.json({ ok: true, gecikenler, bu_hafta, gecen_hafta_bitenler, taahhutler, sahip_ozeti, karne });
     } catch (e) { next(e); }
 });
 
@@ -4972,22 +4982,32 @@ app.get('/api/gorevler', yetkiKontrol, cekirdekEkipKontrol, async (req, res, nex
 // Görev oluştur / güncelle (id varsa update). sahip_id + bitis_tarihi zorunlu.
 app.post('/api/gorev-kaydet', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
     try {
-        const { id, baslik, aciklama, sahip_id, alan, oncelik, bitis_tarihi, taahhut } = req.body;
+        const { id, baslik, aciklama, sahip_id, alan, oncelik, bitis_tarihi, taahhut, taahhut_vade } = req.body;
         if (!baslik || !String(baslik).trim()) return res.json({ ok: false, hata: 'Görev başlığı zorunludur.' });
         if (!sahip_id || !bitis_tarihi) return res.json({ ok: false, hata: 'Görevin sahibi ve bitiş tarihi zorunludur.' });
         const alanV = GOREV_ALANLAR.includes(alan) ? alan : 'GENEL';
         const oncelikV = GOREV_ONCELIKLER.includes(oncelik) ? oncelik : 'NORMAL';
+        const vadeV = taahhut && [30, 90].includes(Number(taahhut_vade)) ? Number(taahhut_vade) : null;
         if (id) {
+            // Ledger bütünlüğü: bitiş tarihi / sahip değişikliği otomatik nota işlenir (deadline sessizce ötelenemesin)
+            const eski = await pool.query("SELECT bitis_tarihi, sahip_id FROM yonetim_gorevleri WHERE id=$1", [id]);
+            if (!eski.rowCount) return res.status(404).json({ ok: false, hata: 'Görev bulunamadı.' });
             const r = await pool.query(
-                `UPDATE yonetim_gorevleri SET baslik=$1, aciklama=$2, sahip_id=$3, alan=$4, oncelik=$5, bitis_tarihi=$6, taahhut=$7 WHERE id=$8 RETURNING id`,
-                [String(baslik).trim(), aciklama || null, sahip_id, alanV, oncelikV, bitis_tarihi, !!taahhut, id]);
-            if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Görev bulunamadı.' });
+                `UPDATE yonetim_gorevleri SET baslik=$1, aciklama=$2, sahip_id=$3, alan=$4, oncelik=$5, bitis_tarihi=$6, taahhut=$7, taahhut_vade=$8 WHERE id=$9 RETURNING id`,
+                [String(baslik).trim(), aciklama || null, sahip_id, alanV, oncelikV, bitis_tarihi, !!taahhut, vadeV, id]);
+            const trFmt = d => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
+            if (String(eski.rows[0].bitis_tarihi).slice(0, 10) !== String(bitis_tarihi).slice(0, 10))
+                await pool.query("INSERT INTO gorev_notlari (gorev_id, yazan_id, not_metni) VALUES ($1,$2,$3)",
+                    [id, req.user.id, `⏱ Bitiş tarihi değişti: ${trFmt(eski.rows[0].bitis_tarihi)} → ${trFmt(bitis_tarihi)}`]);
+            if (Number(eski.rows[0].sahip_id) !== Number(sahip_id))
+                await pool.query("INSERT INTO gorev_notlari (gorev_id, yazan_id, not_metni) VALUES ($1,$2,$3)",
+                    [id, req.user.id, `👤 Sahip değişti`]);
             return res.json({ ok: true, id: r.rows[0].id, mesaj: 'Görev güncellendi.' });
         }
         const r = await pool.query(
-            `INSERT INTO yonetim_gorevleri (baslik, aciklama, sahip_id, olusturan_id, alan, oncelik, bitis_tarihi, taahhut)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-            [String(baslik).trim(), aciklama || null, sahip_id, req.user.id, alanV, oncelikV, bitis_tarihi, !!taahhut]);
+            `INSERT INTO yonetim_gorevleri (baslik, aciklama, sahip_id, olusturan_id, alan, oncelik, bitis_tarihi, taahhut, taahhut_vade)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+            [String(baslik).trim(), aciklama || null, sahip_id, req.user.id, alanV, oncelikV, bitis_tarihi, !!taahhut, vadeV]);
         res.json({ ok: true, id: r.rows[0].id, mesaj: 'Görev oluşturuldu.' });
     } catch (e) { next(e); }
 });
