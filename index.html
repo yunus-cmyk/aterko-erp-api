@@ -8401,7 +8401,7 @@ function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
     // Para birimi + KDV: düzenlemede mevcut siparişten yükle, yeni siparişte varsayılana sıfırla.
     // (Aksi halde select önceki değeri korur → USD/%10 sipariş yanlışlıkla TL/%20'ye dönerdi.)
     document.getElementById("soPara").value = isEdit ? (s.para_birimi || 'TL') : 'TL';
-    document.getElementById("soKdv").value  = isEdit ? String(s.kdv_orani ?? 20) : '20';
+    document.getElementById("soKdv").value  = isEdit ? String(normKdv(s.kdv_orani)) : '20';
 
     // Tedarikçileri yükle
     const tSelect = document.getElementById("soTedarikci");
@@ -9443,17 +9443,15 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Tedarikçi</span><span class="fw-bold text-dark">${esc(sip?.tedarikci_adi || '-')}</span></div></div>
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş Tarihi</span><span>${formatTarihTR(sip?.siparis_tarihi) || '-'}</span></div></div>
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Termin</span>${renderTerminTarihi(sip?.termin_tarihi)}</div></div>
-            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Durum</span>${getSatinalmaDurumBadge(sip?.durum)}</div></div>
+            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Kalem Sayısı</span><span class="fw-bold">${kalemler.length}</span></div></div>
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Para / KDV</span>${esc(para)} / %${kdv}</div></div>
-            <div class="col-md-6"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Kalem Sayısı</span><span class="fw-bold">${kalemler.length}</span></div></div>
         </div>
-        ${(sh.odeme_vade || sh.teslim_nakliye || sh.teslim_adresi || sh.siparis_notu) ? `
         <div class="row g-2 mb-3">
             ${sh.odeme_vade ? `<div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Ödeme Vadesi</span><span>${esc(sh.odeme_vade)}</span></div></div>` : ''}
             ${sh.teslim_nakliye ? `<div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Nakliye Şekli</span><span>${esc(sh.teslim_nakliye)}</span></div></div>` : ''}
             ${sh.teslim_adresi ? `<div class="col-md-6"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Teslimat Adresi</span><span>${esc(sh.teslim_adresi)}</span></div></div>` : ''}
-            ${sh.siparis_notu ? `<div class="col-md-12"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş Notu</span><span>${esc(sh.siparis_notu)}</span></div></div>` : ''}
-        </div>` : ''}
+            <div class="col-md-12"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş Notu</span><span>${sh.siparis_notu ? esc(sh.siparis_notu) : '<span class="text-muted">—</span>'}</span></div></div>
+        </div>
         <div class="table-responsive">
             <table class="table table-sm align-middle" style="font-size:0.82rem;">
                 <thead class="table-light">
