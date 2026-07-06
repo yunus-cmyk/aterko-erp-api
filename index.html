@@ -1634,7 +1634,9 @@
                 <div class="col-md-4"><label class="form-label small fw-semibold m-0">Görev</label><input id="grvBaslik" class="form-control form-control-sm" placeholder="Net çıktı — örn. 'En büyük 10 alacağın arama planı'"></div>
                 <div class="col-md-2"><label class="form-label small fw-semibold m-0">Sahip <span class="text-danger">*</span></label><select id="grvSahip" class="form-select form-select-sm"></select></div>
                 <div class="col-md-2"><label class="form-label small fw-semibold m-0">Bitiş <span class="text-danger">*</span></label><input id="grvBitis" type="date" class="form-control form-control-sm"></div>
-                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Alan</label><select id="grvAlan" class="form-select form-select-sm"><option value="GENEL">Genel</option><option value="TAAHHUT">30/90 Taahhüt</option><option value="NAKIT">Nakit Seferberliği</option><option value="YENIDEN_YAPILANMA">Yeniden Yapılanma</option><option value="KOMISER">Komiser Hazırlığı</option><option value="PZT_KARAR">Pazartesi Kararı</option></select></div>
+                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Alan</label>
+                    <select id="grvAlan" class="form-select form-select-sm" onchange="grvAlanSecimDegis('grvAlan','grvAlanYeni')"></select>
+                    <input id="grvAlanYeni" class="form-control form-control-sm mt-1 d-none" placeholder="Yeni alan adı" maxlength="40"></div>
                 <div class="col-md-1"><label class="form-label small fw-semibold m-0">Öncelik</label><select id="grvOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
                 <div class="col-md-1"><button class="btn btn-primary btn-sm w-100" onclick="gorevHizliEkle()" title="Görev ekle"><i class="bi bi-plus-lg"></i></button></div>
             </div>
@@ -1649,7 +1651,7 @@
             <div class="d-flex gap-2 flex-wrap mb-2 align-items-center">
                 <select id="grvFilSahip" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm sahipler</option></select>
                 <select id="grvFilDurum" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm durumlar</option><option value="ACIK">Açık</option><option value="DEVAM">Devam</option><option value="TAMAMLANDI">Tamamlandı</option><option value="IPTAL">İptal</option></select>
-                <select id="grvFilAlan" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm alanlar</option><option value="GENEL">Genel</option><option value="TAAHHUT">30/90 Taahhüt</option><option value="NAKIT">Nakit Seferberliği</option><option value="YENIDEN_YAPILANMA">Yeniden Yapılanma</option><option value="KOMISER">Komiser Hazırlığı</option><option value="PZT_KARAR">Pazartesi Kararı</option></select>
+                <select id="grvFilAlan" class="form-select form-select-sm" style="width:auto" onchange="gorevListeYukle()"><option value="">Tüm alanlar</option></select>
                 <div class="form-check"><input class="form-check-input" type="checkbox" id="grvFilTaahhut" onchange="gorevListeYukle()"><label class="form-check-label small" for="grvFilTaahhut">Taahhütler</label></div>
                 <div class="form-check"><input class="form-check-input" type="checkbox" id="grvFilGecikmis" onchange="gorevListeYukle()"><label class="form-check-label small text-danger fw-semibold" for="grvFilGecikmis">Sadece gecikenler</label></div>
             </div>
@@ -1670,7 +1672,9 @@
             <div class="row g-2">
                 <div class="col-6"><label class="form-label small fw-semibold">Sahip</label><select id="gdSahip" class="form-select form-select-sm"></select></div>
                 <div class="col-6"><label class="form-label small fw-semibold">Bitiş</label><input id="gdBitis" type="date" class="form-control form-control-sm"></div>
-                <div class="col-6"><label class="form-label small fw-semibold">Alan</label><select id="gdAlan" class="form-select form-select-sm"><option value="GENEL">Genel</option><option value="TAAHHUT">30/90 Taahhüt</option><option value="NAKIT">Nakit Seferberliği</option><option value="YENIDEN_YAPILANMA">Yeniden Yapılanma</option><option value="KOMISER">Komiser Hazırlığı</option><option value="PZT_KARAR">Pazartesi Kararı</option></select></div>
+                <div class="col-6"><label class="form-label small fw-semibold">Alan</label>
+                    <select id="gdAlan" class="form-select form-select-sm" onchange="grvAlanSecimDegis('gdAlan','gdAlanYeni')"></select>
+                    <input id="gdAlanYeni" class="form-control form-control-sm mt-1 d-none" placeholder="Yeni alan adı" maxlength="40"></div>
                 <div class="col-6"><label class="form-label small fw-semibold">Öncelik</label><select id="gdOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
             </div>
             <div class="d-flex align-items-center gap-3 mt-2">
@@ -5115,7 +5119,48 @@ window.grvEkip = [];
 const GRV_ALAN_AD = { TAAHHUT: '30/90 Taahhüt', NAKIT: 'Nakit Seferberliği', YENIDEN_YAPILANMA: 'Yeniden Yapılanma', KOMISER: 'Komiser Hazırlığı', PZT_KARAR: 'Pazartesi Kararı', GENEL: 'Genel' };
 const GRV_DURUM_AD = { ACIK: 'Açık', DEVAM: 'Devam', TAMAMLANDI: 'Tamamlandı', IPTAL: 'İptal' };
 const GRV_DURUM_BADGE = { ACIK: 'bg-secondary', DEVAM: 'bg-primary', TAMAMLANDI: 'bg-success', IPTAL: 'bg-dark' };
-const GRV_ONCELIK_BADGE = { KRITIK: 'bg-danger', YUKSEK: 'bg-warning text-dark', NORMAL: 'bg-light text-dark border' };
+const GRV_ONCELIK_BADGE = { KRITIK: 'bg-danger', YUKSEK: 'bg-warning text-dark', NORMAL: 'bg-secondary-subtle text-secondary-emphasis' };
+
+// Dinamik alan yönetimi (v1.1) — alanlar veriden türer, serbest tanımlanabilir
+function grvAlanAd(kod) {
+    if (GRV_ALAN_AD[kod]) return GRV_ALAN_AD[kod];
+    return String(kod || '').split('_').filter(Boolean).map(w => w.charAt(0) + w.slice(1).toLocaleLowerCase('tr')).join(' ') || String(kod || '');
+}
+window.grvAlanlar = [];
+async function grvAlanlariYukle() {
+    const r = await secureFetch('/gorevler/alanlar').catch(() => null);
+    window.grvAlanlar = (r && r.ok) ? r.alanlar : [];
+    grvAlanMenuleriDoldur();
+}
+function grvAlanMenuleriDoldur() {
+    const veri = (window.grvAlanlar || []).slice();
+    const cmp = (a, b) => grvAlanAd(a.alan).localeCompare(grvAlanAd(b.alan), 'tr');
+    // FORM (ekle + düzenle): tüm alanlar (alfabetik) + GENEL garantisi + "+ Yeni alan…"
+    const formSet = veri.slice();
+    if (!formSet.some(a => a.alan === 'GENEL')) formSet.push({ alan: 'GENEL', aktif_sayi: 0, toplam: 0 });
+    formSet.sort(cmp);
+    const formOpt = formSet.map(a => `<option value="${a.alan}">${esc(grvAlanAd(a.alan))}</option>`).join('') + '<option value="__yeni__">+ Yeni alan…</option>';
+    ['grvAlan', 'gdAlan'].forEach(id => { const el = document.getElementById(id); if (el) { const cur = el.value; el.innerHTML = formOpt; if ([...el.options].some(o => o.value === cur)) el.value = cur; } });
+    // FİLTRE: TAAHHUT hariç (Taahhütler checkbox'ı zaten var); aktif üstte, pasif (aktif=0) altta gri "(pasif)"
+    const filtre = veri.filter(a => a.alan !== 'TAAHHUT');
+    const aktif = filtre.filter(a => a.aktif_sayi > 0).sort(cmp);
+    const pasif = filtre.filter(a => a.aktif_sayi === 0).sort(cmp);
+    const fil = document.getElementById('grvFilAlan');
+    if (fil) {
+        const cur = fil.value;
+        fil.innerHTML = '<option value="">Tüm alanlar</option>'
+            + aktif.map(a => `<option value="${a.alan}">${esc(grvAlanAd(a.alan))} (${a.aktif_sayi})</option>`).join('')
+            + pasif.map(a => `<option value="${a.alan}" style="color:#999">${esc(grvAlanAd(a.alan))} (pasif)</option>`).join('');
+        if ([...fil.options].some(o => o.value === cur)) fil.value = cur;
+    }
+}
+function grvAlanSecimDegis(selId, inpId) {
+    document.getElementById(inpId).classList.toggle('d-none', document.getElementById(selId).value !== '__yeni__');
+}
+function grvAlanOku(selId, inpId) {
+    const sel = document.getElementById(selId).value;
+    return sel === '__yeni__' ? (document.getElementById(inpId).value || '').trim() : sel;
+}
 
 function gorevGorunum(v) {
     document.getElementById('grvListeGorunum').classList.toggle('d-none', v !== 'liste');
@@ -5134,6 +5179,8 @@ async function gorevSekmeInit() {
     const sahipSel = document.getElementById('grvSahip'); if (sahipSel) sahipSel.innerHTML = opts;
     const gdSahip = document.getElementById('gdSahip'); if (gdSahip) gdSahip.innerHTML = opts;
     const filSahip = document.getElementById('grvFilSahip'); if (filSahip) filSahip.innerHTML = '<option value="">Tüm sahipler</option>' + opts;
+    await grvAlanlariYukle();
+    const ga = document.getElementById('grvAlan'); if (ga && [...ga.options].some(o => o.value === 'GENEL')) ga.value = 'GENEL';
     gorevGorunum('liste');
 }
 
@@ -5150,8 +5197,8 @@ function gorevKartHTML(g) {
             <div class="small text-muted mt-1">
               <i class="bi bi-person me-1"></i>${esc(g.sahip_ad)} ·
               <span class="${gec ? 'text-danger fw-bold' : ''}"><i class="bi bi-calendar-event me-1"></i>${tarih}${gec ? ' — GECİKTİ' : ''}</span> ·
-              <span class="badge ${GRV_ONCELIK_BADGE[g.oncelik] || ''}">${g.oncelik}</span>
-              <span class="badge bg-light text-dark border">${GRV_ALAN_AD[g.alan] || g.alan}</span>
+              <span class="badge rounded-pill ${GRV_ONCELIK_BADGE[g.oncelik] || 'bg-secondary'}">${g.oncelik}</span>
+              <span class="badge bg-white text-secondary border"><i class="bi bi-tag me-1"></i>${esc(grvAlanAd(g.alan))}</span>
             </div>
             ${g.aciklama ? `<div class="small mt-1">${esc(g.aciklama)}</div>` : ''}
             ${notHTML}
@@ -5181,11 +5228,13 @@ async function gorevListeYukle() {
 
 async function gorevHizliEkle() {
     const taahhut = document.getElementById('grvTaahhut').checked;
+    const alan = grvAlanOku('grvAlan', 'grvAlanYeni');
+    if (document.getElementById('grvAlan').value === '__yeni__' && alan.replace(/\s/g, '').length < 2) return showToast('Yeni alan adı en az 2 karakter olmalı.', 'error');
     const govde = {
         baslik: document.getElementById('grvBaslik').value.trim(),
         sahip_id: document.getElementById('grvSahip').value,
         bitis_tarihi: document.getElementById('grvBitis').value,
-        alan: document.getElementById('grvAlan').value,
+        alan,
         oncelik: document.getElementById('grvOncelik').value,
         taahhut,
         taahhut_vade: taahhut ? document.getElementById('grvVade').value : null
@@ -5200,6 +5249,9 @@ async function gorevHizliEkle() {
         document.getElementById('grvBitis').value = '';
         document.getElementById('grvTaahhut').checked = false;
         document.getElementById('grvVadeWrap').classList.add('d-none');
+        document.getElementById('grvAlanYeni').value = '';
+        document.getElementById('grvAlanYeni').classList.add('d-none');
+        await grvAlanlariYukle();
         gorevListeYukle();
     } else showToast((r && r.hata) || 'Kayıt hatası', 'error');
 }
@@ -5226,6 +5278,8 @@ function gorevDuzenleAc(id) {
     document.getElementById('gdSahip').value = g.sahip_id;
     document.getElementById('gdBitis').value = (g.bitis_tarihi || '').slice(0, 10);
     document.getElementById('gdAlan').value = g.alan || 'GENEL';
+    document.getElementById('gdAlanYeni').value = '';
+    document.getElementById('gdAlanYeni').classList.add('d-none');
     document.getElementById('gdOncelik').value = g.oncelik || 'NORMAL';
     document.getElementById('gdTaahhut').checked = !!g.taahhut;
     document.getElementById('gdVade').value = g.taahhut_vade || 30;
@@ -5246,6 +5300,8 @@ async function gorevDuzenleKaydet() {
         taahhut,
         taahhut_vade: taahhut ? document.getElementById('gdVade').value : null
     };
+    govde.alan = grvAlanOku('gdAlan', 'gdAlanYeni');
+    if (document.getElementById('gdAlan').value === '__yeni__' && govde.alan.replace(/\s/g, '').length < 2) return showToast('Yeni alan adı en az 2 karakter olmalı.', 'error');
     if (!govde.baslik) return showToast('Görev başlığı girin.', 'error');
     if (!govde.sahip_id || !govde.bitis_tarihi) return showToast('Sahip ve bitiş tarihi zorunlu.', 'error');
     if (!gorevGranularOnay(govde.bitis_tarihi)) return;
@@ -5253,6 +5309,7 @@ async function gorevDuzenleKaydet() {
     if (r && r.ok) {
         showToast('Görev güncellendi', 'success');
         bootstrap.Modal.getInstance(document.getElementById('modalGorevDuzenle'))?.hide();
+        await grvAlanlariYukle();
         gorevListeYukle();
     } else showToast((r && r.hata) || 'Hata', 'error');
 }

@@ -4910,7 +4910,12 @@ async function cekirdekEkipKontrol(req, res, next) {
         return res.status(403).json({ ok: false, hata: 'Bu modüle erişiminiz yok (çekirdek yönetim ekibi).' });
     } catch (e) { next(e); }
 }
-const GOREV_ALANLAR = ['TAAHHUT', 'NAKIT', 'YENIDEN_YAPILANMA', 'KOMISER', 'PZT_KARAR', 'GENEL'];
+// Görev alanı serbest tema etiketidir (dinamik) — normalize: trim, TR uppercase, boşluk→_, geçersiz karakter at
+function gorevAlanNormalize(a) {
+    if (!a) return 'GENEL';
+    const s = String(a).trim().toLocaleUpperCase('tr').replace(/\s+/g, '_').replace(/[^A-ZÇĞİÖŞÜ0-9_]/g, '');
+    return s || 'GENEL';
+}
 const GOREV_ONCELIKLER = ['KRITIK', 'YUKSEK', 'NORMAL'];
 const GOREV_DURUMLAR = ['ACIK', 'DEVAM', 'TAMAMLANDI', 'IPTAL'];
 const gorevOrtakMi = req => ['yunus@aterko.com', 'yakup@aterko.com'].includes((req.user.email || '').toLowerCase());
@@ -4920,6 +4925,18 @@ app.get('/api/gorev-ekip', yetkiKontrol, cekirdekEkipKontrol, async (req, res, n
     try {
         const r = await pool.query("SELECT id, ad_soyad, email FROM kullanicilar WHERE cekirdek_ekip=TRUE AND durum='AKTIF' ORDER BY ad_soyad");
         res.json({ ok: true, ekip: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Görev alanları — veriden türetilir (dinamik alan yönetimi v1.1): alan + aktif_sayi + toplam
+app.get('/api/gorevler/alanlar', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT alan,
+                   COUNT(*) FILTER (WHERE durum IN ('ACIK','DEVAM'))::int AS aktif_sayi,
+                   COUNT(*)::int AS toplam
+            FROM yonetim_gorevleri GROUP BY alan ORDER BY alan`);
+        res.json({ ok: true, alanlar: r.rows });
     } catch (e) { next(e); }
 });
 
@@ -4985,7 +5002,8 @@ app.post('/api/gorev-kaydet', yetkiKontrol, cekirdekEkipKontrol, async (req, res
         const { id, baslik, aciklama, sahip_id, alan, oncelik, bitis_tarihi, taahhut, taahhut_vade } = req.body;
         if (!baslik || !String(baslik).trim()) return res.json({ ok: false, hata: 'Görev başlığı zorunludur.' });
         if (!sahip_id || !bitis_tarihi) return res.json({ ok: false, hata: 'Görevin sahibi ve bitiş tarihi zorunludur.' });
-        const alanV = GOREV_ALANLAR.includes(alan) ? alan : 'GENEL';
+        const alanV = gorevAlanNormalize(alan);
+        if (alanV.length < 2) return res.json({ ok: false, hata: 'Alan adı en az 2 karakter olmalı.' });
         const oncelikV = GOREV_ONCELIKLER.includes(oncelik) ? oncelik : 'NORMAL';
         const vadeV = taahhut && [30, 90].includes(Number(taahhut_vade)) ? Number(taahhut_vade) : null;
         if (id) {
