@@ -2409,7 +2409,7 @@ app.post('/api/teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             detaylar: [
                 { label: 'Ürün', value: (tkUrun && tkUrun.urun) || '-' },
                 { label: 'Tedarikçi', value: (tkTed && tkTed.firma_adi) || '-' },
-                { label: 'Birim fiyat', value: birim_fiyat ? `${birim_fiyat} ${para_birimi || 'TL'}` : '-' }
+                { label: 'Birim fiyat', value: birim_fiyat ? `${trSayi(birim_fiyat, { min: 2 })} ${para_birimi || 'TL'}` : '-' }
             ]
         });
         res.json({ ok: true, mesaj: 'Teklif kaydedildi.', id: ins.rows[0].id });
@@ -2489,6 +2489,13 @@ function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, 
 }
 // Basit HTML-escape (mail gövdesi için)
 function esc2(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+// Türkçe sayı biçimi: binlik ayıraç nokta, ondalık ayıraç virgül (mail/bildirim gövdeleri).
+// min=0 → gereksiz ondalık gösterilmez (miktar); min=2 → para için sabit iki hane.
+function trSayi(n, { min = 0, max = 2 } = {}) {
+    const v = parseFloat(n);
+    if (!isFinite(v)) return esc2(n == null ? '' : n);
+    return v.toLocaleString('tr-TR', { minimumFractionDigits: min, maximumFractionDigits: max });
+}
 
 // --- BİLDİRİM SİSTEMİ ---
 // Genel amaçlı iç bildirim e-postası (siparis.html görsel diliyle uyumlu)
@@ -2507,7 +2514,7 @@ function bildirimMailHTML({ baslik, mesaj, detaylar, kalemler }) {
           <tbody>${kalemler.map((k, i) => `<tr style="background:${i % 2 ? '#fafbfc' : '#ffffff'};">
             <td style="padding:6px 10px;border-bottom:1px solid #eee;">${esc2(k.ad)}</td>
             <td style="padding:6px 10px;border-bottom:1px solid #eee;color:#6c757d;">${esc2(k.kod)}</td>
-            <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600;white-space:nowrap;">${esc2(k.miktar)} ${esc2(k.birim || '')}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:600;white-space:nowrap;">${trSayi(k.miktar)} ${esc2(k.birim || '')}</td>
           </tr>`).join('')}</tbody>
         </table>` : '';
     return `
@@ -5770,7 +5777,7 @@ async function gunlukRaporPDF() {
     const v = await gunlukRaporVerisi();
     const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const trTarih = d => { if(!d) return '-'; const dt=new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
-    const trNum = n => { const x=parseFloat(n)||0; return (x===Math.floor(x))?String(x):x.toFixed(2).replace('.',','); };
+    const trNum = n => trSayi(n);  // binlik nokta + ondalık virgül (gereksiz ondalık gösterilmez)
     const bos = m => `<div class="bos">✓ ${m}</div>`;
     const tablo = (rows, basliklar, satirFn, bosMsg) => rows.length
         ? `<table><thead><tr>${basliklar.map(b=>`<th${b.cls?` class="${b.cls}"`:''}>${b.t}</th>`).join('')}</tr></thead><tbody>${rows.map(satirFn).join('')}</tbody></table>`
