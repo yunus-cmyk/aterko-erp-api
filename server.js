@@ -1653,8 +1653,10 @@ async function talepBol(client, orijinalTalepId, kalanKalemler) {
     const rootId = orig.parent_talep_id || orig.id;
     const rootR = await client.query('SELECT talep_no FROM satinalma_talepleri WHERE id=$1', [rootId]);
     const rootTalepNo = rootR.rows[0].talep_no || orig.talep_no;
-    // ProjeNo-T-NNNN şeklinde base (root'ta -N olmamalı ama güvenli olsun)
-    const baseTalepNo = rootTalepNo.replace(/-\d+$/, '');
+    // Base = kök talep numarasının TAMAMI (ör. 72759-T-1111). Alt-talep = base-altSira.
+    // NOT: root her zaman ProjeNo-T-NNNN biçiminde (parent_talep_id NULL), ekstra sonek yok —
+    // eskiden buradaki .replace(/-\d+$/,'') asıl sıra numarasını (NNNN) kırpıp 72759-T-1 üretiyordu.
+    const baseTalepNo = rootTalepNo;
 
     // 3) Sıradaki alt_sira (artan numara)
     const mxR = await client.query(`
