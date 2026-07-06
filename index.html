@@ -8435,7 +8435,8 @@ async function openSiparisDuzenle(siparisId) {
     const detay = await secureFetch(`/siparis-detay/${siparisId}`);
     hideLoading();
     if (!detay.ok) return showToast(detay.hata, 'error');
-    openSiparisOlusturModal({ siparis: sip, kalemler: detay.data });
+    // Başlık alanlarını (nakliye/adres/not/vade/kdv...) DB'den (detay.siparis) al — cache eksik olabilir
+    openSiparisOlusturModal({ siparis: { ...sip, ...(detay.siparis || {}) }, kalemler: detay.data });
 }
 
 // 2. Seçilen Ürünleri Sipariş Tablosuna Fiyat Girdileriyle Birlikte Yazar
@@ -9389,7 +9390,8 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
         return;
     }
     const kalemler = detayR.data || [];
-    // Para birimi/KDV güncel DB değerinden (endpoint başlığı) — cache (sip) güvenilmez olabilir
+    // Para birimi/KDV/başlık alanları güncel DB değerinden (endpoint başlığı) — cache (sip) güvenilmez olabilir
+    const sh = detayR.siparis || {};
     const kdv = normKdv(detayR.siparis?.kdv_orani ?? sip?.kdv_orani);
     const para = detayR.siparis?.para_birimi || sip?.para_birimi || 'TL';
     let araToplam = 0;
@@ -9445,6 +9447,13 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
             <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Para / KDV</span>${esc(para)} / %${kdv}</div></div>
             <div class="col-md-6"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Kalem Sayısı</span><span class="fw-bold">${kalemler.length}</span></div></div>
         </div>
+        ${(sh.odeme_vade || sh.teslim_nakliye || sh.teslim_adresi || sh.siparis_notu) ? `
+        <div class="row g-2 mb-3">
+            ${sh.odeme_vade ? `<div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Ödeme Vadesi</span><span>${esc(sh.odeme_vade)}</span></div></div>` : ''}
+            ${sh.teslim_nakliye ? `<div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Nakliye Şekli</span><span>${esc(sh.teslim_nakliye)}</span></div></div>` : ''}
+            ${sh.teslim_adresi ? `<div class="col-md-6"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Teslimat Adresi</span><span>${esc(sh.teslim_adresi)}</span></div></div>` : ''}
+            ${sh.siparis_notu ? `<div class="col-md-12"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş Notu</span><span>${esc(sh.siparis_notu)}</span></div></div>` : ''}
+        </div>` : ''}
         <div class="table-responsive">
             <table class="table table-sm align-middle" style="font-size:0.82rem;">
                 <thead class="table-light">
