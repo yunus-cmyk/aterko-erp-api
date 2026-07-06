@@ -8279,6 +8279,10 @@ function updateLineActionButtons() {
         const siparisAra = (window.aktifIncelenenTalepNo || '').replace('-T-', '-S-');
         btnHtml += `<span class="text-muted small fst-italic me-2"><i class="bi bi-info-circle me-1"></i>Bu kalemler siparişe alındı. Sipariş işlemleri Sipariş Listesi'nde yapılır.</span>`;
         btnHtml += `<button class="btn btn-outline-success btn-sm fw-bold" onclick="bootstrap.Modal.getInstance(document.getElementById('modalTalepDetay'))?.hide(); gotoSiparisListesi('${siparisAra}');"><i class="bi bi-box-arrow-up-right me-1"></i>Sipariş Listesi'ne Git</button>`;
+    } else if(mevcutDurum === "İPTAL") {
+        // İptal edilen kalem talep akışına geri alınabilir (yeniden değerlendirme)
+        btnHtml += `<span class="text-muted small fst-italic me-2"><i class="bi bi-arrow-counterclockwise me-1"></i>İptal edilen kalem — yeniden değerlendirmek için talep akışına geri alınabilir.</span>`;
+        btnHtml += `<button class="btn btn-outline-secondary btn-sm fw-bold" onclick="executeStatusChange('ONAY BEKLİYOR')"><i class="bi bi-arrow-counterclockwise me-1"></i>Onay Bekliyor'a Geri Al</button>`;
     } else {
         btnHtml += `<span class="text-muted small fst-italic"><i class="bi bi-lock-fill me-1"></i>Bu kalemler '${mevcutDurum}' aşamasında — burada işlem yapılamaz.</span>`;
     }
