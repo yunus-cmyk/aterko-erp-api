@@ -1719,7 +1719,11 @@
             <input type="hidden" id="gdId">
             <div class="mb-2"><label class="form-label small fw-semibold">Görev</label><input id="gdBaslik" class="form-control form-control-sm"></div>
             <div class="mb-2"><label class="form-label small fw-semibold">Açıklama</label><textarea id="gdAciklama" class="form-control form-control-sm" rows="2"></textarea></div>
-            <div class="mb-2"><label class="form-label small fw-semibold"><i class="bi bi-sticky me-1 text-warning"></i>Notlar <span class="text-muted fw-normal">— serbest, düzenlenebilir</span></label><textarea id="gdNotlar" class="form-control form-control-sm" rows="3" placeholder="Görevle ilgili güncel notlar — istediğiniz zaman revize edebilirsiniz"></textarea></div>
+            <div class="mb-2">
+                <label class="form-label small fw-semibold"><i class="bi bi-sticky me-1 text-warning"></i>Notlar <span class="text-muted fw-normal">— her not tarihli; revize edilse de ilk tarih korunur</span></label>
+                <div id="gdNotlarListe"></div>
+                <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="gdNotEkle()"><i class="bi bi-plus-lg me-1"></i>Not ekle</button>
+            </div>
             <div class="row g-2">
                 <div class="col-6"><label class="form-label small fw-semibold">Sahip</label><select id="gdSahip" class="form-select form-select-sm"></select></div>
                 <div class="col-6"><label class="form-label small fw-semibold">Bitiş</label><input id="gdBitis" type="date" class="form-control form-control-sm"></div>
@@ -5279,7 +5283,8 @@ function gorevKartHTML(g) {
     const tarih = g.bitis_tarihi ? new Date(g.bitis_tarihi).toLocaleDateString('tr-TR') : '-';
     const durumSel = ['ACIK', 'DEVAM', 'TAMAMLANDI', 'IPTAL'].map(d => `<option value="${d}" ${g.durum === d ? 'selected' : ''}>${GRV_DURUM_AD[d]}</option>`).join('');
     // Üst: düzenlenebilir Notlar alanı (görevin kalıcı notu)
-    const notAlaniHTML = g.notlar ? `<div class="mt-2 p-2 rounded bg-warning-subtle border border-warning-subtle small" style="white-space:pre-wrap"><i class="bi bi-sticky me-1 text-warning-emphasis"></i><span class="fw-semibold">Notlar:</span> ${esc(g.notlar)}</div>` : '';
+    const notDizi = Array.isArray(g.notlar) ? g.notlar : [];
+    const notAlaniHTML = notDizi.length ? `<div class="mt-2">${notDizi.map(n => `<div class="p-2 mb-1 rounded bg-warning-subtle border border-warning-subtle small d-flex justify-content-between gap-2" style="white-space:pre-wrap"><span><i class="bi bi-sticky me-1 text-warning-emphasis"></i>${esc(n.metin)}</span><span class="text-muted text-nowrap"><i class="bi bi-calendar3 me-1"></i>${n.tarih ? new Date(n.tarih + 'T00:00:00').toLocaleDateString('tr-TR') : ''}</span></div>`).join('')}</div>` : '';
     // Alt: Kayıt Notları — tarih + kişi damgalı olay/kayıt günlüğü
     const notHTML = kayitlar.length ? `<div class="mt-2 border-top pt-1"><div class="text-muted fw-semibold" style="font-size:.7rem;letter-spacing:.03em"><i class="bi bi-clock-history me-1"></i>KAYIT NOTLARI</div>${kayitlar.map(n => `<div class="small text-muted"><i class="bi bi-chat-left-text me-1"></i><b>${esc(n.yazan)}</b>: ${esc(n.not_metni)} <span class="text-muted">· ${new Date(n.tarih).toLocaleDateString('tr-TR')}</span></div>`).join('')}</div>` : '';
     return `<div class="card border-0 shadow-sm mb-2 ${gec ? 'border-start border-danger border-3' : ''}"><div class="card-body py-2">
@@ -5382,13 +5387,35 @@ function gorevGranularOnay(bitis) {
     return true;
 }
 
+// --- Düzenle modalı: tarihli not listesi editörü ---
+let gdNotlarData = [];  // [{metin, tarih|null}] — tarih=null ise yeni not (kaydedince bugüne damgalanır)
+function gorevNotTarihKisa(t) { return t ? new Date(t + 'T00:00:00').toLocaleDateString('tr-TR') : 'bugün'; }
+function gdNotOku() {  // ekrandaki textarea değerlerini diziye geri yaz (yeniden render öncesi kayıp olmasın)
+    document.querySelectorAll('#gdNotlarListe .gdNotMetin').forEach(t => { const i = +t.dataset.i; if (gdNotlarData[i]) gdNotlarData[i].metin = t.value; });
+}
+function gdNotlarRender() {
+    const box = document.getElementById('gdNotlarListe');
+    if (!gdNotlarData.length) { box.innerHTML = '<div class="text-muted small fst-italic mb-1">Henüz not yok.</div>'; return; }
+    box.innerHTML = gdNotlarData.map((n, i) => `
+        <div class="d-flex gap-2 mb-2 align-items-start">
+            <textarea class="form-control form-control-sm gdNotMetin" rows="2" data-i="${i}" placeholder="Not...">${esc(n.metin || '')}</textarea>
+            <div class="text-nowrap small pt-1" style="min-width:104px">
+                <span class="badge ${n.tarih ? 'bg-light text-secondary border' : 'bg-success-subtle text-success-emphasis border border-success-subtle'}"><i class="bi bi-calendar3 me-1"></i>${gorevNotTarihKisa(n.tarih)}</span>
+                <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-1 align-baseline" onclick="gdNotSil(${i})" title="Notu sil"><i class="bi bi-x-lg"></i></button>
+            </div>
+        </div>`).join('');
+}
+function gdNotEkle() { gdNotOku(); gdNotlarData.push({ metin: '', tarih: null }); gdNotlarRender(); const ta = document.querySelectorAll('#gdNotlarListe .gdNotMetin'); ta[ta.length - 1]?.focus(); }
+function gdNotSil(i) { gdNotOku(); gdNotlarData.splice(i, 1); gdNotlarRender(); }
+
 function gorevDuzenleAc(id) {
     const g = (window.grvSonListe || []).find(x => x.id === id);
     if (!g) return;
     document.getElementById('gdId').value = g.id;
     document.getElementById('gdBaslik').value = g.baslik || '';
     document.getElementById('gdAciklama').value = g.aciklama || '';
-    document.getElementById('gdNotlar').value = g.notlar || '';
+    gdNotlarData = Array.isArray(g.notlar) ? g.notlar.map(n => ({ metin: n.metin || '', tarih: n.tarih || null })) : [];
+    gdNotlarRender();
     document.getElementById('gdSahip').value = g.sahip_id;
     document.getElementById('gdBitis').value = (g.bitis_tarihi || '').slice(0, 10);
     document.getElementById('gdAlan').value = g.alan || 'GENEL';
@@ -5423,7 +5450,7 @@ async function gorevDuzenleKaydet() {
         id: document.getElementById('gdId').value,
         baslik: document.getElementById('gdBaslik').value.trim(),
         aciklama: document.getElementById('gdAciklama').value.trim(),
-        notlar: document.getElementById('gdNotlar').value.trim(),
+        notlar: (gdNotOku(), gdNotlarData.filter(n => (n.metin || '').trim())),
         sahip_id: document.getElementById('gdSahip').value,
         bitis_tarihi: document.getElementById('gdBitis').value,
         alan: document.getElementById('gdAlan').value,
