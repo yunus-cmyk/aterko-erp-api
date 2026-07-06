@@ -2017,7 +2017,12 @@ app.get('/api/siparis-detay/:siparisId', yetkiKontrol, async (req, res, next) =>
             ORDER BY sk.id ASC
         `;
         const result = await pool.query(query, [siparisId]);
-        const bas = await pool.query("SELECT para_birimi, kdv_orani, durum, siparis_no, termin_tarihi, odeme_vade, teslim_nakliye, teslim_adresi, siparis_notu, tedarikci_id FROM satinalma_siparisleri WHERE id=$1", [siparisId]);
+        const bas = await pool.query(`SELECT s.para_birimi, s.kdv_orani, s.durum, s.siparis_no, s.termin_tarihi,
+                s.odeme_vade, s.teslim_nakliye, s.teslim_adresi, s.siparis_notu, s.tedarikci_id, s.siparis_tarihi,
+                s.fatura_onay_durumu, s.fatura_nolari, s.fatura_notu, s.fatura_onaylayan_email, s.fatura_onay_tarihi,
+                t.firma_adi AS tedarikci_adi
+             FROM satinalma_siparisleri s LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
+             WHERE s.id=$1`, [siparisId]);
         res.json({ ok: true, data: result.rows, siparis: bas.rows[0] || null });
     } catch (error) { next(error); }
 });
@@ -2738,13 +2743,20 @@ app.post('/api/talep-gerial', yetkiKontrol, async (req, res, next) => {
 // =================================================================
 app.post('/api/siparis-onayla', yetkiKontrol, async (req, res, next) => {
     try {
-        await pool.query("UPDATE satinalma_siparisleri SET durum='SİPARİŞ ONAYLANDI', onaylanma_tarihi=NOW() WHERE id=$1",
+        // Atomik durum geçişi — yalnızca "SİPARİŞ OLUŞTURULDU" iken onaylanır.
+        // Mükerrer/eşzamanlı istekler (çift tıklama, ağ tekrarı) tekrar bildirim ÜRETMEZ (idempotent):
+        // yalnızca ilk geçiş bir satır döndürür; sonrakiler rowCount=0 ile sessizce çıkar.
+        const upd = await pool.query(
+            "UPDATE satinalma_siparisleri SET durum='SİPARİŞ ONAYLANDI', onaylanma_tarihi=NOW() WHERE id=$1 AND durum='SİPARİŞ OLUŞTURULDU' RETURNING siparis_no",
             [req.body.siparis_id]);
+        if (upd.rowCount === 0) {
+            return res.json({ ok: true, mesaj: 'Sipariş zaten onaylanmış — tekrar bildirim gönderilmedi.', tekrar: true });
+        }
         await auditLogla(req, {
             eylem: 'APPROVE', tablo: 'satinalma_siparisleri', kayit_id: req.body.siparis_id,
             ozet: 'Sipariş onaylandı'
         });
-        const soNo = (await pool.query("SELECT siparis_no FROM satinalma_siparisleri WHERE id=$1", [req.body.siparis_id])).rows[0];
+        const soNo = upd.rows[0];
         // Final (kaşe+imzalı) sipariş formunu bildirim mailine ekle — durum artık "ONAYLANDI"
         let onaylandiEkler;
         try {

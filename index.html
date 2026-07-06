@@ -7416,6 +7416,24 @@ async function montajMusteriyeTeslim() {
 
 function showLoading() { document.getElementById("topLoadingBar").style.display = "block"; }
 function hideLoading() { document.getElementById("topLoadingBar").style.display = "none"; }
+
+// Sipariş/işlem aksiyonlarında ÇİFT-TIKLAMA koruması + görünür "işleniyor" örtüsü.
+// _saAksiyonKilit: iş sürerken ikinci çağrı sessizce yok sayılır. Örtü tüm tıklamaları da bloklar.
+let _saAksiyonKilit = false;
+function saAksiyonBaslat(mesaj) {
+    _saAksiyonKilit = true;
+    let ov = document.getElementById('saAksiyonOverlay');
+    if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'saAksiyonOverlay';
+        ov.style.cssText = 'position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center;';
+        ov.innerHTML = '<div style="background:#fff;padding:18px 26px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);font-weight:600;color:#212529;display:flex;align-items:center;gap:12px;"><span class="spinner-border spinner-border-sm text-primary"></span><span id="saAksiyonMesaj"></span></div>';
+        document.body.appendChild(ov);
+    }
+    ov.querySelector('#saAksiyonMesaj').textContent = mesaj || 'İşleniyor…';
+    ov.style.display = 'flex';
+}
+function saAksiyonBitir() { _saAksiyonKilit = false; const ov = document.getElementById('saAksiyonOverlay'); if (ov) ov.style.display = 'none'; }
 function showToast(msg, type) {
     const container = document.getElementById("toastContainer");
     const isError = type === "error";
@@ -9539,9 +9557,9 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
     document.getElementById('siparisDetayBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
     new bootstrap.Modal(document.getElementById('modalSiparisDetay')).show();
 
-    // Siparişi listeden bul
+    // Siparişi listeden bul (cache — bayat olabilir; taze başlıkla birleştirilecek)
     const liste = window.siparislerCache || [];
-    const sip = liste.find(x => x.id === siparisId);
+    let sip = liste.find(x => x.id === siparisId);
     const detayR = await secureFetch(`/siparis-detay/${siparisId}`);
     if (!detayR.ok) {
         document.getElementById('siparisDetayBody').innerHTML = `<div class="alert alert-danger">${esc(detayR.hata)}</div>`;
@@ -9550,6 +9568,9 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
     const kalemler = detayR.data || [];
     // Para birimi/KDV/başlık alanları güncel DB değerinden (endpoint başlığı) — cache (sip) güvenilmez olabilir
     const sh = detayR.siparis || {};
+    // ÖNEMLİ: taze başlığı cache'in üzerine yaz → durum, butonlar, fatura bölümü ilk açılışta güncel gelsin
+    // (cache/liste fetch'i henüz bitmemiş olabilir; detay endpoint'i her zaman güncel durumu döndürür)
+    sip = { ...(sip || {}), ...sh, id: siparisId };
     const kdv = normKdv(detayR.siparis?.kdv_orani ?? sip?.kdv_orani);
     const para = detayR.siparis?.para_birimi || sip?.para_birimi || 'TL';
     let araToplam = 0;
@@ -9784,16 +9805,19 @@ function formatDosyaBoyut(b) {
 // FATURA ONAY
 // ============================================================================
 async function faturaOnayla(siparisId) {
+    if (_saAksiyonKilit) return;
     const noInput = document.getElementById('faturaNolari-' + siparisId);
     const notInput = document.getElementById('faturaNotu-' + siparisId);
     if (!noInput) return;
     const fatura_nolari = noInput.value.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
     const notlar = notInput.value.trim();
 
+    saAksiyonBaslat('Fatura kaydediliyor…');
     const r = await secureFetch('/siparis-fatura-onayla', {
         method: 'POST',
         body: JSON.stringify({ siparis_id: siparisId, fatura_nolari, notlar })
     });
+    saAksiyonBitir();
     if (r.ok) {
         showToast(r.mesaj, 'success');
         // Cache'i yenile + modal'ı tazele
@@ -10026,51 +10050,57 @@ function renderSiparisKalemMini(kalemler, para) {
 
 // --- Sipariş aksiyon fonksiyonları ---
 async function siparisOnayla(siparis_id) {
+    if (_saAksiyonKilit) return;
     if (!confirm('Bu siparişi ONAYLAMAK istediğinize emin misiniz?')) return;
-    showLoading();
+    saAksiyonBaslat('Sipariş onaylanıyor…');
     const r = await secureFetch('/siparis-onayla', { method: 'POST', body: JSON.stringify({ siparis_id }) });
-    hideLoading();
+    saAksiyonBitir();
     if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi('siparis', siparis_id); }
     else showToast(r.hata, 'error');
 }
 async function siparisGonder(siparis_id) {
+    if (_saAksiyonKilit) return;
     if (!confirm('Bu sipariş tedarikçiye GÖNDERİLDİ olarak işaretlensin mi?')) return;
-    showLoading();
+    saAksiyonBaslat('Tedarikçiye gönderiliyor…');
     const r = await secureFetch('/siparis-gonder', { method: 'POST', body: JSON.stringify({ siparis_id }) });
-    hideLoading();
+    saAksiyonBitir();
     if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi('siparis', siparis_id); }
     else showToast(r.hata, 'error');
 }
 async function siparisTamamenGerial(siparis_id) {
+    if (_saAksiyonKilit) return;
     if (!confirm('Bu siparişi İPTAL EDİP SİLMEK istediğinize emin misiniz?\n\n⚠️ Sipariş kalıcı olarak SİLİNECEK. Talep kalemleri "İŞLEME ALINDI" durumuna geri dönecek ve yeniden sipariş açılabilir hale gelecek.')) return;
-    showLoading();
+    saAksiyonBaslat('Sipariş siliniyor…');
     const r = await secureFetch('/siparis-tamamen-sil', { method: 'POST', body: JSON.stringify({ siparis_id }) });
-    hideLoading();
+    saAksiyonBitir();
     if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 
 async function siparisIptal(siparis_id) {
+    if (_saAksiyonKilit) return;
     if (!confirm('Bu siparişi İPTAL etmek istediğinize emin misiniz? İlgili talepler ONAYLANDI durumuna geri alınacak.')) return;
-    showLoading();
+    saAksiyonBaslat('Sipariş iptal ediliyor…');
     const r = await secureFetch('/siparis-iptal', { method: 'POST', body: JSON.stringify({ siparis_id }) });
-    hideLoading();
+    saAksiyonBitir();
     if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
 async function siparisGerial(siparis_id, hedef_durum) {
+    if (_saAksiyonKilit) return;
     if (!confirm(`Bu siparişi ${hedef_durum} durumuna geri çekmek istiyor musunuz?`)) return;
-    showLoading();
+    saAksiyonBaslat('Geri alınıyor…');
     const r = await secureFetch('/siparis-gerial', { method: 'POST', body: JSON.stringify({ siparis_id, hedef_durum }) });
-    hideLoading();
+    saAksiyonBitir();
     if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi('siparis', siparis_id); }
     else showToast(r.hata, 'error');
 }
 async function siparisArsivle(siparis_id) {
+    if (_saAksiyonKilit) return;
     if (!confirm('Bu siparişi arşivlemek istediğinize emin misiniz?')) return;
-    showLoading();
+    saAksiyonBaslat('Arşivleniyor…');
     const r = await secureFetch('/siparis-arsivle', { method: 'POST', body: JSON.stringify({ siparis_id }) });
-    hideLoading();
+    saAksiyonBitir();
     if (r.ok) { showToast(r.mesaj, 'success'); satinalmaIslemSonrasi(); }
     else showToast(r.hata, 'error');
 }
