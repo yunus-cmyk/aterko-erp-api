@@ -1683,7 +1683,7 @@
             </div>
             <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Bitiş tarihini değiştirirsen ledger izi için otomatik not düşülür.</div>
         </div>
-        <div class="modal-footer py-2"><button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">İptal</button><button class="btn btn-sm btn-primary" onclick="gorevDuzenleKaydet()">Kaydet</button></div>
+        <div class="modal-footer py-2"><button id="gdSilBtn" class="btn btn-sm btn-outline-danger me-auto d-none" onclick="gorevSil()"><i class="bi bi-trash me-1"></i>Kalıcı Sil</button><button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">İptal</button><button class="btn btn-sm btn-primary" onclick="gorevDuzenleKaydet()">Kaydet</button></div>
     </div></div></div>
 
     <div id="auditArea" class="d-none p-3">
@@ -5284,7 +5284,23 @@ function gorevDuzenleAc(id) {
     document.getElementById('gdTaahhut').checked = !!g.taahhut;
     document.getElementById('gdVade').value = g.taahhut_vade || 30;
     document.getElementById('gdVadeWrap').classList.toggle('d-none', !g.taahhut);
+    // Kalıcı Sil yalnızca ADMIN'e görünür
+    document.getElementById('gdSilBtn').classList.toggle('d-none', !(kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin'));
     new bootstrap.Modal(document.getElementById('modalGorevDuzenle')).show();
+}
+
+async function gorevSil() {
+    const id = document.getElementById('gdId').value;
+    if (!id) return;
+    const g = (window.grvSonListe || []).find(x => String(x.id) === String(id));
+    if (!confirm(`"${g?.baslik || 'Bu görev'}" KALICI olarak silinecek — geri alınamaz, hiçbir yerde görünmez (notları da silinir).\n\nDevam edilsin mi?`)) return;
+    const r = await secureFetch('/gorev-sil/' + id, { method: 'DELETE' });
+    if (r && r.ok) {
+        showToast('Görev kalıcı olarak silindi', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('modalGorevDuzenle'))?.hide();
+        await grvAlanlariYukle();
+        gorevListeYukle();
+    } else showToast((r && r.hata) || 'Silinemedi', 'error');
 }
 
 async function gorevDuzenleKaydet() {

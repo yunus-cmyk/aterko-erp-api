@@ -5060,6 +5060,16 @@ app.post('/api/gorev-not', yetkiKontrol, cekirdekEkipKontrol, async (req, res, n
     } catch (e) { next(e); }
 });
 
+// Görevi KALICI sil — yalnızca ADMIN (iz bırakmaz; gorev_notlari ON DELETE CASCADE ile birlikte silinir)
+app.delete('/api/gorev-sil/:id', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.status(403).json({ ok: false, hata: 'Görevi yalnızca ADMIN silebilir.' });
+    try {
+        const r = await pool.query("DELETE FROM yonetim_gorevleri WHERE id=$1 RETURNING id", [req.params.id]);
+        if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Görev bulunamadı.' });
+        res.json({ ok: true, mesaj: 'Görev kalıcı olarak silindi.' });
+    } catch (e) { next(e); }
+});
+
 // ============================================================================
 // KULLANICI YÖNETİMİ (sadece ADMIN)
 // ============================================================================
