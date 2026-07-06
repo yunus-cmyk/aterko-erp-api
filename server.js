@@ -5886,6 +5886,156 @@ app.post('/api/gunluk-rapor-ayar', yetkiKontrol, async (req, res, next) => {
 });
 
 // ============================================================================
+// GÖREV RAPORU (PDF + günlük/haftalık e-posta) — çekirdek ekip
+// ============================================================================
+async function gorevRaporVerisi(filtre = {}) {
+    const kos = [], par = [];
+    if (filtre.sahip_id) { par.push(filtre.sahip_id); kos.push(`g.sahip_id=$${par.length}`); }
+    if (filtre.durum) { par.push(filtre.durum); kos.push(`g.durum=$${par.length}`); }
+    else if (filtre.sadeceAcik) kos.push(`g.durum IN ('ACIK','DEVAM')`);
+    if (filtre.alan) { par.push(filtre.alan); kos.push(`g.alan=$${par.length}`); }
+    if (filtre.taahhut) kos.push(`g.taahhut=TRUE`);
+    if (filtre.gecikmis) kos.push(`g.durum IN ('ACIK','DEVAM') AND g.bitis_tarihi < CURRENT_DATE`);
+    const where = kos.length ? 'WHERE ' + kos.join(' AND ') : '';
+    const g = await pool.query(`
+        SELECT g.id, g.baslik, g.alan, g.oncelik, g.durum, g.bitis_tarihi, g.taahhut, g.sahip_id, sh.ad_soyad AS sahip_ad,
+               (g.durum IN ('ACIK','DEVAM') AND g.bitis_tarihi < CURRENT_DATE) AS gecikmis
+        FROM yonetim_gorevleri g JOIN kullanicilar sh ON g.sahip_id=sh.id
+        ${where}
+        ORDER BY sh.ad_soyad, (g.durum IN ('ACIK','DEVAM') AND g.bitis_tarihi < CURRENT_DATE) DESC, g.bitis_tarihi ASC`, par);
+    let baslik = 'Tüm Görevler';
+    if (filtre.sahip_id) {
+        const sr = await pool.query("SELECT ad_soyad FROM kullanicilar WHERE id=$1", [filtre.sahip_id]);
+        baslik = sr.rows[0] ? sr.rows[0].ad_soyad : 'Görevler';
+    }
+    return { gorevler: g.rows, baslik };
+}
+function gorevRaporHTML(gorevler, baslik) {
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const tr = d => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
+    const ALAN = { TAAHHUT: '30/90 Taahhüt', NAKIT: 'Nakit Seferberliği', YENIDEN_YAPILANMA: 'Yeniden Yapılanma', KOMISER: 'Komiser Hazırlığı', PZT_KARAR: 'Pazartesi Kararı', GENEL: 'Genel' };
+    const alanAd = k => ALAN[k] || String(k || '').split('_').filter(Boolean).map(w => w.charAt(0) + w.slice(1).toLocaleLowerCase('tr')).join(' ');
+    const DURUM = { ACIK: 'Açık', DEVAM: 'Devam', TAMAMLANDI: 'Tamamlandı', IPTAL: 'İptal' };
+    const grup = {}; gorevler.forEach(g => { (grup[g.sahip_ad] = grup[g.sahip_ad] || []).push(g); });
+    let govde = '';
+    Object.keys(grup).sort((a, b) => a.localeCompare(b, 'tr')).forEach(ad => {
+        const gs = grup[ad];
+        const acik = gs.filter(x => ['ACIK', 'DEVAM'].includes(x.durum)).length;
+        const gec = gs.filter(x => x.gecikmis).length;
+        govde += `<h3>${esc(ad)} <span class="ozet">(açık: ${acik}${gec ? ` · <span class="kirmizi">geciken: ${gec}</span>` : ''})</span></h3>
+        <table><thead><tr><th style="width:44%">Görev</th><th>Alan</th><th>Öncelik</th><th>Bitiş</th><th>Durum</th></tr></thead><tbody>
+        ${gs.map(x => `<tr class="${x.gecikmis ? 'gec' : ''}"><td>${esc(x.baslik)}${x.taahhut ? ' <span class="tb">Taahhüt</span>' : ''}</td><td>${esc(alanAd(x.alan))}</td><td>${esc(x.oncelik)}</td><td>${tr(x.bitis_tarihi)}${x.gecikmis ? ' ⚠' : ''}</td><td>${esc(DURUM[x.durum] || x.durum)}</td></tr>`).join('')}
+        </tbody></table>`;
+    });
+    if (!gorevler.length) govde = '<p class="bos">Kayıt yok.</p>';
+    return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><style>
+      @page { margin: 16mm; size: A4; }
+      body { font-family: Arial, sans-serif; font-size: 10pt; color:#1a1a1a; }
+      h1 { font-size: 16pt; margin:0 0 2px; }
+      .ust { color:#666; font-size:9pt; margin-bottom:14px; border-bottom:2px solid #0d6efd; padding-bottom:8px; }
+      h3 { font-size:11pt; margin:16px 0 4px; color:#0d6efd; page-break-after:avoid; }
+      .ozet { font-weight:normal; font-size:9pt; color:#666; }
+      .kirmizi { color:#dc3545; font-weight:bold; }
+      table { width:100%; border-collapse:collapse; margin-bottom:8px; }
+      th { background:#f1f3f5; text-align:left; padding:5px 8px; font-size:8.5pt; border-bottom:1px solid #dee2e6; }
+      td { padding:5px 8px; font-size:9pt; border-bottom:1px solid #eee; vertical-align:top; }
+      tr { page-break-inside:avoid; }
+      tr.gec td { background:#fff5f5; }
+      tr.gec td:first-child { border-left:3px solid #dc3545; }
+      .tb { background:#cff4fc; color:#055160; font-size:7.5pt; padding:1px 5px; border-radius:4px; }
+      .bos { color:#888; font-style:italic; }
+      .ft { margin-top:18px; color:#999; font-size:8pt; }
+    </style></head><body>
+      <h1>Görev Raporu — ${esc(baslik)}</h1>
+      <div class="ust">Oluşturma: ${new Date().toLocaleString('tr-TR')} · Aterko Workspace · Çekirdek Yönetim Ekibi · Toplam ${gorevler.length} görev</div>
+      ${govde}
+      <div class="ft">Aterko Workspace — Görev Takip</div>
+    </body></html>`;
+}
+async function gorevRaporPDF(filtre) {
+    const { htmlToPDF } = require('./lib/pdf-generator');
+    const { gorevler, baslik } = await gorevRaporVerisi(filtre);
+    const pdf = await htmlToPDF(gorevRaporHTML(gorevler, baslik), {});
+    return { pdf, sayi: gorevler.length, baslik };
+}
+
+// On-demand PDF — kişi bazlı (sahip_id) ya da tümü; liste filtrelerini yansıtır
+app.get('/api/gorevler/pdf', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
+    try {
+        const { sahip_id, durum, alan, taahhut, gecikmis } = req.query;
+        const { pdf } = await gorevRaporPDF({ sahip_id, durum, alan, taahhut: taahhut === '1' || taahhut === 'true', gecikmis: gecikmis === '1' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="Gorev-Raporu.pdf"');
+        res.send(pdf);
+    } catch (e) { next(e); }
+});
+
+// Zamanlı görev raporu (günlük/haftalık) — panel ayarı
+async function gorevRaporAyarOku() {
+    const r = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='gorev_rapor'");
+    return r.rowCount ? r.rows[0].deger : { aktif: false, periyot: 'haftalik', gun: 1, saat: '08:00', ek_alicilar: '' };
+}
+async function gorevRaporGonder(testEmail) {
+    if (!mailTransporter) { console.log('⚠️ Görev raporu: mail kapalı'); return; }
+    const { pdf, sayi } = await gorevRaporPDF({ sadeceAcik: true });
+    let alicilar;
+    if (testEmail) alicilar = [testEmail];
+    else {
+        const r = await pool.query("SELECT email FROM kullanicilar WHERE cekirdek_ekip=TRUE AND durum='AKTIF' AND email IS NOT NULL");
+        alicilar = r.rows.map(x => x.email);
+        const ayar = await gorevRaporAyarOku();
+        if (ayar.ek_alicilar) String(ayar.ek_alicilar).split(/[,;\s]+/).filter(Boolean).forEach(e => alicilar.push(e));
+        alicilar = [...new Set(alicilar)];
+    }
+    if (!alicilar.length) { console.log('⚠️ Görev raporu: alıcı yok'); return; }
+    const bugun = new Date().toLocaleDateString('tr-TR');
+    await mailTransporter.sendMail({
+        from: `"Aterko Workspace" <${MAIL_FROM_EMAIL}>`,
+        to: alicilar.join(', '),
+        subject: `Görev Raporu — ${bugun}`,
+        html: `<div style="font-family:Arial,sans-serif;color:#212529;"><p>Merhaba,</p><p>${bugun} tarihli açık görev raporu (${sayi} görev) ektedir.</p><p style="color:#6c757d;font-size:12px;margin-top:16px;">Aterko Workspace — otomatik görev raporu</p></div>`,
+        attachments: [{ filename: `Gorev-Raporu-${bugun}.pdf`, content: pdf }]
+    });
+    console.log(`📋 Görev raporu gönderildi → ${alicilar.length} alıcı${testEmail ? ' (TEST)' : ''}`);
+}
+let gorevRaporCronTask = null;
+async function gorevRaporCronKur() {
+    if (!(process.env.RENDER || process.env.NODE_ENV === 'production')) return;
+    const cronLib = require('node-cron');
+    if (gorevRaporCronTask) { gorevRaporCronTask.stop(); gorevRaporCronTask = null; }
+    const ayar = await gorevRaporAyarOku();
+    if (!ayar.aktif) { console.log('📋 Görev raporu KAPALI (panel ayarı).'); return; }
+    const [h, m] = (ayar.saat || '08:00').split(':').map(Number);
+    const gunSpec = ayar.periyot === 'gunluk' ? '*' : String(ayar.gun == null ? 1 : ayar.gun);
+    gorevRaporCronTask = cronLib.schedule(`${m} ${h} * * ${gunSpec}`, () => {
+        gorevRaporGonder().catch(e => console.error('📋 Görev raporu hatası:', e.message));
+    }, { timezone: 'Europe/Istanbul' });
+    console.log(`📋 Görev raporu zamanlandı: ${ayar.periyot} ${ayar.saat} (TR)${ayar.periyot === 'haftalik' ? ` gün=${gunSpec}` : ''}`);
+}
+app.post('/api/gorev-rapor-test', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
+    try { await gorevRaporGonder(req.user.email); res.json({ ok: true, mesaj: `Test raporu ${req.user.email} adresine gönderildi.` }); }
+    catch (e) { res.status(500).json({ ok: false, hata: e.message }); }
+});
+app.get('/api/gorev-rapor-ayar', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
+    try {
+        const ayar = await gorevRaporAyarOku();
+        const r = await pool.query("SELECT count(*)::int n FROM kullanicilar WHERE cekirdek_ekip=TRUE AND durum='AKTIF'");
+        res.json({ ok: true, ayar, cekirdekSayisi: r.rows[0].n });
+    } catch (e) { next(e); }
+});
+app.post('/api/gorev-rapor-ayar', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
+    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN değiştirebilir.' });
+    try {
+        const { aktif, periyot, gun, saat, ek_alicilar } = req.body;
+        const saatGecerli = /^([01]\d|2[0-3]):[0-5]\d$/.test(saat || '');
+        const yeni = { aktif: !!aktif, periyot: periyot === 'gunluk' ? 'gunluk' : 'haftalik', gun: Math.min(6, Math.max(0, parseInt(gun) || 1)), saat: saatGecerli ? saat : '08:00', ek_alicilar: String(ek_alicilar || '').trim() };
+        await pool.query("INSERT INTO sistem_ayarlari (anahtar,deger,guncelleme) VALUES ('gorev_rapor',$1,now()) ON CONFLICT (anahtar) DO UPDATE SET deger=$1, guncelleme=now()", [JSON.stringify(yeni)]);
+        await gorevRaporCronKur();
+        res.json({ ok: true, ayar: yeni });
+    } catch (e) { next(e); }
+});
+
+// ============================================================================
 // DASHBOARD (D-3) — Tek endpoint, tüm KPI'lar
 // ============================================================================
 app.get('/api/dashboard', yetkiKontrol, async (req, res, next) => {
@@ -6951,6 +7101,7 @@ async function semaGuvence() {
         await pool.query(`ALTER TABLE teknik_sartname_sablonu ADD COLUMN IF NOT EXISTS baslik_gizle BOOLEAN DEFAULT false`);
         await pool.query(`CREATE TABLE IF NOT EXISTS sistem_ayarlari (anahtar TEXT PRIMARY KEY, deger JSONB, guncelleme TIMESTAMPTZ DEFAULT now())`);
         await pool.query(`INSERT INTO sistem_ayarlari (anahtar,deger) VALUES ('gunluk_rapor',$1) ON CONFLICT (anahtar) DO NOTHING`, [JSON.stringify({ aktif: true, saat: '08:00', ek_alicilar: '' })]);
+        await pool.query(`INSERT INTO sistem_ayarlari (anahtar,deger) VALUES ('gorev_rapor',$1) ON CONFLICT (anahtar) DO NOTHING`, [JSON.stringify({ aktif: false, periyot: 'haftalik', gun: 1, saat: '08:00', ek_alicilar: '' })]);
 
         // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
         await pool.query(`
@@ -7019,6 +7170,8 @@ app.listen(PORT, async () => {
         setInterval(() => bildirimleriOtomatikUret().catch(()=>{}), 60 * 60 * 1000);
         // Günlük satınalma raporu (PDF) — panel ayarına göre (saat/aktif), Satınalma yetkilileri + Admin'e
         raporCronKur().catch(e => console.error('🗓️ Günlük rapor cron kurulamadı:', e.message));
+        // Görev raporu (PDF) — günlük/haftalık, çekirdek ekibe
+        gorevRaporCronKur().catch(e => console.error('📋 Görev raporu cron kurulamadı:', e.message));
     } else {
         console.log('🗓️ Zamanlanmış işler lokalde atlandı (yalnızca production çalışır).');
     }

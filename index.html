@@ -1271,6 +1271,53 @@
                 </div>
             </div>
         </div>
+
+        <!-- Görev Raporu kartı (çekirdek ekip) -->
+        <div class="card border shadow-sm mb-4" id="grvRaporKart">
+            <div class="card-header bg-white fw-bold"><i class="bi bi-check2-square me-2 text-primary"></i>Görev Raporu (PDF e-posta) <span class="text-muted small fw-normal">— açık görevler, çekirdek ekibe</span></div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-auto">
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="grvRaporAktif">
+                            <label class="form-check-label small" for="grvRaporAktif">Otomatik gönderim açık</label>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <label class="small fw-semibold d-block mb-1">Sıklık</label>
+                        <select id="grvRaporPeriyot" class="form-select form-select-sm" style="width:130px" onchange="grvRaporGunGoster()">
+                            <option value="haftalik">Haftalık</option>
+                            <option value="gunluk">Günlük</option>
+                        </select>
+                    </div>
+                    <div class="col-auto" id="grvRaporGunWrap">
+                        <label class="small fw-semibold d-block mb-1">Gün</label>
+                        <select id="grvRaporGun" class="form-select form-select-sm" style="width:130px">
+                            <option value="1">Pazartesi</option>
+                            <option value="2">Salı</option>
+                            <option value="3">Çarşamba</option>
+                            <option value="4">Perşembe</option>
+                            <option value="5">Cuma</option>
+                            <option value="6">Cumartesi</option>
+                            <option value="0">Pazar</option>
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <label class="small fw-semibold d-block mb-1">Saat</label>
+                        <input type="time" id="grvRaporSaat" class="form-control form-control-sm" style="width:130px">
+                    </div>
+                    <div class="col-12 col-md">
+                        <label class="small fw-semibold d-block mb-1">Ek alıcılar <span class="text-muted fw-normal">(virgülle; çekirdek dışı ekstra e-posta)</span></label>
+                        <input id="grvRaporEkAlicilar" class="form-control form-control-sm" placeholder="ornek@aterko.com, bir@aterko.com">
+                    </div>
+                </div>
+                <div class="small text-muted mt-2" id="grvRaporBilgi"></div>
+                <div class="d-flex gap-2 mt-3 flex-wrap">
+                    <button class="btn btn-sm btn-dark fw-bold" onclick="grvRaporAyarKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="grvRaporTestGonder()"><i class="bi bi-send me-1"></i>Şimdi bana test gönder</button>
+                </div>
+            </div>
+        </div>
         <h6 class="fw-bold text-secondary mb-2"><i class="bi bi-bell me-2"></i>Olay Bildirimleri</h6>
         <div id="bildirimAyarListe"><div class="text-center text-muted p-4"><div class="spinner-border text-warning"></div></div></div>
     </div>
@@ -1621,9 +1668,12 @@
     <div id="gorevlerArea" class="d-none p-3">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h5 class="fw-bold text-dark mb-0"><i class="bi bi-check2-square me-2 text-primary"></i>Görev Takip <span class="text-muted small fw-normal">— Çekirdek yönetim ekibi</span></h5>
-            <div class="btn-group btn-group-sm">
-                <button id="grvBtnListe" class="btn btn-primary" onclick="gorevGorunum('liste')"><i class="bi bi-list-ul me-1"></i>Liste</button>
-                <button id="grvBtnPazartesi" class="btn btn-outline-primary" onclick="gorevGorunum('pazartesi')"><i class="bi bi-calendar-week me-1"></i>Pazartesi</button>
+            <div class="d-flex gap-2">
+                <div class="btn-group btn-group-sm">
+                    <button id="grvBtnListe" class="btn btn-primary" onclick="gorevGorunum('liste')"><i class="bi bi-list-ul me-1"></i>Liste</button>
+                    <button id="grvBtnPazartesi" class="btn btn-outline-primary" onclick="gorevGorunum('pazartesi')"><i class="bi bi-calendar-week me-1"></i>Pazartesi</button>
+                </div>
+                <button id="grvBtnPdf" class="btn btn-sm btn-outline-danger" onclick="gorevPdfAl()" title="Görev listesini PDF olarak indir — seçili filtrelere göre (kişi bazlı ya da tümü)"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
             </div>
         </div>
 
@@ -4922,6 +4972,7 @@ async function bildirimAyarYukle() {
     window.bildirimKurallari = r.kurallar || [];
     renderBildirimAyar();
     grAyarYukle();
+    grvRaporAyarYukle();
 }
 
 // ---- Günlük Satınalma Raporu ayarı ----
@@ -4946,6 +4997,43 @@ async function grAyarKaydet() {
 async function grTestGonder() {
     showToast('Test raporu hazırlanıyor…', 'info');
     const r = await secureFetch('/gunluk-rapor-test', { method: 'POST' });
+    if (r && r.ok) showToast(r.mesaj || 'Test gönderildi', 'success');
+    else showToast((r && r.hata) || 'Test hatası', 'error');
+}
+
+// ---- Görev Raporu ayarı (günlük/haftalık PDF e-posta) ----
+function grvRaporGunGoster() {
+    const haftalik = document.getElementById('grvRaporPeriyot').value === 'haftalik';
+    document.getElementById('grvRaporGunWrap').classList.toggle('d-none', !haftalik);
+}
+async function grvRaporAyarYukle() {
+    const kart = document.getElementById('grvRaporKart');
+    const r = await secureFetch('/gorev-rapor-ayar').catch(() => null);
+    if (!r || !r.ok) { if (kart) kart.classList.add('d-none'); return; }  // çekirdek değilse gizle
+    if (kart) kart.classList.remove('d-none');
+    document.getElementById('grvRaporAktif').checked = !!r.ayar.aktif;
+    document.getElementById('grvRaporPeriyot').value = r.ayar.periyot || 'haftalik';
+    document.getElementById('grvRaporGun').value = String(r.ayar.gun == null ? 1 : r.ayar.gun);
+    document.getElementById('grvRaporSaat').value = r.ayar.saat || '08:00';
+    document.getElementById('grvRaporEkAlicilar').value = r.ayar.ek_alicilar || '';
+    document.getElementById('grvRaporBilgi').innerHTML = `<i class="bi bi-people me-1"></i>Çekirdek ekip alıcısı (aktif): <b>${r.cekirdekSayisi}</b> kişi — bunlara her zaman gider. Rapor <b>açık görevleri</b> (sahibe göre gruplu, gecikenler kırmızı) içerir.`;
+    grvRaporGunGoster();
+}
+async function grvRaporAyarKaydet() {
+    const govde = {
+        aktif: document.getElementById('grvRaporAktif').checked,
+        periyot: document.getElementById('grvRaporPeriyot').value,
+        gun: parseInt(document.getElementById('grvRaporGun').value),
+        saat: document.getElementById('grvRaporSaat').value || '08:00',
+        ek_alicilar: document.getElementById('grvRaporEkAlicilar').value || ''
+    };
+    const r = await secureFetch('/gorev-rapor-ayar', { method: 'POST', body: JSON.stringify(govde) });
+    if (r && r.ok) { showToast('Görev raporu ayarı kaydedildi', 'success'); grvRaporAyarYukle(); }
+    else showToast((r && r.hata) || 'Kayıt hatası', 'error');
+}
+async function grvRaporTestGonder() {
+    showToast('Test raporu hazırlanıyor…', 'info');
+    const r = await secureFetch('/gorev-rapor-test', { method: 'POST' });
     if (r && r.ok) showToast(r.mesaj || 'Test gönderildi', 'success');
     else showToast((r && r.hata) || 'Test hatası', 'error');
 }
@@ -5224,6 +5312,26 @@ async function gorevListeYukle() {
     if (!r || !r.ok) { box.innerHTML = '<div class="text-danger p-3">Yüklenemedi.</div>'; return; }
     window.grvSonListe = r.gorevler;
     box.innerHTML = r.gorevler.length ? r.gorevler.map(gorevKartHTML).join('') : '<div class="text-muted text-center p-4">Görev yok.</div>';
+}
+
+// Görev listesini PDF olarak indir — seçili filtreleri yansıtır (sahip seçiliyse kişi bazlı, değilse tümü)
+async function gorevPdfAl() {
+    const p = new URLSearchParams();
+    const fs = document.getElementById('grvFilSahip')?.value; if (fs) p.set('sahip_id', fs);
+    const fd = document.getElementById('grvFilDurum')?.value; if (fd) p.set('durum', fd);
+    const fa = document.getElementById('grvFilAlan')?.value; if (fa) p.set('alan', fa);
+    if (document.getElementById('grvFilTaahhut')?.checked) p.set('taahhut', '1');
+    if (document.getElementById('grvFilGecikmis')?.checked) p.set('gecikmis', '1');
+    showLoading(); showToast('Görev PDF üretiliyor (5-15 sn)...', 'success');
+    try {
+        const token = localStorage.getItem('aterko_token');
+        const resp = await fetch(`${API_URL}/gorevler/pdf?` + p.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!resp.ok) { let h = 'PDF üretilemedi'; try { h = (await resp.json()).hata || h; } catch (e) {} throw new Error(h); }
+        const u = URL.createObjectURL(await resp.blob());
+        if (!window.open(u, '_blank')) { const a = document.createElement('a'); a.href = u; a.download = 'gorev-raporu.pdf'; a.click(); }
+        setTimeout(() => URL.revokeObjectURL(u), 60000);
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { hideLoading(); }
 }
 
 async function gorevHizliEkle() {
