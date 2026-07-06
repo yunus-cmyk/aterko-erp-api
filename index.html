@@ -1719,6 +1719,7 @@
             <input type="hidden" id="gdId">
             <div class="mb-2"><label class="form-label small fw-semibold">Görev</label><input id="gdBaslik" class="form-control form-control-sm"></div>
             <div class="mb-2"><label class="form-label small fw-semibold">Açıklama</label><textarea id="gdAciklama" class="form-control form-control-sm" rows="2"></textarea></div>
+            <div class="mb-2"><label class="form-label small fw-semibold"><i class="bi bi-sticky me-1 text-warning"></i>Notlar <span class="text-muted fw-normal">— serbest, düzenlenebilir</span></label><textarea id="gdNotlar" class="form-control form-control-sm" rows="3" placeholder="Görevle ilgili güncel notlar — istediğiniz zaman revize edebilirsiniz"></textarea></div>
             <div class="row g-2">
                 <div class="col-6"><label class="form-label small fw-semibold">Sahip</label><select id="gdSahip" class="form-select form-select-sm"></select></div>
                 <div class="col-6"><label class="form-label small fw-semibold">Bitiş</label><input id="gdBitis" type="date" class="form-control form-control-sm"></div>
@@ -5274,10 +5275,13 @@ async function gorevSekmeInit() {
 
 function gorevKartHTML(g) {
     const gec = g.gecikmis === true;
-    const notlar = Array.isArray(g.notlar) ? g.notlar : [];
+    const kayitlar = Array.isArray(g.kayit_notlari) ? g.kayit_notlari : [];
     const tarih = g.bitis_tarihi ? new Date(g.bitis_tarihi).toLocaleDateString('tr-TR') : '-';
     const durumSel = ['ACIK', 'DEVAM', 'TAMAMLANDI', 'IPTAL'].map(d => `<option value="${d}" ${g.durum === d ? 'selected' : ''}>${GRV_DURUM_AD[d]}</option>`).join('');
-    const notHTML = notlar.length ? `<div class="mt-2 border-top pt-1">${notlar.map(n => `<div class="small text-muted"><i class="bi bi-chat-left-text me-1"></i><b>${esc(n.yazan)}</b>: ${esc(n.not_metni)} <span class="text-muted">· ${new Date(n.tarih).toLocaleDateString('tr-TR')}</span></div>`).join('')}</div>` : '';
+    // Üst: düzenlenebilir Notlar alanı (görevin kalıcı notu)
+    const notAlaniHTML = g.notlar ? `<div class="mt-2 p-2 rounded bg-warning-subtle border border-warning-subtle small" style="white-space:pre-wrap"><i class="bi bi-sticky me-1 text-warning-emphasis"></i><span class="fw-semibold">Notlar:</span> ${esc(g.notlar)}</div>` : '';
+    // Alt: Kayıt Notları — tarih + kişi damgalı olay/kayıt günlüğü
+    const notHTML = kayitlar.length ? `<div class="mt-2 border-top pt-1"><div class="text-muted fw-semibold" style="font-size:.7rem;letter-spacing:.03em"><i class="bi bi-clock-history me-1"></i>KAYIT NOTLARI</div>${kayitlar.map(n => `<div class="small text-muted"><i class="bi bi-chat-left-text me-1"></i><b>${esc(n.yazan)}</b>: ${esc(n.not_metni)} <span class="text-muted">· ${new Date(n.tarih).toLocaleDateString('tr-TR')}</span></div>`).join('')}</div>` : '';
     return `<div class="card border-0 shadow-sm mb-2 ${gec ? 'border-start border-danger border-3' : ''}"><div class="card-body py-2">
         <div class="d-flex justify-content-between align-items-start gap-2">
           <div class="flex-grow-1">
@@ -5289,6 +5293,7 @@ function gorevKartHTML(g) {
               <span class="badge bg-white text-secondary border"><i class="bi bi-tag me-1"></i>${esc(grvAlanAd(g.alan))}</span>
             </div>
             ${g.aciklama ? `<div class="small mt-1">${esc(g.aciklama)}</div>` : ''}
+            ${notAlaniHTML}
             ${notHTML}
           </div>
           <div class="text-end" style="min-width:135px">
@@ -5383,6 +5388,7 @@ function gorevDuzenleAc(id) {
     document.getElementById('gdId').value = g.id;
     document.getElementById('gdBaslik').value = g.baslik || '';
     document.getElementById('gdAciklama').value = g.aciklama || '';
+    document.getElementById('gdNotlar').value = g.notlar || '';
     document.getElementById('gdSahip').value = g.sahip_id;
     document.getElementById('gdBitis').value = (g.bitis_tarihi || '').slice(0, 10);
     document.getElementById('gdAlan').value = g.alan || 'GENEL';
@@ -5417,6 +5423,7 @@ async function gorevDuzenleKaydet() {
         id: document.getElementById('gdId').value,
         baslik: document.getElementById('gdBaslik').value.trim(),
         aciklama: document.getElementById('gdAciklama').value.trim(),
+        notlar: document.getElementById('gdNotlar').value.trim(),
         sahip_id: document.getElementById('gdSahip').value,
         bitis_tarihi: document.getElementById('gdBitis').value,
         alan: document.getElementById('gdAlan').value,

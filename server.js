@@ -4986,7 +4986,7 @@ app.get('/api/gorevler', yetkiKontrol, cekirdekEkipKontrol, async (req, res, nex
             SELECT g.*, sh.ad_soyad AS sahip_ad, ol.ad_soyad AS olusturan_ad,
                    (g.durum IN ('ACIK','DEVAM') AND g.bitis_tarihi < CURRENT_DATE) AS gecikmis,
                    COALESCE((SELECT json_agg(json_build_object('id',n.id,'not_metni',n.not_metni,'yazan',ky.ad_soyad,'tarih',n.olusturma_tarihi) ORDER BY n.olusturma_tarihi)
-                             FROM gorev_notlari n JOIN kullanicilar ky ON n.yazan_id=ky.id WHERE n.gorev_id=g.id), '[]') AS notlar
+                             FROM gorev_notlari n JOIN kullanicilar ky ON n.yazan_id=ky.id WHERE n.gorev_id=g.id), '[]') AS kayit_notlari
             FROM yonetim_gorevleri g
             JOIN kullanicilar sh ON g.sahip_id = sh.id
             JOIN kullanicilar ol ON g.olusturan_id = ol.id
@@ -4999,7 +4999,8 @@ app.get('/api/gorevler', yetkiKontrol, cekirdekEkipKontrol, async (req, res, nex
 // Görev oluştur / güncelle (id varsa update). sahip_id + bitis_tarihi zorunlu.
 app.post('/api/gorev-kaydet', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
     try {
-        const { id, baslik, aciklama, sahip_id, alan, oncelik, bitis_tarihi, taahhut, taahhut_vade } = req.body;
+        const { id, baslik, aciklama, notlar, sahip_id, alan, oncelik, bitis_tarihi, taahhut, taahhut_vade } = req.body;
+        const notlarV = (notlar == null || String(notlar).trim() === '') ? null : String(notlar).trim();
         if (!baslik || !String(baslik).trim()) return res.json({ ok: false, hata: 'Görev başlığı zorunludur.' });
         if (!sahip_id || !bitis_tarihi) return res.json({ ok: false, hata: 'Görevin sahibi ve bitiş tarihi zorunludur.' });
         const alanV = gorevAlanNormalize(alan);
@@ -5008,13 +5009,19 @@ app.post('/api/gorev-kaydet', yetkiKontrol, cekirdekEkipKontrol, async (req, res
         const vadeV = taahhut && [30, 90].includes(Number(taahhut_vade)) ? Number(taahhut_vade) : null;
         if (id) {
             // Ledger bütünlüğü: bitiş tarihi / sahip değişikliği otomatik nota işlenir (deadline sessizce ötelenemesin)
-            const eski = await pool.query("SELECT bitis_tarihi, sahip_id FROM yonetim_gorevleri WHERE id=$1", [id]);
+            const eski = await pool.query("SELECT bitis_tarihi, sahip_id, notlar FROM yonetim_gorevleri WHERE id=$1", [id]);
             if (!eski.rowCount) return res.status(404).json({ ok: false, hata: 'Görev bulunamadı.' });
             const r = await pool.query(
-                `UPDATE yonetim_gorevleri SET baslik=$1, aciklama=$2, sahip_id=$3, alan=$4, oncelik=$5, bitis_tarihi=$6, taahhut=$7, taahhut_vade=$8 WHERE id=$9 RETURNING id`,
-                [String(baslik).trim(), aciklama || null, sahip_id, alanV, oncelikV, bitis_tarihi, !!taahhut, vadeV, id]);
+                `UPDATE yonetim_gorevleri SET baslik=$1, aciklama=$2, sahip_id=$3, alan=$4, oncelik=$5, bitis_tarihi=$6, taahhut=$7, taahhut_vade=$8, notlar=$9 WHERE id=$10 RETURNING id`,
+                [String(baslik).trim(), aciklama || null, sahip_id, alanV, oncelikV, bitis_tarihi, !!taahhut, vadeV, notlarV, id]);
             const trFmt = d => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
-            if (String(eski.rows[0].bitis_tarihi).slice(0, 10) !== String(bitis_tarihi).slice(0, 10))
+            // pg DATE'i takvim günü (YYYY-MM-DD) olarak karşılaştır — yerel bileşenler, tz kaymasız
+            const ymd = d => { if (!d) return ''; const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+            // Not alanı değişince Kayıt Notları'na iz düşür (kim/ne zaman)
+            if ((eski.rows[0].notlar || '') !== (notlarV || ''))
+                await pool.query("INSERT INTO gorev_notlari (gorev_id, yazan_id, not_metni) VALUES ($1,$2,$3)",
+                    [id, req.user.id, notlarV ? '📝 Not güncellendi' : '📝 Not temizlendi']);
+            if (ymd(eski.rows[0].bitis_tarihi) !== String(bitis_tarihi).slice(0, 10))
                 await pool.query("INSERT INTO gorev_notlari (gorev_id, yazan_id, not_metni) VALUES ($1,$2,$3)",
                     [id, req.user.id, `⏱ Bitiş tarihi değişti: ${trFmt(eski.rows[0].bitis_tarihi)} → ${trFmt(bitis_tarihi)}`]);
             if (Number(eski.rows[0].sahip_id) !== Number(sahip_id))
@@ -5023,9 +5030,9 @@ app.post('/api/gorev-kaydet', yetkiKontrol, cekirdekEkipKontrol, async (req, res
             return res.json({ ok: true, id: r.rows[0].id, mesaj: 'Görev güncellendi.' });
         }
         const r = await pool.query(
-            `INSERT INTO yonetim_gorevleri (baslik, aciklama, sahip_id, olusturan_id, alan, oncelik, bitis_tarihi, taahhut, taahhut_vade)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-            [String(baslik).trim(), aciklama || null, sahip_id, req.user.id, alanV, oncelikV, bitis_tarihi, !!taahhut, vadeV]);
+            `INSERT INTO yonetim_gorevleri (baslik, aciklama, sahip_id, olusturan_id, alan, oncelik, bitis_tarihi, taahhut, taahhut_vade, notlar)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+            [String(baslik).trim(), aciklama || null, sahip_id, req.user.id, alanV, oncelikV, bitis_tarihi, !!taahhut, vadeV, notlarV]);
         res.json({ ok: true, id: r.rows[0].id, mesaj: 'Görev oluşturuldu.' });
     } catch (e) { next(e); }
 });
@@ -7102,6 +7109,7 @@ async function semaGuvence() {
         await pool.query(`CREATE TABLE IF NOT EXISTS sistem_ayarlari (anahtar TEXT PRIMARY KEY, deger JSONB, guncelleme TIMESTAMPTZ DEFAULT now())`);
         await pool.query(`INSERT INTO sistem_ayarlari (anahtar,deger) VALUES ('gunluk_rapor',$1) ON CONFLICT (anahtar) DO NOTHING`, [JSON.stringify({ aktif: true, saat: '08:00', ek_alicilar: '' })]);
         await pool.query(`INSERT INTO sistem_ayarlari (anahtar,deger) VALUES ('gorev_rapor',$1) ON CONFLICT (anahtar) DO NOTHING`, [JSON.stringify({ aktif: false, periyot: 'haftalik', gun: 1, saat: '08:00', ek_alicilar: '' })]);
+        await pool.query(`ALTER TABLE yonetim_gorevleri ADD COLUMN IF NOT EXISTS notlar TEXT`).catch(() => {});
 
         // Bildirim kuralları (panelden yönetilen aç/kapa + alıcılar)
         await pool.query(`
