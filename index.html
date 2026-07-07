@@ -4461,7 +4461,7 @@ function tsGizleKosulEkle() {
     document.getElementById('tsGizleKosullar').insertAdjacentHTML('beforeend', tsGizleKosulSatir('', ''));
 }
 
-function tsSatirSec(id) {
+function tsSatirSec(id, hamModu) {
     tsSeciliId = id;
     tsSablonRender();
     const s = tsSablonCache.find(x => x.id === id);
@@ -4481,7 +4481,19 @@ function tsSatirSec(id) {
         <span class="small text-muted ms-2">Bölüm:</span>
         <select class="form-select form-select-sm" style="width:auto" onchange="tsSatirTasi(${id},{bolum:this.value})">${_bolOpt}</select>
     </div>`;
-    if (s.tip === 'basit') {
+    // Türü içerikten türer; ama kullanıcı her satırı "Gelişmiş (ham)" olarak da düzenleyebilir (hamModu)
+    const gelismisNativ = (s.tip !== 'basit' && s.tip !== 'sabit');
+    const hamGoster = hamModu || gelismisNativ;
+    // Sabit/Seçenekli satırlarda "ham formüle geç" düğmesi (tutarlılık + tam kontrol)
+    const hamGecBtn = `<div class="mt-2"><button class="btn btn-sm btn-outline-secondary" onclick="tsSatirSec(${id}, true)"><i class="bi bi-code-slash me-1"></i>Gelişmiş (ham formül) olarak düzenle</button></div>`;
+    if (hamGoster) {
+        if (hamModu && !gelismisNativ) {
+            html += `<div class="alert alert-info py-2 small mb-2"><i class="bi bi-code-slash me-1"></i>Ham formül düzenleme. Yazdığınız şey tek soruya bağlı basit bir seçimse, kaydedince yine <b>Seçenekli</b> olarak görünür. <button type="button" class="btn btn-sm btn-link p-0 align-baseline" onclick="tsSatirSec(${id})">← Kolay editöre dön</button></div>`;
+        } else {
+            html += `<div class="alert alert-warning py-2 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Gelişmiş satır (hesap veya çoklu koşul içerir). {{...}} kodlarına dokunmadan sadece metinleri değiştirin.</div>`;
+        }
+        html += `<textarea id="tsHam" class="form-control form-control-sm font-monospace" rows="6">${tsEsc(s.ham || '')}</textarea>`;
+    } else if (s.tip === 'basit') {
         html += `<div class="small text-muted mb-2">"<b>${tsEsc(s.karar)}</b>" seçimine göre yazılacak metinler. Seçenek adını ve metnini düzenleyebilir, ekleyip silebilirsiniz.</div>`;
         const fsec = s.form_secenekler || null;
         if (fsec && fsec.length) {
@@ -4493,12 +4505,11 @@ function tsSatirSec(id) {
         }
         html += `<div id="tsSecListe">` + Object.entries(s.secenekler).map(([sec, metin]) => tsSecSatirHTML(sec, metin, fsec)).join('') + `</div>`;
         html += `<button class="btn btn-sm btn-outline-secondary" onclick="tsSecekEkle()"><i class="bi bi-plus-lg me-1"></i>Seçenek ekle</button>`;
-    } else if (s.tip === 'sabit') {
+        html += hamGecBtn;
+    } else {
         html += `<div class="small text-muted mb-2">Bu satır her zaman aynı metni yazar:</div>
             <textarea id="tsMetin" class="form-control form-control-sm" rows="4">${tsEsc(s.metin || '')}</textarea>`;
-    } else {
-        html += `<div class="alert alert-warning py-2 small mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Gelişmiş satır (hesap veya çoklu koşul içerir). {{...}} kodlarına dokunmadan sadece metinleri değiştirin.</div>
-            <textarea id="tsHam" class="form-control form-control-sm font-monospace" rows="6">${tsEsc(s.ham || '')}</textarea>`;
+        html += hamGecBtn;
     }
     html += `<div class="form-check mt-3 mb-1"><input class="form-check-input" type="checkbox" id="tsYeniTabloChk" ${s.yeni_tablo ? 'checked' : ''}><label class="form-check-label small" for="tsYeniTabloChk">Bu satırdan itibaren ayrı (başlıksız) tablo başlasın</label></div>`;
     html += `<div class="form-check mb-1"><input class="form-check-input" type="checkbox" id="tsBaslikGizleChk" ${s.baslik_gizle ? 'checked' : ''}><label class="form-check-label small" for="tsBaslikGizleChk">Bu bölümün başlığını gizle (tüm bölümü etkiler)</label></div>`;
@@ -4530,17 +4541,20 @@ async function tsSatirKaydet(id) {
         return (alan && deger) ? `${alan}=${deger}` : null;
     }).filter(Boolean);
     govde.bolum_gizle = _gizleKos.length ? _gizleKos.join('||') : null;
-    if (s.tip === 'basit') {
+    // Ham (Gelişmiş) editör açıksa — hangi tipten gelmiş olursa olsun ham metni kaydet (tip içerikten yeniden türer)
+    const hamEl = document.getElementById('tsHam');
+    if (hamEl) {
+        govde.tip = 'gelismis';
+        govde.ham = hamEl.value;
+    } else if (s.tip === 'basit') {
         govde.karar = s.karar; govde.secenekler = {};
         document.querySelectorAll('#tsEditor .ts-sec-satir').forEach(row => {
             const ad = row.querySelector('.ts-sec-ad').value.trim();
             if (ad) govde.secenekler[ad] = row.querySelector('.ts-sec-metin').value;
         });
         if (Object.keys(govde.secenekler).length === 0) { showToast('En az bir seçenek gerekli.', 'error'); return; }
-    } else if (s.tip === 'sabit') {
-        govde.metin = document.getElementById('tsMetin').value;
     } else {
-        govde.ham = document.getElementById('tsHam').value;
+        govde.metin = document.getElementById('tsMetin').value;
     }
     const r = await secureFetch('/teknik-sartname-sablonu-kaydet', { method:'POST', body: JSON.stringify(govde) });
     if (r && r.ok) { showToast('Kaydedildi', 'success'); await tsSablonYukle(); tsSatirSec(id); }
@@ -4591,6 +4605,7 @@ function tsYeniSatir() {
             <select id="tsYeniTip" class="form-select form-select-sm" onchange="tsYeniTipDegis()">
                 <option value="sabit">Sabit metin (her zaman aynı)</option>
                 <option value="basit">Seçenekli (seçime göre)</option>
+                <option value="gelismis">Gelişmiş (ham formül {{ }})</option>
             </select></div>
         <div id="tsYeniIcerik"></div>
         <div class="form-check mt-3"><input class="form-check-input" type="checkbox" id="tsYeniTablo"><label class="form-check-label small" for="tsYeniTablo">Bu satırdan itibaren ayrı (başlıksız) tablo başlasın</label></div>
@@ -4616,6 +4631,10 @@ function tsYeniTipDegis() {
     if (tip === 'sabit') {
         c.innerHTML = `<label class="small fw-semibold d-block">Metin</label>
             <textarea id="tsYeniMetin" class="form-control form-control-sm" rows="3" placeholder="Bu satırda her zaman görünecek metin"></textarea>`;
+    } else if (tip === 'gelismis') {
+        c.innerHTML = `<label class="small fw-semibold d-block">Ham formül <span class="text-muted fw-normal">({{ }} ile)</span></label>
+            <textarea id="tsYeniHam" class="form-control form-control-sm font-monospace" rows="6" placeholder="örn. {{EGER:Bina Tipi=Monoblok Konteyner:...}}{{HESAP:...}} ..."></textarea>
+            <div class="small text-muted mt-1"><i class="bi bi-info-circle me-1"></i>Hesap, çoklu koşul veya sabit+değişken karışık satırlar için. <b>Not:</b> yazdığınız şey tek soruya bağlı basit bir seçimse, kaydedince otomatik "Seçenekli" olarak görünür (veri kaybı olmaz).</div>`;
     } else {
         c.innerHTML = `<div class="mb-2"><label class="small fw-semibold d-block">Hangi soruya göre?</label>
             <input id="tsYeniKarar" class="form-control form-control-sm" placeholder="örn. Bina Tipi"></div>
@@ -4643,7 +4662,10 @@ async function tsYeniKaydet() {
     const tip = document.getElementById('tsYeniTip').value;
     const govde = { bina_turu: bt, bolum_no, bolum_adi, bolum_gizle, soru, tip, baslik_gizle, yeni_tablo: document.getElementById('tsYeniTablo')?.checked || false };
     if (tip === 'sabit') govde.metin = document.getElementById('tsYeniMetin').value;
-    else {
+    else if (tip === 'gelismis') {
+        govde.ham = document.getElementById('tsYeniHam').value;
+        if (!govde.ham.trim()) return showToast('Gelişmiş satır için formül metni gerekli.', 'error');
+    } else {
         govde.karar = (document.getElementById('tsYeniKarar').value || '').trim();
         if (!govde.karar) return showToast('Seçenekli satır için "hangi soruya göre" gerekli.', 'error');
         govde.secenekler = {};
