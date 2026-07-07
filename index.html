@@ -553,7 +553,7 @@
         </div>
         <div class="input-group input-group-sm shadow-sm ms-2 me-auto" style="max-width:360px;">
             <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-            <input type="text" id="satinalmaGlobalArama" class="form-control border-start-0 shadow-none" placeholder="Tüm sekmelerde ara: proje, ürün, no, tedarikçi…" oninput="satinalmaGlobalAramaDegisti()" title="Talep, Teklif ve Sipariş sekmelerinde ortak arar — sekme değişse de kalır">
+            <input type="text" id="satinalmaGlobalArama" class="form-control border-start-0 shadow-none" placeholder="Tüm sekmelerde ara: proje, ürün, no, tedarikçi…" oninput="satinalmaGlobalAramaDegisti()" title="Talep, Teklif, Sipariş ve Arşiv sekmelerinde ortak arar — sekme değişse de kalır">
             <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('satinalmaGlobalArama').value='';satinalmaGlobalAramaDegisti();" title="Aramayı temizle"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="d-flex gap-2">
@@ -8858,6 +8858,7 @@ function satinalmaGlobalAramaDegisti() {
     if (sekme === 'talepler') renderTalepTableFiltered();
     else if (sekme === 'siparisler') renderSiparisTableFiltered();
     else if (sekme === 'teklif') renderTeklifHavuzu(window.teklifHavuzuCache || []);
+    else if (sekme === 'arsiv') renderArsivFiltered();
 }
 
 function switchSatinalmaSubTab(target) {
@@ -9200,14 +9201,31 @@ async function fetchArsiv() {
     const r = await secureFetch('/satinalma-arsiv?_=' + Date.now());
     hideLoading();
     if (!r.ok) return showToast(r.hata, 'error');
-    renderArsivTalepleri(r.talepler || []);
-    renderArsivSiparisleri(r.siparisler || []);
+    // Cache'le → ortak arama (satinalmaGlobalArama) Arşiv'de de süzsün
+    window.arsivTalepleriCache = r.talepler || [];
+    window.arsivSiparisleriCache = r.siparisler || [];
+    // Detay modalı için sipariş cache'ine ekle (mükerrer olmadan)
+    const arsivIdler = new Set(window.arsivSiparisleriCache.map(s => s.id));
+    window.siparislerCache = [...(window.siparislerCache || []).filter(s => !arsivIdler.has(s.id)), ...window.arsivSiparisleriCache];
+    renderArsivFiltered();
+}
+
+// Arşiv'i ortak aramaya göre süz (Talep/Teklif/Sipariş ile aynı kutu)
+function renderArsivFiltered() {
+    const arama = trAra(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
+    const tp = window.arsivTalepleriCache || [];
+    const sp = window.arsivSiparisleriCache || [];
+    const tpF = arama ? tp.filter(t => trAra(`${t.talep_no || ''} ${t.proje_kodu || ''} ${t.musteri_adi || ''} ${t.proje_adi || ''} ${t.talep_eden || ''} ${t.durum || ''}`).includes(arama)) : tp;
+    const spF = arama ? sp.filter(s => trAra(`${s.siparis_no || ''} ${s.tedarikci_adi || ''} ${s.para_birimi || ''} ${s.durum || ''}`).includes(arama)) : sp;
+    renderArsivTalepleri(tpF);
+    renderArsivSiparisleri(spF);
 }
 
 function renderArsivTalepleri(talepler) {
     const tb = document.getElementById('arsivTalepBody');
     if (talepler.length === 0) {
-        tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-3">Arşivlenmiş talep yok.</td></tr>';
+        const filtreVar = !!(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
+        tb.innerHTML = `<tr><td colspan="6" class="text-center text-muted p-3">${filtreVar ? 'Aramayla eşleşen arşiv talebi yok.' : 'Arşivlenmiş talep yok.'}</td></tr>`;
         return;
     }
     tb.innerHTML = talepler.map(t => `
@@ -9228,10 +9246,10 @@ function renderArsivTalepleri(talepler) {
 }
 
 function renderArsivSiparisleri(siparisler) {
-    window.siparislerCache = [...(window.siparislerCache || []), ...siparisler]; // Detay modal için
     const tb = document.getElementById('arsivSiparisBody');
     if (siparisler.length === 0) {
-        tb.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-3">Arşivlenmiş sipariş yok.</td></tr>';
+        const filtreVar = !!(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
+        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-3">${filtreVar ? 'Aramayla eşleşen arşiv siparişi yok.' : 'Arşivlenmiş sipariş yok.'}</td></tr>`;
         return;
     }
     tb.innerHTML = siparisler.map(s => {
