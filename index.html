@@ -5559,6 +5559,17 @@ function setTab(tab) {
         tab = 'anasayfa';
     }
 
+    // 0b. Açık modal varken sekme değişirse koyu zemin/kilit kalmasın:
+    // açık modalları kapat ve kalıntı backdrop + body kilidini temizle.
+    const acikModallar = document.querySelectorAll('.modal.show');
+    if (acikModallar.length) {
+        acikModallar.forEach(m => { try { bootstrap.Modal.getInstance(m)?.hide(); } catch (e) {} });
+        document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+    }
+
     // 1. Menüdeki aktif sekme rengini ayarla
     document.querySelectorAll(".nav-pills .nav-link").forEach(el => el.classList.remove("active"));
     if(document.getElementById(`nav-${tab}`)) {
@@ -7434,6 +7445,20 @@ function saAksiyonBaslat(mesaj) {
     ov.style.display = 'flex';
 }
 function saAksiyonBitir() { _saAksiyonKilit = false; const ov = document.getElementById('saAksiyonOverlay'); if (ov) ov.style.display = 'none'; }
+
+// Bootstrap modal-backdrop KALINTISI güvenlik ağı: bazı modüllerde (ör. proje karlılık
+// detayı) modal kapanınca koyu zemin + kilit kalabiliyor (tekrar açılışlarda biriken
+// artık backdrop). Hiç AÇIK modal kalmadığında tüm kalıntı backdrop'ları ve body kilidini temizler.
+function temizleModalKilidi() {
+    if (document.querySelector('.modal.show')) return;   // hâlâ açık modal var → dokunma (yığılı modal güvenli)
+    document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+}
+// Her modal kapanışından sonra (bir tık gecikmeyle) kalıntı kontrolü
+document.addEventListener('hidden.bs.modal', () => setTimeout(temizleModalKilidi, 0));
+
 function showToast(msg, type) {
     const container = document.getElementById("toastContainer");
     const isError = type === "error";
