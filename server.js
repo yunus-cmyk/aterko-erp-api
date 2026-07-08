@@ -522,6 +522,7 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
         const mevcutRes = await client.query('SELECT id FROM proje_teslimatlari WHERE proje_id = $1', [proje.id]);
         const mevcutIds = new Set(mevcutRes.rows.map(r => r.id));
         const gonderilenIds = new Set();
+        const kilitliBinalar = [];   // aktif iş emrine bağlı (şartname alanları güncellenmeyen) teslimatlar
 
         // 3. Her teslimatı işle (ID varsa güncelle, yoksa ekle)
         for (const t of teslimatlar || []) {
@@ -535,6 +536,17 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                 : (t.sevkiyat_baslangici || null);
 
             if (t.id && mevcutIds.has(t.id)) {
+                // İŞ EMRİ KİLİDİ: aktif iş emri varken şartnameye giren alanlar değiştirilemez —
+                // yalnız sevkiyat başlangıcı ve tutar güncellenir (belge bütünlüğü)
+                const kilitliIE = await aktifIsEmri(t.id);
+                if (kilitliIE) {
+                    await client.query(
+                        'UPDATE proje_teslimatlari SET sevkiyat_baslangici=$1, kdvsiz_tutar=$2 WHERE id=$3',
+                        [sevkiyatBaslangici, parseFloat(t.kdvsiz_tutar) || 0, t.id]);
+                    kilitliBinalar.push(`${t.bina_adi || t.id} (${kilitliIE.emir_no})`);
+                    gonderilenIds.add(t.id);
+                    continue;
+                }
                 // Güncelle (mevcut ek_veriler'i koru, yeni sevkiyatlar üzerine yaz)
                 const eskiRes = await client.query('SELECT ek_veriler FROM proje_teslimatlari WHERE id=$1', [t.id]);
                 const eskiVeri = eskiRes.rows[0]?.ek_veriler || {};
@@ -579,14 +591,24 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
             }
         }
 
-        // 4. Gönderilmeyen mevcut teslimatları sil
+        // 4. Gönderilmeyen mevcut teslimatları sil — aktif iş emri bağlıysa SİLİNEMEZ
         const silinecek = [...mevcutIds].filter(id => !gonderilenIds.has(id));
+        for (const sid of silinecek) {
+            const ie = await aktifIsEmri(sid);
+            if (ie) {
+                await client.query('ROLLBACK');
+                return res.json({ ok: false, hata: `Teslimat silinemez: ${ie.emir_no} numaralı iş emrine bağlı. Önce iş emri silinmeli/iptal edilmelidir.` });
+            }
+        }
         if (silinecek.length > 0) {
             await client.query('DELETE FROM proje_teslimatlari WHERE id = ANY($1::integer[])', [silinecek]);
         }
 
         await client.query('COMMIT');
-        res.json({ ok: true, mesaj: 'Proje güncellendi.', silinen_teslimat: silinecek.length });
+        const kilitliMsg = kilitliBinalar.length
+            ? ` Not: ${kilitliBinalar.join(', ')} iş emrine bağlı olduğundan şartname alanları DEĞİŞTİRİLMEDİ (yalnız sevkiyat/tutar güncellendi).`
+            : '';
+        res.json({ ok: true, mesaj: 'Proje güncellendi.' + kilitliMsg, silinen_teslimat: silinecek.length });
     } catch (error) {
         await client.query('ROLLBACK');
         next(error);
@@ -2558,6 +2580,8 @@ async function bildirimGonder(olayKodu, context = {}) {
         }
         // 2) Ekstra belirli e-postalar
         (k.ekstra_emailler || []).forEach(e => e && aliciSet.add(e));
+        // 2b) Çağrıya özel ek alıcılar (örn. iş emrinin ek_alicilar alanı)
+        (context.ekAlicilar || []).forEach(e => e && aliciSet.add(String(e).trim()));
         // 3) Dinamik: talebi açan kişi (ad_soyad → email)
         if (k.dinamik_alicilar && k.dinamik_alicilar.includes('TALEP_SAHIBI') && context.talepEdenAd) {
             const eR = await pool.query("SELECT email FROM kullanicilar WHERE ad_soyad=$1 AND email IS NOT NULL LIMIT 1", [context.talepEdenAd]);
@@ -3651,16 +3675,16 @@ const { renderToPDF } = require('./lib/pdf-generator');
 // Dinamik üretici lib/teknik-sartname-dinamik.js'e taşındı (test edilebilirlik için)
 const { teknikSartnameHTML, teslimatVeri, cevapBicim, motorIsle } = require('./lib/teknik-sartname-dinamik');
 
-app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, next) => {
-    try {
-        const { teslimatId } = req.params;
-        const r = await pool.query(`
-            SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye
-            FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id = p.id
-            WHERE pt.id = $1
-        `, [teslimatId]);
-        if (r.rowCount === 0) return res.status(404).json({ ok: false, hata: 'Teslimat bulunamadı.' });
-        const t = r.rows[0];
+// Teslimatın teknik şartname PDF'ini üretir (dinamik şablon → Google fallback → form).
+// Hem GET /teknik-sartname-pdf hem İş Emri snapshot'ı (is-emri-olustur) bu tek kaynağı kullanır.
+async function teslimatSartnamePDF(teslimatId, kullaniciAd) {
+    const r = await pool.query(`
+        SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye
+        FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id = p.id
+        WHERE pt.id = $1
+    `, [teslimatId]);
+    if (r.rowCount === 0) throw new Error('Teslimat bulunamadı.');
+    const t = r.rows[0];
 
         // Bina türünün özel (zengin, EĞER/HESAP/HARİCİ'li) şablonu varsa onu kullan — birebir doküman.
         const SABLON_HARITASI = { 'Prefabrik': 'prefabrik' };
@@ -3688,7 +3712,7 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
                 bolum_aciklama: x.bolum_aciklama, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle,
                 bolum_gizle: x.bolum_gizle || null
             }));
-            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ft, req.user.adSoyad), pdfOpts);
+            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ft, kullaniciAd), pdfOpts);
         } else if (sablon && fs.existsSync(path.join(__dirname, 'templates', sablon + '.html'))) {
             const trTarih = d => { const dt = new Date(d); return `${String(dt.getDate()).padStart(2,'0')}.${String(dt.getMonth()+1).padStart(2,'0')}.${dt.getFullYear()}`; };
             const degerler = {
@@ -3697,7 +3721,7 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
                 'Bina Adı': t.bina_adi || '', 'Bina Tipi': t.bina_tipi || '',
                 'Kat Yüksekliği': t.kat_yuksekligi || '', 'Kat Adedi': t.kat_adedi || '',
                 'Büyüklük': t.buyukluk_m2 ? `${t.buyukluk_m2} m²` : '',
-                'TARİH': trTarih(new Date()), 'DÜZENLEYEN': req.user.adSoyad || '', 'KOD': `${t.proje_kodu}-${t.id}`,
+                'TARİH': trTarih(new Date()), 'DÜZENLEYEN': kullaniciAd || '', 'KOD': `${t.proje_kodu}-${t.id}`,
                 ...(t.ek_veriler || {}) // form cevapları (Dış Duvar Kalınlığı (mm), Bina Tipi vb.)
             };
             // Salt-okunur alanlar (kaynak_kolon eşleştirmesi) teslimattan güncel gelsin (ek_veriler'i ezer)
@@ -3716,10 +3740,16 @@ app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, n
                 FROM form_tanimlari WHERE bina_turu = $1 ORDER BY bolum_sirasi, soru_sirasi
             `, [t.bina_turu]);
             if (ftR.rowCount === 0) {
-                return res.status(400).json({ ok: false, hata: `"${t.bina_turu}" bina türü için şablon veya form tanımı yok.` });
+                throw new Error(`"${t.bina_turu}" bina türü için şablon veya form tanımı yok.`);
             }
-            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, req.user.adSoyad), pdfOpts);
+            pdfBuffer = await htmlToPDF(teknikSartnameHTML(t, ftR.rows, kullaniciAd), pdfOpts);
         }
+    return { pdfBuffer, t };
+}
+
+app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { pdfBuffer, t } = await teslimatSartnamePDF(req.params.teslimatId, req.user.adSoyad);
         const dosyaAdi = `${t.proje_kodu}-${t.bina_adi}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${dosyaAdi}"`);
@@ -3799,6 +3829,10 @@ app.post('/api/teknik-sartname-kaydet', yetkiKontrol, async (req, res, next) => 
         const { teslimat_id, form_verisi } = req.body;
         if (!teslimat_id) return res.json({ ok: false, hata: 'Teslimat ID gerekli.' });
 
+        // İŞ EMRİ KİLİDİ: aktif iş emri varken şartname değiştirilemez
+        const kilit = await aktifIsEmri(teslimat_id);
+        if (kilit) return res.json({ ok: false, hata: `Teknik şartname ${kilit.emir_no} numaralı iş emrine bağlandı ve KİLİTLİDİR. Değişiklik için önce iş emrinin silinmesi (taslaksa) veya ADMIN tarafından iptali gerekir.` });
+
         // Mevcut ek_veriler'i çek, üzerine yaz
         const mevcut = await pool.query(
             'SELECT ek_veriler FROM proje_teslimatlari WHERE id = $1', [teslimat_id]
@@ -3814,6 +3848,167 @@ app.post('/api/teknik-sartname-kaydet', yetkiKontrol, async (req, res, next) => 
         );
         res.json({ ok: true, mesaj: 'Teknik şartname kaydedildi.' });
     } catch (error) { next(error); }
+});
+
+// ============================================================================
+// İŞ EMRİ (teknik şartname bazlı, teslimat düzeyi) — SATIŞ aşaması
+// Akış: teslimat (SÖZLEŞME) → iş emri OLUŞTUR [HAZIRLANDI; şartname KİLİTLENİR;
+//       teslimat durumu 'İŞ EMRİ'] → YAYINLA [YAYINLANDI; teslimat 'PROJE';
+//       ekibe PDF ekli mail] → yayın sonrası yalnız append-only NOT (her not mail).
+// Belge = oluşturma ANINDA dondurulan PDF + veri kopyası; şablon sonradan değişse
+// bile iş emri değişmez. Taslak silinebilir; yayınlananı yalnız ADMIN iptal eder
+// (iz kalır) → şartname yeniden açılır. Üretimdeki kalem-bazlı iş emrinden AYRIDIR.
+// ============================================================================
+async function aktifIsEmri(teslimatId) {
+    const r = await pool.query("SELECT * FROM is_emirleri WHERE teslimat_id=$1 AND durum <> 'İPTAL' LIMIT 1", [teslimatId]);
+    return r.rows[0] || null;
+}
+const isEmriAliciListe = ie => String(ie.ek_alicilar || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+
+app.get('/api/is-emri/:teslimatId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const ie = await pool.query(
+            `SELECT id, emir_no, teslimat_id, durum, is_emri_notu, ek_alicilar,
+                    olusturan_adsoyad, olusturma_tarihi, yayinlayan_email, yayinlama_tarihi
+             FROM is_emirleri WHERE teslimat_id=$1 AND durum <> 'İPTAL' LIMIT 1`, [req.params.teslimatId]);
+        if (!ie.rowCount) return res.json({ ok: true, is_emri: null });
+        const notlar = await pool.query(
+            "SELECT id, yazan_adsoyad, not_metni, tarih FROM is_emri_notlari WHERE is_emri_id=$1 ORDER BY tarih", [ie.rows[0].id]);
+        res.json({ ok: true, is_emri: ie.rows[0], notlar: notlar.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/is-emri-olustur', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { teslimat_id, is_emri_notu, ek_alicilar } = req.body;
+        if (!teslimat_id) return res.json({ ok: false, hata: 'Teslimat ID gerekli.' });
+        if (await aktifIsEmri(teslimat_id)) return res.json({ ok: false, hata: 'Bu teslimat için zaten bir iş emri var.' });
+        // Belgeyi DONDUR: PDF + veri kopyası (şablon sonradan değişse bile iş emri sabit kalır)
+        const { pdfBuffer, t } = await teslimatSartnamePDF(teslimat_id, req.user.adSoyad);
+        const seq = await pool.query("SELECT nextval('is_emri_no_seq') AS no");
+        const emir_no = `${t.proje_kodu}-İE-${seq.rows[0].no}`;
+        const snapshot = {
+            proje_kodu: t.proje_kodu, musteri_adi: t.musteri_adi, proje_adi: t.proje_adi,
+            bina_adi: t.bina_adi, bina_turu: t.bina_turu, bina_tipi: t.bina_tipi,
+            kat_adedi: t.kat_adedi, kat_yuksekligi: t.kat_yuksekligi, bina_adedi: t.bina_adedi,
+            buyukluk_m2: t.buyukluk_m2, bina_yeri: t.bina_yeri, montaj_gerekli: t.montaj_gerekli,
+            ek_veriler: t.ek_veriler || {}, dondurulma: new Date().toISOString()
+        };
+        const ins = await pool.query(
+            `INSERT INTO is_emirleri (emir_no, teslimat_id, durum, is_emri_notu, ek_alicilar, form_snapshot, pdf, olusturan_email, olusturan_adsoyad)
+             VALUES ($1,$2,'HAZIRLANDI',$3,$4,$5,$6,$7,$8) RETURNING id`,
+            [emir_no, teslimat_id, (is_emri_notu || '').trim() || null, (ek_alicilar || '').trim() || null,
+             JSON.stringify(snapshot), pdfBuffer, req.user.email, req.user.adSoyad]);
+        // Erken aşamadaki teslimatı 'İŞ EMRİ' aşamasına çek (ileri aşamayı geriletme)
+        await pool.query("UPDATE proje_teslimatlari SET durum='İŞ EMRİ' WHERE id=$1 AND durum IN ('BEKLEMEDE','SÖZLEŞME')", [teslimat_id]);
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'is_emirleri', kayit_id: ins.rows[0].id, kayit_no: emir_no, ozet: `İş emri hazırlandı (${t.bina_adi}) — şartname kilitlendi` });
+        res.json({ ok: true, id: ins.rows[0].id, emir_no, mesaj: `${emir_no} hazırlandı. Teknik şartname kilitlendi — yayınlayınca ekibe PDF ekli bildirim gider.` });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id } = req.body;
+        // Atomik geçiş — yalnız HAZIRLANDI'dan; mükerrer tıklama ikinci mail üretmez
+        const upd = await pool.query(
+            `UPDATE is_emirleri SET durum='YAYINLANDI', yayinlayan_email=$1, yayinlama_tarihi=NOW()
+             WHERE id=$2 AND durum='HAZIRLANDI' RETURNING *`, [req.user.email, id]);
+        if (!upd.rowCount) return res.json({ ok: false, hata: 'İş emri bulunamadı veya zaten yayınlanmış.' });
+        const ie = upd.rows[0];
+        const s = ie.form_snapshot || {};
+        // İş emri yayınlandı → projelendirme başlar
+        await pool.query("UPDATE proje_teslimatlari SET durum='PROJE' WHERE id=$1 AND durum IN ('BEKLEMEDE','SÖZLEŞME','İŞ EMRİ')", [ie.teslimat_id]);
+        await auditLogla(req, { eylem: 'APPROVE', tablo: 'is_emirleri', kayit_id: ie.id, kayit_no: ie.emir_no, ozet: 'İş emri YAYINLANDI — teslimat PROJE aşamasına geçti' });
+        await bildirimGonder('IS_EMRI_YAYINLANDI', {
+            konu: `Aterko Workspace - İş Emri yayınlandı (${ie.emir_no})`,
+            baslik: 'İş Emri Yayınlandı',
+            mesaj: `${ie.emir_no} numaralı iş emri ${req.user.adSoyad} tarafından onaylanıp yayınlandı. Teknik şartname ektedir; bina projelendirme aşamasına alınmıştır.${ie.is_emri_notu ? `\n\n📌 İş emri notu: ${ie.is_emri_notu}` : ''}`,
+            detaylar: [
+                { label: 'İş Emri No', value: ie.emir_no },
+                { label: 'Proje', value: `${s.proje_kodu || ''}${s.musteri_adi ? ' / ' + s.musteri_adi : ''}${s.proje_adi ? ' - ' + s.proje_adi : ''}` },
+                { label: 'Bina', value: `${s.bina_adi || ''} (${s.bina_turu || ''}${s.bina_tipi ? ' — ' + s.bina_tipi : ''})` },
+                { label: 'Yayınlayan', value: req.user.adSoyad }
+            ],
+            ekAlicilar: isEmriAliciListe(ie),
+            ekler: [{ filename: `${ie.emir_no}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_'), content: ie.pdf }]
+        });
+        res.json({ ok: true, mesaj: `${ie.emir_no} yayınlandı — ekibe bildirim gönderildi. Teslimat PROJE aşamasına geçti.` });
+    } catch (e) { next(e); }
+});
+
+// Taslak (HAZIRLANDI) iş emrini sil → şartname kilidi açılır, teslimat SÖZLEŞME'ye döner
+app.post('/api/is-emri-sil', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id } = req.body;
+        const del = await pool.query("DELETE FROM is_emirleri WHERE id=$1 AND durum='HAZIRLANDI' RETURNING emir_no, teslimat_id", [id]);
+        if (!del.rowCount) return res.json({ ok: false, hata: 'Yalnızca HAZIRLANDI (taslak) durumundaki iş emri silinebilir. Yayınlanmış iş emrini ADMIN iptal edebilir.' });
+        await pool.query("UPDATE proje_teslimatlari SET durum='SÖZLEŞME' WHERE id=$1 AND durum='İŞ EMRİ'", [del.rows[0].teslimat_id]);
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'is_emirleri', kayit_id: id, kayit_no: del.rows[0].emir_no, ozet: 'Taslak iş emri silindi — şartname yeniden düzenlenebilir' });
+        res.json({ ok: true, mesaj: `${del.rows[0].emir_no} silindi. Teknik şartname yeniden düzenlenebilir.` });
+    } catch (e) { next(e); }
+});
+
+// Yayınlanmış iş emrini İPTAL et — yalnız ADMIN; iz kalır, alıcılara bilgi gider, şartname açılır
+app.post('/api/is-emri-iptal', yetkiKontrol, async (req, res, next) => {
+    try {
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
+            return res.status(403).json({ ok: false, hata: 'Yayınlanmış iş emrini yalnızca ADMIN iptal edebilir.' });
+        const { id, neden } = req.body;
+        if (!neden || !String(neden).trim()) return res.json({ ok: false, hata: 'İptal nedeni zorunludur.' });
+        const upd = await pool.query(
+            `UPDATE is_emirleri SET durum='İPTAL', iptal_eden_email=$1, iptal_tarihi=NOW(), iptal_nedeni=$2
+             WHERE id=$3 AND durum='YAYINLANDI' RETURNING *`, [req.user.email, String(neden).trim(), id]);
+        if (!upd.rowCount) return res.json({ ok: false, hata: 'İş emri bulunamadı veya yayınlanmış durumda değil.' });
+        const ie = upd.rows[0];
+        await pool.query("UPDATE proje_teslimatlari SET durum='SÖZLEŞME' WHERE id=$1 AND durum IN ('İŞ EMRİ','PROJE')", [ie.teslimat_id]);
+        await auditLogla(req, { eylem: 'CANCEL', tablo: 'is_emirleri', kayit_id: ie.id, kayit_no: ie.emir_no, ozet: `İş emri İPTAL edildi: ${String(neden).trim()}` });
+        await bildirimGonder('IS_EMRI_YAYINLANDI', {
+            konu: `Aterko Workspace - İş Emri İPTAL edildi (${ie.emir_no})`,
+            baslik: 'İş Emri İPTAL Edildi',
+            mesaj: `${ie.emir_no} numaralı iş emri ${req.user.adSoyad} tarafından iptal edildi. Bu iş emrine göre çalışma YAPILMAMALIDIR.`,
+            detaylar: [
+                { label: 'İş Emri No', value: ie.emir_no },
+                { label: 'İptal nedeni', value: String(neden).trim() },
+                { label: 'İptal eden', value: req.user.adSoyad }
+            ],
+            ekAlicilar: isEmriAliciListe(ie)
+        });
+        res.json({ ok: true, mesaj: `${ie.emir_no} iptal edildi — alıcılara bilgi gönderildi. Teknik şartname yeniden düzenlenebilir.` });
+    } catch (e) { next(e); }
+});
+
+// Yayın sonrası not — ana belge DEĞİŞMEZ; notlar append-only, her not aynı alıcılara mail
+app.post('/api/is-emri-not', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, not_metni } = req.body;
+        if (!not_metni || !String(not_metni).trim()) return res.json({ ok: false, hata: 'Not metni boş olamaz.' });
+        const ieR = await pool.query("SELECT * FROM is_emirleri WHERE id=$1 AND durum='YAYINLANDI'", [id]);
+        if (!ieR.rowCount) return res.json({ ok: false, hata: 'Not yalnızca YAYINLANMIŞ iş emrine eklenebilir.' });
+        const ie = ieR.rows[0];
+        await pool.query("INSERT INTO is_emri_notlari (is_emri_id, yazan_email, yazan_adsoyad, not_metni) VALUES ($1,$2,$3,$4)",
+            [id, req.user.email, req.user.adSoyad, String(not_metni).trim()]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'is_emri_notlari', kayit_id: id, kayit_no: ie.emir_no, ozet: 'İş emrine not eklendi' });
+        await bildirimGonder('IS_EMRI_NOT', {
+            konu: `Aterko Workspace - İş emri notu (${ie.emir_no})`,
+            baslik: 'İş Emrine Not Eklendi',
+            mesaj: `${ie.emir_no} numaralı iş emrine ${req.user.adSoyad} tarafından not eklendi:\n\n"${String(not_metni).trim()}"\n\nAna iş emri dokümanı değişmemiştir; bu not süreçteki değişikliği tarif eder.`,
+            detaylar: [{ label: 'İş Emri No', value: ie.emir_no }, { label: 'Yazan', value: req.user.adSoyad }],
+            ekAlicilar: isEmriAliciListe(ie)
+        });
+        res.json({ ok: true, mesaj: 'Not eklendi ve alıcılara bildirildi.' });
+    } catch (e) { next(e); }
+});
+
+// Dondurulmuş iş emri PDF'i (oluşturma anındaki hali — şablon değişse de sabit)
+app.get('/api/is-emri-pdf/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query("SELECT emir_no, pdf FROM is_emirleri WHERE id=$1", [req.params.id]);
+        if (!r.rowCount || !r.rows[0].pdf) return res.status(404).json({ ok: false, hata: 'İş emri PDF bulunamadı.' });
+        const ad = `${r.rows[0].emir_no}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${ad}"`);
+        res.send(r.rows[0].pdf);
+    } catch (e) { next(e); }
 });
 
 // =================================================================
@@ -4847,6 +5042,8 @@ const ENDPOINT_IZIN_KURALLARI = [
 
     // Teknik şartname / form
     { pattern: /^\/api\/teknik-sartname/, modul: 'projeler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/is-emri/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
+    { pattern: /^\/api\/is-emri-(olustur|yayinla|sil|iptal|not)/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/form-tanimlari/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
 
     // --- FAIL-OPEN KAPATMA: önceden hiçbir kurala uymayan yazma uçları ---
@@ -7148,6 +7345,37 @@ async function semaGuvence() {
         await pool.query(`INSERT INTO sistem_ayarlari (anahtar,deger) VALUES ('gunluk_rapor',$1) ON CONFLICT (anahtar) DO NOTHING`, [JSON.stringify({ aktif: true, saat: '08:00', ek_alicilar: '' })]);
         await pool.query(`INSERT INTO sistem_ayarlari (anahtar,deger) VALUES ('gorev_rapor',$1) ON CONFLICT (anahtar) DO NOTHING`, [JSON.stringify({ aktif: false, periyot: 'haftalik', gun: 1, saat: '08:00', ek_alicilar: '' })]);
         await pool.query(`ALTER TABLE yonetim_gorevleri ADD COLUMN IF NOT EXISTS notlar JSONB`).catch(() => {});
+        // İş Emri (teknik şartname bazlı, teslimat düzeyi — satış aşaması)
+        await pool.query(`CREATE TABLE IF NOT EXISTS is_emirleri (
+            id SERIAL PRIMARY KEY,
+            emir_no TEXT UNIQUE NOT NULL,
+            teslimat_id INTEGER NOT NULL REFERENCES proje_teslimatlari(id) ON DELETE CASCADE,
+            durum TEXT NOT NULL DEFAULT 'HAZIRLANDI',
+            is_emri_notu TEXT,
+            ek_alicilar TEXT,
+            form_snapshot JSONB,
+            pdf BYTEA,
+            olusturan_email TEXT, olusturan_adsoyad TEXT, olusturma_tarihi TIMESTAMPTZ DEFAULT NOW(),
+            yayinlayan_email TEXT, yayinlama_tarihi TIMESTAMPTZ,
+            iptal_eden_email TEXT, iptal_tarihi TIMESTAMPTZ, iptal_nedeni TEXT
+        )`);
+        // Teslimat başına tek AKTİF iş emri (İPTAL edilenler iz olarak kalır, yenisi açılabilir)
+        await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_is_emirleri_teslimat_aktif ON is_emirleri(teslimat_id) WHERE durum <> 'İPTAL'`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS is_emri_notlari (
+            id SERIAL PRIMARY KEY,
+            is_emri_id INTEGER NOT NULL REFERENCES is_emirleri(id) ON DELETE CASCADE,
+            yazan_email TEXT, yazan_adsoyad TEXT,
+            not_metni TEXT NOT NULL,
+            tarih TIMESTAMPTZ DEFAULT NOW()
+        )`);
+        await pool.query(`CREATE SEQUENCE IF NOT EXISTS is_emri_no_seq START 1001`);
+        // Bildirim olayları (panel > Bildirim Ayarları'ndan roller/kişiler yönetilir)
+        await pool.query(`INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, ekstra_emailler, dinamik_alicilar, sira)
+            SELECT 'IS_EMRI_YAYINLANDI','İş emri yayınlandı (şartname PDF ekli)','Proje',true,'{}','{}','{}',50
+            WHERE NOT EXISTS (SELECT 1 FROM bildirim_kurallari WHERE olay_kodu='IS_EMRI_YAYINLANDI')`);
+        await pool.query(`INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, ekstra_emailler, dinamik_alicilar, sira)
+            SELECT 'IS_EMRI_NOT','İş emrine not eklendi','Proje',true,'{}','{}','{}',51
+            WHERE NOT EXISTS (SELECT 1 FROM bildirim_kurallari WHERE olay_kodu='IS_EMRI_NOT')`);
         // Eski TEXT notlar'ı tarihli JSONB dizisine çevir (idempotent; yalnız text ise)
         await pool.query(`
             DO $$

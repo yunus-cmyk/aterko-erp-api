@@ -3309,6 +3309,24 @@ STK-002		50	adet
         </div>
     </div>
 
+    <!-- İş Emri (teknik şartname bazlı, teslimat düzeyi) — üretimdeki kalem-bazlı iş emrinden AYRI -->
+    <div class="modal fade" id="modalTeslimatIsEmri" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-3 text-white" style="background:#4b0082;">
+                    <h5 class="modal-title fw-bold" id="tieBaslik"><i class="bi bi-clipboard2-check me-2"></i>İş Emri</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="background-color:#f8f9fa;">
+                    <div id="tieBody"><div class="text-center py-4"><div class="spinner-border text-primary"></div></div></div>
+                </div>
+                <div class="modal-footer bg-white py-2">
+                    <button type="button" class="btn btn-light border btn-sm px-4" data-bs-dismiss="modal">Kapat</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="modalProjeDetay" tabindex="-1" data-bs-backdrop="static">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
@@ -11131,6 +11149,7 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
             <td class="text-center">
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary py-0" onclick="openTeknikSartname(${t.id})" title="Teknik Şartname"><i class="bi bi-file-earmark-text"></i></button>
+                    <button class="btn btn-outline-warning py-0" onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"><i class="bi bi-clipboard2-check"></i></button>
                     <button class="btn btn-outline-dark py-0 dropdown-toggle" data-bs-toggle="dropdown">Durum</button>
                     <ul class="dropdown-menu shadow" style="font-size:0.8rem;">${durumOptions}</ul>
                 </div>
@@ -11166,6 +11185,133 @@ async function updateTeslimatDurumuAkordion(teslimatId, yeniDurum, projeId) {
 // =================================================================
 let tsAktifTeslimat = null;
 let tsAktifFormTanimlari = [];
+
+// ===== İŞ EMRİ (teknik şartname bazlı, teslimat düzeyi) =====
+// Üretimdeki kalem-bazlı iş emrinden AYRI: satış aşaması, şartnameyi kilitleyip belgeleştirir.
+let tieAktifTeslimatId = null;
+async function tieAc(teslimatId, binaAdi) {
+    tieAktifTeslimatId = teslimatId;
+    document.getElementById('tieBaslik').innerHTML = `<i class="bi bi-clipboard2-check me-2"></i>İş Emri${binaAdi ? ' — ' + esc(binaAdi) : ''}`;
+    document.getElementById('tieBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+    new bootstrap.Modal(document.getElementById('modalTeslimatIsEmri')).show();
+    tieYenile();
+}
+async function tieYenile() {
+    const r = await secureFetch('/is-emri/' + tieAktifTeslimatId).catch(() => null);
+    const box = document.getElementById('tieBody');
+    if (!r || !r.ok) { box.innerHTML = `<div class="alert alert-danger">${esc((r && r.hata) || 'Yüklenemedi.')}</div>`; return; }
+    box.innerHTML = tieHTML(r.is_emri, r.notlar || []);
+}
+function tieHTML(ie, notlar) {
+    if (!ie) {
+        return `
+        <div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>İş emri, bu binanın <b>teknik şartnamesini</b> tek tuşla resmî belgeye dönüştürür: şartname <b>kilitlenir</b>, PDF o anki haliyle <b>dondurulur</b>. Yayınlayınca ekibe PDF ekli bildirim gider ve bina <b>PROJE</b> aşamasına geçer.</div>
+        <div class="mb-2"><label class="form-label small fw-semibold"><i class="bi bi-sticky me-1 text-warning"></i>İş emri notu <span class="text-muted fw-normal">(ekibe yönelik — bildirim mailinde görünür)</span></label>
+            <textarea id="tieNot" class="form-control form-control-sm" rows="3" placeholder="örn. Sevkiyat önceliği, özel imalat detayı, dikkat edilecekler..."></textarea></div>
+        <div class="mb-3"><label class="form-label small fw-semibold">Ek alıcılar <span class="text-muted fw-normal">(virgülle — Bildirim Ayarları kuralına ek olarak)</span></label>
+            <input id="tieEkAlici" class="form-control form-control-sm" placeholder="ornek@aterko.com, birisi@aterko.com"></div>
+        <button class="btn btn-sm btn-primary fw-bold" onclick="tieOlustur()"><i class="bi bi-clipboard2-check me-1"></i>İş Emri Oluştur <span class="fw-normal">(şartnameyi kilitler)</span></button>`;
+    }
+    const trT = d => d ? new Date(d).toLocaleString('tr-TR') : '-';
+    const rozet = ie.durum === 'YAYINLANDI'
+        ? '<span class="badge bg-success">YAYINLANDI</span>'
+        : '<span class="badge bg-warning text-dark">HAZIRLANDI — taslak</span>';
+    let h = `
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div><span class="fw-bold fs-5" style="color:#4b0082">${esc(ie.emir_no)}</span> ${rozet}</div>
+        <button class="btn btn-sm btn-outline-danger" onclick="tiePdf(${ie.id}, '${escJs(ie.emir_no)}')"><i class="bi bi-file-earmark-pdf me-1"></i>İş Emri PDF</button>
+      </div>
+      <div class="row g-2 mb-3 small">
+        <div class="col-md-6"><div class="p-2 border rounded bg-white h-100"><span class="d-block text-muted fw-bold">Hazırlayan</span>${esc(ie.olusturan_adsoyad || '-')} · ${trT(ie.olusturma_tarihi)}</div></div>
+        ${ie.durum === 'YAYINLANDI' ? `<div class="col-md-6"><div class="p-2 border rounded bg-white h-100"><span class="d-block text-muted fw-bold">Yayınlayan</span>${esc(ie.yayinlayan_email || '-')} · ${trT(ie.yayinlama_tarihi)}</div></div>` : ''}
+        ${ie.is_emri_notu ? `<div class="col-12"><div class="p-2 rounded bg-warning-subtle border border-warning-subtle" style="white-space:pre-wrap"><i class="bi bi-sticky me-1"></i><b>İş emri notu:</b> ${esc(ie.is_emri_notu)}</div></div>` : ''}
+        ${ie.ek_alicilar ? `<div class="col-12 text-muted"><i class="bi bi-envelope me-1"></i>Ek alıcılar: ${esc(ie.ek_alicilar)}</div>` : ''}
+      </div>
+      <div class="alert alert-light border py-2 small mb-3"><i class="bi bi-lock-fill me-1 text-danger"></i>Teknik şartname bu iş emrine bağlı ve <b>kilitli</b>. PDF, oluşturma anındaki haliyle <b>dondurulmuştur</b> — şablon sonradan değişse bile bu belge değişmez.</div>`;
+    if (ie.durum === 'HAZIRLANDI') {
+        h += `<div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-sm btn-success fw-bold" onclick="tieYayinla(${ie.id})"><i class="bi bi-megaphone me-1"></i>Yayınla <span class="fw-normal">(onayla + ekibe PDF ekli bildir)</span></button>
+          <button class="btn btn-sm btn-outline-danger" onclick="tieSil(${ie.id})"><i class="bi bi-trash me-1"></i>Taslağı Sil <span class="fw-normal">(şartnameyi aç)</span></button>
+        </div>`;
+    } else {
+        h += `<h6 class="fw-bold text-secondary mt-3"><i class="bi bi-chat-left-text me-1"></i>Süreç Notları <span class="text-muted small fw-normal">— ana belge değişmez; her not aynı alıcılara bildirilir</span></h6>`;
+        h += notlar.length
+            ? notlar.map(n => `<div class="p-2 mb-1 border rounded bg-white small"><b>${esc(n.yazan_adsoyad || '-')}</b> <span class="text-muted">· ${trT(n.tarih)}</span><div style="white-space:pre-wrap">${esc(n.not_metni)}</div></div>`).join('')
+            : '<div class="text-muted small fst-italic mb-2">Henüz not yok.</div>';
+        h += `<div class="d-flex gap-2 mt-2">
+            <input id="tieYeniNot" class="form-control form-control-sm" placeholder="Yeni not... (örn. kapı yönü değişti — bkz. yeni kroki)" onkeydown="if(event.key==='Enter') tieNotEkle(${ie.id})">
+            <button class="btn btn-sm btn-info text-white fw-bold text-nowrap" onclick="tieNotEkle(${ie.id})"><i class="bi bi-plus-circle me-1"></i>Not Ekle</button>
+        </div>`;
+        if (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') {
+            h += `<div class="mt-3 pt-2 border-top"><button class="btn btn-sm btn-outline-danger" onclick="tieIptal(${ie.id})"><i class="bi bi-x-octagon me-1"></i>İş Emrini İPTAL Et <span class="fw-normal">(ADMIN — alıcılara bilgi gider, şartname açılır)</span></button></div>`;
+        }
+    }
+    return h;
+}
+async function tieOlustur() {
+    if (_saAksiyonKilit) return;
+    if (!confirm('İş emri oluşturulsun mu?\n\nTeknik şartname KİLİTLENECEK ve PDF şu anki haliyle dondurulacak.')) return;
+    saAksiyonBaslat('İş emri hazırlanıyor (PDF dondurluyor, 5-15 sn)…');
+    const r = await secureFetch('/is-emri-olustur', { method: 'POST', body: JSON.stringify({
+        teslimat_id: tieAktifTeslimatId,
+        is_emri_notu: document.getElementById('tieNot')?.value || '',
+        ek_alicilar: document.getElementById('tieEkAlici')?.value || ''
+    }) }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(r.mesaj, 'success'); tieYenile(); fetchProjeler(); }
+    else showToast((r && r.hata) || 'İş emri oluşturulamadı.', 'error');
+}
+async function tieYayinla(id) {
+    if (_saAksiyonKilit) return;
+    if (!confirm('İş emri YAYINLANSIN mı?\n\nBu, iş emrinin ONAYLANDIĞI anlamına gelir: ekibe PDF ekli bildirim gider ve bina PROJE aşamasına geçer.')) return;
+    saAksiyonBaslat('Yayınlanıyor — bildirimler gönderiliyor…');
+    const r = await secureFetch('/is-emri-yayinla', { method: 'POST', body: JSON.stringify({ id }) }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(r.mesaj, 'success'); tieYenile(); fetchProjeler(); }
+    else showToast((r && r.hata) || 'Yayınlanamadı.', 'error');
+}
+async function tieSil(id) {
+    if (_saAksiyonKilit) return;
+    if (!confirm('Taslak iş emri silinsin mi?\n\nTeknik şartname yeniden düzenlenebilir hale gelecek.')) return;
+    saAksiyonBaslat('Siliniyor…');
+    const r = await secureFetch('/is-emri-sil', { method: 'POST', body: JSON.stringify({ id }) }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(r.mesaj, 'success'); tieYenile(); fetchProjeler(); }
+    else showToast((r && r.hata) || 'Silinemedi.', 'error');
+}
+async function tieIptal(id) {
+    if (_saAksiyonKilit) return;
+    const neden = prompt('İptal nedeni (zorunlu — alıcılara gönderilecek):');
+    if (!neden || !neden.trim()) return;
+    saAksiyonBaslat('İptal ediliyor — alıcılara bilgi gönderiliyor…');
+    const r = await secureFetch('/is-emri-iptal', { method: 'POST', body: JSON.stringify({ id, neden: neden.trim() }) }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(r.mesaj, 'success'); tieYenile(); fetchProjeler(); }
+    else showToast((r && r.hata) || 'İptal edilemedi.', 'error');
+}
+async function tieNotEkle(id) {
+    if (_saAksiyonKilit) return;
+    const inp = document.getElementById('tieYeniNot');
+    const metin = (inp?.value || '').trim();
+    if (!metin) return showToast('Not metni boş olamaz.', 'error');
+    saAksiyonBaslat('Not ekleniyor — bildirim gönderiliyor…');
+    const r = await secureFetch('/is-emri-not', { method: 'POST', body: JSON.stringify({ id, not_metni: metin }) }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(r.mesaj, 'success'); tieYenile(); }
+    else showToast((r && r.hata) || 'Not eklenemedi.', 'error');
+}
+async function tiePdf(id, emirNo) {
+    showLoading();
+    try {
+        const token = localStorage.getItem('aterko_token');
+        const resp = await fetch(`${API_URL}/is-emri-pdf/${id}`, { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!resp.ok) { let h = 'PDF alınamadı'; try { h = (await resp.json()).hata || h; } catch (e) {} throw new Error(h); }
+        const u = URL.createObjectURL(await resp.blob());
+        if (!window.open(u, '_blank')) { const a = document.createElement('a'); a.href = u; a.download = (emirNo || 'is-emri') + '.pdf'; a.click(); }
+        setTimeout(() => URL.revokeObjectURL(u), 60000);
+    } catch (e) { showToast(e.message, 'error'); }
+    finally { hideLoading(); }
+}
 
 async function openTeknikSartname(teslimatId) {
     tsAktifTeslimat = teslimatId;
@@ -11216,6 +11362,17 @@ async function openTeknikSartname(teslimatId) {
     }
     document.getElementById("tsKaydetBtn").disabled = false;
     renderTeknikSartnameForm(tsAktifFormTanimlari, mevcutVeri);
+
+    // İŞ EMRİ KİLİDİ — aktif iş emri varsa form salt-okunur (backend de ayrıca reddeder)
+    try {
+        const ieR = await secureFetch(`/is-emri/${teslimatId}`);
+        if (ieR && ieR.ok && ieR.is_emri) {
+            document.querySelectorAll('#tsModalBody .ts-input').forEach(el => el.disabled = true);
+            document.getElementById('tsKaydetBtn').disabled = true;
+            document.getElementById('tsModalBody').insertAdjacentHTML('afterbegin',
+                `<div class="alert alert-warning py-2 small mb-3"><i class="bi bi-lock-fill me-1"></i>Bu teknik şartname <b>${esc(ieR.is_emri.emir_no)}</b> numaralı iş emrine bağlı ve <b>KİLİTLİ</b> (${esc(ieR.is_emri.durum)}). Değişiklik için iş emrinin silinmesi (taslaksa) veya ADMIN tarafından iptali gerekir.</div>`);
+        }
+    } catch (e) {}
 }
 
 function renderTeknikSartnameForm(alanlar, mevcutVeri) {
@@ -12210,6 +12367,9 @@ function renderProjeDetay(proje, teslimatlar) {
                   <div class="d-flex gap-2">
                     <button type="button" class="btn btn-sm btn-outline-primary" onclick="openTeknikSartname(${t.id})">
                         <i class="bi bi-file-earmark-text me-1"></i>Teknik Şartname
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')">
+                        <i class="bi bi-clipboard2-check me-1"></i>İş Emri
                     </button>
                     <div class="btn-group btn-group-sm">
                         <button type="button" class="btn btn-outline-dark dropdown-toggle" data-bs-toggle="dropdown">
