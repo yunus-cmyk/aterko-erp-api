@@ -3873,19 +3873,14 @@ async function isEmriPDF(teslimatId, kullaniciAd, emirNo, isEmriNotu) {
         WHERE pt.id = $1`, [teslimatId]);
     if (r.rowCount === 0) throw new Error('Teslimat bulunamadı.');
     const t = r.rows[0];
-    // Şartname satırları: öncelik DB şablonu; yoksa form tanımları (cevap=veri[soru])
-    const tsSab = await pool.query(
-        "SELECT bolum_no,bolum_adi,bolum_gizle,soru,cevap_sablonu FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
-        [t.bina_turu]);
-    let ft;
-    if (tsSab.rowCount) {
-        ft = tsSab.rows.map(x => ({ bolum_adi: x.bolum_adi, bolum_sirasi: x.bolum_no, soru: x.soru, cevap_sablonu: x.cevap_sablonu, bolum_gizle: x.bolum_gizle || null }));
-    } else {
-        const ftR = await pool.query(
-            "SELECT bolum_adi, bolum_sirasi, soru FROM form_tanimlari WHERE bina_turu=$1 ORDER BY bolum_sirasi, soru_sirasi", [t.bina_turu]);
-        if (!ftR.rowCount) throw new Error(`"${t.bina_turu}" bina türü için şablon veya form tanımı yok.`);
-        ft = ftR.rows.map(f => ({ bolum_adi: f.bolum_adi, bolum_sirasi: f.bolum_sirasi, soru: f.soru, cevap_sablonu: null, bolum_gizle: null }));
-    }
+    // İş emri FORM TANIMLARINDAN beslenir (şartname şablonundan DEĞİL):
+    // formdaki başlıklar + sorular + formda verilen cevaplar (ek_veriler)
+    const ftR = await pool.query(
+        "SELECT bolum_adi, bolum_sirasi, soru, kosullar FROM form_tanimlari WHERE bina_turu=$1 ORDER BY bolum_sirasi, soru_sirasi", [t.bina_turu]);
+    if (!ftR.rowCount) throw new Error(`"${t.bina_turu}" bina türü için form tanımı yok.`);
+    const ft = ftR.rows;
+    // Otomatik dolan (kaynak_kolon) alanların GÜNCEL değerleri cevaplara işlensin
+    t.ek_veriler = { ...(t.ek_veriler || {}), ...(await otomatikAlanDegerleri(t)) };
     const { htmlToPDF } = require('./lib/pdf-generator');
     const { isEmriHTML } = require('./lib/teknik-sartname-dinamik');
     const fesc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
