@@ -769,8 +769,10 @@
                         <th>Proje No</th>
                         <th>Müşteri Adı</th>
                         <th>Proje Adı</th>
+                        <th>Satış Temsilcisi</th>
                         <th class="text-center">Sözleşme Tarihi</th>
                         <th class="text-center">Nakliye</th>
+                        <th class="text-center">Teslimat</th>
                         <th class="text-center">ASET</th>
                         <th class="text-center">Dosyalar</th>
                         <th class="text-end">Proje Bedeli</th>
@@ -3322,8 +3324,21 @@ STK-002		50	adet
     </div>
 
     <!-- İş Emri (teknik şartname bazlı, teslimat düzeyi) — üretimdeki kalem-bazlı iş emrinden AYRI -->
+    <!-- Teslimat durum seçimi (akordiyon satırındaki dropdown yerine — ekran ortasında, kesin görünür) -->
+    <div class="modal fade" id="modalDurumSec" tabindex="-1">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-2 bg-dark text-white">
+                    <h6 class="modal-title fw-bold" id="dsBaslik"><i class="bi bi-arrow-repeat me-2"></i>Durum Değiştir</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3"><div id="dsListe" class="d-grid gap-2"></div></div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="modalTeslimatIsEmri" tabindex="-1" data-bs-backdrop="static">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 text-white" style="background:#4b0082;">
                     <h5 class="modal-title fw-bold" id="tieBaslik"><i class="bi bi-clipboard2-check me-2"></i>İş Emri</h5>
@@ -11016,7 +11031,7 @@ function renderProjeTable() {
     if(label) label.textContent = `${filtered.length} / ${projelerGlobal.length} proje${toplamSayfa > 1 ? ` — sayfa ${window.projeAktifSayfa + 1}/${toplamSayfa}` : ''}`;
 
     if(filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted p-4">Gösterilecek proje bulunamadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted p-4">Gösterilecek proje bulunamadı.</td></tr>';
         renderProjeSayfalama(0);
         return;
     }
@@ -11024,15 +11039,17 @@ function renderProjeTable() {
     let html = '';
     gosterilen.forEach(p => {
         const asetLink = p.aset_link ? `<a href="${esc(p.aset_link)}" target="_blank" onclick="event.stopPropagation();" class="text-decoration-none"><i class="bi bi-link-45deg fs-5 text-primary"></i></a>` : '<span class="text-muted">-</span>';
-        const dosyaLink = p.dokumanlar_link ? `<a href="${esc(p.dokumanlar_link)}" target="_blank" onclick="event.stopPropagation();" class="text-decoration-none"><i class="bi bi-folder2-open fs-5 text-warning"></i></a>` : '<span class="text-muted">-</span>';
+        const dosyaLink = (p.drive_link || p.dokumanlar_link) ? `<a href="${esc(p.drive_link || p.dokumanlar_link)}" target="_blank" onclick="event.stopPropagation();" title="DRIVE klasörü" class="text-decoration-none"><i class="bi bi-folder2-open fs-5 text-warning"></i></a>` : '<span class="text-muted">-</span>';
         const bedel = parseFloat(p.kdvli_toplam || p.kdvsiz_toplam || 0);
         html += `<tr class="proje-ana-satir" data-proje-id="${p.id}" onclick="toggleProjeAccordion(${p.id})" style="cursor:pointer;">
             <td class="text-center">${getDurumBadge(p.durum)}</td>
             <td class="fw-bold text-primary"><i class="bi bi-chevron-right me-1 proje-chevron"></i>${esc(p.proje_kodu)}</td>
             <td class="fw-bold text-dark">${esc(p.musteri_adi)}</td>
             <td class="text-muted">${esc(p.proje_adi)}</td>
+            <td class="text-muted small">${esc(p.satis_temsilcisi || '-')}</td>
             <td class="text-center">${formatTarihTR(p.sozlesme_tarihi) || '-'}</td>
             <td class="text-center text-muted small">${esc(p.nakliye || '-')}</td>
+            <td class="text-center"><span class="badge bg-secondary-subtle text-secondary-emphasis border">${parseInt(p.teslimat_sayisi) || 0}</span></td>
             <td class="text-center">${asetLink}</td>
             <td class="text-center">${dosyaLink}</td>
             <td class="text-end fw-bold">${bedel > 0 ? formatTR(bedel) + ' ' + esc(p.para_birimi || 'TL') : '-'}</td>
@@ -11041,7 +11058,7 @@ function renderProjeTable() {
             </td>
         </tr>
         <tr class="proje-accordion-satir d-none" id="proje-accordion-${p.id}">
-            <td colspan="10" class="p-0 bg-light">
+            <td colspan="12" class="p-0 bg-light">
                 <div id="proje-accordion-icerik-${p.id}" class="px-4 py-3"></div>
             </td>
         </tr>`;
@@ -11162,8 +11179,7 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary py-0" onclick="openTeknikSartname(${t.id})" title="Teknik Şartname"><i class="bi bi-file-earmark-text"></i></button>
                     <button class="btn btn-outline-warning py-0" onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"><i class="bi bi-clipboard2-check"></i></button>
-                    <button class="btn btn-outline-dark py-0 dropdown-toggle" data-bs-toggle="dropdown">Durum</button>
-                    <ul class="dropdown-menu shadow" style="font-size:0.8rem;">${durumOptions}</ul>
+                    <button class="btn btn-outline-dark py-0" onclick="durumSecAc(${t.id}, '${escJs(t.durum || '')}', ${proje.id}, '${escJs(t.bina_adi || '')}')">Durum</button>
                 </div>
             </td>
         </tr>`;
@@ -11173,6 +11189,22 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
 }
 
 // Akordiyonda durum güncelleme sonrası yeniden yükle
+// Teslimat durum seçimi — satır içinde kaybolan dropdown yerine ekran ortasında modal
+function durumSecAc(teslimatId, mevcutDurum, projeId, binaAdi) {
+    const durumlar = ['BEKLEMEDE','SÖZLEŞME','İŞ EMRİ','PROJE','ÜRETİM','MONTAJ','TESLİM EDİLDİ','İPTAL'];
+    document.getElementById('dsBaslik').innerHTML = `<i class="bi bi-arrow-repeat me-2"></i>Durum — ${esc(binaAdi || '')}`;
+    document.getElementById('dsListe').innerHTML = durumlar.map(d => `
+        <button class="btn btn-sm ${d === mevcutDurum ? 'btn-dark' : 'btn-outline-secondary'} text-start"
+                onclick="durumSecUygula(${teslimatId}, '${escJs(d)}', ${projeId})">
+            ${d === mevcutDurum ? '<i class="bi bi-check-lg me-1"></i>' : ''}${getDurumBadge(d)}
+        </button>`).join('');
+    new bootstrap.Modal(document.getElementById('modalDurumSec')).show();
+}
+async function durumSecUygula(teslimatId, yeniDurum, projeId) {
+    bootstrap.Modal.getInstance(document.getElementById('modalDurumSec'))?.hide();
+    await updateTeslimatDurumuAkordion(teslimatId, yeniDurum, projeId);
+}
+
 async function updateTeslimatDurumuAkordion(teslimatId, yeniDurum, projeId) {
     showLoading();
     const res = await secureFetch('/teslimat-durum-guncelle', {
@@ -11216,12 +11248,13 @@ async function tieYenile() {
     const box = document.getElementById('tieBody');
     if (!r || !r.ok) { box.innerHTML = `<div class="alert alert-danger">${esc((r && r.hata) || 'Yüklenemedi.')}</div>`; return; }
     box.innerHTML = tieHTML(r.is_emri, r.notlar || []);
+    if (r.is_emri) tiePdfYukle(r.is_emri.id);   // dondurulmuş belgeyi salt-okunur görüntüleyiciye yükle
 }
 function tieHTML(ie, notlar) {
     if (!ie) {
         return `
         <div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>İş emri, bu binanın <b>teknik şartnamesini</b> tek tuşla resmî belgeye dönüştürür: şartname <b>kilitlenir</b>, PDF o anki haliyle <b>dondurulur</b>. Yayınlayınca ekibe PDF ekli bildirim gider ve bina <b>PROJE</b> aşamasına geçer.</div>
-        <div class="mb-2"><label class="form-label small fw-semibold"><i class="bi bi-sticky me-1 text-warning"></i>İş emri notu <span class="text-muted fw-normal">(ekibe yönelik — bildirim mailinde görünür)</span></label>
+        <div class="mb-2"><label class="form-label small fw-semibold"><i class="bi bi-sticky me-1 text-warning"></i>İş emri notu <span class="text-muted fw-normal">(ekibe yönelik — belgeye basılır, mailde görünür)</span></label>
             <textarea id="tieNot" class="form-control form-control-sm" rows="3" placeholder="örn. Sevkiyat önceliği, özel imalat detayı, dikkat edilecekler..."></textarea></div>
         <div class="mb-3"><label class="form-label small fw-semibold">Ek alıcılar <span class="text-muted fw-normal">(virgülle — Bildirim Ayarları kuralına ek olarak)</span></label>
             <input id="tieEkAlici" class="form-control form-control-sm" placeholder="ornek@aterko.com, birisi@aterko.com"></div>
@@ -11234,20 +11267,35 @@ function tieHTML(ie, notlar) {
     let h = `
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div><span class="fw-bold fs-5" style="color:#4b0082">${esc(ie.emir_no)}</span> ${rozet}</div>
-        <button class="btn btn-sm btn-outline-danger" onclick="tiePdf(${ie.id}, '${escJs(ie.emir_no)}')"><i class="bi bi-file-earmark-pdf me-1"></i>İş Emri PDF</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="tiePdf(${ie.id}, '${escJs(ie.emir_no)}')"><i class="bi bi-file-earmark-pdf me-1"></i>PDF İndir</button>
       </div>
       <div class="row g-2 mb-3 small">
         <div class="col-md-6"><div class="p-2 border rounded bg-white h-100"><span class="d-block text-muted fw-bold">Hazırlayan</span>${esc(ie.olusturan_adsoyad || '-')} · ${trT(ie.olusturma_tarihi)}</div></div>
         ${ie.durum === 'YAYINLANDI' ? `<div class="col-md-6"><div class="p-2 border rounded bg-white h-100"><span class="d-block text-muted fw-bold">Yayınlayan</span>${esc(ie.yayinlayan_email || '-')} · ${trT(ie.yayinlama_tarihi)}</div></div>` : ''}
-        ${ie.is_emri_notu ? `<div class="col-12"><div class="p-2 rounded bg-warning-subtle border border-warning-subtle" style="white-space:pre-wrap"><i class="bi bi-sticky me-1"></i><b>İş emri notu:</b> ${esc(ie.is_emri_notu)}</div></div>` : ''}
         ${ie.ek_alicilar ? `<div class="col-12 text-muted"><i class="bi bi-envelope me-1"></i>Ek alıcılar: ${esc(ie.ek_alicilar)}</div>` : ''}
-      </div>
-      <div class="alert alert-light border py-2 small mb-3"><i class="bi bi-lock-fill me-1 text-danger"></i>Teknik şartname bu iş emrine bağlı ve <b>kilitli</b>. PDF, oluşturma anındaki haliyle <b>dondurulmuştur</b> — şablon sonradan değişse bile bu belge değişmez.</div>`;
+      </div>`;
+    // İş Emri Notu — TASLAKTA tek düzenlenebilir alan; YAYINDA kilitli
     if (ie.durum === 'HAZIRLANDI') {
-        h += `<div class="d-flex gap-2 flex-wrap">
+        h += `<div class="mb-3 p-2 rounded bg-white border">
+            <label class="form-label small fw-semibold mb-1"><i class="bi bi-sticky me-1 text-warning"></i>İş Emri Notu <span class="text-muted fw-normal">— yayına kadar güncellenebilir (tek düzenlenebilir alan); belgeye basılır</span></label>
+            <textarea id="tieNotDuzen" class="form-control form-control-sm" rows="3" placeholder="Ekibe yönelik not...">${esc(ie.is_emri_notu || '')}</textarea>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="tieNotuKaydet(${ie.id})"><i class="bi bi-save me-1"></i>Notu Kaydet <span class="fw-normal">(belge yeniden dondurulur)</span></button>
+        </div>`;
+    } else if (ie.is_emri_notu) {
+        h += `<div class="mb-3"><div class="p-2 rounded bg-warning-subtle border border-warning-subtle small" style="white-space:pre-wrap"><i class="bi bi-lock-fill me-1"></i><b>İş emri notu (yayınla birlikte kilitlendi):</b> ${esc(ie.is_emri_notu)}</div></div>`;
+    }
+    // Dondurulmuş belge — teknik şartnameden gelen veriler, DEĞİŞTİRİLEMEZ görünüm
+    h += `
+      <div class="mb-3">
+        <div class="small fw-semibold text-secondary mb-1"><i class="bi bi-file-earmark-lock2 me-1"></i>DONDURULMUŞ BELGE <span class="fw-normal text-muted">— teknik şartnameden gelen veriler; oluşturma anındaki hali, değiştirilemez</span></div>
+        <iframe id="tiePdfFrame" title="İş Emri Belgesi" style="width:100%;height:55vh;border:1px solid #dee2e6;border-radius:6px;background:#f8f9fa"></iframe>
+      </div>`;
+    if (ie.durum === 'HAZIRLANDI') {
+        h += `<div class="d-flex gap-2 flex-wrap align-items-center">
           <button class="btn btn-sm btn-success fw-bold" onclick="tieYayinla(${ie.id})"><i class="bi bi-megaphone me-1"></i>Yayınla <span class="fw-normal">(onayla + ekibe PDF ekli bildir)</span></button>
           <button class="btn btn-sm btn-outline-danger" onclick="tieSil(${ie.id})"><i class="bi bi-trash me-1"></i>Taslağı Sil <span class="fw-normal">(şartnameyi aç)</span></button>
-        </div>`;
+        </div>
+        <div class="small text-muted mt-2"><i class="bi bi-chat-left-text me-1"></i>Süreç notları (yorum) <b>yayından sonra</b> eklenebilir — her yorum aynı alıcılara bildirilir.</div>`;
     } else {
         h += `<h6 class="fw-bold text-secondary mt-3"><i class="bi bi-chat-left-text me-1"></i>Süreç Notları <span class="text-muted small fw-normal">— ana belge değişmez; her not aynı alıcılara bildirilir</span></h6>`;
         h += notlar.length
@@ -11262,6 +11310,27 @@ function tieHTML(ie, notlar) {
         }
     }
     return h;
+}
+// Dondurulmuş belge PDF'ini modal içindeki görüntüleyiciye yükler (salt-okunur görünüm)
+async function tiePdfYukle(id) {
+    try {
+        const token = localStorage.getItem('aterko_token');
+        const resp = await fetch(`${API_URL}/is-emri-pdf/${id}`, { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!resp.ok) return;
+        const u = URL.createObjectURL(await resp.blob());
+        const fr = document.getElementById('tiePdfFrame');
+        if (fr) fr.src = u + '#toolbar=0&navpanes=0';
+        setTimeout(() => URL.revokeObjectURL(u), 300000);
+    } catch (e) {}
+}
+// TASLAKTA yalnız İş Emri Notu güncellenir — belge (PDF) aynı numarayla yeniden dondurulur
+async function tieNotuKaydet(id) {
+    if (_saAksiyonKilit) return;
+    saAksiyonBaslat('Not kaydediliyor — belge yeniden dondurluyor (5-15 sn)…');
+    const r = await secureFetch('/is-emri-guncelle', { method: 'POST', body: JSON.stringify({ id, is_emri_notu: document.getElementById('tieNotDuzen')?.value || '' }) }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(r.mesaj, 'success'); tieYenile(); }
+    else showToast((r && r.hata) || 'Kaydedilemedi.', 'error');
 }
 async function tieOlustur() {
     if (_saAksiyonKilit) return;
@@ -11417,11 +11486,32 @@ function renderTeknikSartnameForm(alanlar, mevcutVeri) {
     });
     document.getElementById("tsModalBody").innerHTML = html;
 
-    // Koşul motoru: input değiştiğinde alanları gizle/göster
-    document.querySelectorAll('#tsModalBody .ts-input').forEach(el => {
-        el.addEventListener('change', () => tsKosullariCalistir());
+    // Koşul motoru: input değiştiğinde alanları gizle/göster + "Diğer" giriş kutusunu aç/kapa
+    document.querySelectorAll('#tsModalBody .ts-input, #tsModalBody .ts-diger').forEach(el => {
+        el.addEventListener('change', () => { tsDigerToggle(el); tsKosullariCalistir(); });
     });
     tsKosullariCalistir(); // İlk açılışta da çalıştır
+}
+
+// "Diğer" seçilince serbest giriş kutusunu göster; başka seçenekte gizle
+function tsDigerToggle(el) {
+    if (el.classList.contains('ts-diger')) return;
+    if (el.type === 'radio' && !el.checked) return;
+    if (el.type !== 'radio' && el.tagName !== 'SELECT') return;
+    const alanDiv = el.closest('.ts-alan'); if (!alanDiv) return;
+    const dg = alanDiv.querySelector('.ts-diger'); if (!dg) return;
+    const digerSecili = /^diğer$/i.test(String(el.value || '').trim());
+    dg.classList.toggle('d-none', !digerSecili);
+    if (digerSecili) dg.focus();
+}
+
+// "Diğer" girilen özel değerleri cevaba işle: seçim 'Diğer' ise girilen değer cevabın KENDİSİ olur
+function tsDigerUygula(veri) {
+    document.querySelectorAll('#tsModalBody .ts-diger').forEach(el => {
+        const soru = el.dataset.soru; if (!soru) return;
+        if (/^diğer$/i.test(String(veri[soru] || '').trim()) && el.value.trim()) veri[soru] = el.value.trim();
+    });
+    return veri;
 }
 
 function tsMevcutDegerleriOku() {
@@ -11440,7 +11530,7 @@ function tsMevcutDegerleriOku() {
         }
     });
     Object.assign(veri, cokGruplar);
-    return veri;
+    return tsDigerUygula(veri);
 }
 
 function tsKosulSaglandi(kosulStr, mevcutVeri) {
@@ -11499,19 +11589,28 @@ function buildFormField(alan, deger) {
     const secenekler = Array.isArray(alan.secenekler) ? alan.secenekler : [];
 
     if (tip === 'TEK') {
+        // "Diğer" seçeneği: seçilince serbest giriş açılır; girilen değer cevabın KENDİSİ olur
+        // (kaydedilen değer sayı/metin — HESAP formülleri ve PDF bu değeri kullanır)
+        const digerOpt = secenekler.find(s => /^diğer$/i.test(String(s).trim()));
+        const ozelDeger = !!(digerOpt && deger && !secenekler.includes(deger));
+        const seciliMi = s => (deger === s || (ozelDeger && s === digerOpt));
         if (saltOkunur) {
             girisHTML = `<input type="text" class="form-control form-control-sm ts-input bg-light text-muted" data-soru="${esc(alan.soru)}" value="${esc(deger || '')}" readonly>`;
         } else if (secenekler.length <= 6) {
             // Belirgin seçim kartları (radio) — seçili olan turuncu
             girisHTML = '<div class="d-flex flex-wrap gap-2">' + secenekler.map(s =>
-                `<input type="radio" class="btn-check ts-input ts-secim" name="${safeId}" data-soru="${esc(alan.soru)}" value="${esc(s)}" id="${safeId}_${esc(s)}" ${deger === s ? 'checked' : ''} autocomplete="off">
+                `<input type="radio" class="btn-check ts-input ts-secim" name="${safeId}" data-soru="${esc(alan.soru)}" value="${esc(s)}" id="${safeId}_${esc(s)}" ${seciliMi(s) ? 'checked' : ''} autocomplete="off">
                  <label class="ts-secim-lbl" for="${safeId}_${esc(s)}">${esc(s)}</label>`
             ).join('') + '</div>';
         } else {
             girisHTML = `<select class="form-select form-select-sm ts-input" data-soru="${esc(alan.soru)}">
                 <option value="">-- Seçiniz --</option>
-                ${secenekler.map(s => `<option value="${esc(s)}" ${deger === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+                ${secenekler.map(s => `<option value="${esc(s)}" ${seciliMi(s) ? 'selected' : ''}>${esc(s)}</option>`).join('')}
             </select>`;
+        }
+        if (digerOpt && !saltOkunur) {
+            const goster = ozelDeger || deger === digerOpt;
+            girisHTML += `<input type="text" class="form-control form-control-sm mt-1 ts-diger ${goster ? '' : 'd-none'}" data-soru="${esc(alan.soru)}" placeholder="Diğer — değeri girin (örn. 125)" value="${ozelDeger ? esc(deger) : ''}">`;
         }
     } else if (tip === 'ÇOK') {
         const mevcutDizi = Array.isArray(deger) ? deger : (deger ? String(deger).split(',').map(x => x.trim()) : []);
@@ -11593,6 +11692,7 @@ async function saveTeknikSartname() {
         }
     });
     Object.assign(formVerisi, cokGruplar);
+    tsDigerUygula(formVerisi);   // "Diğer" seçiminde girilen özel değer cevabın kendisi olur
 
     // Zorunlu alan kontrolü — koşul nedeniyle gizlenmiş alanlar hariç
     const mevcutDegerler = tsMevcutDegerleriOku();
@@ -12479,13 +12579,14 @@ function addTeslimatRow(data) {
 
             <div class="col-md-2 kosul-prefabrik" style="display:none;">
                 <label class="small fw-bold text-muted mb-1">Kat Yüksekliği</label>
-                <select class="form-select form-select-sm t-kat-yuksekligi">
+                <select class="form-select form-select-sm t-kat-yuksekligi" onchange="const dg=this.parentElement.querySelector('.t-kat-yuksekligi-diger'); dg.classList.toggle('d-none', this.value !== 'DİĞER'); if(this.value==='DİĞER') dg.focus();">
                     <option value="">Seçiniz...</option>
                     <option value="2500" ${d.kat_yuksekligi === '2500' ? 'selected' : ''}>2500 mm</option>
                     <option value="2800" ${d.kat_yuksekligi === '2800' ? 'selected' : ''}>2800 mm</option>
                     <option value="3000" ${d.kat_yuksekligi === '3000' ? 'selected' : ''}>3000 mm</option>
-                    <option value="DİĞER" ${d.kat_yuksekligi === 'DİĞER' ? 'selected' : ''}>DİĞER</option>
+                    <option value="DİĞER" ${(d.kat_yuksekligi && !['2500','2800','3000'].includes(String(d.kat_yuksekligi))) ? 'selected' : ''}>DİĞER</option>
                 </select>
+                <input type="number" class="form-control form-control-sm mt-1 t-kat-yuksekligi-diger ${(d.kat_yuksekligi && !['2500','2800','3000','DİĞER'].includes(String(d.kat_yuksekligi))) ? '' : 'd-none'}" placeholder="mm girin (örn. 3200)" value="${(d.kat_yuksekligi && !['2500','2800','3000','DİĞER'].includes(String(d.kat_yuksekligi))) ? esc(d.kat_yuksekligi) : ''}">
             </div>
             <div class="col-md-2 kosul-prefabrik" style="display:none;">
                 <label class="small fw-bold text-muted mb-1">Kat Adedi</label>
@@ -12680,7 +12781,9 @@ function saveProjeGelis() {
             bina_adi: row.querySelector(".t-ad").value.trim(),
             bina_turu: row.querySelector(".t-tur").value,
             bina_tipi: row.querySelector(".t-tip").value,
-            kat_yuksekligi: row.querySelector(".t-kat-yuksekligi").value,
+            kat_yuksekligi: (row.querySelector(".t-kat-yuksekligi").value === 'DİĞER'
+                ? row.querySelector(".t-kat-yuksekligi-diger").value.trim() || 'DİĞER'
+                : row.querySelector(".t-kat-yuksekligi").value),
             kat_adedi: row.querySelector(".t-kat-adedi").value,
             bina_adedi: parseInt(row.querySelector(".t-bina-adedi").value) || null,
             konteyner_ebadi: row.querySelector(".t-konteyner-ebadi").value.trim(),

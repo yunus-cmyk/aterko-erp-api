@@ -3953,6 +3953,25 @@ app.post('/api/is-emri-olustur', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// Taslak (HAZIRLANDI) iş emrinde YALNIZ iş emri notu güncellenebilir.
+// Not belgeye basıldığı için PDF aynı emir no ile YENİDEN DONDURULUR.
+// Yayınlandıktan sonra not da kilitlenir — yalnız süreç notu (yorum) eklenebilir.
+app.post('/api/is-emri-guncelle', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, is_emri_notu } = req.body;
+        const ieR = await pool.query("SELECT * FROM is_emirleri WHERE id=$1", [id]);
+        if (!ieR.rowCount) return res.json({ ok: false, hata: 'İş emri bulunamadı.' });
+        const ie = ieR.rows[0];
+        if (ie.durum !== 'HAZIRLANDI')
+            return res.json({ ok: false, hata: 'Yayınlanmış iş emrinde not değiştirilemez — süreç notu (yorum) ekleyin.' });
+        const yeniNot = (is_emri_notu || '').trim() || null;
+        const { pdfBuffer } = await isEmriPDF(ie.teslimat_id, ie.olusturan_adsoyad || req.user.adSoyad, ie.emir_no, yeniNot || '');
+        await pool.query("UPDATE is_emirleri SET is_emri_notu=$1, pdf=$2 WHERE id=$3", [yeniNot, pdfBuffer, id]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'is_emirleri', kayit_id: parseInt(id), kayit_no: ie.emir_no, ozet: 'İş emri notu güncellendi (belge yeniden donduruldu)' });
+        res.json({ ok: true, mesaj: 'İş emri notu güncellendi — belge yeniden donduruldu.' });
+    } catch (e) { next(e); }
+});
+
 app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
     try {
         const { id } = req.body;
@@ -5090,7 +5109,7 @@ const ENDPOINT_IZIN_KURALLARI = [
     // Teknik şartname / form
     { pattern: /^\/api\/teknik-sartname/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/is-emri/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
-    { pattern: /^\/api\/is-emri-(olustur|yayinla|sil|iptal|not)/, modul: 'projeler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/is-emri-(olustur|guncelle|yayinla|sil|iptal|not)/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/form-tanimlari/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
 
     // --- FAIL-OPEN KAPATMA: önceden hiçbir kurala uymayan yazma uçları ---
