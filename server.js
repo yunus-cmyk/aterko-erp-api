@@ -3861,6 +3861,24 @@ app.post('/api/teknik-sartname-kaydet', yetkiKontrol, async (req, res, next) => 
     } catch (error) { next(error); }
 });
 
+// Teknik şartname KOPYALAMA kaynakları: aynı bina türündeki, formu doldurulmuş diğer teslimatlar
+// (aynı projeden veya başka projeden). Frontend seçilen kaynağın cevaplarını forma UYARLAYARAK alır.
+app.get('/api/teknik-sartname-kopya-kaynaklar/:teslimatId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const cur = await pool.query('SELECT bina_turu FROM proje_teslimatlari WHERE id=$1', [req.params.teslimatId]);
+        if (!cur.rowCount) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+        const r = await pool.query(`
+            SELECT pt.id, pt.bina_adi, pt.bina_tipi, pt.kat_yuksekligi, pt.kat_adedi,
+                   pt.konteyner_ebadi, pt.buyukluk_m2, p.proje_kodu, p.musteri_adi, p.proje_adi
+            FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id=p.id
+            WHERE pt.bina_turu = $1 AND pt.id <> $2
+              AND pt.ek_veriler IS NOT NULL AND pt.ek_veriler <> '{}'::jsonb
+              AND COALESCE(pt.durum,'') <> 'İPTAL'
+            ORDER BY pt.id DESC LIMIT 200`, [cur.rows[0].bina_turu, req.params.teslimatId]);
+        res.json({ ok: true, bina_turu: cur.rows[0].bina_turu, kaynaklar: r.rows });
+    } catch (e) { next(e); }
+});
+
 // ============================================================================
 // İŞ EMRİ (teknik şartname bazlı, teslimat düzeyi) — SATIŞ aşaması
 // Akış: teslimat (SÖZLEŞME) → iş emri OLUŞTUR [HAZIRLANDI; şartname KİLİTLENİR;

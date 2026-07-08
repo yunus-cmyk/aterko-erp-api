@@ -3324,6 +3324,23 @@ STK-002		50	adet
     </div>
 
     <!-- İş Emri (teknik şartname bazlı, teslimat düzeyi) — üretimdeki kalem-bazlı iş emrinden AYRI -->
+    <!-- Teknik şartname kopyalama — aynı bina türündeki teslimatlardan cevapları aktar -->
+    <div class="modal fade" id="modalTsKopya" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header py-2 bg-dark text-white">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-copy me-2"></i>Başka Teslimattan Kopyala <span class="fw-normal small" id="tskBinaTuru"></span></h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3">
+                    <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Seçilen teslimatın şartname cevapları bu forma aktarılır (üzerine yazar). Bu formun seçeneklerine <b>uymayan</b> değerler boş bırakılır; bina künyesi (tip/kat/ebat) <b>bu teslimattan</b> kalır. Aktarım sonrası kontrol edip <b>Kaydet</b>'e basmanız gerekir.</div>
+                    <input id="tskArama" class="form-control form-control-sm mb-2" placeholder="Ara: müşteri, proje, bina adı..." oninput="tsKopyaRender(this.value)">
+                    <div id="tskListe" style="max-height:52vh;overflow:auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Teslimat durum seçimi (akordiyon satırındaki dropdown yerine — ekran ortasında, kesin görünür) -->
     <div class="modal fade" id="modalDurumSec" tabindex="-1">
         <div class="modal-dialog modal-sm modal-dialog-centered">
@@ -11428,6 +11445,9 @@ async function openTeknikSartname(teslimatId) {
     // Projede montaj gerekli değilse Montaj bölümü tümüyle gizlenir
     mevcutVeri['Sahada Montaj'] = teslimat.montaj_gerekli ? 'Var' : 'Yok';   // koşullarda kullanılabilir alan
     if (teslimat.montaj_gerekli === false) mevcutVeri['Montaj'] = 'Yok';
+    // Kopyalama sonrası yeniden render'da da geçerli kalsın (BU teslimatın türetilmiş değerleri)
+    window.tsMontajDerived = { 'Sahada Montaj': mevcutVeri['Sahada Montaj'] };
+    if (teslimat.montaj_gerekli === false) window.tsMontajDerived['Montaj'] = 'Yok';
 
     document.getElementById("tsModalBaslik").innerHTML = `<i class="bi bi-file-earmark-text me-2"></i>Teknik Şartname — ${esc(teslimat.bina_adi)} (${esc(teslimat.bina_turu)})`;
 
@@ -11453,6 +11473,7 @@ async function openTeknikSartname(teslimatId) {
         if (ieR && ieR.ok && ieR.is_emri) {
             document.querySelectorAll('#tsModalBody .ts-input').forEach(el => el.disabled = true);
             document.getElementById('tsKaydetBtn').disabled = true;
+            document.getElementById('tsKopyaBtn')?.classList.add('d-none');   // kilitliye kopyalama olmaz
             document.getElementById('tsModalBody').insertAdjacentHTML('afterbegin',
                 `<div class="alert alert-warning py-2 small mb-3"><i class="bi bi-lock-fill me-1"></i>Bu teknik şartname <b>${esc(ieR.is_emri.emir_no)}</b> numaralı iş emrine bağlı ve <b>KİLİTLİ</b> (${esc(ieR.is_emri.durum)}). Değişiklik için iş emrinin silinmesi (taslaksa) veya ADMIN tarafından iptali gerekir.</div>`);
         }
@@ -11470,7 +11491,12 @@ function renderTeknikSartnameForm(alanlar, mevcutVeri) {
 
     const sirali = Object.values(bolumler).sort((a, b) => a.sira - b.sira);
 
-    let html = '';
+    // Üst araç çubuğu: başka teslimattan kopyalama (kilitli şartnamede gizlenir)
+    let html = `<div class="d-flex justify-content-end mb-2">
+        <button type="button" id="tsKopyaBtn" class="btn btn-sm btn-outline-secondary" onclick="tsKopyaAc()" title="Aynı bina türündeki başka bir teslimatın şartname cevaplarını bu forma aktar">
+            <i class="bi bi-copy me-1"></i>Başka Teslimattan Kopyala
+        </button>
+    </div>`;
     sirali.forEach(b => {
         // Projede montaj gerekli değilse Montaj bölümünü hiç gösterme
         if (/^montaj$/i.test((b.ad || '').trim()) && mevcutVeri['Montaj'] === 'Yok') return;
@@ -11512,6 +11538,76 @@ function tsDigerUygula(veri) {
         if (/^diğer$/i.test(String(veri[soru] || '').trim()) && el.value.trim()) veri[soru] = el.value.trim();
     });
     return veri;
+}
+
+// ===== TEKNİK ŞARTNAME KOPYALAMA — aynı bina türündeki teslimattan cevapları aktar =====
+let tsKopyaKaynaklar = [];
+let tsKopyaBinaTuru = '';
+async function tsKopyaAc() {
+    const r = await secureFetch('/teknik-sartname-kopya-kaynaklar/' + tsAktifTeslimat).catch(() => null);
+    if (!r || !r.ok) return showToast((r && r.hata) || 'Kaynak listesi alınamadı.', 'error');
+    tsKopyaKaynaklar = r.kaynaklar || [];
+    tsKopyaBinaTuru = r.bina_turu || '';
+    document.getElementById('tskBinaTuru').textContent = `— yalnız ${tsKopyaBinaTuru} (${tsKopyaKaynaklar.length} kaynak)`;
+    document.getElementById('tskArama').value = '';
+    tsKopyaRender('');
+    new bootstrap.Modal(document.getElementById('modalTsKopya')).show();
+}
+function tsKopyaRender(filtre) {
+    const f = trAra(filtre || '').trim();
+    const liste = f ? tsKopyaKaynaklar.filter(k =>
+        trAra(`${k.musteri_adi || ''} ${k.proje_adi || ''} ${k.bina_adi || ''} ${k.proje_kodu || ''} ${k.bina_tipi || ''}`).includes(f)) : tsKopyaKaynaklar;
+    const box = document.getElementById('tskListe');
+    if (!liste.length) { box.innerHTML = '<div class="text-muted small text-center p-3">Uygun kaynak yok.</div>'; return; }
+    box.innerHTML = liste.map(k => {
+        // PREFABRİK: Bina Tipi - Kat Yüksekliği - Kat Adedi | KONTEYNER: Bina Tipi - Konteyner Ebadı
+        const detay = (tsKopyaBinaTuru === 'Konteyner'
+            ? [k.bina_tipi, k.konteyner_ebadi]
+            : [k.bina_tipi, k.kat_yuksekligi ? k.kat_yuksekligi + ' mm' : '', k.kat_adedi ? k.kat_adedi + ' Kat' : ''])
+            .filter(x => x && String(x).trim()).join(' - ');
+        return `<div class="border rounded p-2 mb-2 bg-white d-flex justify-content-between align-items-center gap-2">
+            <div class="small">
+                <div class="fw-semibold">${esc(k.musteri_adi || '')} - ${esc(k.proje_adi || '')} - ${esc(k.bina_adi || '')}</div>
+                <div class="text-muted">${esc(detay || '-')}${k.buyukluk_m2 ? ' · ' + k.buyukluk_m2 + ' m²' : ''} <span class="ms-1 badge bg-light text-secondary border">${esc(k.proje_kodu || '')}</span></div>
+            </div>
+            <button class="btn btn-sm btn-primary text-nowrap" onclick="tsKopyaUygula(${k.id})"><i class="bi bi-download me-1"></i>Aktar</button>
+        </div>`;
+    }).join('');
+}
+async function tsKopyaUygula(kaynakId) {
+    if (!confirm('Seçilen teslimatın şartname cevapları bu forma aktarılacak (mevcut girişlerin ÜZERİNE yazar).\n\nBu formun seçeneklerine uymayan değerler boş bırakılır; bina künyesi bu teslimattan kalır. Kaydetmeden önce kontrol edebilirsiniz. Devam?')) return;
+    showLoading();
+    const r = await secureFetch('/teknik-sartname/' + kaynakId).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) return showToast('Kaynak teslimat okunamadı.', 'error');
+    const kaynakEk = (r.teslimat && r.teslimat.ek_veriler) || r.ek_veriler || {};
+    // Bu teslimatın mevcut form durumu (künye/otomatik alanlar dahil) temel alınır
+    const yeni = { ...tsMevcutDegerleriOku() };
+    const atlanan = [];
+    tsAktifFormTanimlari.forEach(a => {
+        if ((a.kurallar || '').includes('SALT_OKUNUR')) return;   // künye alanları BU teslimattan kalır
+        const soru = a.soru;
+        if (!(soru in kaynakEk)) return;
+        let v = kaynakEk[soru];
+        const tip = (a.giris_tipi || '').toUpperCase();
+        const sec = Array.isArray(a.secenekler) ? a.secenekler : [];
+        const digerVar = sec.some(s => /^diğer$/i.test(String(s).trim()));
+        if (tip === 'TEK' && sec.length) {
+            // Bu formun seçeneklerine uymayan değer: Diğer yoksa BOŞ bırakılır
+            if (v != null && v !== '' && !sec.includes(v) && !digerVar) { atlanan.push(soru.split('\n')[0]); v = ''; }
+        } else if ((tip === 'ÇOK' || tip === 'COK') && sec.length) {
+            const dizi = Array.isArray(v) ? v : (v ? [v] : []);
+            const uyan = dizi.filter(x => sec.includes(x));
+            if (uyan.length !== dizi.length) atlanan.push(soru.split('\n')[0] + ' (kısmen)');
+            v = uyan;
+        }
+        yeni[soru] = v;
+    });
+    Object.assign(yeni, window.tsMontajDerived || {});   // montaj türetmeleri BU teslimattan
+    renderTeknikSartnameForm(tsAktifFormTanimlari, yeni);
+    bootstrap.Modal.getInstance(document.getElementById('modalTsKopya'))?.hide();
+    showToast('Cevaplar aktarıldı — kontrol edip Kaydet\'e basın.' + (atlanan.length ? ` ${atlanan.length} alan bu forma uymadığı için boş/kırpılmış geldi.` : ''), 'success');
+    if (atlanan.length) setTimeout(() => showToast('Uymayanlar: ' + atlanan.slice(0, 4).join(', ') + (atlanan.length > 4 ? '…' : ''), 'info'), 1600);
 }
 
 function tsMevcutDegerleriOku() {
