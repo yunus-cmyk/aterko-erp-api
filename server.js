@@ -512,6 +512,11 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
         if (!proje || !proje.id) return res.json({ ok: false, hata: 'Geçersiz proje ID' });
 
         // 1. Projeyi güncelle
+        // Yeni alanlar (temsilci/linkler): payload'da HİÇ yoksa (eski önbellekli sayfa) mevcut
+        // değer korunur — yoksa eski form her kayıtta bu alanları null'a ezer (yaşandı: 72691).
+        // Alan payload'da varsa boş gönderim bilinçli temizlik sayılır (null yazılır).
+        const eskiP = await client.query('SELECT satis_temsilcisi, aset_link, drive_link FROM projeler WHERE id=$1', [proje.id]);
+        const koru = (yeni, eski) => yeni === undefined ? eski : ((String(yeni || '').trim()) || null);
         await client.query(`
             UPDATE projeler SET musteri_adi=$1, proje_adi=$2, sozlesme_tarihi=$3,
                                 satis_turu=$4, nakliye=$5, para_birimi=$6, kdv_orani=$7,
@@ -519,7 +524,9 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
             WHERE id=$11
         `, [proje.musteri_adi, proje.proje_adi, proje.sozlesme_tarihi || null,
             proje.satis_turu, proje.nakliye, proje.para_birimi, parseInt(proje.kdv_orani),
-            (proje.satis_temsilcisi || '').trim() || null, (proje.aset_link || '').trim() || null, (proje.drive_link || '').trim() || null,
+            koru(proje.satis_temsilcisi, eskiP.rows[0]?.satis_temsilcisi),
+            koru(proje.aset_link, eskiP.rows[0]?.aset_link),
+            koru(proje.drive_link, eskiP.rows[0]?.drive_link),
             proje.id]);
 
         // 2. Mevcut teslimat ID'lerini al
@@ -3683,7 +3690,7 @@ const { teknikSartnameHTML, teslimatVeri, cevapBicim, motorIsle } = require('./l
 // Hem GET /teknik-sartname-pdf hem İş Emri snapshot'ı (is-emri-olustur) bu tek kaynağı kullanır.
 async function teslimatSartnamePDF(teslimatId, kullaniciAd) {
     const r = await pool.query(`
-        SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye
+        SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye, p.satis_temsilcisi
         FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id = p.id
         WHERE pt.id = $1
     `, [teslimatId]);
@@ -5639,7 +5646,7 @@ app.get('/api/teknik-sartname-alanlar/:binaTuru', yetkiKontrol, async (req, res,
         const projeSoru = r.rows.filter(x => x.kaynak_kolon).map(x => x.soru);
         const formSoru = r.rows.filter(x => !x.kaynak_kolon).map(x => x.soru);
         // Her türde ortak sistem alanları (form sorusu olmayan proje/sistem verileri)
-        const genel = ['Proje No', 'Müşteri Adı', 'Proje Adı', 'Bina Yeri', 'Nakliye', 'Sahada Montaj', 'Bina Adı', 'Büyüklük', 'TARİH', 'DÜZENLEYEN', 'KOD'];
+        const genel = ['Proje No', 'Müşteri Adı', 'Proje Adı', 'Bina Yeri', 'Nakliye', 'Sahada Montaj', 'Bina Adı', 'Büyüklük', 'TARİH', 'DÜZENLEYEN', 'SATIŞ TEMSİLCİSİ', 'KOD'];
         res.json({
             ok: true,
             form: formSoru,
