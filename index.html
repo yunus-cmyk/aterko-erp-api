@@ -11428,6 +11428,9 @@ async function saveTeknikSartname() {
         if (!a.zorunlu) return false;
         // Koşul sağlanıyorsa (alan gizliyse) zorunlu sayma
         if (a.kosullar && tsKosulSaglandi(a.kosullar, mevcutDegerler)) return false;
+        // Ekranda hiç render edilmemiş alan (ör. montajsız projede tüm Montaj bölümü
+        // hardcoded gizlenir) doldurulamaz → zorunlu sayma
+        if (!document.querySelector(`#tsModalBody .ts-input[data-soru="${CSS.escape(a.soru)}"]`)) return false;
         return !formVerisi[a.soru];
     });
     if (eksik.length > 0) {
