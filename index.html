@@ -11193,6 +11193,9 @@ async function tieAc(teslimatId, binaAdi) {
     tieAktifTeslimatId = teslimatId;
     document.getElementById('tieBaslik').innerHTML = `<i class="bi bi-clipboard2-check me-2"></i>İş Emri${binaAdi ? ' — ' + esc(binaAdi) : ''}`;
     document.getElementById('tieBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+    // Proje detay modalı açıksa kapat — üst üste durmasın (Teknik Şartname ile aynı davranış)
+    const pdEl = document.getElementById('modalProjeDetay');
+    if (pdEl && pdEl.classList.contains('show')) bootstrap.Modal.getInstance(pdEl)?.hide();
     new bootstrap.Modal(document.getElementById('modalTeslimatIsEmri')).show();
     tieYenile();
 }

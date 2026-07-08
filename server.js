@@ -3863,6 +3863,41 @@ async function aktifIsEmri(teslimatId) {
     const r = await pool.query("SELECT * FROM is_emirleri WHERE teslimat_id=$1 AND durum <> 'İPTAL' LIMIT 1", [teslimatId]);
     return r.rows[0] || null;
 }
+
+// İş Emri PDF'i — şartnameden FARKLI format (lib isEmriHTML: bölüm başına kutu,
+// başta Proje+Teslimat Bilgileri, sonda İş Emri Notu). Oluşturma anında dondurulur.
+async function isEmriPDF(teslimatId, kullaniciAd, emirNo, isEmriNotu) {
+    const r = await pool.query(`
+        SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye
+        FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id = p.id
+        WHERE pt.id = $1`, [teslimatId]);
+    if (r.rowCount === 0) throw new Error('Teslimat bulunamadı.');
+    const t = r.rows[0];
+    // Şartname satırları: öncelik DB şablonu; yoksa form tanımları (cevap=veri[soru])
+    const tsSab = await pool.query(
+        "SELECT bolum_no,bolum_adi,bolum_gizle,soru,cevap_sablonu FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
+        [t.bina_turu]);
+    let ft;
+    if (tsSab.rowCount) {
+        ft = tsSab.rows.map(x => ({ bolum_adi: x.bolum_adi, bolum_sirasi: x.bolum_no, soru: x.soru, cevap_sablonu: x.cevap_sablonu, bolum_gizle: x.bolum_gizle || null }));
+    } else {
+        const ftR = await pool.query(
+            "SELECT bolum_adi, bolum_sirasi, soru FROM form_tanimlari WHERE bina_turu=$1 ORDER BY bolum_sirasi, soru_sirasi", [t.bina_turu]);
+        if (!ftR.rowCount) throw new Error(`"${t.bina_turu}" bina türü için şablon veya form tanımı yok.`);
+        ft = ftR.rows.map(f => ({ bolum_adi: f.bolum_adi, bolum_sirasi: f.bolum_sirasi, soru: f.soru, cevap_sablonu: null, bolum_gizle: null }));
+    }
+    const { htmlToPDF } = require('./lib/pdf-generator');
+    const { isEmriHTML } = require('./lib/teknik-sartname-dinamik');
+    const fesc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const pdfBuffer = await htmlToPDF(isEmriHTML(t, ft, kullaniciAd, emirNo, isEmriNotu), {
+        margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' },
+        footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
+            `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
+            `<span>${fesc(emirNo)} · ${fesc(t.proje_kodu)} / ${fesc(t.musteri_adi)} - ${fesc(t.proje_adi)} [ ${fesc(t.bina_adi)} ]</span>` +
+            `</div>`
+    });
+    return { pdfBuffer, t };
+}
 const isEmriAliciListe = ie => String(ie.ek_alicilar || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
 
 app.get('/api/is-emri/:teslimatId', yetkiKontrol, async (req, res, next) => {
@@ -3883,10 +3918,17 @@ app.post('/api/is-emri-olustur', yetkiKontrol, async (req, res, next) => {
         const { teslimat_id, is_emri_notu, ek_alicilar } = req.body;
         if (!teslimat_id) return res.json({ ok: false, hata: 'Teslimat ID gerekli.' });
         if (await aktifIsEmri(teslimat_id)) return res.json({ ok: false, hata: 'Bu teslimat için zaten bir iş emri var.' });
-        // Belgeyi DONDUR: PDF + veri kopyası (şablon sonradan değişse bile iş emri sabit kalır)
-        const { pdfBuffer, t } = await teslimatSartnamePDF(teslimat_id, req.user.adSoyad);
-        const seq = await pool.query("SELECT nextval('is_emri_no_seq') AS no");
-        const emir_no = `${t.proje_kodu}-İE-${seq.rows[0].no}`;
+        // Emir no: proje bazlı iki basamak — {ProjeKodu}-İE-01, -02, ... (teslimat adedince)
+        const tkR = await pool.query(
+            "SELECT p.proje_kodu FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id=p.id WHERE pt.id=$1", [teslimat_id]);
+        if (!tkR.rowCount) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+        const projeKodu = tkR.rows[0].proje_kodu;
+        const mxR = await pool.query(
+            `SELECT COALESCE(MAX(NULLIF(regexp_replace(emir_no, '^.*-İE-', ''), '')::int), 0) AS mx
+             FROM is_emirleri WHERE emir_no LIKE $1`, [`${projeKodu}-İE-%`]);
+        const emir_no = `${projeKodu}-İE-${String(Number(mxR.rows[0].mx) + 1).padStart(2, '0')}`;
+        // Belgeyi DONDUR: İş Emri formatlı PDF + veri kopyası (şablon sonradan değişse bile sabit kalır)
+        const { pdfBuffer, t } = await isEmriPDF(teslimat_id, req.user.adSoyad, emir_no, (is_emri_notu || '').trim());
         const snapshot = {
             proje_kodu: t.proje_kodu, musteri_adi: t.musteri_adi, proje_adi: t.proje_adi,
             bina_adi: t.bina_adi, bina_turu: t.bina_turu, bina_tipi: t.bina_tipi,
@@ -3930,7 +3972,7 @@ app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
                 { label: 'Yayınlayan', value: req.user.adSoyad }
             ],
             ekAlicilar: isEmriAliciListe(ie),
-            ekler: [{ filename: `${ie.emir_no}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_'), content: ie.pdf }]
+            ekler: [{ filename: `${ie.emir_no}-Is-Emri.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_'), content: ie.pdf }]
         });
         res.json({ ok: true, mesaj: `${ie.emir_no} yayınlandı — ekibe bildirim gönderildi. Teslimat PROJE aşamasına geçti.` });
     } catch (e) { next(e); }
@@ -4004,7 +4046,7 @@ app.get('/api/is-emri-pdf/:id', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query("SELECT emir_no, pdf FROM is_emirleri WHERE id=$1", [req.params.id]);
         if (!r.rowCount || !r.rows[0].pdf) return res.status(404).json({ ok: false, hata: 'İş emri PDF bulunamadı.' });
-        const ad = `${r.rows[0].emir_no}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
+        const ad = `${r.rows[0].emir_no}-Is-Emri.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${ad}"`);
         res.send(r.rows[0].pdf);
