@@ -3256,6 +3256,18 @@ STK-002		50	adet
                             <label class="small fw-bold text-muted mb-1">KDV (%)</label>
                             <select id="pjKdv" class="form-select form-select-sm"><option value="20">%20</option><option value="10">%10</option><option value="1">%1</option><option value="0">%0</option></select>
                         </div>
+                        <div class="col-md-4">
+                            <label class="small fw-bold text-muted mb-1"><i class="bi bi-person-badge me-1"></i>Satış Temsilcisi</label>
+                            <input type="text" id="pjSatisTemsilcisi" class="form-control form-control-sm" placeholder="örn. Ayşe Bilgin">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="small fw-bold text-muted mb-1"><i class="bi bi-link-45deg me-1"></i>ASET (link)</label>
+                            <input type="url" id="pjAsetLink" class="form-control form-control-sm" placeholder="https://aset.aterko.com/entity/project/...">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="small fw-bold text-muted mb-1"><i class="bi bi-google me-1"></i>DRIVE (link)</label>
+                            <input type="url" id="pjDriveLink" class="form-control form-control-sm" placeholder="https://drive.google.com/open?id=...">
+                        </div>
                     </div>
                 </div>
 
@@ -11944,6 +11956,9 @@ function openYeniProjeModal(duzenlemeData) {
     if(document.getElementById("pjNakliye")) document.getElementById("pjNakliye").value = p.nakliye || "Aterko";
     if(document.getElementById("pjPara")) document.getElementById("pjPara").value = p.para_birimi || "TL";
     if(document.getElementById("pjKdv")) document.getElementById("pjKdv").value = p.kdv_orani || "20";
+    if(document.getElementById("pjSatisTemsilcisi")) document.getElementById("pjSatisTemsilcisi").value = p.satis_temsilcisi || "";
+    if(document.getElementById("pjAsetLink")) document.getElementById("pjAsetLink").value = p.aset_link || "";
+    if(document.getElementById("pjDriveLink")) document.getElementById("pjDriveLink").value = p.drive_link || "";
 
     // Teslimatları yükle
     const container = document.getElementById("teslimatListContainer");
@@ -12244,6 +12259,9 @@ function renderProjeDetay(proje, teslimatlar) {
         <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-boxes me-1"></i>Teslimat Sayısı</span><span class="fw-bold text-dark">${teslimatlar.length} Bina</span></div></div>
         <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-activity me-1"></i>Mevcut Durum</span>${getDurumBadge(proje.durum)}</div></div>
         <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-clock-history me-1"></i>Oluşturma</span><span class="fw-bold text-dark small">${formatTarihTR(proje.olusturma_tarihi) || '-'}</span></div></div>
+        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-person-badge me-1"></i>Satış Temsilcisi</span><span class="fw-bold text-dark">${esc(proje.satis_temsilcisi || '-')}</span></div></div>
+        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-link-45deg me-1"></i>ASET</span>${proje.aset_link ? `<a class="fw-bold small text-decoration-none" target="_blank" rel="noopener" href="${esc(proje.aset_link)}">${esc(proje.aset_link)}</a>` : '<span class="text-muted">-</span>'}</div></div>
+        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-google me-1"></i>DRIVE</span>${proje.drive_link ? `<a class="fw-bold small text-decoration-none" target="_blank" rel="noopener" href="${esc(proje.drive_link)}">${esc(proje.drive_link)}</a>` : '<span class="text-muted">-</span>'}</div></div>
 
         <div class="col-12 mt-2">
           <div class="card border-0 shadow-sm bg-light">
@@ -12637,7 +12655,10 @@ function saveProjeGelis() {
         satis_turu: document.getElementById("pjSatisTuru").value,
         nakliye: document.getElementById("pjNakliye").value,
         para_birimi: document.getElementById("pjPara").value,
-        kdv_orani: document.getElementById("pjKdv").value
+        kdv_orani: document.getElementById("pjKdv").value,
+        satis_temsilcisi: document.getElementById("pjSatisTemsilcisi")?.value.trim() || '',
+        aset_link: document.getElementById("pjAsetLink")?.value.trim() || '',
+        drive_link: document.getElementById("pjDriveLink")?.value.trim() || ''
     };
     if (isEdit) projeObj.id = duzenlenenProjeId;
 

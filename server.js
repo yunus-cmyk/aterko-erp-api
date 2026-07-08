@@ -387,11 +387,12 @@ app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
         if (check.rowCount > 0) return res.json({ ok: false, hata: "Bu Proje Kodu zaten sistemde kullanılıyor!" });
 
         const projeRes = await client.query(`
-            INSERT INTO projeler (proje_kodu, musteri_adi, proje_adi, sozlesme_tarihi, satis_turu, nakliye, para_birimi, kdv_orani)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+            INSERT INTO projeler (proje_kodu, musteri_adi, proje_adi, sozlesme_tarihi, satis_turu, nakliye, para_birimi, kdv_orani, satis_temsilcisi, aset_link, drive_link)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
         `, [
-            proje.proje_kodu, proje.musteri_adi, proje.proje_adi, proje.sozlesme_tarihi || null, 
-            proje.satis_turu, proje.nakliye, proje.para_birimi, parseInt(proje.kdv_orani)
+            proje.proje_kodu, proje.musteri_adi, proje.proje_adi, proje.sozlesme_tarihi || null,
+            proje.satis_turu, proje.nakliye, proje.para_birimi, parseInt(proje.kdv_orani),
+            (proje.satis_temsilcisi || '').trim() || null, (proje.aset_link || '').trim() || null, (proje.drive_link || '').trim() || null
         ]);
 
         const yeniProjeId = projeRes.rows[0].id;
@@ -513,10 +514,13 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
         // 1. Projeyi güncelle
         await client.query(`
             UPDATE projeler SET musteri_adi=$1, proje_adi=$2, sozlesme_tarihi=$3,
-                                satis_turu=$4, nakliye=$5, para_birimi=$6, kdv_orani=$7
-            WHERE id=$8
+                                satis_turu=$4, nakliye=$5, para_birimi=$6, kdv_orani=$7,
+                                satis_temsilcisi=$8, aset_link=$9, drive_link=$10
+            WHERE id=$11
         `, [proje.musteri_adi, proje.proje_adi, proje.sozlesme_tarihi || null,
-            proje.satis_turu, proje.nakliye, proje.para_birimi, parseInt(proje.kdv_orani), proje.id]);
+            proje.satis_turu, proje.nakliye, proje.para_birimi, parseInt(proje.kdv_orani),
+            (proje.satis_temsilcisi || '').trim() || null, (proje.aset_link || '').trim() || null, (proje.drive_link || '').trim() || null,
+            proje.id]);
 
         // 2. Mevcut teslimat ID'lerini al
         const mevcutRes = await client.query('SELECT id FROM proje_teslimatlari WHERE proje_id = $1', [proje.id]);
@@ -3868,7 +3872,8 @@ async function aktifIsEmri(teslimatId) {
 // başta Proje+Teslimat Bilgileri, sonda İş Emri Notu). Oluşturma anında dondurulur.
 async function isEmriPDF(teslimatId, kullaniciAd, emirNo, isEmriNotu) {
     const r = await pool.query(`
-        SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye
+        SELECT pt.*, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye,
+               p.satis_temsilcisi, p.aset_link, p.drive_link
         FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id = p.id
         WHERE pt.id = $1`, [teslimatId]);
     if (r.rowCount === 0) throw new Error('Teslimat bulunamadı.');
@@ -7411,6 +7416,11 @@ async function semaGuvence() {
             tarih TIMESTAMPTZ DEFAULT NOW()
         )`);
         await pool.query(`CREATE SEQUENCE IF NOT EXISTS is_emri_no_seq START 1001`);
+        // Proje bilgileri: satış temsilcisi + dış sistem linkleri (ASET/DRIVE) — iş emrine yansır
+        await pool.query(`ALTER TABLE projeler
+            ADD COLUMN IF NOT EXISTS satis_temsilcisi TEXT,
+            ADD COLUMN IF NOT EXISTS aset_link TEXT,
+            ADD COLUMN IF NOT EXISTS drive_link TEXT`).catch(() => {});
         // Bildirim olayları (panel > Bildirim Ayarları'ndan roller/kişiler yönetilir)
         await pool.query(`INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, ekstra_emailler, dinamik_alicilar, sira)
             SELECT 'IS_EMRI_YAYINLANDI','İş emri yayınlandı (şartname PDF ekli)','Proje',true,'{}','{}','{}',50
