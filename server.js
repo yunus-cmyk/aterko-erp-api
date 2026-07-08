@@ -3881,14 +3881,19 @@ async function isEmriPDF(teslimatId, kullaniciAd, emirNo, isEmriNotu) {
     const ft = ftR.rows;
     // Otomatik dolan (kaynak_kolon) alanların GÜNCEL değerleri cevaplara işlensin
     t.ek_veriler = { ...(t.ek_veriler || {}), ...(await otomatikAlanDegerleri(t)) };
+    // [03] Projedeki Teslimatlar bölümü için: projedeki tüm (iptal olmayan) binalar
+    const ptR = await pool.query(
+        `SELECT id, bina_adi, bina_turu, bina_tipi, kat_yuksekligi, kat_adedi,
+                konteyner_ebadi, konteyner_miktari, buyukluk_m2
+         FROM proje_teslimatlari WHERE proje_id=$1 AND COALESCE(durum,'') <> 'İPTAL' ORDER BY id`, [t.proje_id]);
     const { htmlToPDF } = require('./lib/pdf-generator');
     const { isEmriHTML } = require('./lib/teknik-sartname-dinamik');
     const fesc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const pdfBuffer = await htmlToPDF(isEmriHTML(t, ft, kullaniciAd, emirNo, isEmriNotu), {
+    const pdfBuffer = await htmlToPDF(isEmriHTML(t, ft, kullaniciAd, emirNo, isEmriNotu, ptR.rows), {
         margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' },
         footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
             `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
-            `<span>${fesc(emirNo)} · ${fesc(t.proje_kodu)} / ${fesc(t.musteri_adi)} - ${fesc(t.proje_adi)} [ ${fesc(t.bina_adi)} ]</span>` +
+            `<span>${fesc(emirNo)} // ${fesc(t.bina_adi)}${t.buyukluk_m2 ? ' - ' + fesc(t.buyukluk_m2) + ' m²' : ''}</span>` +
             `</div>`
     });
     return { pdfBuffer, t };
