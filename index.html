@@ -11407,9 +11407,9 @@ async function tiePdf(id, emirNo) {
         const token = localStorage.getItem('aterko_token');
         const resp = await fetch(`${API_URL}/is-emri-pdf/${id}`, { headers: { 'Authorization': 'Bearer ' + token } });
         if (!resp.ok) { let h = 'PDF alınamadı'; try { h = (await resp.json()).hata || h; } catch (e) {} throw new Error(h); }
-        const u = URL.createObjectURL(await resp.blob());
-        if (!window.open(u, '_blank')) { const a = document.createElement('a'); a.href = u; a.download = (emirNo || 'is-emri') + '.pdf'; a.click(); }
-        setTimeout(() => URL.revokeObjectURL(u), 60000);
+        // Zengin dosya adıyla indir (önizleme zaten modaldaki görüntüleyicide)
+        pdfIndirBlob(await resp.blob(), cdDosyaAdi(resp, (emirNo || 'is-emri') + '.pdf'));
+        showToast('PDF indirildi.', 'success');
     } catch (e) { showToast(e.message, 'error'); }
     finally { hideLoading(); }
 }
@@ -11731,6 +11731,25 @@ function buildFormField(alan, deger) {
     </div>`;
 }
 
+// Content-Disposition'dan dosya adını çöz (önce UTF-8 filename*, sonra filename)
+function cdDosyaAdi(resp, varsayilan) {
+    try {
+        const cd = resp.headers.get('Content-Disposition') || '';
+        let m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+        if (m) return decodeURIComponent(m[1]);
+        m = cd.match(/filename="([^"]+)"/i);
+        if (m) return m[1];
+    } catch (e) {}
+    return varsayilan;
+}
+// İsimli PDF indirme (blob'u sekmede açmak dosya adını korumaz — düzgün adla indirilir)
+function pdfIndirBlob(blob, ad) {
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u; a.download = ad; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 60000);
+}
+
 async function downloadTeknikSartnamePdf() {
     console.log('[PDF] downloadTeknikSartnamePdf çağrıldı, teslimat:', tsAktifTeslimat);
     if (!tsAktifTeslimat) { console.warn('[PDF] Aktif teslimat yok'); return; }
@@ -11752,15 +11771,9 @@ async function downloadTeknikSartnamePdf() {
         }
         const blob = await response.blob();
         console.log('[PDF] Blob alındı:', blob.size, 'byte, tip:', blob.type);
-        const blobUrl = URL.createObjectURL(blob);
-        const yeniSekme = window.open(blobUrl, '_blank');
-        if (!yeniSekme) {
-            showToast('Tarayıcı pop-up engelledi. PDF için pop-up izni verin.', 'error');
-            // Yine de indirme linki ver
-            const a = document.createElement('a');
-            a.href = blobUrl; a.download = 'teknik-sartname.pdf'; a.click();
-        }
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        // Zengin dosya adıyla indir ({kod} __ {proje} _ {müşteri} - {proje adı} [ {bina} ].pdf)
+        pdfIndirBlob(blob, cdDosyaAdi(response, 'teknik-sartname.pdf'));
+        showToast('PDF indirildi.', 'success');
     } catch (e) {
         console.error('[PDF] HATA:', e);
         showToast(e.message, 'error');

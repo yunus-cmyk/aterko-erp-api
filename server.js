@@ -3686,6 +3686,27 @@ const { renderToPDF } = require('./lib/pdf-generator');
 // Dinamik üretici lib/teknik-sartname-dinamik.js'e taşındı (test edilebilirlik için)
 const { teknikSartnameHTML, teslimatVeri, cevapBicim, motorIsle } = require('./lib/teknik-sartname-dinamik');
 
+// PDF dosya adı yardımcıları: yasak karakterleri temizle + Türkçe karakterli ad için
+// RFC5987 Content-Disposition (filename* UTF-8; ASCII fallback) — Node header'a ham
+// Türkçe karakter kabul etmez.
+const dosyaAdiTemizle = s => String(s || '').replace(/[\\/:*?"<>|\r\n]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 150);
+const cdHeader = ad => `inline; filename="${ad.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(ad)}`;
+
+// Teknik şartname kodu — iş emri gibi proje bazlı iki basamak: {proje_kodu}-TŞ-01, -02...
+// İlk PDF üretiminde atanır ve teslimatta SABİT kalır.
+async function sartnameKoduAta(t) {
+    if (t.sartname_kodu) return t.sartname_kodu;
+    const mx = await pool.query(
+        `SELECT COALESCE(MAX(NULLIF(regexp_replace(sartname_kodu, '^.*-TŞ-', ''), '')::int), 0) AS mx
+         FROM proje_teslimatlari WHERE proje_id=$1 AND sartname_kodu LIKE '%-TŞ-%'`, [t.proje_id]);
+    const kod = `${t.proje_kodu}-TŞ-${String(Number(mx.rows[0].mx) + 1).padStart(2, '0')}`;
+    // Yarışta benzersizlik: yalnız hâlâ boşsa yaz; doluysa mevcut değeri kullan
+    const u = await pool.query("UPDATE proje_teslimatlari SET sartname_kodu=$1 WHERE id=$2 AND sartname_kodu IS NULL RETURNING sartname_kodu", [kod, t.id]);
+    t.sartname_kodu = u.rowCount ? u.rows[0].sartname_kodu
+        : (await pool.query("SELECT sartname_kodu FROM proje_teslimatlari WHERE id=$1", [t.id])).rows[0].sartname_kodu;
+    return t.sartname_kodu;
+}
+
 // Teslimatın teknik şartname PDF'ini üretir (dinamik şablon → Google fallback → form).
 // Hem GET /teknik-sartname-pdf hem İş Emri snapshot'ı (is-emri-olustur) bu tek kaynağı kullanır.
 async function teslimatSartnamePDF(teslimatId, kullaniciAd) {
@@ -3696,6 +3717,7 @@ async function teslimatSartnamePDF(teslimatId, kullaniciAd) {
     `, [teslimatId]);
     if (r.rowCount === 0) throw new Error('Teslimat bulunamadı.');
     const t = r.rows[0];
+    await sartnameKoduAta(t);   // {proje_kodu}-TŞ-NN — ilk üretimde atanır, sabit kalır
 
         // Bina türünün özel (zengin, EĞER/HESAP/HARİCİ'li) şablonu varsa onu kullan — birebir doküman.
         const SABLON_HARITASI = { 'Prefabrik': 'prefabrik' };
@@ -3709,7 +3731,7 @@ async function teslimatSartnamePDF(teslimatId, kullaniciAd) {
             margin: { top: '20mm', bottom: '20mm', left: '20mm', right: '20mm' },
             footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
                 `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
-                `<span>${fesc(t.proje_kodu)} / ${fesc(t.musteri_adi)} - ${fesc(t.proje_adi)} [ ${fesc(t.bina_adi)} ]</span>` +
+                `<span>${fesc(t.sartname_kodu)} · ${fesc(t.proje_kodu)} / ${fesc(t.musteri_adi)} - ${fesc(t.proje_adi)} [ ${fesc(t.bina_adi)} ]</span>` +
                 `</div>`
         };
 
@@ -3761,9 +3783,10 @@ async function teslimatSartnamePDF(teslimatId, kullaniciAd) {
 app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, next) => {
     try {
         const { pdfBuffer, t } = await teslimatSartnamePDF(req.params.teslimatId, req.user.adSoyad);
-        const dosyaAdi = `${t.proje_kodu}-${t.bina_adi}-Teknik-Sartname.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
+        // Zengin dosya adı: {kod} __ {proje_kodu} _ {müşteri} - {proje adı} [ {bina adı} ].pdf
+        const dosyaAdi = dosyaAdiTemizle(`${t.sartname_kodu} __ ${t.proje_kodu} _ ${t.musteri_adi} - ${t.proje_adi} [ ${t.bina_adi} ]`) + '.pdf';
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${dosyaAdi}"`);
+        res.setHeader('Content-Disposition', cdHeader(dosyaAdi));
         res.send(pdfBuffer);
     } catch (error) {
         console.error('🔥 Teknik şartname PDF Hatası:', error);
@@ -4021,7 +4044,7 @@ app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
                 { label: 'Yayınlayan', value: req.user.adSoyad }
             ],
             ekAlicilar: isEmriAliciListe(ie),
-            ekler: [{ filename: `${ie.emir_no}-Is-Emri.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_'), content: ie.pdf }]
+            ekler: [{ filename: dosyaAdiTemizle(`${ie.emir_no} __ ${s.proje_kodu || ''} _ ${s.musteri_adi || ''} - ${s.proje_adi || ''} [ ${s.bina_adi || ''} ]`) + '.pdf', content: ie.pdf }]
         });
         res.json({ ok: true, mesaj: `${ie.emir_no} yayınlandı — ekibe bildirim gönderildi. Teslimat PROJE aşamasına geçti.` });
     } catch (e) { next(e); }
@@ -4093,11 +4116,12 @@ app.post('/api/is-emri-not', yetkiKontrol, async (req, res, next) => {
 // Dondurulmuş iş emri PDF'i (oluşturma anındaki hali — şablon değişse de sabit)
 app.get('/api/is-emri-pdf/:id', yetkiKontrol, async (req, res, next) => {
     try {
-        const r = await pool.query("SELECT emir_no, pdf FROM is_emirleri WHERE id=$1", [req.params.id]);
+        const r = await pool.query("SELECT emir_no, pdf, form_snapshot FROM is_emirleri WHERE id=$1", [req.params.id]);
         if (!r.rowCount || !r.rows[0].pdf) return res.status(404).json({ ok: false, hata: 'İş emri PDF bulunamadı.' });
-        const ad = `${r.rows[0].emir_no}-Is-Emri.pdf`.replace(/[^a-zA-Z0-9\-_.]/g, '_');
+        const s = r.rows[0].form_snapshot || {};
+        const ad = dosyaAdiTemizle(`${r.rows[0].emir_no} __ ${s.proje_kodu || ''} _ ${s.musteri_adi || ''} - ${s.proje_adi || ''} [ ${s.bina_adi || ''} ]`) + '.pdf';
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${ad}"`);
+        res.setHeader('Content-Disposition', cdHeader(ad));
         res.send(r.rows[0].pdf);
     } catch (e) { next(e); }
 });
@@ -7465,6 +7489,8 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS satis_temsilcisi TEXT,
             ADD COLUMN IF NOT EXISTS aset_link TEXT,
             ADD COLUMN IF NOT EXISTS drive_link TEXT`).catch(() => {});
+        // Teknik şartname kodu ({proje_kodu}-TŞ-NN) — ilk PDF üretiminde atanır, sonra sabit
+        await pool.query(`ALTER TABLE proje_teslimatlari ADD COLUMN IF NOT EXISTS sartname_kodu TEXT`).catch(() => {});
         // Bildirim olayları (panel > Bildirim Ayarları'ndan roller/kişiler yönetilir)
         await pool.query(`INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, ekstra_emailler, dinamik_alicilar, sira)
             SELECT 'IS_EMRI_YAYINLANDI','İş emri yayınlandı (şartname PDF ekli)','Proje',true,'{}','{}','{}',50
