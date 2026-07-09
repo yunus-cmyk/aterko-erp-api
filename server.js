@@ -425,6 +425,14 @@ app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
 });
 
 // YENİ: Projeleri, Teslimat Sayılarını, Toplam Tutarları ve Hesaplanmış Durumu Birlikte Çek
+// Projeler modülünde FİYAT görme yetkisi: YAZMA veya TAM gerekir.
+// OKUMA seviyesindeki kullanıcıya tutarlar SUNUCUDA maskelenir (ekrana hiç inmez).
+async function projeFiyatGorebilir(req) {
+    if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return true;
+    const izinler = await getKullaniciIzinleri(req.user.rol);
+    return ['YAZMA', 'TAM'].includes(izinler['projeler']);
+}
+
 app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
     try {
         // Durum öncelik sıralaması (en ileri aşama → 8)
@@ -483,7 +491,10 @@ app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
             ...r,
             durum: r.hesaplanmis_durum || r.durum || 'BEKLEMEDE'
         }));
-        res.json({ ok: true, data });
+        // FİYAT MASKESİ: projeler YAZMA yetkisi olmayana tutarlar sunucudan hiç inmez
+        const fiyatGorebilir = await projeFiyatGorebilir(req);
+        if (!fiyatGorebilir) data.forEach(r => { r.kdvsiz_toplam = null; r.kdvli_toplam = null; });
+        res.json({ ok: true, data, fiyat_gizli: !fiyatGorebilir });
     } catch (error) { next(error); }
 });
 
@@ -498,8 +509,11 @@ app.get('/api/proje-detay/:id', yetkiKontrol, async (req, res, next) => {
         
         // Projeye Bağlı Teslimatları (Binaları) Çek
         const teslimatRes = await pool.query("SELECT * FROM proje_teslimatlari WHERE proje_id = $1 ORDER BY id ASC", [id]);
-        
-        res.json({ ok: true, proje: projeRes.rows[0], teslimatlar: teslimatRes.rows });
+
+        // FİYAT MASKESİ: projeler YAZMA yetkisi olmayana teslimat tutarları sunucudan hiç inmez
+        const fiyatGorebilir = await projeFiyatGorebilir(req);
+        if (!fiyatGorebilir) teslimatRes.rows.forEach(t => { t.kdvsiz_tutar = null; });
+        res.json({ ok: true, proje: projeRes.rows[0], teslimatlar: teslimatRes.rows, fiyat_gizli: !fiyatGorebilir });
     } catch (error) { next(error); }
 });
 

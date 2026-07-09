@@ -10958,11 +10958,21 @@ function getDurumBadge(durum) {
     return `<span class="badge-status ${cls}">${esc(durum || 'BEKLEMEDE')}</span>`;
 }
 
+// Fiyat maskesi: projeler modülünde YAZMA yetkisi olmayan kullanıcı tutarları GÖREMEZ
+// (sunucu zaten null gönderir — bu yalnız görsel katman)
+window.projeFiyatGizli = false;
+function fiyatHucre(html) {
+    return window.projeFiyatGizli
+        ? '<i class="bi bi-lock-fill text-muted" title="Fiyat bilgisi yetkiniz dışında"></i>'
+        : html;
+}
+
 function fetchProjeler() {
     showLoading();
     secureFetch('/projeler?_=' + Date.now()).then(res => {
         hideLoading();
         if(res.ok) {
+            window.projeFiyatGizli = !!res.fiyat_gizli;
             projelerGlobal = res.data;
             renderProjeTable();
         } else { showToast(res.hata, "error"); }
@@ -11069,7 +11079,7 @@ function renderProjeTable() {
             <td class="text-center"><span class="badge bg-secondary-subtle text-secondary-emphasis border">${parseInt(p.teslimat_sayisi) || 0}</span></td>
             <td class="text-center">${asetLink}</td>
             <td class="text-center">${dosyaLink}</td>
-            <td class="text-end fw-bold">${bedel > 0 ? formatTR(bedel) + ' ' + esc(p.para_birimi || 'TL') : '-'}</td>
+            <td class="text-end fw-bold">${fiyatHucre(bedel > 0 ? formatTR(bedel) + ' ' + esc(p.para_birimi || 'TL') : '-')}</td>
             <td class="text-center">
                 <button class="btn btn-sm btn-outline-dark py-0" onclick="event.stopPropagation(); openProjeDetay(${p.id})" title="Detaylı görünüm"><i class="bi bi-arrows-fullscreen"></i></button>
             </td>
@@ -11148,6 +11158,7 @@ async function toggleProjeAccordion(projeId) {
         icerik.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary"></div> <span class="text-muted ms-2">Teslimatlar yükleniyor...</span></div>';
         const res = await secureFetch(`/proje-detay/${projeId}`);
         if (res.ok) {
+            window.projeFiyatGizli = !!res.fiyat_gizli;
             renderAccordionTeslimatlar(icerik, res.proje, res.teslimatlar);
             icerik.dataset.yuklendi = '1';
         } else {
@@ -11190,7 +11201,7 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
             <td class="text-center">${t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '-'}</td>
             <td class="text-muted small">${esc(t.bina_yeri || '-')}</td>
             <td class="text-center small">${formatTarihTR(t.sevkiyat_baslangici) || '-'}</td>
-            <td class="text-end fw-bold">${formatTR(tKdvli)} ${esc(proje.para_birimi || 'TL')}</td>
+            <td class="text-end fw-bold">${fiyatHucre(formatTR(tKdvli) + ' ' + esc(proje.para_birimi || 'TL'))}</td>
             <td class="text-center">${getDurumBadge(t.durum)}</td>
             <td class="text-center">
                 <div class="btn-group btn-group-sm">
@@ -12211,6 +12222,7 @@ function openProjeDetay(projeId) {
     secureFetch(`/proje-detay/${projeId}`).then(res => {
         hideLoading();
         if(res.ok) {
+            window.projeFiyatGizli = !!res.fiyat_gizli;
             renderProjeDetay(res.proje, res.teslimatlar);
             const myModal = new bootstrap.Modal(document.getElementById('modalProjeDetay'));
             myModal.show();
@@ -12476,9 +12488,9 @@ function renderProjeDetay(proje, teslimatlar) {
           <div class="card border-0 shadow-sm bg-light">
             <div class="card-body py-3">
               <div class="row text-center">
-                <div class="col-md-4"><span class="d-block small text-muted fw-bold">KDV'siz Toplam</span><span class="fw-bold fs-5 text-dark">${formatTR(toplamKdvsiz)} ${esc(proje.para_birimi || 'TL')}</span></div>
-                <div class="col-md-4 border-start border-end"><span class="d-block small text-muted fw-bold">KDV (%${proje.kdv_orani})</span><span class="fw-bold fs-5 text-secondary">${formatTR(toplamKdv)} ${esc(proje.para_birimi || 'TL')}</span></div>
-                <div class="col-md-4"><span class="d-block small text-muted fw-bold">KDV'li Toplam Bedel</span><span class="fw-bold fs-5 text-primary">${formatTR(toplamKdvli)} ${esc(proje.para_birimi || 'TL')}</span></div>
+                <div class="col-md-4"><span class="d-block small text-muted fw-bold">KDV'siz Toplam</span><span class="fw-bold fs-5 text-dark">${fiyatHucre(formatTR(toplamKdvsiz) + ' ' + esc(proje.para_birimi || 'TL'))}</span></div>
+                <div class="col-md-4 border-start border-end"><span class="d-block small text-muted fw-bold">KDV (%${proje.kdv_orani})</span><span class="fw-bold fs-5 text-secondary">${fiyatHucre(formatTR(toplamKdv) + ' ' + esc(proje.para_birimi || 'TL'))}</span></div>
+                <div class="col-md-4"><span class="d-block small text-muted fw-bold">KDV'li Toplam Bedel</span><span class="fw-bold fs-5 text-primary">${fiyatHucre(formatTR(toplamKdvli) + ' ' + esc(proje.para_birimi || 'TL'))}</span></div>
               </div>
             </div>
           </div>
@@ -12584,11 +12596,11 @@ function renderProjeDetay(proje, teslimatlar) {
                   <div class="col-12"><h6 class="text-muted fw-bold small text-uppercase border-bottom pb-1 mb-2 mt-2"><i class="bi bi-cash-coin me-1"></i>Mali Bilgiler</h6></div>
                   <div class="col-md-6"><div class="p-3 border rounded bg-light h-100">
                     <span class="d-block small text-muted fw-bold">KDV'siz Sözleşme Tutarı</span>
-                    <span class="fw-bold text-dark fs-5">${formatTR(tKdvsiz)} ${esc(proje.para_birimi || 'TL')}</span>
+                    <span class="fw-bold text-dark fs-5">${fiyatHucre(formatTR(tKdvsiz) + ' ' + esc(proje.para_birimi || 'TL'))}</span>
                   </div></div>
                   <div class="col-md-6"><div class="p-3 border rounded bg-light h-100">
                     <span class="d-block small text-muted fw-bold">KDV'li Tutar (%${proje.kdv_orani})</span>
-                    <span class="fw-bold text-primary fs-5">${formatTR(tKdvli)} ${esc(proje.para_birimi || 'TL')}</span>
+                    <span class="fw-bold text-primary fs-5">${fiyatHucre(formatTR(tKdvli) + ' ' + esc(proje.para_birimi || 'TL'))}</span>
                   </div></div>
                 </div>
 
