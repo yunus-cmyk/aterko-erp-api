@@ -3706,6 +3706,9 @@ window.addEventListener("DOMContentLoaded", function() {
         fetchStokKartlariForDropdown();
         // İzin haritasını yükle ve uygula (navbar filtreleme dahil)
         izinHaritasiYukle().then(() => {
+            // Adres çubuğunda paylaşılan bir rota varsa (#satinalma/teklif, #proje/452...)
+            // önce onu uygula — doğrudan o sayfaya/detaya açılır
+            if (location.hash && rotaUygula()) return;
             // İzinler geldi, hangi sekmeye gidilecek?
             // Anasayfa'ya gitmeyi dene; izni yoksa ilk erişilebilir sekmeye gönder
             if (sekmeGorunur('anasayfa')) {
@@ -5639,6 +5642,43 @@ async function gorevPazartesiYukle() {
     `;
 }
 
+// ============================================================================
+// ROTA (adres çubuğu senkronu) — her sayfa/sekme/detay için paylaşılabilir link:
+//   #anasayfa, #projeler, #satinalma/teklif, #gorevler, #proje/452, #talep/311,
+//   #siparis/271 ... Tarayıcı geri/ileri tuşları da çalışır (hashchange).
+// ============================================================================
+let _rotaUygulaniyor = false;   // paylaşılan link uygulanırken setTab hash'i ezmesin
+let _rotaSessiz = 0;            // programatik hash yazımı hashchange'i tetiklemesin
+function rotaYaz(hash) {
+    if (_rotaUygulaniyor) return;
+    if (location.hash === '#' + hash) return;
+    _rotaSessiz = Date.now();
+    location.hash = hash;
+}
+function rotaUygula() {
+    const h = decodeURIComponent((location.hash || '').replace(/^#/, ''));
+    if (!h) return false;
+    _rotaUygulaniyor = true;
+    try {
+        const [kok, p1] = h.split('/');
+        // Detay linkleri: ilgili sekme + detay modalı
+        if (kok === 'proje' && p1) { setTab('projeler'); setTimeout(() => openProjeDetay(parseInt(p1)), 350); return true; }
+        if (kok === 'talep' && p1) { setTab('satinalma'); setTimeout(() => { switchSatinalmaSubTab('talepler'); setTimeout(() => openTalepDetayModal(parseInt(p1)), 350); }, 250); return true; }
+        if (kok === 'siparis' && p1) { setTab('satinalma'); setTimeout(() => { switchSatinalmaSubTab('siparisler'); setTimeout(() => openSiparisDetayModal(parseInt(p1)), 350); }, 250); return true; }
+        // Satınalma alt sekmeleri
+        if (kok === 'satinalma') { setTab('satinalma'); if (p1) setTimeout(() => switchSatinalmaSubTab(p1), 200); return true; }
+        // Düz sekmeler
+        const sekmeler = ['anasayfa','projeler','stok','urun-listesi','uretim','sevkiyat','montaj','ozet','gorevler','audit','formtanim','tssablon','kullanicilar','roller','bildirimayar'];
+        if (sekmeler.includes(kok)) { setTab(kok); return true; }
+        return false;
+    } finally { setTimeout(() => { _rotaUygulaniyor = false; }, 800); }
+}
+window.addEventListener('hashchange', () => {
+    if (_rotaUygulaniyor) return;
+    if (Date.now() - _rotaSessiz < 300) return;   // kendi yazdığımız hash — yeniden yükleme yok
+    rotaUygula();                                  // geri/ileri tuşu veya elle girilen adres
+});
+
 function setTab(tab) {
     // 0. İzin kontrolü — yoksa anasayfa'ya yönlendir
     if (typeof sekmeGuard === 'function' && !sekmeGuard(tab)) {
@@ -5736,6 +5776,9 @@ function setTab(tab) {
         document.getElementById("satinalmaArea").classList.remove("d-none");
         switchSatinalmaSubTab('talepler');
     }
+
+    // Adres çubuğu senkronu (satınalma alt sekmesi kendi rotasını yazar)
+    if (tab !== 'satinalma') rotaYaz(tab);
 }
 
 // --- ÜRÜN LİSTESİ FONKSİYONLARI ---
@@ -7557,6 +7600,10 @@ document.addEventListener('hidden.bs.modal', e => {
         window.pdGeriDonId = null;
         setTimeout(() => openProjeDetay(pid), 150);
     }
+    // Detay modalı kapanınca adres çubuğunu üst sekme rotasına döndür
+    if (id === 'modalProjeDetay' && /^#proje\//.test(location.hash)) rotaYaz('projeler');
+    if (id === 'modalTalepDetay' && /^#talep\//.test(location.hash)) rotaYaz('satinalma/talepler');
+    if (id === 'modalSiparisDetay' && /^#siparis\//.test(location.hash)) rotaYaz('satinalma/siparisler');
 });
 
 // İzin dışı bir bölüm/işlem denendiğinde: kırmızı balon(lar) YERİNE görünen alanın
@@ -8372,6 +8419,7 @@ async function ntBekleyenDosyalariYukle(talepId) {
 async function openTalepDetayModal(talepId, talepNo) {
     aktifIncelenenTalepId = talepId;
     window.aktifIncelenenTalepNo = talepNo || '';
+    rotaYaz('talep/' + talepId);   // paylaşılabilir detay linki
     document.getElementById("dtModalTitle").innerText = `Talep İnceleme ve Onay Ekranı: ${talepNo || ('#' + talepId)}`;
     document.getElementById("chkAllDetail").checked = false;
 
@@ -9031,6 +9079,8 @@ function switchSatinalmaSubTab(target) {
     } else if (target === 'arsiv') {
         fetchArsiv();
     }
+
+    rotaYaz('satinalma/' + target);   // adres çubuğu: #satinalma/teklif gibi
 }
 
 // Teklif Havuzu — TEKLİF İSTENDİ durumundaki kalemler
@@ -9718,6 +9768,7 @@ async function submitTeklifIste() {
 
 // Sipariş Detay Modalı — salt-okunur özet
 async function openSiparisDetayModal(siparisId, siparisNo) {
+    rotaYaz('siparis/' + siparisId);   // paylaşılabilir detay linki
     if (!siparisNo) {
         const c = (window.siparislerGlobal || []).find(x => x.id === siparisId) || (window.siparislerCache || []).find(x => x.id === siparisId);
         siparisNo = c ? c.siparis_no : '';
@@ -12308,6 +12359,7 @@ async function pdOnayGeriAl(projeId) {
 // 6. Proje Detayını Supabase'den Çeker ve Modalı Açar
 function openProjeDetay(projeId) {
     pdAktifProjeId = projeId;
+    rotaYaz('proje/' + projeId);   // paylaşılabilir detay linki
     showLoading();
     secureFetch(`/proje-detay/${projeId}`).then(res => {
         hideLoading();
