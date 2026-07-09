@@ -661,6 +661,9 @@
                 <button class="btn btn-success btn-sm fw-bold shadow-sm px-3" id="btnTeklifSecimSiparis" onclick="siparisOlusturTeklifSecili()" disabled>
                     <i class="bi bi-cart-plus me-1"></i>Seçilenlerle Sipariş Oluştur (<span id="teklifSecimSayi">0</span>)
                 </button>
+                <button class="btn btn-outline-secondary btn-sm fw-bold shadow-sm px-3" id="btnTeklifSecimGeri" onclick="teklifGeriAlSecili()" disabled title="Seçili kalemleri Onaylandı'ya geri çek — Talep Havuzu'na dönerler">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Geri Al (<span id="teklifSecimSayi3">0</span>)
+                </button>
             </div>
         </div>
         <div id="teklifHavuzuBody"></div>
@@ -8022,6 +8025,10 @@ function openYeniTalepModal(duzenlemeData) {
     document.getElementById("ntPersonel").readOnly = isEdit; // Düzenlemede personel sabit
     document.getElementById("ntProje").value = t.proje_id || '';
     document.getElementById("ntTarih").value = isoTarih(t.istenen_tarih);
+    // İstenen tarih en erken 5 gün sonrası olabilir — önceki günler seçime kapalı
+    const minT = new Date(); minT.setDate(minT.getDate() + 5);
+    const p2 = n => String(n).padStart(2, '0');
+    document.getElementById("ntTarih").min = `${minT.getFullYear()}-${p2(minT.getMonth() + 1)}-${p2(minT.getDate())}`;
     // Teslim Yeri: depo dropdown'undan seç
     ntYerDepoDoldur();
     document.getElementById("ntYer").value = t.teslim_yeri || '';
@@ -8730,6 +8737,7 @@ function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
                 birim: k.birim,
                 birim_fiyat: parseFloat(k.birim_fiyat) || 0,
                 aciklama: k.aciklama || '',
+                stok_kart_id: k.stok_kart_id || null,
                 talep_id: k.talep_id || null,
                 talep_no: k.talep_no || ''
             });
@@ -8754,6 +8762,7 @@ function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
             secilenKalemler.push({
                 id: id, ad: urunText, kod: kodText, miktar: miktar, birim: birim, birim_fiyat: 0,
                 aciklama: (kaynakKalem && kaynakKalem.aciklama) || '',
+                stok_kart_id: (kaynakKalem && kaynakKalem.stok_kart_id) || null,
                 talep_id: crossTalepKaynakId, talep_no: kaynakTalepNo
             });
         });
@@ -8825,11 +8834,12 @@ function renderSiparisFormLines(kalemler) {
         const talepNoCell = k.talep_no ? `<span class="badge bg-light text-dark border">${esc(k.talep_no)}</span>` : '<span class="text-muted small">-</span>';
         const silBtn = k.cross_eklenen ? `<button class="btn btn-sm btn-outline-danger ms-1 py-0" title="Kaldır" onclick="crossKalemKaldir(this)"><i class="bi bi-x"></i></button>` : '';
         tbody.innerHTML += `
-            <tr class="so-line" data-id="${k.id}" data-siparis-kalem-id="${k.siparis_kalem_id || ''}" data-talep-id="${k.talep_id || ''}">
+            <tr class="so-line" data-id="${k.id}" data-siparis-kalem-id="${k.siparis_kalem_id || ''}" data-talep-id="${k.talep_id || ''}" data-stok-kart="${k.stok_kart_id || ''}">
                 <td>
                     <span class="fw-bold text-dark">${esc(k.ad)}</span>
                     <span class="text-muted small d-block">${esc(k.kod)}</span>
                     ${k.aciklama ? `<span class="small d-block fst-italic" style="color:#6c757d;"><i class="bi bi-chat-left-text me-1"></i>${esc(k.aciklama)}</span>` : ''}
+                    <span class="so-son-alis small d-block mt-1" style="color:#0d6efd;"></span>
                 </td>
                 <td class="text-center" width="120">${talepNoCell}${silBtn}</td>
                 <td class="text-center text-secondary fw-bold" width="140">${formatTR(k.miktar)} ${k.birim}</td>
@@ -8853,6 +8863,25 @@ function renderSiparisFormLines(kalemler) {
         document.querySelectorAll(".currency-lbl").forEach(el => el.innerText = pBirimi);
         document.querySelectorAll(".so-line").forEach(tr => calculateSiparisRowTotal(tr.querySelector(".so-f")));
     };
+
+    sonAlisBilgileriYukle();   // her ürünün son alım fiyatı/tedarikçi/tarihi (referans bilgi)
+}
+
+// Sipariş oluşturma ekranına özgü: her stok kartının SON alım bilgisi ürün adının altında
+// (detaylı geçmiş için grafik ikonu duruyor; bu, fiyat girerken hızlı referans)
+async function sonAlisBilgileriYukle() {
+    const ids = [...new Set([...document.querySelectorAll('tr.so-line')].map(tr => tr.dataset.stokKart).filter(Boolean))];
+    if (!ids.length) return;
+    const r = await secureFetch('/son-alis-fiyatlari?ids=' + ids.join(',')).catch(() => null);
+    if (!r || !r.ok) return;
+    const map = {};
+    (r.data || []).forEach(x => map[String(x.stok_kart_id)] = x);
+    document.querySelectorAll('tr.so-line').forEach(tr => {
+        const x = map[tr.dataset.stokKart];
+        const el = tr.querySelector('.so-son-alis');
+        if (!el || !x) return;
+        el.innerHTML = `<i class="bi bi-clock-history me-1"></i>Son alım: <b>${formatTR(parseFloat(x.birim_fiyat))} ${esc(x.para_birimi || 'TL')}</b> — ${esc(x.tedarikci || '-')} · ${formatTarihTR(x.siparis_tarihi)}`;
+    });
 }
 
 // 3. Anlık Satır Toplamı Hesaplama
@@ -8902,9 +8931,11 @@ function submitPurchaseOrder() {
     if (isEdit) payload.id = duzenlenenSiparisId;
 
     const endpoint = isEdit ? '/siparis-guncelle' : '/siparis-kaydet';
-    showLoading();
+    // Çift-tıklama koruması + görünür "işleniyor" örtüsü (sipariş onayıyla aynı desen)
+    if (_saAksiyonKilit) return;
+    saAksiyonBaslat(isEdit ? 'Sipariş güncelleniyor…' : 'Sipariş oluşturuluyor…');
     secureFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) }).then(res => {
-        hideLoading();
+        saAksiyonBitir();
         if(res.ok) {
             showToast(res.mesaj || (isEdit ? 'Sipariş güncellendi.' : 'Sipariş oluşturuldu.'), "success");
             const dId = duzenlenenSiparisId;
@@ -8914,7 +8945,7 @@ function submitPurchaseOrder() {
             if (isEdit && dId) satinalmaIslemSonrasi('siparis', dId);
             else satinalmaIslemSonrasi();
         } else { showToast(res.hata, "error"); }
-    });
+    }).catch(() => { saAksiyonBitir(); showToast('Sipariş kaydedilemedi — bağlantıyı kontrol edin.', 'error'); });
 }
 
 // ============================================================================
@@ -9190,6 +9221,7 @@ function teklifKalemToSiparis(k) {
         birim: k.stok_birim || k.ozel_urun_birim || 'ADET',
         birim_fiyat: 0,
         aciklama: k.aciklama || '',
+        stok_kart_id: k.stok_kart_id || null,
         talep_id: k.talep_id,
         talep_no: k.talep_no
     };
@@ -9205,8 +9237,24 @@ function siparisOlusturTekliften(kalemId) {
 // Seçim kutusu değiştikçe sayaçlar + her iki toplu buton durumu güncelle
 function teklifSecimGuncelle() {
     const n = document.querySelectorAll('.teklif-chk:checked').length;
-    ['teklifSecimSayi', 'teklifSecimSayi2'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = n; });
-    ['btnTeklifSecimSiparis', 'btnTeklifSecimTeklif'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = n === 0; });
+    ['teklifSecimSayi', 'teklifSecimSayi2', 'teklifSecimSayi3'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = n; });
+    ['btnTeklifSecimSiparis', 'btnTeklifSecimTeklif', 'btnTeklifSecimGeri'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = n === 0; });
+}
+
+// Seçili kalemleri toplu olarak ONAYLANDI'ya geri çek (tekli geri almanın çoklusu)
+async function teklifGeriAlSecili() {
+    if (_saAksiyonKilit) return;
+    const ids = [...document.querySelectorAll('.teklif-chk:checked')].map(cb => parseInt(cb.value));
+    if (!ids.length) return showToast('En az bir kalem seçin.', 'error');
+    if (!confirm(`${ids.length} kalem ONAYLANDI durumuna geri çekilecek — Teklif Havuzu'ndan çıkıp Talep Havuzu'na dönerler. (Teklif kayıtları korunur.)\n\nDevam edilsin mi?`)) return;
+    saAksiyonBaslat('Kalemler geri çekiliyor…');
+    const r = await secureFetch('/talep-durum-guncelle', {
+        method: 'POST',
+        body: JSON.stringify({ kalem_idler: ids, yeni_durum: 'ONAYLANDI' })
+    }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(`${ids.length} kalem Onaylandı durumuna geri çekildi.`, 'success'); fetchTeklifHavuzu(); }
+    else showToast((r && r.hata) || 'İşlem başarısız.', 'error');
 }
 
 // Tümünü seç/kaldır (kalem + grup checkbox'ları)
@@ -9220,8 +9268,16 @@ function siparisOlusturTeklifSecili() {
     const ids = [...document.querySelectorAll('.teklif-chk:checked')].map(cb => cb.value);
     if (ids.length === 0) return showToast('En az bir kalem seçin.', 'error');
     const cache = window.teklifHavuzuCache || [];
-    const kalemler = ids.map(id => cache.find(x => (x.kalem_id || x.id) == id)).filter(Boolean).map(teklifKalemToSiparis);
-    if (kalemler.length === 0) return showToast('Seçili kalemler bulunamadı, listeyi yenileyin.', 'error');
+    const secili = ids.map(id => cache.find(x => (x.kalem_id || x.id) == id)).filter(Boolean);
+    if (secili.length === 0) return showToast('Seçili kalemler bulunamadı, listeyi yenileyin.', 'error');
+    // ERKEN kontrol: farklı projelerin kalemleri aynı siparişte olamaz — modal hiç açılmasın
+    // (Teklif İste'de bu kısıt YOKTUR; farklı projeler için birlikte fiyat istenebilir.)
+    const projeler = [...new Set(secili.map(k => String(k.proje_id ?? k.proje_kodu ?? '')))];
+    if (projeler.length > 1) {
+        const adlar = [...new Set(secili.map(k => k.proje_kodu || 'GENEL'))].join(', ');
+        return showToast(`Farklı projelere ait kalemler AYNI siparişte olamaz (seçili projeler: ${adlar}). Lütfen tek projenin kalemlerini seçin.`, 'error');
+    }
+    const kalemler = secili.map(teklifKalemToSiparis);
     openSiparisOlusturModal(null, kalemler);
 }
 

@@ -2095,6 +2095,28 @@ app.get('/api/siparis-listesi', yetkiKontrol, async (req, res, next) => {
 });
 
 // YENİ: Teslim Alınacak Siparişin İçindeki Ürünleri ve İlişkili Stok Bilgilerini Getir
+// Sipariş oluşturma ekranı için: her stok kartının SON alım fiyatı + tedarikçisi + tarihi
+// (ürün adının altında bilgi olarak gösterilir — fiyat girerken referans)
+app.get('/api/son-alis-fiyatlari', yetkiKontrol, async (req, res, next) => {
+    try {
+        const ids = String(req.query.ids || '').split(',').map(x => parseInt(x)).filter(n => Number.isInteger(n) && n > 0);
+        if (!ids.length) return res.json({ ok: true, data: [] });
+        const r = await pool.query(`
+            SELECT DISTINCT ON (tu.stok_kart_id)
+                   tu.stok_kart_id, sk.birim_fiyat, s.para_birimi, s.siparis_tarihi,
+                   ted.firma_adi AS tedarikci
+            FROM siparis_kalemleri sk
+            JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            JOIN satinalma_siparisleri s ON sk.siparis_id = s.id
+            LEFT JOIN tedarikciler ted ON s.tedarikci_id = ted.id
+            WHERE tu.stok_kart_id = ANY($1) AND COALESCE(sk.birim_fiyat, 0) > 0
+              AND COALESCE(s.durum, '') <> 'İPTAL'
+            ORDER BY tu.stok_kart_id, s.siparis_tarihi DESC NULLS LAST, sk.id DESC
+        `, [ids]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
 app.get('/api/siparis-detay/:siparisId', yetkiKontrol, async (req, res, next) => {
     try {
         const { siparisId } = req.params;
@@ -2164,6 +2186,7 @@ app.get('/api/teklif-havuzu', yetkiKontrol, async (req, res, next) => {
             SELECT tu.id as kalem_id, tu.id as id, tu.miktar, tu.aciklama, tu.durum, tu.stok_kart_id,
                    tu.teklif_notlari,
                    t.id as talep_id, t.talep_no, t.istenen_tarih, t.kayit_tarihi,
+                   t.proje_id,
                    COALESCE(p.proje_kodu,'GENEL') as proje_kodu,
                    COALESCE(p.musteri_adi,'') as musteri_adi,
                    COALESCE(p.proje_adi,'Genel') as proje_adi,
@@ -5239,7 +5262,7 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/(talep-kaydet|talep-guncelle|talep-onayla|talep-reddet|talep-iptal|talep-arsivle)/, modul: 'satinalma.talepler', seviye: 'TAM' },
 
     // Satınalma — Siparişler
-    { pattern: /^\/api\/(siparis-listesi|siparis-detay|siparis-pdf|siparis-dosya)/, method: 'GET', modul: 'satinalma.siparisler', seviye: 'OKUMA' },
+    { pattern: /^\/api\/(siparis-listesi|siparis-detay|siparis-pdf|siparis-dosya|son-alis-fiyatlari)/, method: 'GET', modul: 'satinalma.siparisler', seviye: 'OKUMA' },
     { pattern: /^\/api\/(siparis-kaydet|siparis-guncelle|siparis-onayla|siparis-gonder|siparis-iptal|siparis-arsivle|siparis-gerial|siparis-dosya-yukle|siparis-dosya-sil)/, modul: 'satinalma.siparisler', seviye: 'TAM' },
 
     // Satınalma — Mal Kabul
