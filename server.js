@@ -40,10 +40,13 @@ const mailTransporter = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWOR
     })
     : null;
 if (!mailTransporter) console.warn('⚠️ GMAIL_USER / GMAIL_APP_PASSWORD eksik — e-posta gönderimi devre dışı.');
-// Gönderen adresi: MAIL_FROM_EMAIL tanımlıysa onu kullan (örn satinalma@aterko.com),
-// yoksa kimlik doğrulayan hesabın adresi. NOT: farklı bir adres kullanmak için o adres
-// Gmail'de "Send mail as" (alias) olarak eklenmiş VEYA ayrı bir gönderim hesabı olmalı.
+// Gönderen adresleri (her ikisi de yunus@aterko.com altında "Send mail as" alias'ı):
+//   - SATINALMA modülü mailleri  → MAIL_FROM_EMAIL (satinalma@aterko.com)
+//   - Diğer TÜM bildirimler      → MAIL_FROM_GENEL (aterko@aterko.com)
 const MAIL_FROM_EMAIL = process.env.MAIL_FROM_EMAIL || process.env.GMAIL_USER;
+const MAIL_FROM_GENEL = process.env.MAIL_FROM_GENEL || 'aterko@aterko.com';
+// Satınalma olay kodları — bildirim motorunda gönderen adresi seçimi için
+const SATINALMA_OLAY_MI = kod => /^(TALEP_|TEKLIF_|SIPARIS_|MAL_KABUL|FATURA_)/.test(String(kod || ''));
 
 // Supabase Storage istemcisi (dosya yükleme için)
 const supabaseStorage = (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY)
@@ -2703,7 +2706,8 @@ async function bildirimGonder(olayKodu, context = {}) {
         } catch (ze) { console.error('⚠️ Bildirim zenginleştirme:', ze.message); }
 
         await mailTransporter.sendMail({
-            from: `"Aterko Workspace" <${MAIL_FROM_EMAIL}>`,
+            // Satınalma olayları satinalma@'dan, diğer her şey (iş emri, görev vb.) aterko@'dan
+            from: `"Aterko Workspace" <${SATINALMA_OLAY_MI(olayKodu) ? MAIL_FROM_EMAIL : MAIL_FROM_GENEL}>`,
             to: toList.join(', '),
             cc: realCc.length ? realCc.join(', ') : undefined,
             subject: context.konu || context.baslik || 'Aterko Workspace Bildirimi',
@@ -6445,7 +6449,7 @@ async function gorevRaporGonder(testEmail) {
     if (!alicilar.length) { console.log('⚠️ Görev raporu: alıcı yok'); return; }
     const bugun = new Date().toLocaleDateString('tr-TR');
     await mailTransporter.sendMail({
-        from: `"Aterko Workspace" <${MAIL_FROM_EMAIL}>`,
+        from: `"Aterko Workspace" <${MAIL_FROM_GENEL}>`,   // görev raporu satınalma değil → genel adres
         to: alicilar.join(', '),
         subject: `Görev Raporu — ${bugun}`,
         html: `<div style="font-family:Arial,sans-serif;color:#212529;"><p>Merhaba,</p><p>${bugun} tarihli açık görev raporu (${sayi} görev) ektedir.</p><p style="color:#6c757d;font-size:12px;margin-top:16px;">Aterko Workspace — otomatik görev raporu</p></div>`,
