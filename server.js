@@ -2190,10 +2190,12 @@ app.get('/api/satinalma-arsiv', yetkiKontrol, async (req, res, next) => {
                    COALESCE(p.proje_adi, 'Genel / Belirsiz') as proje_adi,
                    COALESCE(p.proje_kodu, 'GENEL') as proje_kodu,
                    COALESCE(p.musteri_adi, '') as musteri_adi,
-                   COALESCE(COUNT(tu.id), 0) as urun_sayisi
+                   COALESCE(COUNT(tu.id), 0) as urun_sayisi,
+                   STRING_AGG(DISTINCT NULLIF(TRIM(skart.kategori), ''), ', ') as kategoriler
             FROM satinalma_talepleri t
             LEFT JOIN projeler p ON t.proje_id = p.id
             LEFT JOIN talep_urunleri tu ON t.id = tu.talep_id
+            LEFT JOIN stok_kartlari skart ON tu.stok_kart_id = skart.id
             WHERE COALESCE(t.arsiv, false) = true
             GROUP BY t.id, p.proje_adi, p.proje_kodu, p.musteri_adi
             ORDER BY t.kayit_tarihi DESC NULLS LAST, t.id DESC
@@ -2204,10 +2206,18 @@ app.get('/api/satinalma-arsiv', yetkiKontrol, async (req, res, next) => {
                    s.tedarikci_id,
                    t.firma_adi as tedarikci_adi,
                    COALESCE(SUM(sk.siparis_miktari * sk.birim_fiyat), 0) as ara_toplam,
-                   COUNT(sk.id) as kalem_sayisi
+                   COUNT(sk.id) as kalem_sayisi,
+                   STRING_AGG(DISTINCT NULLIF(TRIM(skart.kategori), ''), ', ') as kategoriler,
+                   MAX(p.proje_kodu) as proje_kodu,
+                   MAX(p.musteri_adi) as musteri_adi,
+                   MAX(p.proje_adi) as proje_adi
             FROM satinalma_siparisleri s
             LEFT JOIN tedarikciler t ON s.tedarikci_id = t.id
             LEFT JOIN siparis_kalemleri sk ON s.id = sk.siparis_id
+            LEFT JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            LEFT JOIN stok_kartlari skart ON tu.stok_kart_id = skart.id
+            LEFT JOIN satinalma_talepleri tlp ON tu.talep_id = tlp.id
+            LEFT JOIN projeler p ON tlp.proje_id = p.id
             WHERE COALESCE(s.arsiv, false) = true
             GROUP BY s.id, t.firma_adi
             ORDER BY s.siparis_tarihi DESC NULLS LAST, s.id DESC

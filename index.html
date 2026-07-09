@@ -678,6 +678,7 @@
                     <tr>
                         <th>Talep No</th>
                         <th>İlgili Proje</th>
+                        <th>Kategoriler</th>
                         <th>Talep Eden</th>
                         <th class="text-center">Kalem</th>
                         <th class="text-center">Durum</th>
@@ -695,6 +696,8 @@
                     <tr>
                         <th>Sipariş No</th>
                         <th>Tedarikçi</th>
+                        <th>İlgili Proje</th>
+                        <th>Kategoriler</th>
                         <th class="text-center">Tarih</th>
                         <th class="text-center">Kalem</th>
                         <th class="text-end">Tutar</th>
@@ -9391,8 +9394,8 @@ function renderArsivFiltered() {
     const arama = trAra(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
     const tp = window.arsivTalepleriCache || [];
     const sp = window.arsivSiparisleriCache || [];
-    const tpF = arama ? tp.filter(t => trAra(`${t.talep_no || ''} ${t.proje_kodu || ''} ${t.musteri_adi || ''} ${t.proje_adi || ''} ${t.talep_eden || ''} ${t.durum || ''}`).includes(arama)) : tp;
-    const spF = arama ? sp.filter(s => trAra(`${s.siparis_no || ''} ${s.tedarikci_adi || ''} ${s.para_birimi || ''} ${s.durum || ''}`).includes(arama)) : sp;
+    const tpF = arama ? tp.filter(t => trAra(`${t.talep_no || ''} ${t.proje_kodu || ''} ${t.musteri_adi || ''} ${t.proje_adi || ''} ${t.talep_eden || ''} ${t.kategoriler || ''} ${t.durum || ''}`).includes(arama)) : tp;
+    const spF = arama ? sp.filter(s => trAra(`${s.siparis_no || ''} ${s.tedarikci_adi || ''} ${s.proje_kodu || ''} ${s.musteri_adi || ''} ${s.proje_adi || ''} ${s.kategoriler || ''} ${s.para_birimi || ''} ${s.durum || ''}`).includes(arama)) : sp;
     renderArsivTalepleri(tpF);
     renderArsivSiparisleri(spF);
 }
@@ -9401,13 +9404,14 @@ function renderArsivTalepleri(talepler) {
     const tb = document.getElementById('arsivTalepBody');
     if (talepler.length === 0) {
         const filtreVar = !!(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
-        tb.innerHTML = `<tr><td colspan="6" class="text-center text-muted p-3">${filtreVar ? 'Aramayla eşleşen arşiv talebi yok.' : 'Arşivlenmiş talep yok.'}</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-3">${filtreVar ? 'Aramayla eşleşen arşiv talebi yok.' : 'Arşivlenmiş talep yok.'}</td></tr>`;
         return;
     }
     tb.innerHTML = talepler.map(t => `
         <tr>
             <td class="fw-bold text-primary">${esc(t.talep_no)}</td>
             <td class="small">${esc(t.proje_kodu)}${t.musteri_adi ? ' / ' + esc(t.musteri_adi) : ''} - ${esc(t.proje_adi)}</td>
+            <td class="small text-muted">${esc(t.kategoriler || '-')}</td>
             <td class="small">${esc(t.talep_eden || '-')}</td>
             <td class="text-center"><span class="badge bg-secondary">${t.urun_sayisi}</span></td>
             <td class="text-center">${getSatinalmaDurumBadge(t.durum)}</td>
@@ -9425,7 +9429,7 @@ function renderArsivSiparisleri(siparisler) {
     const tb = document.getElementById('arsivSiparisBody');
     if (siparisler.length === 0) {
         const filtreVar = !!(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
-        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-3">${filtreVar ? 'Aramayla eşleşen arşiv siparişi yok.' : 'Arşivlenmiş sipariş yok.'}</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-3">${filtreVar ? 'Aramayla eşleşen arşiv siparişi yok.' : 'Arşivlenmiş sipariş yok.'}</td></tr>`;
         return;
     }
     tb.innerHTML = siparisler.map(s => {
@@ -9435,6 +9439,8 @@ function renderArsivSiparisleri(siparisler) {
         return `<tr>
             <td class="fw-bold text-success">${esc(s.siparis_no)}</td>
             <td class="fw-bold">${esc(s.tedarikci_adi || '-')}</td>
+            <td class="small">${s.proje_kodu ? `${esc(s.proje_kodu)}${s.musteri_adi ? ' / ' + esc(s.musteri_adi) : ''} - ${esc(s.proje_adi || '')}` : '-'}</td>
+            <td class="small text-muted">${esc(s.kategoriler || '-')}</td>
             <td class="text-center small">${formatTarihTR(s.siparis_tarihi) || '-'}</td>
             <td class="text-center"><span class="badge bg-secondary">${s.kalem_sayisi}</span></td>
             <td class="text-end fw-bold">${formatTR(genel)} ${esc(s.para_birimi)}</td>
