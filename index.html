@@ -5645,8 +5645,9 @@ function setTab(tab) {
         tab = 'anasayfa';
     }
 
-    // 0a. Önceki sekmede kalan yetki-kilidi yerleşimlerini temizle
+    // 0a. Önceki sekmede kalan yetki-kilidi yerleşimlerini temizle + detaya-dönüş işaretini sıfırla
     document.querySelectorAll('.yetki-kilit-note').forEach(n => n.remove());
+    window.pdGeriDonId = null;
 
     // 0b. Açık modal varken sekme değişirse koyu zemin/kilit kalmasın:
     // açık modalları kapat ve kalıntı backdrop + body kilidini temizle.
@@ -7545,8 +7546,18 @@ function temizleModalKilidi() {
     document.body.style.removeProperty('overflow');
     document.body.style.removeProperty('padding-right');
 }
-// Her modal kapanışından sonra (bir tık gecikmeyle) kalıntı kontrolü
-document.addEventListener('hidden.bs.modal', () => setTimeout(temizleModalKilidi, 0));
+// Her modal kapanışından sonra (bir tık gecikmeyle) kalıntı kontrolü.
+// Ayrıca: Teknik Şartname / İş Emri, Proje Detay'dan açıldıysa kapanınca DETAYA geri dön
+// (listeye değil). Akordiyondan açıldıysa işaret yoktur → listede kalınır.
+document.addEventListener('hidden.bs.modal', e => {
+    setTimeout(temizleModalKilidi, 0);
+    const id = e.target && e.target.id;
+    if ((id === 'modalTeknikSartname' || id === 'modalTeslimatIsEmri') && window.pdGeriDonId) {
+        const pid = window.pdGeriDonId;
+        window.pdGeriDonId = null;
+        setTimeout(() => openProjeDetay(pid), 150);
+    }
+});
 
 // İzin dışı bir bölüm/işlem denendiğinde: kırmızı balon(lar) YERİNE görünen alanın
 // başına tek bir kilit yerleşimi. Paralel 403'ler (sayfa açılışında 4-5 istek) tek işleme iner.
@@ -11290,9 +11301,13 @@ async function tieAc(teslimatId, binaAdi) {
     tieAktifTeslimatId = teslimatId;
     document.getElementById('tieBaslik').innerHTML = `<i class="bi bi-clipboard2-check me-2"></i>İş Emri${binaAdi ? ' — ' + esc(binaAdi) : ''}`;
     document.getElementById('tieBody').innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
-    // Proje detay modalı açıksa kapat — üst üste durmasın (Teknik Şartname ile aynı davranış)
+    // Proje detay modalı açıksa kapat — üst üste durmasın (Teknik Şartname ile aynı davranış).
+    // Kapanınca (iş emri modalı kapatıldığında) detaya GERİ dönmek için işaretle.
     const pdEl = document.getElementById('modalProjeDetay');
-    if (pdEl && pdEl.classList.contains('show')) bootstrap.Modal.getInstance(pdEl)?.hide();
+    if (pdEl && pdEl.classList.contains('show')) {
+        bootstrap.Modal.getInstance(pdEl)?.hide();
+        window.pdGeriDonId = pdAktifProjeId;
+    }
     new bootstrap.Modal(document.getElementById('modalTeslimatIsEmri')).show();
     tieYenile();
 }
@@ -11457,11 +11472,13 @@ async function openTeknikSartname(teslimatId) {
     tsAktifTeslimat = teslimatId;
     document.getElementById("tsModalBody").innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><div class="mt-2 text-muted">Form yükleniyor...</div></div>';
 
-    // Proje detay modal'ı açıksa kapat — üst üste durmasın
+    // Proje detay modal'ı açıksa kapat — üst üste durmasın.
+    // Kapanınca (şartname modalı kapatıldığında) detaya GERİ dönmek için işaretle.
     const pdModalEl = document.getElementById('modalProjeDetay');
     if (pdModalEl && pdModalEl.classList.contains('show')) {
         const pdModal = bootstrap.Modal.getInstance(pdModalEl);
         if (pdModal) pdModal.hide();
+        window.pdGeriDonId = pdAktifProjeId;
     }
 
     const modal = new bootstrap.Modal(document.getElementById("modalTeknikSartname"));
