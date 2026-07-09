@@ -4876,6 +4876,7 @@ const MODUL_KATALOG = [
     { kod: 'projeler',            ad: 'Projeler',            grup: 'İş Akışı' },
     { kod: 'bina_listeleri',      ad: 'Bina Listeleri',      grup: 'İş Akışı' },
     { kod: 'satinalma.talepler',  ad: 'Satınalma — Talepler', grup: 'Satınalma' },
+    { kod: 'satinalma.teklif',    ad: 'Satınalma — Teklif Havuzu', grup: 'Satınalma' },
     { kod: 'satinalma.siparisler',ad: 'Satınalma — Siparişler', grup: 'Satınalma' },
     { kod: 'satinalma.tedarikci', ad: 'Satınalma — Tedarikçi', grup: 'Satınalma' },
     { kod: 'satinalma.mal_kabul', ad: 'Satınalma — Mal Kabul', grup: 'Satınalma' },
@@ -5136,8 +5137,11 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/urun-listesi-(versiyon|teslimat-sablon)/, modul: 'bina_listeleri', seviye: 'OKUMA' },
 
     // Satınalma — Talepler
-    { pattern: /^\/api\/(satinalma-listesi|talep-detay|talep-urunleri|teklif-havuzu|arsiv)/, method: 'GET', modul: 'satinalma.talepler', seviye: 'OKUMA' },
-    { pattern: /^\/api\/(talep-kaydet|talep-guncelle|talep-onayla|talep-reddet|talep-iptal|talep-arsivle|teklif-iste|teklif-iptal)/, modul: 'satinalma.talepler', seviye: 'TAM' },
+    { pattern: /^\/api\/(satinalma-listesi|talep-detay|talep-urunleri|arsiv)/, method: 'GET', modul: 'satinalma.talepler', seviye: 'OKUMA' },
+    // Teklif Havuzu — talepten AYRI izin satırı (satinalma.teklif)
+    { pattern: /^\/api\/(teklif-havuzu|teklifler)/, method: 'GET', modul: 'satinalma.teklif', seviye: 'OKUMA' },
+    { pattern: /^\/api\/teklif-(iste|iptal|kaydet|sil)/, modul: 'satinalma.teklif', seviye: 'TAM' },
+    { pattern: /^\/api\/(talep-kaydet|talep-guncelle|talep-onayla|talep-reddet|talep-iptal|talep-arsivle)/, modul: 'satinalma.talepler', seviye: 'TAM' },
 
     // Satınalma — Siparişler
     { pattern: /^\/api\/(siparis-listesi|siparis-detay|siparis-pdf|siparis-dosya)/, method: 'GET', modul: 'satinalma.siparisler', seviye: 'OKUMA' },
@@ -5179,7 +5183,7 @@ const ENDPOINT_IZIN_KURALLARI = [
     // Talepler (yeni-talep + dosya = YAZMA; durum/geri-al/arşiv/teklif yönetimi = TAM)
     { pattern: /^\/api\/yeni-talep/, modul: 'satinalma.talepler', seviye: 'YAZMA' },
     { pattern: /^\/api\/talep-dosya-(yukle|sil)/, modul: 'satinalma.talepler', seviye: 'YAZMA' },
-    { pattern: /^\/api\/(talep-durum-guncelle|talep-gerial|arsivden-cikar|teklif-kaydet|teklif-sil)/, modul: 'satinalma.talepler', seviye: 'TAM' },
+    { pattern: /^\/api\/(talep-durum-guncelle|talep-gerial|arsivden-cikar)/, modul: 'satinalma.talepler', seviye: 'TAM' },
     // Siparişler (silme/fatura onayı = TAM; not = OKUMA)
     { pattern: /^\/api\/(siparis-tamamen-sil|siparis-fatura-onayla)/, modul: 'satinalma.siparisler', seviye: 'TAM' },
     { pattern: /^\/api\/siparis-not-sil/, modul: 'satinalma.siparisler', seviye: 'OKUMA' },
@@ -7505,6 +7509,15 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS drive_link TEXT`).catch(() => {});
         // Teknik şartname kodu ({proje_kodu}-TŞ-NN) — ilk PDF üretiminde atanır, sonra sabit
         await pool.query(`ALTER TABLE proje_teslimatlari ADD COLUMN IF NOT EXISTS sartname_kodu TEXT`).catch(() => {});
+        // Teklif Havuzu ayrı izin satırı: mevcut davranış korunarak her rolün
+        // satinalma.talepler seviyesi satinalma.teklif'e kopyalanır (yalnız yoksa)
+        await pool.query(`
+            INSERT INTO rol_izinleri (rol_id, modul_kod, seviye)
+            SELECT ri.rol_id, 'satinalma.teklif'::varchar, ri.seviye
+            FROM rol_izinleri ri
+            WHERE ri.modul_kod = 'satinalma.talepler'
+              AND NOT EXISTS (SELECT 1 FROM rol_izinleri r2 WHERE r2.rol_id = ri.rol_id AND r2.modul_kod = 'satinalma.teklif')
+        `).catch(e => console.error('⚠️ teklif izin tohumu:', e.message));
         // Bildirim olayları (panel > Bildirim Ayarları'ndan roller/kişiler yönetilir)
         await pool.query(`INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, ekstra_emailler, dinamik_alicilar, sira)
             SELECT 'IS_EMRI_YAYINLANDI','İş emri yayınlandı (şartname PDF ekli)','Proje',true,'{}','{}','{}',50
