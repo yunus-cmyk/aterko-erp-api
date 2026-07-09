@@ -3635,12 +3635,12 @@ function izinleriUygula() {
 
     // Satınalma alt sekmeleri (Yönetim panel olmayan, modül bazlı)
     const altSekmeMap = {
-        'btnSubGenelBakis':   'satinalma.siparisler',
+        'btnSubGenelBakis':   'satinalma.rapor',     // Satınalma Raporu — ayrı izin satırı
         'btnSubTalepler':     'satinalma.talepler',
         'btnSubTeklif':       'satinalma.teklif',    // Teklif Havuzu — talepten ayrı izin satırı
         'btnSubSiparisler':   'satinalma.siparisler',
         'btnSubTedarikciler': 'satinalma.tedarikci',
-        'btnSubArsiv':        'satinalma.talepler'
+        'btnSubArsiv':        'satinalma.arsiv'      // Arşiv — ayrı izin satırı (sipariş tutarları içerir)
     };
     for (const [btnId, modul] of Object.entries(altSekmeMap)) {
         const btn = document.getElementById(btnId);

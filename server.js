@@ -4880,6 +4880,8 @@ const MODUL_KATALOG = [
     { kod: 'satinalma.siparisler',ad: 'Satınalma — Siparişler', grup: 'Satınalma' },
     { kod: 'satinalma.tedarikci', ad: 'Satınalma — Tedarikçi', grup: 'Satınalma' },
     { kod: 'satinalma.mal_kabul', ad: 'Satınalma — Mal Kabul', grup: 'Satınalma' },
+    { kod: 'satinalma.arsiv',     ad: 'Satınalma — Arşiv', grup: 'Satınalma' },
+    { kod: 'satinalma.rapor',     ad: 'Satınalma — Rapor (Genel Bakış)', grup: 'Satınalma' },
     { kod: 'stok',                ad: 'Stok',                grup: 'Operasyon' },
     { kod: 'uretim',              ad: 'Üretim',              grup: 'Operasyon' },
     { kod: 'sevkiyat',            ad: 'Sevkiyat',            grup: 'Operasyon' },
@@ -5141,6 +5143,11 @@ const ENDPOINT_IZIN_KURALLARI = [
     // Teklif Havuzu — talepten AYRI izin satırı (satinalma.teklif)
     { pattern: /^\/api\/(teklif-havuzu|teklifler)/, method: 'GET', modul: 'satinalma.teklif', seviye: 'OKUMA' },
     { pattern: /^\/api\/teklif-(iste|iptal|kaydet|sil)/, modul: 'satinalma.teklif', seviye: 'TAM' },
+    // Arşiv sayfası + arşivden çıkarma — ayrı izin satırı (arşivde sipariş tutarları var)
+    { pattern: /^\/api\/satinalma-arsiv/, method: 'GET', modul: 'satinalma.arsiv', seviye: 'OKUMA' },
+    { pattern: /^\/api\/arsivden-cikar/, modul: 'satinalma.arsiv', seviye: 'TAM' },
+    // Satınalma Raporu (Genel Bakış) — tutar/grafik özetleri
+    { pattern: /^\/api\/satinalma-genel-ozet/, method: 'GET', modul: 'satinalma.rapor', seviye: 'OKUMA' },
     { pattern: /^\/api\/(talep-kaydet|talep-guncelle|talep-onayla|talep-reddet|talep-iptal|talep-arsivle)/, modul: 'satinalma.talepler', seviye: 'TAM' },
 
     // Satınalma — Siparişler
@@ -5183,7 +5190,7 @@ const ENDPOINT_IZIN_KURALLARI = [
     // Talepler (yeni-talep + dosya = YAZMA; durum/geri-al/arşiv/teklif yönetimi = TAM)
     { pattern: /^\/api\/yeni-talep/, modul: 'satinalma.talepler', seviye: 'YAZMA' },
     { pattern: /^\/api\/talep-dosya-(yukle|sil)/, modul: 'satinalma.talepler', seviye: 'YAZMA' },
-    { pattern: /^\/api\/(talep-durum-guncelle|talep-gerial|arsivden-cikar)/, modul: 'satinalma.talepler', seviye: 'TAM' },
+    { pattern: /^\/api\/(talep-durum-guncelle|talep-gerial)/, modul: 'satinalma.talepler', seviye: 'TAM' },
     // Siparişler (silme/fatura onayı = TAM; not = OKUMA)
     { pattern: /^\/api\/(siparis-tamamen-sil|siparis-fatura-onayla)/, modul: 'satinalma.siparisler', seviye: 'TAM' },
     { pattern: /^\/api\/siparis-not-sil/, modul: 'satinalma.siparisler', seviye: 'OKUMA' },
@@ -7518,6 +7525,17 @@ async function semaGuvence() {
             WHERE ri.modul_kod = 'satinalma.talepler'
               AND NOT EXISTS (SELECT 1 FROM rol_izinleri r2 WHERE r2.rol_id = ri.rol_id AND r2.modul_kod = 'satinalma.teklif')
         `).catch(e => console.error('⚠️ teklif izin tohumu:', e.message));
+        // Arşiv + Rapor (Genel Bakış) ayrı izin satırları: SİPARİŞLER seviyesi kopyalanır
+        // (arşiv/rapor sipariş tutarları içerir — siparişi görmeyen bunları da görmesin)
+        for (const yeniModul of ['satinalma.arsiv', 'satinalma.rapor']) {
+            await pool.query(`
+                INSERT INTO rol_izinleri (rol_id, modul_kod, seviye)
+                SELECT ri.rol_id, $1::varchar, ri.seviye
+                FROM rol_izinleri ri
+                WHERE ri.modul_kod = 'satinalma.siparisler'
+                  AND NOT EXISTS (SELECT 1 FROM rol_izinleri r2 WHERE r2.rol_id = ri.rol_id AND r2.modul_kod = $1)
+            `, [yeniModul]).catch(e => console.error('⚠️ arsiv/rapor izin tohumu:', e.message));
+        }
         // Bildirim olayları (panel > Bildirim Ayarları'ndan roller/kişiler yönetilir)
         await pool.query(`INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, ekstra_emailler, dinamik_alicilar, sira)
             SELECT 'IS_EMRI_YAYINLANDI','İş emri yayınlandı (şartname PDF ekli)','Proje',true,'{}','{}','{}',50
