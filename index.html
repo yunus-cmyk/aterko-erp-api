@@ -3467,9 +3467,9 @@ async function secureFetch(endpoint, options = {}) {
     if (response.status === 401) { cikisYap(); throw new Error("Oturum süresi doldu."); }
 
     const data = await response.json().catch(() => ({ ok: false, hata: 'Cevap okunamadı.' }));
-    // İzin hatası — toast göster ama oturumu kapatma
+    // İzin hatası — balon yağmuru yerine görünen alana TEK kilit yerleşimi (oturum açık kalır)
     if (response.status === 403 && data.izin_hatasi) {
-        if (typeof showToast === 'function') showToast(data.hata || 'Bu işlem için yetkin yok.', 'error');
+        if (typeof yetkiKilidiGoster === 'function') yetkiKilidiGoster();
     }
     return data;
 }
@@ -3655,7 +3655,7 @@ function izinleriUygula() {
 // setTab guard: izin yoksa erişimi engelle (setTab içinde çağrılır)
 function sekmeGuard(tab) {
     if (tab === 'gorevler') {
-        if (!window.cekirdekEkip) { if (typeof showToast === 'function') showToast('Bu sayfaya erişim yetkiniz yok.', 'error'); return false; }
+        if (!window.cekirdekEkip) return false;   // sessizce anasayfaya yönlenir (balon yok)
         return true;
     }
     const guardMap = {
@@ -3676,8 +3676,7 @@ function sekmeGuard(tab) {
     };
     const modul = guardMap[tab];
     if (modul && !sekmeGorunur(modul)) {
-        if (typeof showToast === 'function') showToast('Bu sayfaya erişim yetkiniz yok.', 'error');
-        return false;
+        return false;   // sessizce anasayfaya yönlenir (balon yok)
     }
     return true;
 }
@@ -5643,6 +5642,9 @@ function setTab(tab) {
         tab = 'anasayfa';
     }
 
+    // 0a. Önceki sekmede kalan yetki-kilidi yerleşimlerini temizle
+    document.querySelectorAll('.yetki-kilit-note').forEach(n => n.remove());
+
     // 0b. Açık modal varken sekme değişirse koyu zemin/kilit kalmasın:
     // açık modalları kapat ve kalıntı backdrop + body kilidini temizle.
     const acikModallar = document.querySelectorAll('.modal.show');
@@ -7543,7 +7545,26 @@ function temizleModalKilidi() {
 // Her modal kapanışından sonra (bir tık gecikmeyle) kalıntı kontrolü
 document.addEventListener('hidden.bs.modal', () => setTimeout(temizleModalKilidi, 0));
 
+// İzin dışı bir bölüm/işlem denendiğinde: kırmızı balon(lar) YERİNE görünen alanın
+// başına tek bir kilit yerleşimi. Paralel 403'ler (sayfa açılışında 4-5 istek) tek işleme iner.
+let _yetkiKilitZaman = 0;
+function yetkiKilidiGoster() {
+    const simdi = Date.now();
+    if (simdi - _yetkiKilitZaman < 1500) return;
+    _yetkiKilitZaman = simdi;
+    const alanlar = ['stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea','gorevlerArea','mainContent'];
+    const gorunen = alanlar.map(id => document.getElementById(id)).find(el => el && !el.classList.contains('d-none'));
+    if (!gorunen || gorunen.querySelector('.yetki-kilit-note')) return;
+    gorunen.insertAdjacentHTML('afterbegin',
+        `<div class="yetki-kilit-note text-center text-muted py-4 my-2">
+            <i class="bi bi-lock-fill" style="font-size:2.2rem;"></i>
+            <div class="mt-1 small">Bu bölüm yetkiniz dışında.</div>
+        </div>`);
+}
+
 function showToast(msg, type) {
+    // İzin hatası mesajları balon olarak GÖSTERİLMEZ — kilit yerleşimi yeterli
+    if (/yetkiniz yok|yetkin yok/i.test(String(msg || ''))) { yetkiKilidiGoster(); return; }
     const container = document.getElementById("toastContainer");
     const isError = type === "error";
     const toastEl = document.createElement("div");
