@@ -8482,6 +8482,7 @@ async function talepOzetVeSiparisleriYukle(talepId) {
 
 // 2. Çekilen Kalemleri Tabloya Dizer ve Durum Badgelerini Atar
 function renderTalepDetayLines(kalemler) {
+    window.talepDetayKalemCache = kalemler;   // sipariş oluştururken açıklama vb. buradan okunur
     const tbody = document.getElementById("detayTableBody");
     tbody.innerHTML = '';
 
@@ -8677,6 +8678,7 @@ function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
                 miktar: parseFloat(k.siparis_miktari),
                 birim: k.birim,
                 birim_fiyat: parseFloat(k.birim_fiyat) || 0,
+                aciklama: k.aciklama || '',
                 talep_id: k.talep_id || null,
                 talep_no: k.talep_no || ''
             });
@@ -8697,8 +8699,10 @@ function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
             const miktarParca = miktarText.split(" ");
             const miktar = parseFloat(miktarParca[0].replace(/\./g, '').replace(',', '.'));
             const birim = miktarParca[1] || "ADET";
+            const kaynakKalem = (window.talepDetayKalemCache || []).find(x => String(x.id) === String(id));
             secilenKalemler.push({
                 id: id, ad: urunText, kod: kodText, miktar: miktar, birim: birim, birim_fiyat: 0,
+                aciklama: (kaynakKalem && kaynakKalem.aciklama) || '',
                 talep_id: crossTalepKaynakId, talep_no: kaynakTalepNo
             });
         });
@@ -8774,6 +8778,7 @@ function renderSiparisFormLines(kalemler) {
                 <td>
                     <span class="fw-bold text-dark">${esc(k.ad)}</span>
                     <span class="text-muted small d-block">${esc(k.kod)}</span>
+                    ${k.aciklama ? `<span class="small d-block fst-italic" style="color:#6c757d;"><i class="bi bi-chat-left-text me-1"></i>${esc(k.aciklama)}</span>` : ''}
                 </td>
                 <td class="text-center" width="120">${talepNoCell}${silBtn}</td>
                 <td class="text-center text-secondary fw-bold" width="140">${formatTR(k.miktar)} ${k.birim}</td>
@@ -9073,6 +9078,7 @@ function renderTeklifHavuzu(kalemler) {
                         <input type="checkbox" class="teklif-chk form-check-input mt-1" data-talep-id="${k.talep_id}" value="${k.id}" onchange="teklifSecimGuncelle()">
                         <div>
                             <div class="fw-semibold" style="font-size:0.85rem;">${urunKod}${esc(urunAd)}${k.stok_kart_id ? `<button class="btn btn-sm btn-link p-0 ms-1 align-baseline" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${escJs(urunAd)}')" title="Tedarikçi fiyat karşılaştırması / geçmişi"><i class="bi bi-graph-up text-info"></i></button>` : ''}</div>
+                            ${k.aciklama ? `<div class="fst-italic mt-1" style="font-size:0.75rem;color:#6c757d;"><i class="bi bi-chat-left-text me-1"></i>${esc(k.aciklama)}</div>` : ''}
                             <div class="d-flex flex-wrap gap-3 mt-1" style="font-size:0.75rem;color:#8a8f96;">
                                 <span><i class="bi bi-box-seam"></i> ${formatTR(parseFloat(k.miktar))} ${esc(birim)}</span>
                                 <span><i class="bi bi-calendar3"></i> ${renderTerminTarihi(k.istenen_tarih)}</span>
@@ -9130,6 +9136,7 @@ function teklifKalemToSiparis(k) {
         miktar: parseFloat(k.miktar) || 0,
         birim: k.stok_birim || k.ozel_urun_birim || 'ADET',
         birim_fiyat: 0,
+        aciklama: k.aciklama || '',
         talep_id: k.talep_id,
         talep_no: k.talep_no
     };
@@ -9748,7 +9755,7 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
             ? `<button class="btn btn-sm btn-link p-0 ms-1" onclick="openFiyatGecmisiModal(${k.stok_kart_id}, '${escJs(k.urun_adi)}')" title="Tedarikçi fiyat karşılaştırması"><i class="bi bi-graph-up text-info"></i></button>`
             : '';
         return `<tr>
-            <td class="small">${esc(k.stok_kodu)} ${fiyatBtn}<br><span class="text-muted">${esc(k.urun_adi)}</span></td>
+            <td class="small">${esc(k.stok_kodu)} ${fiyatBtn}<br><span class="text-muted">${esc(k.urun_adi)}</span>${k.aciklama ? `<br><span class="fst-italic" style="color:#6c757d;"><i class="bi bi-chat-left-text me-1"></i>${esc(k.aciklama)}</span>` : ''}</td>
             <td class="text-end">${formatTR(sip2)} ${esc(k.birim || '')}</td>
             <td class="text-end small">${formatTR(parseFloat(k.birim_fiyat)||0)} ${esc(para)}</td>
             <td class="text-end fw-bold">${formatTR(tutar)} ${esc(para)}</td>
@@ -10204,6 +10211,7 @@ function renderSiparisKalemMini(kalemler, para) {
                 <span class="fw-semibold">${esc(k.urun_adi || '-')}</span>
                 <span class="fw-bold text-nowrap">${formatTR(tutar)} ${esc(pb)}</span>
             </div>
+            ${k.aciklama ? `<div class="fst-italic" style="font-size:0.74rem;color:#6c757d;"><i class="bi bi-chat-left-text me-1"></i>${esc(k.aciklama)}</div>` : ''}
             <div class="pb-2" style="font-size:0.74rem;color:#8a8f96;">${alt}</div>
         </div>`;
     }).join('');

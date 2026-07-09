@@ -2071,7 +2071,7 @@ app.get('/api/siparis-listesi', yetkiKontrol, async (req, res, next) => {
                    STRING_AGG(DISTINCT NULLIF(TRIM(skart.kategori), ''), ', ') as kategoriler,
                    COALESCE(JSON_AGG(JSON_BUILD_OBJECT(
                        'urun_adi', COALESCE(skart.stok_adi, tu.ozel_urun_adi), 'stok_kodu', COALESCE(skart.stok_kodu, 'ÖZEL'),
-                       'birim', COALESCE(skart.birim, tu.ozel_urun_birim), 'kategori', skart.kategori,
+                       'birim', COALESCE(skart.birim, tu.ozel_urun_birim), 'kategori', skart.kategori, 'aciklama', tu.aciklama,
                        'siparis_miktari', sk.siparis_miktari, 'teslim_alinan_miktar', COALESCE(sk.teslim_alinan_miktar, 0), 'birim_fiyat', sk.birim_fiyat
                    ) ORDER BY sk.id) FILTER (WHERE sk.id IS NOT NULL), '[]') as kalemler,
                    (SELECT JSON_BUILD_OBJECT('kodu', p.proje_kodu, 'musteri', p.musteri_adi, 'adi', p.proje_adi)
@@ -2100,6 +2100,7 @@ app.get('/api/siparis-detay/:siparisId', yetkiKontrol, async (req, res, next) =>
         const { siparisId } = req.params;
         const query = `
             SELECT sk.id as siparis_kalem_id, sk.siparis_miktari, sk.birim_fiyat,
+                   tu.aciklama,
                    COALESCE(sk.teslim_alinan_miktar, 0) as teslim_alinan_miktar,
                    sk.durum as kalem_durum,
                    tu.stok_kart_id, tu.ozel_urun_adi, tu.ozel_urun_birim,
