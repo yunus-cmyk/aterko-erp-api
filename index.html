@@ -26,6 +26,7 @@
     /* DURUM ROZETLERİ */
     .badge-status { padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; text-transform: uppercase; font-weight: 700; display: inline-block; letter-spacing: 0.3px; }
     .st-beklemede { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .st-taslak { background: #fff3cd; color: #664d03; border: 1px dashed #ffda6a; }
     .st-sozlesme { background: #cfe2ff; color: #084298; border: 1px solid #b6d4fe; }
     .st-is-emri { background: #e0cffc; color: #4b0082; border: 1px solid #c5aafa; }
     .st-proje { background: #cff4fc; color: #055160; border: 1px solid #b6effb; }
@@ -729,6 +730,7 @@
                 <select id="projeDurumFiltre" class="form-select form-select-sm" style="width:155px;" onchange="renderProjeTable()">
                     <option value="">Tüm Durumlar</option>
                     <option value="BEKLEMEDE">Beklemede</option>
+                    <option value="TASLAK">Taslak</option>
                     <option value="SÖZLEŞME">Sözleşme</option>
                     <option value="İŞ EMRİ">İş Emri</option>
                     <option value="PROJE">Proje</option>
@@ -3379,6 +3381,7 @@ STK-002		50	adet
                         <i class="bi bi-folder2-open me-2 text-primary"></i>Proje Detayı
                     </h5>
                     <div class="ms-auto d-flex gap-2 align-items-center">
+                        <span id="pdOnayAlan"></span>
                         <button type="button" class="btn btn-primary btn-sm fw-bold" id="pdDuzenleBtn" onclick="if(pdAktifProjeId) openProjeDuzenle(pdAktifProjeId)">
                             <i class="bi bi-pencil-square me-1"></i> Düzenle
                         </button>
@@ -10971,6 +10974,7 @@ let projelerGlobal = [];
 
 function getDurumBadge(durum) {
     const map = {
+        'TASLAK': 'st-taslak',
         'BEKLEMEDE': 'st-beklemede', 'SÖZLEŞME': 'st-sozlesme', 'İŞ EMRİ': 'st-is-emri',
         'PROJE': 'st-proje', 'ÜRETİM': 'st-uretim', 'MONTAJ': 'st-montaj',
         'TESLİM EDİLDİ': 'st-teslim', 'İPTAL': 'st-iptal'
@@ -11227,7 +11231,7 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
             <td class="text-center">
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary py-0" onclick="openTeknikSartname(${t.id})" title="Teknik Şartname"><i class="bi bi-file-earmark-text"></i></button>
-                    <button class="btn btn-outline-warning py-0" onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"><i class="bi bi-clipboard2-check"></i></button>
+                    <button class="btn btn-outline-warning py-0" ${proje.durum === 'TASLAK' ? 'disabled title="İş emri için önce ADMIN proje onayı (Sözleşme) gerekli"' : `onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"`}><i class="bi bi-clipboard2-check"></i></button>
                     <button class="btn btn-outline-dark py-0" onclick="durumSecAc(${t.id}, '${escJs(t.durum || '')}', ${proje.id}, '${escJs(t.bina_adi || '')}')">Durum</button>
                 </div>
             </td>
@@ -11340,8 +11344,11 @@ function tieHTML(ie, notlar) {
         <iframe id="tiePdfFrame" title="İş Emri Belgesi" style="width:100%;height:55vh;border:1px solid #dee2e6;border-radius:6px;background:#f8f9fa"></iframe>
       </div>`;
     if (ie.durum === 'HAZIRLANDI') {
+        const admin = (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin');
         h += `<div class="d-flex gap-2 flex-wrap align-items-center">
-          <button class="btn btn-sm btn-success fw-bold" onclick="tieYayinla(${ie.id})"><i class="bi bi-megaphone me-1"></i>Yayınla <span class="fw-normal">(onayla + ekibe PDF ekli bildir)</span></button>
+          ${admin
+            ? `<button class="btn btn-sm btn-success fw-bold" onclick="tieYayinla(${ie.id})"><i class="bi bi-megaphone me-1"></i>Yayınla <span class="fw-normal">(onayla + ekibe PDF ekli bildir)</span></button>`
+            : `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-2 px-3"><i class="bi bi-hourglass-split me-1"></i>ADMIN onayı bekleniyor — yayınlama yetkisi ADMIN'dedir (bildirim gönderildi)</span>`}
           <button class="btn btn-sm btn-outline-danger" onclick="tieSil(${ie.id})"><i class="bi bi-trash me-1"></i>Taslağı Sil <span class="fw-normal">(şartnameyi aç)</span></button>
         </div>
         <div class="small text-muted mt-2"><i class="bi bi-chat-left-text me-1"></i>Süreç notları (yorum) <b>yayından sonra</b> eklenebilir — her yorum aynı alıcılara bildirilir.</div>`;
@@ -11499,15 +11506,21 @@ async function openTeknikSartname(teslimatId) {
     document.getElementById("tsKaydetBtn").disabled = false;
     renderTeknikSartnameForm(tsAktifFormTanimlari, mevcutVeri);
 
-    // İŞ EMRİ KİLİDİ — aktif iş emri varsa form salt-okunur (backend de ayrıca reddeder)
+    // KİLİTLER — aktif iş emri VEYA proje ADMIN onayı (SÖZLEŞME) varsa form salt-okunur
+    // (backend de ayrıca reddeder)
     try {
-        const ieR = await secureFetch(`/is-emri/${teslimatId}`);
-        if (ieR && ieR.ok && ieR.is_emri) {
+        const formKilitle = mesajHtml => {
             document.querySelectorAll('#tsModalBody .ts-input').forEach(el => el.disabled = true);
             document.getElementById('tsKaydetBtn').disabled = true;
-            document.getElementById('tsKopyaBtn')?.classList.add('d-none');   // kilitliye kopyalama olmaz
+            document.getElementById('tsKopyaBtn')?.classList.add('d-none');
             document.getElementById('tsModalBody').insertAdjacentHTML('afterbegin',
-                `<div class="alert alert-warning py-2 small mb-3"><i class="bi bi-lock-fill me-1"></i>Bu teknik şartname <b>${esc(ieR.is_emri.emir_no)}</b> numaralı iş emrine bağlı ve <b>KİLİTLİ</b> (${esc(ieR.is_emri.durum)}). Değişiklik için iş emrinin silinmesi (taslaksa) veya ADMIN tarafından iptali gerekir.</div>`);
+                `<div class="alert alert-warning py-2 small mb-3"><i class="bi bi-lock-fill me-1"></i>${mesajHtml}</div>`);
+        };
+        const ieR = await secureFetch(`/is-emri/${teslimatId}`);
+        if (ieR && ieR.ok && ieR.is_emri) {
+            formKilitle(`Bu teknik şartname <b>${esc(ieR.is_emri.emir_no)}</b> numaralı iş emrine bağlı ve <b>KİLİTLİ</b> (${esc(ieR.is_emri.durum)}). Değişiklik için iş emrinin silinmesi (taslaksa) veya ADMIN tarafından iptali gerekir.`);
+        } else if (teslimat.proje_durum === 'SÖZLEŞME') {
+            formKilitle(`Proje ADMIN onayıyla <b>SÖZLEŞME</b> durumunda — teknik şartname <b>KİLİTLİ</b>. Değişiklik için ADMIN'in proje onayını geri alması gerekir.`);
         }
     } catch (e) {}
 }
@@ -12236,6 +12249,37 @@ async function openProjeDuzenle(projeId) {
 // Aktif proje detayında olan ID — Düzenle butonu için
 let pdAktifProjeId = null;
 
+// ===== PROJE ONAY AKIŞI (TASLAK → SÖZLEŞME) — yalnız ADMIN =====
+function pdOnayAlaniDoldur(proje) {
+    const alan = document.getElementById('pdOnayAlan');
+    if (!alan) return;
+    const admin = (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin');
+    if (!admin) { alan.innerHTML = ''; return; }
+    if (proje.durum === 'TASLAK') {
+        alan.innerHTML = `<button class="btn btn-success btn-sm fw-bold" onclick="pdOnayla(${proje.id})"><i class="bi bi-check2-circle me-1"></i>Onayla (Sözleşme'ye Al)</button>`;
+    } else if (proje.durum === 'SÖZLEŞME') {
+        alan.innerHTML = `<button class="btn btn-outline-warning btn-sm fw-bold" onclick="pdOnayGeriAl(${proje.id})"><i class="bi bi-arrow-counterclockwise me-1"></i>Onayı Geri Al</button>`;
+    } else alan.innerHTML = '';
+}
+async function pdOnayla(projeId) {
+    if (_saAksiyonKilit) return;
+    if (!confirm('Proje ONAYLANSIN mı? (SÖZLEŞME durumuna geçer)\n\nTeknik şartname KİLİTLENİR ve iş emri oluşturulabilir hale gelir.')) return;
+    saAksiyonBaslat('Proje onaylanıyor…');
+    const r = await secureFetch('/proje-onayla', { method: 'POST', body: JSON.stringify({ proje_id: projeId }) }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(r.mesaj, 'success'); fetchProjeler(); openProjeDetay(projeId); }
+    else showToast((r && r.hata) || 'Onaylanamadı.', 'error');
+}
+async function pdOnayGeriAl(projeId) {
+    if (_saAksiyonKilit) return;
+    if (!confirm('Proje onayı GERİ ALINSIN mı? (TASLAK durumuna döner)\n\nTeknik şartname yeniden düzenlenebilir olur.')) return;
+    saAksiyonBaslat('Onay geri alınıyor…');
+    const r = await secureFetch('/proje-onay-geri-al', { method: 'POST', body: JSON.stringify({ proje_id: projeId }) }).catch(() => null);
+    saAksiyonBitir();
+    if (r && r.ok) { showToast(r.mesaj, 'success'); fetchProjeler(); openProjeDetay(projeId); }
+    else showToast((r && r.hata) || 'Geri alınamadı.', 'error');
+}
+
 // 6. Proje Detayını Supabase'den Çeker ve Modalı Açar
 function openProjeDetay(projeId) {
     pdAktifProjeId = projeId;
@@ -12479,6 +12523,7 @@ function renderGenelBakisSiparisler(liste, body) {
 }
 
 function renderProjeDetay(proje, teslimatlar) {
+    pdOnayAlaniDoldur(proje);   // ADMIN'e Onayla / Onayı Geri Al butonu (TASLAK↔SÖZLEŞME)
     document.getElementById("pdBaslik").innerHTML = `<i class="bi bi-folder2-open me-2 text-primary"></i>[${esc(proje.proje_kodu)}] ${esc(proje.musteri_adi)} - ${esc(proje.proje_adi)}`;
 
     const kdvOran = parseFloat(proje.kdv_orani) || 0;
@@ -12631,7 +12676,7 @@ function renderProjeDetay(proje, teslimatlar) {
                     <button type="button" class="btn btn-sm btn-outline-primary" onclick="openTeknikSartname(${t.id})">
                         <i class="bi bi-file-earmark-text me-1"></i>Teknik Şartname
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-warning" onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')">
+                    <button type="button" class="btn btn-sm btn-outline-warning" ${proje.durum === 'TASLAK' ? 'disabled title="İş emri için önce ADMIN proje onayı (Sözleşme) gerekli"' : `onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')"`}>
                         <i class="bi bi-clipboard2-check me-1"></i>İş Emri
                     </button>
                     <div class="btn-group btn-group-sm">

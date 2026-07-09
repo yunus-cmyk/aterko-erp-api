@@ -387,8 +387,8 @@ app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
         if (check.rowCount > 0) return res.json({ ok: false, hata: "Bu Proje Kodu zaten sistemde kullanılıyor!" });
 
         const projeRes = await client.query(`
-            INSERT INTO projeler (proje_kodu, musteri_adi, proje_adi, sozlesme_tarihi, satis_turu, nakliye, para_birimi, kdv_orani, satis_temsilcisi, aset_link, drive_link)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
+            INSERT INTO projeler (proje_kodu, musteri_adi, proje_adi, sozlesme_tarihi, satis_turu, nakliye, para_birimi, kdv_orani, satis_temsilcisi, aset_link, drive_link, durum)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'TASLAK') RETURNING id
         `, [
             proje.proje_kodu, proje.musteri_adi, proje.proje_adi, proje.sozlesme_tarihi || null,
             proje.satis_turu, proje.nakliye, proje.para_birimi, parseInt(proje.kdv_orani),
@@ -489,7 +489,9 @@ app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
         // hesaplanmis_durum varsa onu kullan, yoksa p.durum
         const data = result.rows.map(r => ({
             ...r,
-            durum: r.hesaplanmis_durum || r.durum || 'BEKLEMEDE'
+            // TASLAK proje (henüz ADMIN onayı yok) listede TASLAK görünür — teslimat
+            // hesaplı durumu onu ezmesin; onaydan sonra hesaplı durum devam eder
+            durum: r.durum === 'TASLAK' ? 'TASLAK' : (r.hesaplanmis_durum || r.durum || 'BEKLEMEDE')
         }));
         // FİYAT MASKESİ: projeler YAZMA yetkisi olmayana tutarlar sunucudan hiç inmez
         const fiyatGorebilir = await projeFiyatGorebilir(req);
@@ -499,6 +501,43 @@ app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
 });
 
 // YENİ: Proje Detayını ve Bağlı Teslimatları Getir
+// ============================================================================
+// PROJE ONAY AKIŞI (yeni): TASLAK → (ADMIN onayı) → SÖZLEŞME → iş emri → PROJE...
+// TASLAK'ta şartname serbest; SÖZLEŞME'de şartname KİLİTLİ ve iş emri açılabilir.
+// Onay geri alınabilir (yalnız aktif iş emri yoksa) → proje TASLAK'a döner.
+// Mevcut/eski projeler (AKTİF/PROJE durumunda) bu akışın DIŞINDA — davranışları değişmez.
+// ============================================================================
+app.post('/api/proje-onayla', yetkiKontrol, async (req, res, next) => {
+    try {
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
+            return res.status(403).json({ ok: false, hata: 'Proje onayı yalnızca ADMIN yetkisindedir.' });
+        const { proje_id } = req.body;
+        const u = await pool.query(
+            "UPDATE projeler SET durum='SÖZLEŞME' WHERE id=$1 AND durum='TASLAK' RETURNING proje_kodu", [proje_id]);
+        if (!u.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı veya TASLAK durumunda değil.' });
+        await auditLogla(req, { eylem: 'APPROVE', tablo: 'projeler', kayit_id: parseInt(proje_id), kayit_no: u.rows[0].proje_kodu, ozet: 'Proje onaylandı → SÖZLEŞME (teknik şartname kilitlendi)' });
+        res.json({ ok: true, mesaj: `${u.rows[0].proje_kodu} onaylandı — SÖZLEŞME. Teknik şartname kilitlendi; artık iş emri oluşturulabilir.` });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/proje-onay-geri-al', yetkiKontrol, async (req, res, next) => {
+    try {
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
+            return res.status(403).json({ ok: false, hata: 'Onay geri alma yalnızca ADMIN yetkisindedir.' });
+        const { proje_id } = req.body;
+        // Projede aktif iş emri varsa geri alınamaz — önce iş emri silinmeli/iptal edilmeli
+        const ie = await pool.query(
+            `SELECT ie.emir_no FROM is_emirleri ie JOIN proje_teslimatlari pt ON ie.teslimat_id=pt.id
+             WHERE pt.proje_id=$1 AND ie.durum <> 'İPTAL' LIMIT 1`, [proje_id]);
+        if (ie.rowCount) return res.json({ ok: false, hata: `Onay geri alınamaz: ${ie.rows[0].emir_no} numaralı aktif iş emri var. Önce iş emri silinmeli (taslaksa) veya iptal edilmelidir.` });
+        const u = await pool.query(
+            "UPDATE projeler SET durum='TASLAK' WHERE id=$1 AND durum='SÖZLEŞME' RETURNING proje_kodu", [proje_id]);
+        if (!u.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı veya SÖZLEŞME durumunda değil.' });
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'projeler', kayit_id: parseInt(proje_id), kayit_no: u.rows[0].proje_kodu, ozet: 'Proje onayı GERİ ALINDI → TASLAK (şartname yeniden düzenlenebilir)' });
+        res.json({ ok: true, mesaj: `${u.rows[0].proje_kodu} onayı geri alındı — TASLAK. Teknik şartname yeniden düzenlenebilir.` });
+    } catch (e) { next(e); }
+});
+
 app.get('/api/proje-detay/:id', yetkiKontrol, async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -548,6 +587,9 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
         const mevcutIds = new Set(mevcutRes.rows.map(r => r.id));
         const gonderilenIds = new Set();
         const kilitliBinalar = [];   // aktif iş emrine bağlı (şartname alanları güncellenmeyen) teslimatlar
+        // Proje ADMIN onayıyla SÖZLEŞME'deyse şartnameye giren teslimat alanları da kilitlidir
+        const projeDurumu = (await client.query('SELECT durum FROM projeler WHERE id=$1', [proje.id])).rows[0]?.durum;
+        const sozlesmeKilidi = projeDurumu === 'SÖZLEŞME';
 
         // 3. Her teslimatı işle (ID varsa güncelle, yoksa ekle)
         for (const t of teslimatlar || []) {
@@ -564,11 +606,11 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                 // İŞ EMRİ KİLİDİ: aktif iş emri varken şartnameye giren alanlar değiştirilemez —
                 // yalnız sevkiyat başlangıcı ve tutar güncellenir (belge bütünlüğü)
                 const kilitliIE = await aktifIsEmri(t.id);
-                if (kilitliIE) {
+                if (kilitliIE || sozlesmeKilidi) {
                     await client.query(
                         'UPDATE proje_teslimatlari SET sevkiyat_baslangici=$1, kdvsiz_tutar=$2 WHERE id=$3',
                         [sevkiyatBaslangici, parseFloat(t.kdvsiz_tutar) || 0, t.id]);
-                    kilitliBinalar.push(`${t.bina_adi || t.id} (${kilitliIE.emir_no})`);
+                    kilitliBinalar.push(`${t.bina_adi || t.id} (${kilitliIE ? kilitliIE.emir_no : 'SÖZLEŞME kilidi'})`);
                     gonderilenIds.add(t.id);
                     continue;
                 }
@@ -623,6 +665,10 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
             if (ie) {
                 await client.query('ROLLBACK');
                 return res.json({ ok: false, hata: `Teslimat silinemez: ${ie.emir_no} numaralı iş emrine bağlı. Önce iş emri silinmeli/iptal edilmelidir.` });
+            }
+            if (sozlesmeKilidi) {
+                await client.query('ROLLBACK');
+                return res.json({ ok: false, hata: 'Teslimat silinemez: proje ADMIN onayıyla SÖZLEŞME durumunda. Önce onay geri alınmalıdır.' });
             }
         }
         if (silinecek.length > 0) {
@@ -3541,7 +3587,10 @@ async function otomatikAlanDegerleri(t) {
 app.get('/api/teknik-sartname/:teslimatId', yetkiKontrol, async (req, res, next) => {
     try {
         const { teslimatId } = req.params;
-        const result = await pool.query(`SELECT * FROM proje_teslimatlari WHERE id = $1`, [teslimatId]);
+        const result = await pool.query(`
+            SELECT pt.*, p.durum AS proje_durum
+            FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id = p.id
+            WHERE pt.id = $1`, [teslimatId]);
         if (result.rowCount === 0) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
         const t = result.rows[0];
         // SALT_OKUNUR alanlar için otomatik değerler — kaynak_kolon eşleştirmesinden (panelden yönetilir)
@@ -3880,6 +3929,12 @@ app.post('/api/teknik-sartname-kaydet', yetkiKontrol, async (req, res, next) => 
         // İŞ EMRİ KİLİDİ: aktif iş emri varken şartname değiştirilemez
         const kilit = await aktifIsEmri(teslimat_id);
         if (kilit) return res.json({ ok: false, hata: `Teknik şartname ${kilit.emir_no} numaralı iş emrine bağlandı ve KİLİTLİDİR. Değişiklik için önce iş emrinin silinmesi (taslaksa) veya ADMIN tarafından iptali gerekir.` });
+        // PROJE ONAY KİLİDİ: proje SÖZLEŞME'ye alındıysa (ADMIN onayı) şartname kilitlidir —
+        // değişiklik için ADMIN'in onayı geri alması (proje → TASLAK) gerekir
+        const pd = await pool.query(
+            "SELECT p.durum FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id=p.id WHERE pt.id=$1", [teslimat_id]);
+        if (pd.rows[0]?.durum === 'SÖZLEŞME')
+            return res.json({ ok: false, hata: 'Proje ADMIN onayıyla SÖZLEŞME durumunda — teknik şartname KİLİTLİDİR. Değişiklik için ADMIN\'in proje onayını geri alması gerekir.' });
 
         // Mevcut ek_veriler'i çek, üzerine yaz
         const mevcut = await pool.query(
@@ -3987,8 +4042,11 @@ app.post('/api/is-emri-olustur', yetkiKontrol, async (req, res, next) => {
         if (await aktifIsEmri(teslimat_id)) return res.json({ ok: false, hata: 'Bu teslimat için zaten bir iş emri var.' });
         // Emir no: proje bazlı iki basamak — {ProjeKodu}-İE-01, -02, ... (teslimat adedince)
         const tkR = await pool.query(
-            "SELECT p.proje_kodu FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id=p.id WHERE pt.id=$1", [teslimat_id]);
+            "SELECT p.proje_kodu, p.durum AS proje_durum FROM proje_teslimatlari pt JOIN projeler p ON pt.proje_id=p.id WHERE pt.id=$1", [teslimat_id]);
         if (!tkR.rowCount) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+        // Yeni akış: TASLAK projede iş emri açılamaz — önce ADMIN onayı (SÖZLEŞME) gerekir
+        if (tkR.rows[0].proje_durum === 'TASLAK')
+            return res.json({ ok: false, hata: 'Proje henüz TASLAK durumunda — iş emri için önce ADMIN\'in projeyi onaylaması (SÖZLEŞME) gerekir.' });
         const projeKodu = tkR.rows[0].proje_kodu;
         const mxR = await pool.query(
             `SELECT COALESCE(MAX(NULLIF(regexp_replace(emir_no, '^.*-İE-', ''), '')::int), 0) AS mx
@@ -4011,7 +4069,19 @@ app.post('/api/is-emri-olustur', yetkiKontrol, async (req, res, next) => {
         // Erken aşamadaki teslimatı 'İŞ EMRİ' aşamasına çek (ileri aşamayı geriletme)
         await pool.query("UPDATE proje_teslimatlari SET durum='İŞ EMRİ' WHERE id=$1 AND durum IN ('BEKLEMEDE','SÖZLEŞME')", [teslimat_id]);
         await auditLogla(req, { eylem: 'CREATE', tablo: 'is_emirleri', kayit_id: ins.rows[0].id, kayit_no: emir_no, ozet: `İş emri hazırlandı (${t.bina_adi}) — şartname kilitlendi` });
-        res.json({ ok: true, id: ins.rows[0].id, emir_no, mesaj: `${emir_no} hazırlandı. Teknik şartname kilitlendi — yayınlayınca ekibe PDF ekli bildirim gider.` });
+        // ADMIN'e "onay bekleyen iş emri" bildirimi (yayınlama yetkisi yalnız ADMIN'de)
+        await bildirimGonder('IS_EMRI_ONAY_BEKLIYOR', {
+            konu: `Aterko Workspace - Onay bekleyen iş emri (${emir_no})`,
+            baslik: 'İş Emri Onayınızı Bekliyor',
+            mesaj: `${req.user.adSoyad} tarafından ${emir_no} numaralı iş emri hazırlandı. İnceleyip uygunsa "Yayınla" ile onaylayabilirsiniz — yayınlama yetkisi ADMIN'dedir.`,
+            detaylar: [
+                { label: 'İş Emri No', value: emir_no },
+                { label: 'Proje', value: `${t.proje_kodu || ''}${t.musteri_adi ? ' / ' + t.musteri_adi : ''}` },
+                { label: 'Bina', value: t.bina_adi || '-' },
+                { label: 'Hazırlayan', value: req.user.adSoyad }
+            ]
+        });
+        res.json({ ok: true, id: ins.rows[0].id, emir_no, mesaj: `${emir_no} hazırlandı. Teknik şartname kilitlendi — ADMIN'e onay bildirimi gönderildi.` });
     } catch (e) { next(e); }
 });
 
@@ -4036,6 +4106,9 @@ app.post('/api/is-emri-guncelle', yetkiKontrol, async (req, res, next) => {
 
 app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
     try {
+        // Yayınlama = onay → yalnız ADMIN
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
+            return res.status(403).json({ ok: false, hata: 'İş emri yayınlama (onay) yetkisi yalnızca ADMIN\'dedir.' });
         const { id } = req.body;
         // Atomik geçiş — yalnız HAZIRLANDI'dan; mükerrer tıklama ikinci mail üretmez
         const upd = await pool.query(
@@ -5127,7 +5200,7 @@ const ENDPOINT_IZIN_KURALLARI = [
 
     // Projeler
     { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
-    { pattern: /^\/api\/(proje-kaydet|proje-sil|teslimat-durum)/, modul: 'projeler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/(proje-kaydet|proje-sil|proje-onay|teslimat-durum)/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/proje-karlilik/, modul: 'rapor.karlilik', seviye: 'OKUMA' },
 
     // Bina Listeleri (Ürün Listesi)
@@ -7543,6 +7616,9 @@ async function semaGuvence() {
         await pool.query(`INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, ekstra_emailler, dinamik_alicilar, sira)
             SELECT 'IS_EMRI_NOT','İş emrine not eklendi','Proje',true,'{}','{}','{}',51
             WHERE NOT EXISTS (SELECT 1 FROM bildirim_kurallari WHERE olay_kodu='IS_EMRI_NOT')`);
+        await pool.query(`INSERT INTO bildirim_kurallari (olay_kodu, olay_adi, kategori, aktif, roller, ekstra_emailler, dinamik_alicilar, sira)
+            SELECT 'IS_EMRI_ONAY_BEKLIYOR','İş emri onay bekliyor (ADMIN''e)','Proje',true,ARRAY['ADMIN'],'{}','{}',49
+            WHERE NOT EXISTS (SELECT 1 FROM bildirim_kurallari WHERE olay_kodu='IS_EMRI_ONAY_BEKLIYOR')`);
         // Eski TEXT notlar'ı tarihli JSONB dizisine çevir (idempotent; yalnız text ise)
         await pool.query(`
             DO $$
