@@ -4128,6 +4128,9 @@ function maliHareketBolumHTML(tarafTip, hareketler, yazma) {
                 </select></div>
             <div class="col-md-2"><label class="form-label small mb-0">Tutar (TL)</label>
                 <input id="mhTutar" type="number" step="0.01" class="form-control form-control-sm"></div>
+            <div class="col-md-2 mh-planli d-none"><div class="form-check mt-3">
+                <input id="mhPlanli" type="checkbox" class="form-check-input" onchange="maliHareketTipDegisti()">
+                <label class="form-check-label small" for="mhPlanli" title="İleri tarihli taksit: kasa ve bakiyeye şimdi dokunmaz, nakit akışa ödeme tarihiyle yazılır; günü gelince Gerçekleşti'ye basılır">Planlı (ileri tarihli)</label></div></div>
             <div class="col-md-2 mh-vade"><label class="form-label small mb-0" id="mhVadeEtiket">Vade</label>
                 <input id="mhVade" type="date" class="form-control form-control-sm"></div>
             <div class="col-md-2 mh-cek d-none"><div class="form-check mt-3">
@@ -4142,7 +4145,7 @@ function maliHareketBolumHTML(tarafTip, hareketler, yazma) {
     const bolumler = tipler.map(([tip, ad]) => {
         const satirlar = (hareketler || []).filter(h => h.tip === tip);
         const toplam = satirlar.reduce((s, h) => s + (parseFloat(h.tutar) || 0), 0);
-        const vadeliMi = ['FATURA', 'CEK', 'PROJEKSIYON'].includes(tip);   // planla/gerçekleştir yalnız bu tiplerde
+        const vadeliMi = true;   // tüm tiplerde Durum kolonu (planlı ödeme/tahsilat taksitleri de yönetilir)
         if (!satirlar.length) return `<div class="mb-2 small text-muted"><b>${ad}:</b> kayıt yok.</div>`;
         return `
         <div class="mb-3">
@@ -4175,13 +4178,16 @@ function maliHareketTipDegisti() {
     const sel = document.getElementById('mhTip');
     if (!sel) return;
     const tip = sel.value;
+    const nakitTip = (tip === 'ODEME' || tip === 'TAHSILAT');
+    const planli = nakitTip && document.getElementById('mhPlanli')?.checked;
     document.querySelectorAll('.mh-cek').forEach(el => el.classList.toggle('d-none', tip !== 'CEK'));
     document.querySelectorAll('.mh-proj').forEach(el => el.classList.toggle('d-none', tip !== 'PROJEKSIYON'));
     document.querySelectorAll('.mh-belge').forEach(el => el.classList.toggle('d-none', tip !== 'FATURA'));
-    document.querySelectorAll('.mh-vade').forEach(el => el.classList.toggle('d-none', tip === 'ODEME' || tip === 'TAHSILAT'));
+    document.querySelectorAll('.mh-planli').forEach(el => el.classList.toggle('d-none', !nakitTip));
+    document.querySelectorAll('.mh-vade').forEach(el => el.classList.toggle('d-none', nakitTip && !planli));
     const tarihEt = document.getElementById('mhTarihEtiket'), vadeEt = document.getElementById('mhVadeEtiket');
-    if (tarihEt) tarihEt.textContent = tip === 'FATURA' ? 'Belge Tarihi' : (tip === 'CEK' ? 'Veriliş Tarihi' : 'Tarih');
-    if (vadeEt) vadeEt.textContent = tip === 'PROJEKSIYON' ? 'Muhtemel Tarih' : (tip === 'CEK' ? 'Çek Vadesi' : 'Ödeme/Tahsilat Vadesi');
+    if (tarihEt) tarihEt.textContent = tip === 'FATURA' ? 'Belge Tarihi' : (tip === 'CEK' ? 'Veriliş Tarihi' : (planli ? 'Kayıt Tarihi' : 'Tarih'));
+    if (vadeEt) vadeEt.textContent = tip === 'PROJEKSIYON' ? 'Muhtemel Tarih' : (tip === 'CEK' ? 'Çek Vadesi' : (planli ? 'Planlanan Ödeme Tarihi' : 'Ödeme/Tahsilat Vadesi'));
 }
 
 async function maliHareketEkle() {
@@ -4199,6 +4205,7 @@ async function maliHareketEkle() {
             cek_no: document.getElementById('mhCekNo')?.value || '',
             banka: document.getElementById('mhBanka')?.value || '',
             muhlet_oncesi: document.getElementById('mhMuhletOnce')?.checked || false,
+            planli: document.getElementById('mhPlanli')?.checked || false,
             projeksiyon_tur: document.getElementById('mhProjTur')?.value || null,
             aciklama: document.getElementById('mhAciklama')?.value || ''
         })
@@ -4289,6 +4296,8 @@ function maliNakitRender() {
             <td colspan="2">${esc(k.firma_adi || '?')}
                 ${k.tip === 'PROJEKSIYON' ? `<span class="badge text-bg-warning ms-1">Projeksiyon${k.projeksiyon_tur ? ' · ' + (MALI_PROJ_AD[k.projeksiyon_tur] || k.projeksiyon_tur) : ''}</span>` : ''}
                 ${k.tip === 'DEVIR' ? '<span class="badge bg-secondary-subtle text-dark ms-1" title="Açık faturayla açıklanamayan cari borç — vade Ayarlar\'daki varsayılan ödeme vadesi">Cari Borç (Devir)</span>' : ''}
+                ${k.tip === 'ODEME' ? '<span class="badge bg-primary-subtle text-dark ms-1">Planlı Ödeme</span>' : ''}
+                ${k.tip === 'TAHSILAT' ? '<span class="badge bg-primary-subtle text-dark ms-1">Planlı Tahsilat</span>' : ''}
                 ${k.tip === 'CEK' ? `<span class="badge text-bg-secondary ms-1">Çek ${esc(k.cek_no || '')}</span>` : ''}
                 ${k.tip === 'FATURA' && k.belge_no ? `<span class="text-muted ms-1">${esc(k.belge_no)}</span>` : ''}
                 ${k.planlanan_vade ? `<span class="badge bg-info-subtle text-dark ms-1" title="Asıl vade: ${k.asil_vade ? formatTarihTR(k.asil_vade) : '-'}">plan</span>` : ''}</td>

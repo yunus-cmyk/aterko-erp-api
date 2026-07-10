@@ -2261,7 +2261,7 @@ async function maliBakiyeler(tarafTip, tarafIds) {
     const r = await pool.query(`
         SELECT taraf_id,
                COALESCE(SUM(CASE WHEN tip='FATURA' THEN tutar END), 0) AS fatura_toplam,
-               COALESCE(SUM(CASE WHEN tip IN ('ODEME','TAHSILAT') THEN tutar END), 0) AS odeme_toplam,
+               COALESCE(SUM(CASE WHEN tip IN ('ODEME','TAHSILAT') AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS odeme_toplam,
                COALESCE(SUM(CASE WHEN tip='CEK' AND muhlet_oncesi AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS cek_once,
                COALESCE(SUM(CASE WHEN tip='CEK' AND NOT muhlet_oncesi AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS cek_sonra,
                COALESCE(SUM(CASE WHEN tip='PROJEKSIYON' AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS projeksiyon_toplam
@@ -2426,8 +2426,11 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
         if (tip === 'CEK' && !b.vade_tarihi) return res.json({ ok: false, hata: 'Çek için vade tarihi zorunludur (nakit akışına girer).' });
         if (tip === 'PROJEKSIYON' && !['AVANS', 'HAKEDIS', 'CEK'].includes(String(b.projeksiyon_tur || '').toUpperCase()))
             return res.json({ ok: false, hata: 'Projeksiyon türü Avans / Hakediş / Çek olmalıdır.' });
-        // ODEME/TAHSILAT Faz 1'de doğrudan gerçekleşmiş kabul edilir (tarih=belge tarihi)
-        const gerc = (tip === 'ODEME' || tip === 'TAHSILAT');
+        // ODEME/TAHSILAT normalde gerçekleşmiş nakit kaydıdır; "planlı" bayrağıyla ileri tarihli
+        // taksit olarak girilir (kasa/bakiyeye dokunmaz, nakit akışa vadesiyle yazılır)
+        const planli = !!b.planli && (tip === 'ODEME' || tip === 'TAHSILAT');
+        if (planli && !b.vade_tarihi) return res.json({ ok: false, hata: 'Planlı ödeme/tahsilat için ödeme tarihi (vade) zorunludur.' });
+        const gerc = (tip === 'ODEME' || tip === 'TAHSILAT') && !planli;
         const i = await pool.query(`
             INSERT INTO cari_hareketler (taraf_tip, taraf_id, tip, belge_tarihi, belge_no, tutar,
                 vade_tarihi, gerceklesen_tarih, gerceklesen_tutar, cek_no, banka, muhlet_oncesi,
@@ -2494,7 +2497,7 @@ app.post('/api/mali-hareket-planla', yetkiKontrol, async (req, res, next) => {
         const h = await pool.query('SELECT tip, gerceklesen_tarih FROM cari_hareketler WHERE id=$1', [req.body.id]);
         if (!h.rowCount) return res.json({ ok: false, hata: 'Hareket bulunamadı.' });
         if (h.rows[0].gerceklesen_tarih) return res.json({ ok: false, hata: 'Gerçekleşmiş kalem yeniden planlanamaz.' });
-        if (!['FATURA', 'CEK', 'PROJEKSIYON'].includes(h.rows[0].tip)) return res.json({ ok: false, hata: 'Yalnız fatura, çek ve projeksiyon kalemleri planlanabilir.' });
+        if (!['FATURA', 'CEK', 'PROJEKSIYON', 'ODEME', 'TAHSILAT'].includes(h.rows[0].tip)) return res.json({ ok: false, hata: 'Bu kalem planlanamaz.' });
         await pool.query('UPDATE cari_hareketler SET planlanan_vade=$1, planlanan_tutar=$2 WHERE id=$3',
             [req.body.planlanan_vade || null, parseFloat(req.body.planlanan_tutar) || null, req.body.id]);
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'cari_hareketler', kayit_id: parseInt(req.body.id), ozet: `Plan: vade=${req.body.planlanan_vade || '-'}, tutar=${req.body.planlanan_tutar || '-'}` });
@@ -2514,7 +2517,7 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
         await cl.query('BEGIN');
         // Atomik: yalnız henüz gerçekleşmemişse damgala (çift tıklama mükerrer kayıt üretmez)
         const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=$1, gerceklesen_tutar=$2
-            WHERE id=$3 AND gerceklesen_tarih IS NULL AND tip IN ('FATURA','CEK','PROJEKSIYON') RETURNING *`, [tarih, t, id]);
+            WHERE id=$3 AND gerceklesen_tarih IS NULL AND tip IN ('FATURA','CEK','PROJEKSIYON','ODEME','TAHSILAT') RETURNING *`, [tarih, t, id]);
         if (!u.rowCount) { await cl.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem bulunamadı, zaten gerçekleşmiş ya da bu tipte gerçekleştirme yapılamaz.' }); }
         const h = u.rows[0];
         let karsi = null;
@@ -2541,8 +2544,8 @@ async function maliKasaBakiye() {
     const a = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_ayar'");
     const acilis = parseFloat(a.rows[0]?.deger?.kasa_acilis) || 0;
     const r = await pool.query(`SELECT
-            COALESCE(SUM(CASE WHEN tip='TAHSILAT' THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS giris,
-            COALESCE(SUM(CASE WHEN tip='ODEME' THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS cikis_odeme,
+            COALESCE(SUM(CASE WHEN tip='TAHSILAT' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS giris,
+            COALESCE(SUM(CASE WHEN tip='ODEME' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS cikis_odeme,
             COALESCE(SUM(CASE WHEN tip='CEK' AND gerceklesen_tarih IS NOT NULL THEN gerceklesen_tutar END), 0) AS cikis_cek
         FROM cari_hareketler`);
     const x = r.rows[0];
@@ -2564,8 +2567,8 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             LEFT JOIN tedarikciler t ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             LEFT JOIN musteriler m ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
             WHERE h.gerceklesen_tarih IS NULL
-              AND ((h.taraf_tip='TEDARIKCI' AND h.tip IN ('FATURA','CEK'))
-                OR (h.taraf_tip='MUSTERI' AND h.tip IN ('FATURA','PROJEKSIYON')))
+              AND ((h.taraf_tip='TEDARIKCI' AND h.tip IN ('FATURA','CEK','ODEME'))
+                OR (h.taraf_tip='MUSTERI' AND h.tip IN ('FATURA','PROJEKSIYON','TAHSILAT')))
               AND NOT (h.tip='CEK' AND h.muhlet_oncesi)
             ORDER BY etkin_vade NULLS LAST, h.id`);
         // Mühlet öncesi çekler nakit akışa GİRMEZ (konkordato/yapılandırma kapsamı, ödenmeyecek)
@@ -2576,8 +2579,9 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             SELECT t.id, t.firma_adi,
                    COALESCE(t.muhlet_sonrasi_devir, 0)
                    + COALESCE(SUM(CASE WHEN h.tip='FATURA' THEN h.tutar END), 0)
-                   - COALESCE(SUM(CASE WHEN h.tip IN ('ODEME','TAHSILAT') THEN h.tutar END), 0) AS bakiye,
-                   COALESCE(SUM(CASE WHEN h.tip='FATURA' AND h.gerceklesen_tarih IS NULL THEN h.tutar END), 0) AS acik_fatura
+                   - COALESCE(SUM(CASE WHEN h.tip IN ('ODEME','TAHSILAT') AND h.gerceklesen_tarih IS NOT NULL THEN COALESCE(h.gerceklesen_tutar, h.tutar) END), 0) AS bakiye,
+                   COALESCE(SUM(CASE WHEN h.tip='FATURA' AND h.gerceklesen_tarih IS NULL THEN h.tutar END), 0) AS acik_fatura,
+                   COALESCE(SUM(CASE WHEN h.tip='ODEME' AND h.gerceklesen_tarih IS NULL THEN COALESCE(h.planlanan_tutar, h.tutar) END), 0) AS acik_plan
             FROM tedarikciler t
             LEFT JOIN cari_hareketler h ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             GROUP BY t.id, t.firma_adi`);
@@ -2597,7 +2601,8 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             else if (vade <= bitis) kalemler.push(kalem);
         }
         for (const d of devirler.rows) {
-            const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_fatura)) * 100) / 100;
+            // Devir kalemi = bakiye − açık faturalar − planlı ödeme taksitleri (taksitler kendi tarihinde ayrı kalem)
+            const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_fatura) - parseFloat(d.acik_plan)) * 100) / 100;
             if (tutar <= 0) continue;
             const kalem = { id: null, taraf_tip: 'TEDARIKCI', taraf_id: d.id, firma_adi: d.firma_adi,
                 tip: 'DEVIR', belge_no: null, cek_no: null, projeksiyon_tur: null,
@@ -2621,7 +2626,7 @@ app.get('/api/mali-kasa', yetkiKontrol, async (req, res, next) => {
             FROM cari_hareketler h
             LEFT JOIN tedarikciler t ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             LEFT JOIN musteriler m ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
-            WHERE h.tip IN ('ODEME','TAHSILAT') OR (h.tip='CEK' AND h.gerceklesen_tarih IS NOT NULL)
+            WHERE (h.tip IN ('ODEME','TAHSILAT') AND h.gerceklesen_tarih IS NOT NULL) OR (h.tip='CEK' AND h.gerceklesen_tarih IS NOT NULL)
             ORDER BY tarih, h.id`);
         const kasa = await maliKasaBakiye();
         res.json({ ok: true, kasa_acilis: kasa.acilis, kasa_bugun: kasa.bakiye, data: r.rows });
