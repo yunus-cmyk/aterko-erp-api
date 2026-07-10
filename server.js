@@ -2466,14 +2466,17 @@ app.get('/api/mali-ekip', yetkiKontrol, async (req, res, next) => {
 app.get('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_ayar'");
-        res.json({ ok: true, ayar: r.rows[0]?.deger || { muhlet_tarihi: null, kasa_acilis: 0 } });
+        const ayar = r.rows[0]?.deger || { muhlet_tarihi: null, kasa_acilis: 0 };
+        if (!ayar.varsayilan_odeme_vadesi) ayar.varsayilan_odeme_vadesi = '2026-07-13';
+        res.json({ ok: true, ayar });
     } catch (e) { next(e); }
 });
 app.post('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
     try {
         if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
             return res.status(403).json({ ok: false, hata: 'Mali ayarları yalnızca ADMIN değiştirebilir.' });
-        const yeni = { muhlet_tarihi: req.body.muhlet_tarihi || null, kasa_acilis: parseFloat(req.body.kasa_acilis) || 0 };
+        const yeni = { muhlet_tarihi: req.body.muhlet_tarihi || null, kasa_acilis: parseFloat(req.body.kasa_acilis) || 0,
+            varsayilan_odeme_vadesi: req.body.varsayilan_odeme_vadesi || '2026-07-13' };
         await pool.query(`INSERT INTO sistem_ayarlari (anahtar, deger, guncelleme) VALUES ('mali_ayar', $1, now())
             ON CONFLICT (anahtar) DO UPDATE SET deger=$1, guncelleme=now()`, [JSON.stringify(yeni)]);
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'sistem_ayarlari', ozet: `Mali ayar: mühlet=${yeni.muhlet_tarihi || '-'}, kasa açılış=${yeni.kasa_acilis}` });
@@ -2563,7 +2566,21 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             WHERE h.gerceklesen_tarih IS NULL
               AND ((h.taraf_tip='TEDARIKCI' AND h.tip IN ('FATURA','CEK'))
                 OR (h.taraf_tip='MUSTERI' AND h.tip IN ('FATURA','PROJEKSIYON')))
+              AND NOT (h.tip='CEK' AND h.muhlet_oncesi)
             ORDER BY etkin_vade NULLS LAST, h.id`);
+        // Mühlet öncesi çekler nakit akışa GİRMEZ (konkordato/yapılandırma kapsamı, ödenmeyecek)
+        // Faturasız cari borç (devir kısmı): bakiye − açık faturalar; varsayılan ödeme vadesiyle akışa girer
+        const ayarR = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_ayar'");
+        const varsayilanVade = ayarR.rows[0]?.deger?.varsayilan_odeme_vadesi || '2026-07-13';
+        const devirler = await pool.query(`
+            SELECT t.id, t.firma_adi,
+                   COALESCE(t.muhlet_sonrasi_devir, 0)
+                   + COALESCE(SUM(CASE WHEN h.tip='FATURA' THEN h.tutar END), 0)
+                   - COALESCE(SUM(CASE WHEN h.tip IN ('ODEME','TAHSILAT') THEN h.tutar END), 0) AS bakiye,
+                   COALESCE(SUM(CASE WHEN h.tip='FATURA' AND h.gerceklesen_tarih IS NULL THEN h.tutar END), 0) AS acik_fatura
+            FROM tedarikciler t
+            LEFT JOIN cari_hareketler h ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
+            GROUP BY t.id, t.firma_adi`);
         const kasa = await maliKasaBakiye();
         const bugun = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' });
         const bitis = new Date(Date.now() + gun * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' });
@@ -2579,7 +2596,17 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             else if (vade < bugun) gecikmis.push(kalem);
             else if (vade <= bitis) kalemler.push(kalem);
         }
-        res.json({ ok: true, bugun, bitis, kasa_bugun: kasa.bakiye, kasa_acilis: kasa.acilis, kalemler, gecikmis, vadesiz });
+        for (const d of devirler.rows) {
+            const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_fatura)) * 100) / 100;
+            if (tutar <= 0) continue;
+            const kalem = { id: null, taraf_tip: 'TEDARIKCI', taraf_id: d.id, firma_adi: d.firma_adi,
+                tip: 'DEVIR', belge_no: null, cek_no: null, projeksiyon_tur: null,
+                yon: 'CIKIS', tutar, asil_vade: varsayilanVade, planlanan_vade: null, vade: varsayilanVade };
+            if (varsayilanVade < bugun) gecikmis.push(kalem);
+            else if (varsayilanVade <= bitis) kalemler.push(kalem);
+        }
+        kalemler.sort((a, b) => a.vade < b.vade ? -1 : a.vade > b.vade ? 1 : 0);
+        res.json({ ok: true, bugun, bitis, kasa_bugun: kasa.bakiye, kasa_acilis: kasa.acilis, varsayilan_vade: varsayilanVade, kalemler, gecikmis, vadesiz });
     } catch (e) { next(e); }
 });
 

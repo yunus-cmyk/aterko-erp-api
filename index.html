@@ -3503,10 +3503,15 @@ STK-002		50	adet
               <input type="date" id="maliAyarMuhlet" class="form-control">
               <small class="text-muted">Mühlet öncesi/sonrası ayrımının kesim tarihi (tek sabit tarih).</small>
             </div>
-            <div class="mb-2">
+            <div class="mb-3">
               <label class="form-label fw-bold">Kasa Açılış Bakiyesi (TL)</label>
               <input type="number" step="0.01" id="maliAyarKasa" class="form-control">
-              <small class="text-muted">Nakit akışının başlangıç noktası (Faz 2'de kullanılacak).</small>
+              <small class="text-muted">Kasa defterinin ve nakit akışının başlangıç noktası.</small>
+            </div>
+            <div class="mb-2">
+              <label class="form-label fw-bold">Varsayılan Ödeme Vadesi</label>
+              <input type="date" id="maliAyarVarsayilanVade" class="form-control">
+              <small class="text-muted">Faturasız cari borçlar (devir) nakit akışına bu tarihle yazılır.</small>
             </div>
           </div>
           <div class="modal-footer">
@@ -3849,7 +3854,7 @@ function sekmeGuard(tab) {
 
 // ============ MALİ İŞLER (Faz 1 — cari takip) ============
 // İlke: bakiyeler backend'de hareketlerden HESAPLANIR; burada yalnız gösterilir.
-const MALI_HAREKET_AD = { FATURA: 'Fatura', ODEME: 'Ödeme', TAHSILAT: 'Tahsilat', CEK: 'Çek', PROJEKSIYON: 'Projeksiyon' };
+const MALI_HAREKET_AD = { FATURA: 'Fatura', ODEME: 'Ödeme', TAHSILAT: 'Tahsilat', CEK: 'Çek', PROJEKSIYON: 'Projeksiyon', DEVIR: 'Cari Borç (Devir)' };
 const MALI_PROJ_AD = { AVANS: 'Avans', HAKEDIS: 'Hakediş', CEK: 'Çek' };
 let _maliAktifSekme = 'tedarikci';
 function maliTL(x) { return formatTR(parseFloat(x) || 0) + ' TL'; }
@@ -4283,6 +4288,7 @@ function maliNakitRender() {
             <td class="ps-4 text-muted"></td>
             <td colspan="2">${esc(k.firma_adi || '?')}
                 ${k.tip === 'PROJEKSIYON' ? `<span class="badge text-bg-warning ms-1">Projeksiyon${k.projeksiyon_tur ? ' · ' + (MALI_PROJ_AD[k.projeksiyon_tur] || k.projeksiyon_tur) : ''}</span>` : ''}
+                ${k.tip === 'DEVIR' ? '<span class="badge bg-secondary-subtle text-dark ms-1" title="Açık faturayla açıklanamayan cari borç — vade Ayarlar\'daki varsayılan ödeme vadesi">Cari Borç (Devir)</span>' : ''}
                 ${k.tip === 'CEK' ? `<span class="badge text-bg-secondary ms-1">Çek ${esc(k.cek_no || '')}</span>` : ''}
                 ${k.tip === 'FATURA' && k.belge_no ? `<span class="text-muted ms-1">${esc(k.belge_no)}</span>` : ''}
                 ${k.planlanan_vade ? `<span class="badge bg-info-subtle text-dark ms-1" title="Asıl vade: ${k.asil_vade ? formatTarihTR(k.asil_vade) : '-'}">plan</span>` : ''}</td>
@@ -4443,6 +4449,7 @@ function maliAyarAc() {
     const a = window._maliAyar || {};
     document.getElementById('maliAyarMuhlet').value = a.muhlet_tarihi ? String(a.muhlet_tarihi).slice(0, 10) : '';
     document.getElementById('maliAyarKasa').value = a.kasa_acilis || 0;
+    document.getElementById('maliAyarVarsayilanVade').value = a.varsayilan_odeme_vadesi || '2026-07-13';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMaliAyar')).show();
 }
 async function maliAyarKaydet() {
@@ -4450,7 +4457,8 @@ async function maliAyarKaydet() {
         method: 'POST',
         body: JSON.stringify({
             muhlet_tarihi: document.getElementById('maliAyarMuhlet').value || null,
-            kasa_acilis: document.getElementById('maliAyarKasa').value
+            kasa_acilis: document.getElementById('maliAyarKasa').value,
+            varsayilan_odeme_vadesi: document.getElementById('maliAyarVarsayilanVade').value || null
         })
     });
     if (!r.ok) return showToast(r.hata || 'Kaydedilemedi.', 'error');
