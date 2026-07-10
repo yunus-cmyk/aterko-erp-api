@@ -2591,24 +2591,31 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
         const ymdStr = v => v ? String(v instanceof Date ? v.toLocaleDateString('sv-SE') : v).slice(0, 10) : null;
         const kalemler = [], gecikmis = [], vadesiz = [];
         for (const h of r.rows) {
-            const vade = ymdStr(h.etkin_vade);
+            let vade = ymdStr(h.etkin_vade);
             const kalem = { id: h.id, taraf_tip: h.taraf_tip, taraf_id: h.taraf_id, firma_adi: h.firma_adi,
                 tip: h.tip, belge_no: h.belge_no, cek_no: h.cek_no, projeksiyon_tur: h.projeksiyon_tur,
                 yon: h.yon, tutar: parseFloat(h.etkin_tutar), asil_vade: ymdStr(h.vade_tarihi),
                 planlanan_vade: ymdStr(h.planlanan_vade), vade };
+            // Plan kalemleri (ödeme/tahsilat planı) gecikmişe DÜŞMEZ: o gün ödenmediyse
+            // ve yeni vade girilmediyse otomatik bugüne taşınır (kullanıcı kuralı)
+            if ((h.tip === 'ODEME' || h.tip === 'TAHSILAT') && vade && vade < bugun) {
+                kalem.tasindi = true; kalem.vade = vade = bugun;
+            }
             if (!vade) vadesiz.push(kalem);
             else if (vade < bugun) gecikmis.push(kalem);
             else if (vade <= bitis) kalemler.push(kalem);
         }
+        // Devir kalemleri de plan niteliğindedir — varsayılan vade geçtiyse bugüne taşınır
+        const devirVade = varsayilanVade < bugun ? bugun : varsayilanVade;
         for (const d of devirler.rows) {
             // Devir kalemi = bakiye − açık faturalar − planlı ödeme taksitleri (taksitler kendi tarihinde ayrı kalem)
             const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_fatura) - parseFloat(d.acik_plan)) * 100) / 100;
             if (tutar <= 0) continue;
             const kalem = { id: null, taraf_tip: 'TEDARIKCI', taraf_id: d.id, firma_adi: d.firma_adi,
                 tip: 'DEVIR', belge_no: null, cek_no: null, projeksiyon_tur: null,
-                yon: 'CIKIS', tutar, asil_vade: varsayilanVade, planlanan_vade: null, vade: varsayilanVade };
-            if (varsayilanVade < bugun) gecikmis.push(kalem);
-            else if (varsayilanVade <= bitis) kalemler.push(kalem);
+                yon: 'CIKIS', tutar, asil_vade: varsayilanVade, planlanan_vade: null, vade: devirVade,
+                tasindi: devirVade !== varsayilanVade };
+            if (devirVade <= bitis) kalemler.push(kalem);
         }
         kalemler.sort((a, b) => a.vade < b.vade ? -1 : a.vade > b.vade ? 1 : 0);
         res.json({ ok: true, bugun, bitis, kasa_bugun: kasa.bakiye, kasa_acilis: kasa.acilis, varsayilan_vade: varsayilanVade, kalemler, gecikmis, vadesiz });
