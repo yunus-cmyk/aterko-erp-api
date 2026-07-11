@@ -2418,9 +2418,11 @@ app.post('/api/mali-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
 app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
     try {
         const b = req.body;
-        const tarafTip = b.taraf_tip === 'MUSTERI' ? 'MUSTERI' : 'TEDARIKCI';
+        // GIDER = cari kartı olmayan işletme gideri (maaş vb.) — yalnız ödeme, nakit akışa tek kalem
+        const tarafTip = ['MUSTERI', 'GIDER'].includes(b.taraf_tip) ? b.taraf_tip : 'TEDARIKCI';
         const tip = String(b.tip || '').toUpperCase();
-        const gecerli = tarafTip === 'TEDARIKCI' ? ['FATURA', 'ODEME', 'CEK'] : ['FATURA', 'TAHSILAT', 'PROJEKSIYON'];
+        const gecerli = tarafTip === 'TEDARIKCI' ? ['FATURA', 'ODEME', 'CEK'] : tarafTip === 'MUSTERI' ? ['FATURA', 'TAHSILAT', 'PROJEKSIYON'] : ['ODEME'];
+        if (tarafTip === 'GIDER' && !(b.aciklama || '').trim()) return res.json({ ok: false, hata: 'Gider kalemi için açıklama zorunludur (örn. "Temmuz maaşları").' });
         if (!gecerli.includes(tip)) return res.json({ ok: false, hata: `Geçersiz hareket tipi (${tarafTip} için: ${gecerli.join(', ')}).` });
         const tutar = parseFloat(b.tutar);
         if (!(tutar > 0)) return res.json({ ok: false, hata: 'Tutar sıfırdan büyük olmalı.' });
@@ -2439,7 +2441,7 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
                 vade_tarihi, gerceklesen_tarih, gerceklesen_tutar, cek_no, banka, muhlet_oncesi,
                 projeksiyon_tur, aciklama, olusturan_email)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
-            [tarafTip, parseInt(b.taraf_id), tip, b.belge_tarihi, (b.belge_no || '').trim() || null, tutar,
+            [tarafTip, tarafTip === 'GIDER' ? 0 : parseInt(b.taraf_id), tip, b.belge_tarihi, (b.belge_no || '').trim() || null, tutar,
              b.vade_tarihi || null, gerc ? b.belge_tarihi : null, gerc ? tutar : null,
              (b.cek_no || '').trim() || null, (b.banka || '').trim() || null, !!b.muhlet_oncesi,
              tip === 'PROJEKSIYON' ? String(b.projeksiyon_tur).toUpperCase() : null,
@@ -2457,6 +2459,16 @@ app.post('/api/mali-hareket-sil', yetkiKontrol, async (req, res, next) => {
         const h = d.rows[0];
         await auditLogla(req, { eylem: 'DELETE', tablo: 'cari_hareketler', kayit_id: parseInt(req.body.id), ozet: `${h.taraf_tip} #${h.taraf_id} ${h.tip} ${h.tutar} TL SİLİNDİ` });
         res.json({ ok: true, mesaj: 'Hareket silindi.' });
+    } catch (e) { next(e); }
+});
+
+// Kart dışı gider kalemleri (maaş vb.) — açık planlar önce, sonra gerçekleşenler
+app.get('/api/mali-giderler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT * FROM cari_hareketler WHERE taraf_tip='GIDER'
+            ORDER BY (gerceklesen_tarih IS NOT NULL), COALESCE(planlanan_vade, vade_tarihi, belge_tarihi), id`);
+        res.json({ ok: true, data: r.rows });
     } catch (e) { next(e); }
 });
 
@@ -2524,7 +2536,8 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
         if (!u.rowCount) { await cl.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem bulunamadı, zaten gerçekleşmiş ya da bu tipte gerçekleştirme yapılamaz.' }); }
         const h = u.rows[0];
         let karsi = null;
-        if (h.tip === 'FATURA' || h.tip === 'PROJEKSIYON') {
+        // karsi_kayit=false: fatura avans/mahsupla kapatıldı — otomatik ödeme/tahsilat üretilmez
+        if ((h.tip === 'FATURA' || h.tip === 'PROJEKSIYON') && req.body.karsi_kayit !== false) {
             const yeniTip = h.taraf_tip === 'TEDARIKCI' ? 'ODEME' : 'TAHSILAT';
             const ozet = h.tip === 'FATURA'
                 ? `Fatura ${h.belge_no || '#' + h.id} ${yeniTip === 'ODEME' ? 'ödemesi' : 'tahsilatı'}`
@@ -2564,14 +2577,16 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
                    h.tutar, h.planlanan_tutar, h.vade_tarihi, h.planlanan_vade,
                    COALESCE(h.planlanan_vade, h.vade_tarihi) AS etkin_vade,
                    COALESCE(h.planlanan_tutar, h.tutar) AS etkin_tutar,
-                   CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi ELSE m.firma_adi END AS firma_adi,
-                   CASE WHEN h.taraf_tip='TEDARIKCI' THEN 'CIKIS' ELSE 'GIRIS' END AS yon
+                   CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi WHEN h.taraf_tip='MUSTERI' THEN m.firma_adi
+                        ELSE COALESCE(h.aciklama, 'Diğer gider') END AS firma_adi,
+                   CASE WHEN h.taraf_tip='MUSTERI' THEN 'GIRIS' ELSE 'CIKIS' END AS yon
             FROM cari_hareketler h
             LEFT JOIN tedarikciler t ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             LEFT JOIN musteriler m ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
             WHERE h.gerceklesen_tarih IS NULL
               AND ((h.taraf_tip='TEDARIKCI' AND h.tip IN ('FATURA','CEK','ODEME'))
-                OR (h.taraf_tip='MUSTERI' AND h.tip IN ('FATURA','PROJEKSIYON','TAHSILAT')))
+                OR (h.taraf_tip='MUSTERI' AND h.tip IN ('FATURA','PROJEKSIYON','TAHSILAT'))
+                OR (h.taraf_tip='GIDER' AND h.tip='ODEME'))
               AND NOT (h.tip='CEK' AND h.muhlet_oncesi)
             ORDER BY etkin_vade NULLS LAST, h.id`);
         // Mühlet öncesi çekler nakit akışa GİRMEZ (konkordato/yapılandırma kapsamı, ödenmeyecek)
@@ -2632,7 +2647,8 @@ app.get('/api/mali-kasa', yetkiKontrol, async (req, res, next) => {
             SELECT h.id, h.taraf_tip, h.taraf_id, h.tip, h.belge_no, h.cek_no, h.aciklama,
                    COALESCE(h.gerceklesen_tarih, h.belge_tarihi) AS tarih,
                    COALESCE(h.gerceklesen_tutar, h.tutar) AS tutar,
-                   CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi ELSE m.firma_adi END AS firma_adi
+                   CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi WHEN h.taraf_tip='MUSTERI' THEN m.firma_adi
+                        ELSE COALESCE(h.aciklama, 'Diğer gider') END AS firma_adi
             FROM cari_hareketler h
             LEFT JOIN tedarikciler t ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             LEFT JOIN musteriler m ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
@@ -5670,7 +5686,7 @@ const ENDPOINT_IZIN_KURALLARI = [
 
     // Mali İşler — cari takip (hareket silme yalnız TAM; ayar yazma uç içinde ayrıca ADMIN)
     { pattern: /^\/api\/mali-hareket-sil/, modul: 'mali.tedarikci', seviye: 'TAM' },
-    { pattern: /^\/api\/mali-(tedarikci|ayar|ekip|nakit-akis|kasa)/, method: 'GET', modul: 'mali.tedarikci', seviye: 'OKUMA' },
+    { pattern: /^\/api\/mali-(tedarikci|ayar|ekip|nakit-akis|kasa|gider)/, method: 'GET', modul: 'mali.tedarikci', seviye: 'OKUMA' },
     { pattern: /^\/api\/mali-musteri/, method: 'GET', modul: 'mali.musteri', seviye: 'OKUMA' },
     { pattern: /^\/api\/mali-musteri-kaydet/, modul: 'mali.musteri', seviye: 'YAZMA' },
     { pattern: /^\/api\/mali-(tedarikci-guncelle|hareket-ekle|hareket-planla|hareket-gerceklestir|ayar)/, modul: 'mali.tedarikci', seviye: 'YAZMA' },
