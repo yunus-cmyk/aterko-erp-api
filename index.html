@@ -269,9 +269,9 @@
           <table class="table table-sm table-hover align-middle">
             <thead class="table-light"><tr>
               <th>Firma</th><th>Tür</th><th>Durum</th><th>İlgili Kişi</th><th class="text-center">Vade (gün)</th>
-              <th class="text-end">Mühlet Öncesi Borç</th><th class="text-end">Mühlet Sonrası Bakiye</th><th class="text-end">Çekler (Ö / S)</th>
+              <th class="text-end">Mühlet Öncesi Borç</th><th class="text-end">Mühlet Sonrası Bakiye</th><th class="text-end">Planlanan Ödeme</th><th class="text-end">Çekler (Ö / S)</th>
             </tr></thead>
-            <tbody id="maliTedarikciTbody"><tr><td colspan="8" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
+            <tbody id="maliTedarikciTbody"><tr><td colspan="9" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
             <tfoot id="maliTedarikciTfoot" class="fw-bold"></tfoot>
           </table>
         </div>
@@ -296,9 +296,9 @@
           <table class="table table-sm table-hover align-middle">
             <thead class="table-light"><tr>
               <th>Firma</th><th>Tür</th><th>Durum</th><th>İlgili Kişi</th>
-              <th class="text-end">Cari Alacak</th><th class="text-end">Alacak Projeksiyonu</th>
+              <th class="text-end">Cari Alacak</th><th class="text-end">Planlanan Tahsilat</th><th class="text-end">Alacak Projeksiyonu</th>
             </tr></thead>
-            <tbody id="maliMusteriTbody"><tr><td colspan="6" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
+            <tbody id="maliMusteriTbody"><tr><td colspan="7" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
             <tfoot id="maliMusteriTfoot" class="fw-bold"></tfoot>
           </table>
         </div>
@@ -3935,11 +3935,12 @@ function maliTedarikciRender() {
     else
         liste.sort((a, b) => (a.firma_adi || '').localeCompare(b.firma_adi || '', 'tr'));
     const tb = document.getElementById('maliTedarikciTbody');
-    if (!liste.length) { tb.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Kayıt yok.</td></tr>'; document.getElementById('maliTedarikciTfoot').innerHTML = ''; return; }
-    let topOnce = 0, topSonra = 0;
+    if (!liste.length) { tb.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Kayıt yok.</td></tr>'; document.getElementById('maliTedarikciTfoot').innerHTML = ''; return; }
+    let topOnce = 0, topSonra = 0, topPlan = 0;
     tb.innerHTML = liste.map(t => {
         topOnce += parseFloat(t.muhlet_oncesi_borc) || 0;
         topSonra += parseFloat(t.muhlet_sonrasi_bakiye) || 0;
+        topPlan += parseFloat(t.plan_toplam) || 0;
         return `<tr style="cursor:pointer;" onclick="maliKartAc('TEDARIKCI', ${t.id})">
             <td class="fw-semibold">${esc(t.firma_adi)}</td>
             <td>${esc(t.tur || 'Tedarikçi')}</td>
@@ -3948,12 +3949,14 @@ function maliTedarikciRender() {
             <td class="text-center">${t.genel_vade_gun || '-'}</td>
             <td class="text-end">${maliTL(t.muhlet_oncesi_borc)}</td>
             <td class="text-end ${parseFloat(t.muhlet_sonrasi_bakiye) > 0 ? 'text-danger fw-semibold' : ''}">${maliTL(t.muhlet_sonrasi_bakiye)}</td>
+            <td class="text-end ${parseFloat(t.plan_toplam) > 0 ? 'text-primary' : 'text-muted'}">${parseFloat(t.plan_toplam) > 0 ? maliTL(t.plan_toplam) : '-'}</td>
             <td class="text-end small">${maliTL(t.cek_once)} / ${maliTL(t.cek_sonra)}</td>
         </tr>`;
     }).join('');
     document.getElementById('maliTedarikciTfoot').innerHTML =
         `<tr class="table-light"><td colspan="5" class="text-end">TOPLAM (${liste.length} firma):</td>
-         <td class="text-end">${maliTL(topOnce)}</td><td class="text-end text-danger">${maliTL(topSonra)}</td><td></td></tr>`;
+         <td class="text-end">${maliTL(topOnce)}</td><td class="text-end text-danger">${maliTL(topSonra)}</td>
+         <td class="text-end text-primary">${maliTL(topPlan)}</td><td></td></tr>`;
 }
 
 async function maliMusteriYukle() {
@@ -3976,23 +3979,25 @@ function maliMusteriRender() {
     else
         liste.sort((a, b) => (a.firma_adi || '').localeCompare(b.firma_adi || '', 'tr'));
     const tb = document.getElementById('maliMusteriTbody');
-    if (!liste.length) { tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Kayıt yok. "Yeni Müşteri" ile ekleyebilirsiniz.</td></tr>'; document.getElementById('maliMusteriTfoot').innerHTML = ''; return; }
-    let topAlacak = 0, topProj = 0;
+    if (!liste.length) { tb.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Kayıt yok. "Yeni Müşteri" ile ekleyebilirsiniz.</td></tr>'; document.getElementById('maliMusteriTfoot').innerHTML = ''; return; }
+    let topAlacak = 0, topProj = 0, topPlan = 0;
     tb.innerHTML = liste.map(m => {
         topAlacak += parseFloat(m.cari_alacak) || 0;
         topProj += parseFloat(m.projeksiyon_toplam) || 0;
+        topPlan += parseFloat(m.plan_toplam) || 0;
         return `<tr style="cursor:pointer;" onclick="maliKartAc('MUSTERI', ${m.id})">
             <td class="fw-semibold">${esc(m.firma_adi)}</td>
             <td>${esc(m.tur || 'Kurumsal')}</td>
             <td>${(m.durum || '') === 'PASIF' ? '<span class="badge bg-secondary">Pasif</span>' : '<span class="badge bg-success">Aktif</span>'}</td>
             <td>${esc(m.ilgili_kisi || '-')}</td>
             <td class="text-end ${parseFloat(m.cari_alacak) > 0 ? 'text-success fw-semibold' : ''}">${maliTL(m.cari_alacak)}</td>
+            <td class="text-end ${parseFloat(m.plan_toplam) > 0 ? 'text-primary' : 'text-muted'}">${parseFloat(m.plan_toplam) > 0 ? maliTL(m.plan_toplam) : '-'}</td>
             <td class="text-end small">${maliTL(m.projeksiyon_toplam)}</td>
         </tr>`;
     }).join('');
     document.getElementById('maliMusteriTfoot').innerHTML =
         `<tr class="table-light"><td colspan="4" class="text-end">TOPLAM (${liste.length} firma):</td>
-         <td class="text-end text-success">${maliTL(topAlacak)}</td><td class="text-end">${maliTL(topProj)}</td></tr>`;
+         <td class="text-end text-success">${maliTL(topAlacak)}</td><td class="text-end text-primary">${maliTL(topPlan)}</td><td class="text-end">${maliTL(topProj)}</td></tr>`;
 }
 
 // ---- Cari kart (modal) ----

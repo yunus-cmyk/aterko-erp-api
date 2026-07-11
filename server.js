@@ -2264,7 +2264,8 @@ async function maliBakiyeler(tarafTip, tarafIds) {
                COALESCE(SUM(CASE WHEN tip IN ('ODEME','TAHSILAT') AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS odeme_toplam,
                COALESCE(SUM(CASE WHEN tip='CEK' AND muhlet_oncesi AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS cek_once,
                COALESCE(SUM(CASE WHEN tip='CEK' AND NOT muhlet_oncesi AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS cek_sonra,
-               COALESCE(SUM(CASE WHEN tip='PROJEKSIYON' AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS projeksiyon_toplam
+               COALESCE(SUM(CASE WHEN tip='PROJEKSIYON' AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS projeksiyon_toplam,
+               COALESCE(SUM(CASE WHEN tip IN ('ODEME','TAHSILAT') AND gerceklesen_tarih IS NULL THEN COALESCE(planlanan_tutar, tutar) END), 0) AS plan_toplam
         FROM cari_hareketler
         WHERE taraf_tip = $1 AND taraf_id = ANY($2)
         GROUP BY taraf_id`, [tarafTip, tarafIds]);
@@ -2292,6 +2293,7 @@ app.get('/api/mali-tedarikciler', yetkiKontrol, async (req, res, next) => {
                 odeme_toplam: parseFloat(b.odeme_toplam || 0),
                 cek_once: parseFloat(b.cek_once || 0),
                 cek_sonra: parseFloat(b.cek_sonra || 0),
+                plan_toplam: parseFloat(b.plan_toplam || 0),
                 // Mühlet sonrası bakiye = devir + faturalar − ödemeler (HESAPLANAN)
                 muhlet_sonrasi_bakiye: parseFloat(x.muhlet_sonrasi_devir || 0) + parseFloat(b.fatura_toplam || 0) - parseFloat(b.odeme_toplam || 0)
             };
@@ -2357,6 +2359,7 @@ app.get('/api/mali-musteriler', yetkiKontrol, async (req, res, next) => {
                 fatura_toplam: parseFloat(b.fatura_toplam || 0),
                 tahsilat_toplam: parseFloat(b.odeme_toplam || 0),
                 projeksiyon_toplam: parseFloat(b.projeksiyon_toplam || 0),
+                plan_toplam: parseFloat(b.plan_toplam || 0),
                 cari_alacak: parseFloat(x.devir_alacak || 0) + parseFloat(b.fatura_toplam || 0) - parseFloat(b.odeme_toplam || 0)
             };
         });
