@@ -254,14 +254,14 @@
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
           <div class="d-flex align-items-center gap-3 flex-wrap">
             <input id="maliTedarikciAra" class="form-control form-control-sm" style="max-width:280px;" placeholder="Firma / yetkili ara..." oninput="maliTedarikciRender()">
-            <div class="form-check mb-0">
-              <input id="maliTedarikciSifirGizle" type="checkbox" class="form-check-input" onchange="maliTedarikciRender()">
-              <label class="form-check-label small" for="maliTedarikciSifirGizle">Bakiyesi sıfır olanları gizle</label>
-            </div>
             <select id="maliTedarikciSirala" class="form-select form-select-sm" style="width:auto;" onchange="maliTedarikciRender()">
               <option value="ad">Sıralama: Firma Adı (A→Z)</option>
               <option value="bakiye">Sıralama: Bakiye (büyük→küçük)</option>
             </select>
+            <div class="form-check mb-0">
+              <input id="maliTedarikciSifirGizle" type="checkbox" class="form-check-input" onchange="maliTedarikciRender()">
+              <label class="form-check-label small" for="maliTedarikciSifirGizle">Bakiyesi sıfır olanları gizle</label>
+            </div>
           </div>
           <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Tedarikçi girişi ve kimlik bilgileri: Satınalma → Tedarikçiler</small>
         </div>
@@ -281,14 +281,14 @@
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
           <div class="d-flex align-items-center gap-3 flex-wrap">
             <input id="maliMusteriAra" class="form-control form-control-sm" style="max-width:280px;" placeholder="Firma / yetkili ara..." oninput="maliMusteriRender()">
-            <div class="form-check mb-0">
-              <input id="maliMusteriSifirGizle" type="checkbox" class="form-check-input" onchange="maliMusteriRender()">
-              <label class="form-check-label small" for="maliMusteriSifirGizle">Bakiyesi sıfır olanları gizle</label>
-            </div>
             <select id="maliMusteriSirala" class="form-select form-select-sm" style="width:auto;" onchange="maliMusteriRender()">
               <option value="ad">Sıralama: Firma Adı (A→Z)</option>
               <option value="bakiye">Sıralama: Alacak (büyük→küçük)</option>
             </select>
+            <div class="form-check mb-0">
+              <input id="maliMusteriSifirGizle" type="checkbox" class="form-check-input" onchange="maliMusteriRender()">
+              <label class="form-check-label small" for="maliMusteriSifirGizle">Bakiyesi sıfır olanları gizle</label>
+            </div>
           </div>
           <button class="btn btn-sm btn-success d-none" id="btnMaliMusteriYeni" onclick="maliKartAc('MUSTERI', null)"><i class="bi bi-plus-lg me-1"></i>Yeni Müşteri</button>
         </div>
