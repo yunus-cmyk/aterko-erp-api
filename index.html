@@ -254,10 +254,6 @@
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
           <div class="d-flex align-items-center gap-3 flex-wrap">
             <input id="maliTedarikciAra" class="form-control form-control-sm" style="max-width:280px;" placeholder="Firma / yetkili ara..." oninput="maliTedarikciRender()">
-            <select id="maliTedarikciSirala" class="form-select form-select-sm" style="width:auto;" onchange="maliTedarikciRender()">
-              <option value="ad">Sıralama: Firma Adı (A→Z)</option>
-              <option value="bakiye">Sıralama: Bakiye (büyük→küçük)</option>
-            </select>
             <div class="form-check mb-0">
               <input id="maliTedarikciSifirGizle" type="checkbox" class="form-check-input" onchange="maliTedarikciRender()">
               <label class="form-check-label small" for="maliTedarikciSifirGizle">Bakiyesi sıfır olanları gizle</label>
@@ -268,8 +264,15 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover align-middle">
             <thead class="table-light"><tr>
-              <th>Firma</th><th>Tür</th><th>Durum</th><th>İlgili Kişi</th><th class="text-center">Vade (gün)</th>
-              <th class="text-end">Mühlet Öncesi Borç</th><th class="text-end">Mühlet Sonrası Bakiye</th><th class="text-end">Planlanan Ödeme</th><th class="text-end">Çekler (Ö / S)</th>
+              <th style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','firma_adi','metin')">Firma <i class="mali-ok" data-t="tedarikci" data-a="firma_adi"></i></th>
+              <th style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','tur','metin')">Tür <i class="mali-ok" data-t="tedarikci" data-a="tur"></i></th>
+              <th style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','durum','metin')">Durum <i class="mali-ok" data-t="tedarikci" data-a="durum"></i></th>
+              <th style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','ilgili_kisi','metin')">İlgili Kişi <i class="mali-ok" data-t="tedarikci" data-a="ilgili_kisi"></i></th>
+              <th class="text-center" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','genel_vade_gun','sayi')">Vade (gün) <i class="mali-ok" data-t="tedarikci" data-a="genel_vade_gun"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','muhlet_oncesi_borc','sayi')">Mühlet Öncesi Borç <i class="mali-ok" data-t="tedarikci" data-a="muhlet_oncesi_borc"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','muhlet_sonrasi_bakiye','sayi')">Mühlet Sonrası Bakiye <i class="mali-ok" data-t="tedarikci" data-a="muhlet_sonrasi_bakiye"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','plan_toplam','sayi')">Planlanan Ödeme <i class="mali-ok" data-t="tedarikci" data-a="plan_toplam"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','_cek','sayi')">Çekler (Ö / S) <i class="mali-ok" data-t="tedarikci" data-a="_cek"></i></th>
             </tr></thead>
             <tbody id="maliTedarikciTbody"><tr><td colspan="9" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
             <tfoot id="maliTedarikciTfoot" class="fw-bold"></tfoot>
@@ -281,10 +284,6 @@
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
           <div class="d-flex align-items-center gap-3 flex-wrap">
             <input id="maliMusteriAra" class="form-control form-control-sm" style="max-width:280px;" placeholder="Firma / yetkili ara..." oninput="maliMusteriRender()">
-            <select id="maliMusteriSirala" class="form-select form-select-sm" style="width:auto;" onchange="maliMusteriRender()">
-              <option value="ad">Sıralama: Firma Adı (A→Z)</option>
-              <option value="bakiye">Sıralama: Alacak (büyük→küçük)</option>
-            </select>
             <div class="form-check mb-0">
               <input id="maliMusteriSifirGizle" type="checkbox" class="form-check-input" onchange="maliMusteriRender()">
               <label class="form-check-label small" for="maliMusteriSifirGizle">Bakiyesi sıfır olanları gizle</label>
@@ -295,8 +294,13 @@
         <div class="table-responsive">
           <table class="table table-sm table-hover align-middle">
             <thead class="table-light"><tr>
-              <th>Firma</th><th>Tür</th><th>Durum</th><th>İlgili Kişi</th>
-              <th class="text-end">Cari Alacak</th><th class="text-end">Planlanan Tahsilat</th><th class="text-end">Alacak Projeksiyonu</th>
+              <th style="cursor:pointer;" onclick="maliSiralaTikla('musteri','firma_adi','metin')">Firma <i class="mali-ok" data-t="musteri" data-a="firma_adi"></i></th>
+              <th style="cursor:pointer;" onclick="maliSiralaTikla('musteri','tur','metin')">Tür <i class="mali-ok" data-t="musteri" data-a="tur"></i></th>
+              <th style="cursor:pointer;" onclick="maliSiralaTikla('musteri','durum','metin')">Durum <i class="mali-ok" data-t="musteri" data-a="durum"></i></th>
+              <th style="cursor:pointer;" onclick="maliSiralaTikla('musteri','ilgili_kisi','metin')">İlgili Kişi <i class="mali-ok" data-t="musteri" data-a="ilgili_kisi"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('musteri','cari_alacak','sayi')">Cari Alacak <i class="mali-ok" data-t="musteri" data-a="cari_alacak"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('musteri','plan_toplam','sayi')">Planlanan Tahsilat <i class="mali-ok" data-t="musteri" data-a="plan_toplam"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('musteri','projeksiyon_toplam','sayi')">Alacak Projeksiyonu <i class="mali-ok" data-t="musteri" data-a="projeksiyon_toplam"></i></th>
             </tr></thead>
             <tbody id="maliMusteriTbody"><tr><td colspan="7" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
             <tfoot id="maliMusteriTfoot" class="fw-bold"></tfoot>
@@ -3914,6 +3918,32 @@ function switchMaliSekme(s) {
     else maliKasaYukle();
 }
 
+// ---- Sütun başlığından sıralama ----
+// İlk tık: metin A→Z, sayı büyük→küçük; aynı başlığa ikinci tık yönü çevirir
+window._maliSort = {
+    tedarikci: { alan: 'firma_adi', tip: 'metin', yon: 1 },
+    musteri: { alan: 'firma_adi', tip: 'metin', yon: 1 }
+};
+function maliSiralaTikla(tablo, alan, tip) {
+    const s = window._maliSort[tablo];
+    if (s.alan === alan) s.yon = -s.yon;
+    else { s.alan = alan; s.tip = tip; s.yon = tip === 'sayi' ? -1 : 1; }
+    if (tablo === 'tedarikci') maliTedarikciRender(); else maliMusteriRender();
+}
+function maliSiralaUygula(tablo, liste) {
+    const s = window._maliSort[tablo];
+    const deger = x => s.alan === '_cek' ? (parseFloat(x.cek_once) || 0) + (parseFloat(x.cek_sonra) || 0) : x[s.alan];
+    liste.sort((a, b) => s.tip === 'sayi'
+        ? s.yon * ((parseFloat(deger(a)) || 0) - (parseFloat(deger(b)) || 0))
+        : s.yon * String(deger(a) || '').localeCompare(String(deger(b) || ''), 'tr'));
+    // Ok işaretleri: aktif sütunda yön oku, diğerlerinde soluk çift ok
+    document.querySelectorAll(`.mali-ok[data-t="${tablo}"]`).forEach(el => {
+        if (el.dataset.a === s.alan) el.className = 'mali-ok bi ' + (s.yon === 1 ? 'bi-caret-up-fill' : 'bi-caret-down-fill');
+        else el.className = 'mali-ok bi bi-arrow-down-up opacity-25';
+    });
+    return liste;
+}
+
 async function maliTedarikciYukle() {
     const r = await secureFetch('/mali-tedarikciler');
     if (!r.ok) return showToast(r.hata || 'Tedarikçi carileri yüklenemedi.', 'error');
@@ -3927,13 +3957,9 @@ function maliTedarikciRender() {
     // "Sıfır bakiye" = mühlet öncesi + mühlet sonrası + açık çeklerin tümü sıfır
     const bakiyeVar = t => Math.abs(parseFloat(t.muhlet_oncesi_borc) || 0) + Math.abs(parseFloat(t.muhlet_sonrasi_bakiye) || 0)
         + (parseFloat(t.cek_once) || 0) + (parseFloat(t.cek_sonra) || 0) > 0.005;
-    const liste = (window._maliTedarikciler || []).filter(t =>
+    const liste = maliSiralaUygula('tedarikci', (window._maliTedarikciler || []).filter(t =>
         (!q || (t.firma_adi || '').toLocaleLowerCase('tr').includes(q) || (t.yetkili_kisi || '').toLocaleLowerCase('tr').includes(q))
-        && (!sifirGizle || bakiyeVar(t)));
-    if (document.getElementById('maliTedarikciSirala').value === 'bakiye')
-        liste.sort((a, b) => (parseFloat(b.muhlet_sonrasi_bakiye) || 0) - (parseFloat(a.muhlet_sonrasi_bakiye) || 0));
-    else
-        liste.sort((a, b) => (a.firma_adi || '').localeCompare(b.firma_adi || '', 'tr'));
+        && (!sifirGizle || bakiyeVar(t))));
     const tb = document.getElementById('maliTedarikciTbody');
     if (!liste.length) { tb.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Kayıt yok.</td></tr>'; document.getElementById('maliTedarikciTfoot').innerHTML = ''; return; }
     let topOnce = 0, topSonra = 0, topPlan = 0;
@@ -3971,13 +3997,9 @@ function maliMusteriRender() {
     const sifirGizle = document.getElementById('maliMusteriSifirGizle').checked;
     // "Sıfır bakiye" = cari alacak ve açık projeksiyonların tümü sıfır
     const bakiyeVar = m => Math.abs(parseFloat(m.cari_alacak) || 0) + (parseFloat(m.projeksiyon_toplam) || 0) > 0.005;
-    const liste = (window._maliMusteriler || []).filter(m =>
+    const liste = maliSiralaUygula('musteri', (window._maliMusteriler || []).filter(m =>
         (!q || (m.firma_adi || '').toLocaleLowerCase('tr').includes(q) || (m.yetkili_kisi || '').toLocaleLowerCase('tr').includes(q))
-        && (!sifirGizle || bakiyeVar(m)));
-    if (document.getElementById('maliMusteriSirala').value === 'bakiye')
-        liste.sort((a, b) => (parseFloat(b.cari_alacak) || 0) - (parseFloat(a.cari_alacak) || 0));
-    else
-        liste.sort((a, b) => (a.firma_adi || '').localeCompare(b.firma_adi || '', 'tr'));
+        && (!sifirGizle || bakiyeVar(m))));
     const tb = document.getElementById('maliMusteriTbody');
     if (!liste.length) { tb.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Kayıt yok. "Yeni Müşteri" ile ekleyebilirsiniz.</td></tr>'; document.getElementById('maliMusteriTfoot').innerHTML = ''; return; }
     let topAlacak = 0, topProj = 0, topPlan = 0;
