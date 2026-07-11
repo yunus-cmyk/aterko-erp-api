@@ -2423,6 +2423,8 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
         const tip = String(b.tip || '').toUpperCase();
         const gecerli = tarafTip === 'TEDARIKCI' ? ['FATURA', 'ODEME', 'CEK'] : tarafTip === 'MUSTERI' ? ['FATURA', 'TAHSILAT', 'PROJEKSIYON'] : ['ODEME'];
         if (tarafTip === 'GIDER' && !(b.aciklama || '').trim()) return res.json({ ok: false, hata: 'Gider kalemi için açıklama zorunludur (örn. "Temmuz maaşları").' });
+        if (tarafTip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
+            return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
         if (!gecerli.includes(tip)) return res.json({ ok: false, hata: `Geçersiz hareket tipi (${tarafTip} için: ${gecerli.join(', ')}).` });
         const tutar = parseFloat(b.tutar);
         if (!(tutar > 0)) return res.json({ ok: false, hata: 'Tutar sıfırdan büyük olmalı.' });
@@ -2439,13 +2441,13 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
         const i = await pool.query(`
             INSERT INTO cari_hareketler (taraf_tip, taraf_id, tip, belge_tarihi, belge_no, tutar,
                 vade_tarihi, gerceklesen_tarih, gerceklesen_tutar, cek_no, banka, muhlet_oncesi,
-                projeksiyon_tur, aciklama, olusturan_email)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+                projeksiyon_tur, aciklama, olusturan_email, hesap)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
             [tarafTip, tarafTip === 'GIDER' ? 0 : parseInt(b.taraf_id), tip, b.belge_tarihi, (b.belge_no || '').trim() || null, tutar,
              b.vade_tarihi || null, gerc ? b.belge_tarihi : null, gerc ? tutar : null,
              (b.cek_no || '').trim() || null, (b.banka || '').trim() || null, !!b.muhlet_oncesi,
              tip === 'PROJEKSIYON' ? String(b.projeksiyon_tur).toUpperCase() : null,
-             (b.aciklama || '').trim() || null, req.user.email]);
+             (b.aciklama || '').trim() || null, req.user.email, (b.hesap || '').trim() || null]);
         await auditLogla(req, { eylem: 'CREATE', tablo: 'cari_hareketler', kayit_id: i.rows[0].id, ozet: `${tarafTip} #${b.taraf_id} ${tip} ${tutar} TL` });
         res.json({ ok: true, id: i.rows[0].id, mesaj: 'Hareket kaydedildi.' });
     } catch (e) { next(e); }
@@ -2454,6 +2456,9 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
 // Hareket sil — yalnız TAM yetki (yanlış giriş düzeltme; iz audit'te kalır)
 app.post('/api/mali-hareket-sil', yetkiKontrol, async (req, res, next) => {
     try {
+        const on = await pool.query('SELECT taraf_tip FROM cari_hareketler WHERE id=$1', [req.body.id]);
+        if (on.rowCount && on.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'TAM')))
+            return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için tam yetki gerekir.' });
         const d = await pool.query('DELETE FROM cari_hareketler WHERE id=$1 RETURNING taraf_tip, taraf_id, tip, tutar', [req.body.id]);
         if (!d.rowCount) return res.json({ ok: false, hata: 'Hareket bulunamadı.' });
         const h = d.rows[0];
@@ -2486,6 +2491,10 @@ app.get('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
         const r = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_ayar'");
         const ayar = r.rows[0]?.deger || { muhlet_tarihi: null, kasa_acilis: 0 };
         if (!ayar.varsayilan_odeme_vadesi) ayar.varsayilan_odeme_vadesi = '2026-07-13';
+        if (!ayar.varsayilan_tahsilat_vadesi) ayar.varsayilan_tahsilat_vadesi = '2026-07-13';
+        // Hesap listesi yoksa eski tekli kasa açılışından türet
+        if (!Array.isArray(ayar.hesaplar) || !ayar.hesaplar.length)
+            ayar.hesaplar = [{ ad: 'Kasa', acilis: parseFloat(ayar.kasa_acilis) || 0 }];
         res.json({ ok: true, ayar });
     } catch (e) { next(e); }
 });
@@ -2493,8 +2502,15 @@ app.post('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
     try {
         if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
             return res.status(403).json({ ok: false, hata: 'Mali ayarları yalnızca ADMIN değiştirebilir.' });
-        const yeni = { muhlet_tarihi: req.body.muhlet_tarihi || null, kasa_acilis: parseFloat(req.body.kasa_acilis) || 0,
-            varsayilan_odeme_vadesi: req.body.varsayilan_odeme_vadesi || '2026-07-13' };
+        let hesaplar = Array.isArray(req.body.hesaplar) ? req.body.hesaplar
+            .map(h => ({ ad: String(h.ad || '').trim(), acilis: parseFloat(h.acilis) || 0 }))
+            .filter(h => h.ad) : null;
+        if (!hesaplar || !hesaplar.length) hesaplar = [{ ad: 'Kasa', acilis: parseFloat(req.body.kasa_acilis) || 0 }];
+        const yeni = { muhlet_tarihi: req.body.muhlet_tarihi || null,
+            kasa_acilis: hesaplar.reduce((s, h) => s + h.acilis, 0),   // eski alan = açılışlar toplamı (geriye uyum)
+            hesaplar,
+            varsayilan_odeme_vadesi: req.body.varsayilan_odeme_vadesi || '2026-07-13',
+            varsayilan_tahsilat_vadesi: req.body.varsayilan_tahsilat_vadesi || '2026-07-13' };
         await pool.query(`INSERT INTO sistem_ayarlari (anahtar, deger, guncelleme) VALUES ('mali_ayar', $1, now())
             ON CONFLICT (anahtar) DO UPDATE SET deger=$1, guncelleme=now()`, [JSON.stringify(yeni)]);
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'sistem_ayarlari', ozet: `Mali ayar: mühlet=${yeni.muhlet_tarihi || '-'}, kasa açılış=${yeni.kasa_acilis}` });
@@ -2509,8 +2525,10 @@ app.post('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
 // Planlama: yalnız gerçekleşmemiş FATURA/CEK/PROJEKSIYON kalemlerinde; boş gönderilirse plan silinir (asıl vadeye dönülür)
 app.post('/api/mali-hareket-planla', yetkiKontrol, async (req, res, next) => {
     try {
-        const h = await pool.query('SELECT tip, gerceklesen_tarih FROM cari_hareketler WHERE id=$1', [req.body.id]);
+        const h = await pool.query('SELECT tip, taraf_tip, gerceklesen_tarih FROM cari_hareketler WHERE id=$1', [req.body.id]);
         if (!h.rowCount) return res.json({ ok: false, hata: 'Hareket bulunamadı.' });
+        if (h.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
+            return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
         if (h.rows[0].gerceklesen_tarih) return res.json({ ok: false, hata: 'Gerçekleşmiş kalem yeniden planlanamaz.' });
         if (!['FATURA', 'CEK', 'PROJEKSIYON', 'ODEME', 'TAHSILAT'].includes(h.rows[0].tip)) return res.json({ ok: false, hata: 'Bu kalem planlanamaz.' });
         await pool.query('UPDATE cari_hareketler SET planlanan_vade=$1, planlanan_tutar=$2 WHERE id=$3',
@@ -2529,10 +2547,14 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
         if (!tarih) return res.json({ ok: false, hata: 'Gerçekleşme tarihi zorunludur.' });
         const t = parseFloat(tutar);
         if (!(t > 0)) return res.json({ ok: false, hata: 'Gerçekleşen tutar sıfırdan büyük olmalı.' });
+        const on = await pool.query('SELECT taraf_tip FROM cari_hareketler WHERE id=$1', [id]);
+        if (on.rowCount && on.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
+            return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
+        const hesap = (req.body.hesap || '').trim() || null;
         await cl.query('BEGIN');
         // Atomik: yalnız henüz gerçekleşmemişse damgala (çift tıklama mükerrer kayıt üretmez)
-        const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=$1, gerceklesen_tutar=$2
-            WHERE id=$3 AND gerceklesen_tarih IS NULL AND tip IN ('FATURA','CEK','PROJEKSIYON','ODEME','TAHSILAT') RETURNING *`, [tarih, t, id]);
+        const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=$1, gerceklesen_tutar=$2, hesap=COALESCE($4, hesap)
+            WHERE id=$3 AND gerceklesen_tarih IS NULL AND tip IN ('FATURA','CEK','PROJEKSIYON','ODEME','TAHSILAT') RETURNING *`, [tarih, t, id, hesap]);
         if (!u.rowCount) { await cl.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem bulunamadı, zaten gerçekleşmiş ya da bu tipte gerçekleştirme yapılamaz.' }); }
         const h = u.rows[0];
         let karsi = null;
@@ -2543,9 +2565,9 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
                 ? `Fatura ${h.belge_no || '#' + h.id} ${yeniTip === 'ODEME' ? 'ödemesi' : 'tahsilatı'}`
                 : `Projeksiyon (${h.projeksiyon_tur || ''}) tahsilatı`;
             const i = await cl.query(`INSERT INTO cari_hareketler (taraf_tip, taraf_id, tip, belge_tarihi, belge_no,
-                tutar, gerceklesen_tarih, gerceklesen_tutar, aciklama, olusturan_email)
-                VALUES ($1,$2,$3,$4,$5,$6,$4,$6,$7,$8) RETURNING id`,
-                [h.taraf_tip, h.taraf_id, yeniTip, tarih, h.belge_no, t, ozet, req.user.email]);
+                tutar, gerceklesen_tarih, gerceklesen_tutar, aciklama, olusturan_email, hesap, kaynak_hareket_id)
+                VALUES ($1,$2,$3,$4,$5,$6,$4,$6,$7,$8,$9,$10) RETURNING id`,
+                [h.taraf_tip, h.taraf_id, yeniTip, tarih, h.belge_no, t, ozet, req.user.email, hesap, h.id]);
             karsi = { id: i.rows[0].id, tip: yeniTip };
         }
         await cl.query('COMMIT');
@@ -2555,17 +2577,92 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
     finally { cl.release(); }
 });
 
-// Kasa bugünkü bakiyesi = kasa açılışı + gerçekleşen tahsilatlar − ödemeler − ödenen çekler
+// Gerçekleşmeyi geri al (yalnız TAM): damga kalkar, otomatik karşı kayıt silinir
+app.post('/api/mali-hareket-geri-al', yetkiKontrol, async (req, res, next) => {
+    const cl = await pool.connect();
+    try {
+        const on = await pool.query('SELECT taraf_tip FROM cari_hareketler WHERE id=$1', [req.body.id]);
+        if (on.rowCount && on.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'TAM')))
+            return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için tam yetki gerekir.' });
+        await cl.query('BEGIN');
+        const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=NULL, gerceklesen_tutar=NULL
+            WHERE id=$1 AND gerceklesen_tarih IS NOT NULL RETURNING taraf_tip, taraf_id, tip, tutar`, [req.body.id]);
+        if (!u.rowCount) { await cl.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem bulunamadı ya da zaten gerçekleşmemiş.' }); }
+        const d = await cl.query('DELETE FROM cari_hareketler WHERE kaynak_hareket_id=$1 RETURNING id', [req.body.id]);
+        await cl.query('COMMIT');
+        const h = u.rows[0];
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'cari_hareketler', kayit_id: parseInt(req.body.id), ozet: `GERÇEKLEŞME GERİ ALINDI: ${h.taraf_tip} #${h.taraf_id} ${h.tip} ${h.tutar} TL${d.rowCount ? ' (+otomatik karşı kayıt silindi)' : ''}` });
+        res.json({ ok: true, mesaj: 'Gerçekleşme geri alındı.' + (d.rowCount ? ' Otomatik oluşan karşı kayıt da silindi.' : '') });
+    } catch (e) { await cl.query('ROLLBACK').catch(() => {}); next(e); }
+    finally { cl.release(); }
+});
+
+// Gerçekleşmemiş hareket düzeltme (YAZMA) — asıl belge alanları; plan alanlarına dokunmaz
+app.post('/api/mali-hareket-guncelle', yetkiKontrol, async (req, res, next) => {
+    try {
+        const b = req.body;
+        const h = await pool.query('SELECT * FROM cari_hareketler WHERE id=$1', [b.id]);
+        if (!h.rowCount) return res.json({ ok: false, hata: 'Hareket bulunamadı.' });
+        if (h.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
+            return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
+        if (h.rows[0].gerceklesen_tarih) return res.json({ ok: false, hata: 'Gerçekleşmiş kalem düzeltilemez — önce gerçekleşmeyi geri alın.' });
+        const tutar = parseFloat(b.tutar);
+        if (!(tutar > 0)) return res.json({ ok: false, hata: 'Tutar sıfırdan büyük olmalı.' });
+        if (h.rows[0].tip === 'CEK' && !b.vade_tarihi) return res.json({ ok: false, hata: 'Çek için vade zorunludur.' });
+        await pool.query(`UPDATE cari_hareketler SET belge_tarihi=COALESCE($1, belge_tarihi), belge_no=$2, tutar=$3,
+            vade_tarihi=$4, cek_no=COALESCE(NULLIF($5,''), cek_no), banka=$6, aciklama=$7 WHERE id=$8`,
+            [b.belge_tarihi || null, (b.belge_no || '').trim() || null, tutar, b.vade_tarihi || null,
+             (b.cek_no || '').trim(), (b.banka || '').trim() || null, (b.aciklama || '').trim() || null, b.id]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'cari_hareketler', kayit_id: parseInt(b.id), ozet: `Hareket düzeltildi: ${h.rows[0].tip} → ${tutar} TL` });
+        res.json({ ok: true, mesaj: 'Hareket güncellendi.' });
+    } catch (e) { next(e); }
+});
+
+// Tedarikçinin son siparişleri (fatura girişini siparişten doldurmak için köprü)
+app.get('/api/mali-tedarikci-siparisler/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT s.id, s.siparis_no, s.siparis_tarihi, s.durum, COALESCE(s.para_birimi, 'TL') AS para_birimi,
+                   COALESCE(SUM(sk.birim_fiyat * sk.siparis_miktari), 0) AS toplam
+            FROM satinalma_siparisleri s
+            JOIN siparis_kalemleri sk ON sk.siparis_id = s.id
+            WHERE s.tedarikci_id = $1 AND COALESCE(s.durum, '') <> 'İPTAL'
+            GROUP BY s.id ORDER BY s.siparis_tarihi DESC NULLS LAST, s.id DESC LIMIT 20`, [req.params.id]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+// Kasa bakiyesi = hesap açılışları + gerçekleşen tahsilatlar − ödemeler − ödenen çekler
+// Hesap bazlı döner: hareket hesabı boşsa ilk (varsayılan) hesaba sayılır
 async function maliKasaBakiye() {
     const a = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_ayar'");
-    const acilis = parseFloat(a.rows[0]?.deger?.kasa_acilis) || 0;
-    const r = await pool.query(`SELECT
+    const d = a.rows[0]?.deger || {};
+    const hesapTanim = (Array.isArray(d.hesaplar) && d.hesaplar.length)
+        ? d.hesaplar.map(h => ({ ad: h.ad, acilis: parseFloat(h.acilis) || 0 }))
+        : [{ ad: 'Kasa', acilis: parseFloat(d.kasa_acilis) || 0 }];
+    const r = await pool.query(`SELECT COALESCE(NULLIF(TRIM(hesap), ''), '__VARSAYILAN__') AS h,
             COALESCE(SUM(CASE WHEN tip='TAHSILAT' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS giris,
             COALESCE(SUM(CASE WHEN tip='ODEME' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS cikis_odeme,
             COALESCE(SUM(CASE WHEN tip='CEK' AND gerceklesen_tarih IS NOT NULL THEN gerceklesen_tutar END), 0) AS cikis_cek
-        FROM cari_hareketler`);
-    const x = r.rows[0];
-    return { acilis, bakiye: acilis + parseFloat(x.giris) - parseFloat(x.cikis_odeme) - parseFloat(x.cikis_cek) };
+        FROM cari_hareketler GROUP BY 1`);
+    const varsayilanAd = hesapTanim[0].ad;
+    const hesaplar = hesapTanim.map(h => ({ ...h, bakiye: h.acilis }));
+    for (const x of r.rows) {
+        const ad = x.h === '__VARSAYILAN__' ? varsayilanAd : x.h;
+        let hedef = hesaplar.find(h => h.ad === ad);
+        if (!hedef) { hedef = { ad, acilis: 0, bakiye: 0 }; hesaplar.push(hedef); }   // tanımdan silinmiş hesap kaybolmasın
+        hedef.bakiye += parseFloat(x.giris) - parseFloat(x.cikis_odeme) - parseFloat(x.cikis_cek);
+    }
+    const acilis = hesaplar.reduce((s, h) => s + h.acilis, 0);
+    return { acilis, bakiye: hesaplar.reduce((s, h) => s + h.bakiye, 0), hesaplar, varsayilanAd };
+}
+
+// Müşteri hareketlerinde uç içi yetki (kural katmanı hareket uçlarını tedarikçi modülüne bağlar)
+const MALI_IZIN_SIRA = { YOK: 0, OKUMA: 1, YAZMA: 2, TAM: 3 };
+async function maliMusteriYetkiVar(req, gerekli) {
+    if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return true;
+    const iz = await getKullaniciIzinleri(req.user.rol);
+    return (MALI_IZIN_SIRA[iz['mali.musteri'] || 'YOK'] || 0) >= MALI_IZIN_SIRA[gerekli];
 }
 
 // Nakit akış: gerçekleşmemiş kalemler etkin vadeye (planlanan ?? asıl) göre gün gün
@@ -2593,6 +2690,7 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
         // Faturasız cari borç (devir kısmı): bakiye − açık faturalar; varsayılan ödeme vadesiyle akışa girer
         const ayarR = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_ayar'");
         const varsayilanVade = ayarR.rows[0]?.deger?.varsayilan_odeme_vadesi || '2026-07-13';
+        const varsayilanTahsilat = ayarR.rows[0]?.deger?.varsayilan_tahsilat_vadesi || '2026-07-13';
         const devirler = await pool.query(`
             SELECT t.id, t.firma_adi,
                    COALESCE(t.muhlet_sonrasi_devir, 0)
@@ -2603,6 +2701,17 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             FROM tedarikciler t
             LEFT JOIN cari_hareketler h ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             GROUP BY t.id, t.firma_adi`);
+        // Müşteri simetriği: faturayla/tahsilat planıyla açıklanamayan alacak → GİRİŞ kalemi
+        const alacakDevirler = await pool.query(`
+            SELECT m.id, m.firma_adi,
+                   COALESCE(m.devir_alacak, 0)
+                   + COALESCE(SUM(CASE WHEN h.tip='FATURA' THEN h.tutar END), 0)
+                   - COALESCE(SUM(CASE WHEN h.tip='TAHSILAT' AND h.gerceklesen_tarih IS NOT NULL THEN COALESCE(h.gerceklesen_tutar, h.tutar) END), 0) AS bakiye,
+                   COALESCE(SUM(CASE WHEN h.tip='FATURA' AND h.gerceklesen_tarih IS NULL THEN h.tutar END), 0) AS acik_fatura,
+                   COALESCE(SUM(CASE WHEN h.tip='TAHSILAT' AND h.gerceklesen_tarih IS NULL THEN COALESCE(h.planlanan_tutar, h.tutar) END), 0) AS acik_plan
+            FROM musteriler m
+            LEFT JOIN cari_hareketler h ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
+            GROUP BY m.id, m.firma_adi`);
         const kasa = await maliKasaBakiye();
         const bugun = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' });
         const bitis = new Date(Date.now() + gun * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' });
@@ -2635,8 +2744,18 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
                 tasindi: devirVade !== varsayilanVade };
             if (devirVade <= bitis) kalemler.push(kalem);
         }
+        const tahsilatVade = varsayilanTahsilat < bugun ? bugun : varsayilanTahsilat;
+        for (const d of alacakDevirler.rows) {
+            const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_fatura) - parseFloat(d.acik_plan)) * 100) / 100;
+            if (tutar <= 0) continue;
+            const kalem = { id: null, taraf_tip: 'MUSTERI', taraf_id: d.id, firma_adi: d.firma_adi,
+                tip: 'DEVIR', belge_no: null, cek_no: null, projeksiyon_tur: null,
+                yon: 'GIRIS', tutar, asil_vade: varsayilanTahsilat, planlanan_vade: null, vade: tahsilatVade,
+                tasindi: tahsilatVade !== varsayilanTahsilat };
+            if (tahsilatVade <= bitis) kalemler.push(kalem);
+        }
         kalemler.sort((a, b) => a.vade < b.vade ? -1 : a.vade > b.vade ? 1 : 0);
-        res.json({ ok: true, bugun, bitis, kasa_bugun: kasa.bakiye, kasa_acilis: kasa.acilis, varsayilan_vade: varsayilanVade, kalemler, gecikmis, vadesiz });
+        res.json({ ok: true, bugun, bitis, kasa_bugun: kasa.bakiye, kasa_acilis: kasa.acilis, varsayilan_vade: varsayilanVade, varsayilan_tahsilat_vadesi: varsayilanTahsilat, kalemler, gecikmis, vadesiz });
     } catch (e) { next(e); }
 });
 
@@ -2644,7 +2763,7 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
 app.get('/api/mali-kasa', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query(`
-            SELECT h.id, h.taraf_tip, h.taraf_id, h.tip, h.belge_no, h.cek_no, h.aciklama,
+            SELECT h.id, h.taraf_tip, h.taraf_id, h.tip, h.belge_no, h.cek_no, h.aciklama, h.hesap, h.olusturan_email,
                    COALESCE(h.gerceklesen_tarih, h.belge_tarihi) AS tarih,
                    COALESCE(h.gerceklesen_tutar, h.tutar) AS tutar,
                    CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi WHEN h.taraf_tip='MUSTERI' THEN m.firma_adi
@@ -2655,7 +2774,7 @@ app.get('/api/mali-kasa', yetkiKontrol, async (req, res, next) => {
             WHERE (h.tip IN ('ODEME','TAHSILAT') AND h.gerceklesen_tarih IS NOT NULL) OR (h.tip='CEK' AND h.gerceklesen_tarih IS NOT NULL)
             ORDER BY tarih, h.id`);
         const kasa = await maliKasaBakiye();
-        res.json({ ok: true, kasa_acilis: kasa.acilis, kasa_bugun: kasa.bakiye, data: r.rows });
+        res.json({ ok: true, kasa_acilis: kasa.acilis, kasa_bugun: kasa.bakiye, hesaplar: kasa.hesaplar, varsayilan_hesap: kasa.varsayilanAd, data: r.rows });
     } catch (e) { next(e); }
 });
 
@@ -5685,11 +5804,11 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/(tedarikci-kaydet|tedarikci-sil|tedarikci-)/, modul: 'satinalma.tedarikci', seviye: 'YAZMA' },
 
     // Mali İşler — cari takip (hareket silme yalnız TAM; ayar yazma uç içinde ayrıca ADMIN)
-    { pattern: /^\/api\/mali-hareket-sil/, modul: 'mali.tedarikci', seviye: 'TAM' },
+    { pattern: /^\/api\/mali-hareket-(sil|geri-al)/, modul: 'mali.tedarikci', seviye: 'TAM' },
     { pattern: /^\/api\/mali-(tedarikci|ayar|ekip|nakit-akis|kasa|gider)/, method: 'GET', modul: 'mali.tedarikci', seviye: 'OKUMA' },
     { pattern: /^\/api\/mali-musteri/, method: 'GET', modul: 'mali.musteri', seviye: 'OKUMA' },
     { pattern: /^\/api\/mali-musteri-kaydet/, modul: 'mali.musteri', seviye: 'YAZMA' },
-    { pattern: /^\/api\/mali-(tedarikci-guncelle|hareket-ekle|hareket-planla|hareket-gerceklestir|ayar)/, modul: 'mali.tedarikci', seviye: 'YAZMA' },
+    { pattern: /^\/api\/mali-(tedarikci-guncelle|hareket-ekle|hareket-planla|hareket-gerceklestir|hareket-guncelle|ayar)/, modul: 'mali.tedarikci', seviye: 'YAZMA' },
 
     // Stok
     { pattern: /^\/api\/(stok-kart|stok-hareketler|depolar|stok-kartlari)/, method: 'GET', modul: 'stok', seviye: 'OKUMA' },
@@ -8092,6 +8211,10 @@ async function semaGuvence() {
             kayit_tarihi TIMESTAMPTZ DEFAULT NOW()
         )`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_cari_taraf ON cari_hareketler(taraf_tip, taraf_id)`);
+        // Faz 2+ ekleri: otomatik karşı kayıt bağı (geri alma için) + çoklu kasa/banka hesabı
+        await pool.query(`ALTER TABLE cari_hareketler
+            ADD COLUMN IF NOT EXISTS kaynak_hareket_id INTEGER,
+            ADD COLUMN IF NOT EXISTS hesap TEXT`).catch(e => console.error('⚠️ cari kolon ek:', e.message));
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_cari_vade ON cari_hareketler(vade_tarihi) WHERE vade_tarihi IS NOT NULL`);
         // Mali İşler izin tohumları: ADMIN=TAM, MUHASEBE=YAZMA, YONETIM=OKUMA (yalnız satır yoksa)
         for (const [rolAd, seviye] of [['ADMIN', 'TAM'], ['MUHASEBE', 'YAZMA'], ['YONETIM', 'OKUMA']]) {
