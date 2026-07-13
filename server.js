@@ -2265,12 +2265,14 @@ async function maliBakiyeler(tarafTip, tarafIds) {
     if (!tarafIds.length) return {};
     const r = await pool.query(`
         SELECT taraf_id,
-               COALESCE(SUM(CASE WHEN tip='FATURA' THEN tutar END), 0) AS fatura_toplam,
-               COALESCE(SUM(CASE WHEN tip IN ('ODEME','TAHSILAT') AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS odeme_toplam,
-               COALESCE(SUM(CASE WHEN tip='CEK' AND muhlet_oncesi AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS cek_once,
-               COALESCE(SUM(CASE WHEN tip='CEK' AND NOT muhlet_oncesi AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS cek_sonra,
-               COALESCE(SUM(CASE WHEN tip='PROJEKSIYON' AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS projeksiyon_toplam,
-               COALESCE(SUM(CASE WHEN tip IN ('ODEME','TAHSILAT') AND gerceklesen_tarih IS NULL THEN COALESCE(planlanan_tutar, tutar) END), 0) AS plan_toplam
+               COALESCE(SUM(CASE WHEN tip='FATURA' AND COALESCE(fatura_yon,'GELEN')='GELEN' THEN tutar END), 0) AS fatura_gelen,
+               COALESCE(SUM(CASE WHEN tip='FATURA' AND fatura_yon='GIDEN' THEN tutar END), 0) AS fatura_giden,
+               COALESCE(SUM(CASE WHEN tip='ODEME' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS odeme_g,
+               COALESCE(SUM(CASE WHEN tip='TAHSILAT' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS tahsilat_g,
+               COALESCE(SUM(CASE WHEN tip='ODEME' AND gerceklesen_tarih IS NULL THEN COALESCE(planlanan_tutar, tutar) END), 0) AS acik_odeme,
+               COALESCE(SUM(CASE WHEN tip='TAHSILAT' AND gerceklesen_tarih IS NULL THEN COALESCE(planlanan_tutar, tutar) END), 0) AS acik_tahsilat,
+               COALESCE(SUM(CASE WHEN arac='CEK' AND muhlet_oncesi AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS cek_once,
+               COALESCE(SUM(CASE WHEN arac='CEK' AND NOT muhlet_oncesi AND gerceklesen_tarih IS NULL THEN tutar END), 0) AS cek_sonra
         FROM cari_hareketler
         WHERE taraf_tip = $1 AND taraf_id = ANY($2)
         GROUP BY taraf_id`, [tarafTip, tarafIds]);
@@ -2294,13 +2296,17 @@ app.get('/api/mali-tedarikciler', yetkiKontrol, async (req, res, next) => {
             const b = bak[x.id] || {};
             return {
                 ...x,
-                fatura_toplam: parseFloat(b.fatura_toplam || 0),
-                odeme_toplam: parseFloat(b.odeme_toplam || 0),
+                fatura_gelen: parseFloat(b.fatura_gelen || 0),
+                fatura_giden: parseFloat(b.fatura_giden || 0),
+                odeme_toplam: parseFloat(b.odeme_g || 0),
+                tahsilat_toplam: parseFloat(b.tahsilat_g || 0),
                 cek_once: parseFloat(b.cek_once || 0),
                 cek_sonra: parseFloat(b.cek_sonra || 0),
-                plan_toplam: parseFloat(b.plan_toplam || 0),
-                // Mühlet sonrası bakiye = devir + faturalar − ödemeler (HESAPLANAN)
-                muhlet_sonrasi_bakiye: parseFloat(x.muhlet_sonrasi_devir || 0) + parseFloat(b.fatura_toplam || 0) - parseFloat(b.odeme_toplam || 0)
+                // Açık projeksiyon (net ödeme beklentisi) = açık ödemeler − açık tahsilatlar
+                plan_toplam: parseFloat(b.acik_odeme || 0) - parseFloat(b.acik_tahsilat || 0),
+                // Bakiye = devir + gelen − giden fatura − gerçekleşen ödeme + gerçekleşen tahsilat (iade)
+                muhlet_sonrasi_bakiye: parseFloat(x.muhlet_sonrasi_devir || 0) + parseFloat(b.fatura_gelen || 0) - parseFloat(b.fatura_giden || 0)
+                    - parseFloat(b.odeme_g || 0) + parseFloat(b.tahsilat_g || 0)
             };
         });
         res.json({ ok: true, data });
@@ -2322,9 +2328,13 @@ app.get('/api/mali-tedarikci/:id', yetkiKontrol, async (req, res, next) => {
             ok: true, tedarikci: t.rows[0], hareketler: h.rows,
             bakiye: {
                 muhlet_oncesi_borc: parseFloat(t.rows[0].muhlet_oncesi_borc || 0),
-                muhlet_sonrasi_bakiye: parseFloat(t.rows[0].muhlet_sonrasi_devir || 0) + parseFloat(bak.fatura_toplam || 0) - parseFloat(bak.odeme_toplam || 0),
-                fatura_toplam: parseFloat(bak.fatura_toplam || 0),
-                odeme_toplam: parseFloat(bak.odeme_toplam || 0),
+                muhlet_sonrasi_bakiye: parseFloat(t.rows[0].muhlet_sonrasi_devir || 0) + parseFloat(bak.fatura_gelen || 0) - parseFloat(bak.fatura_giden || 0)
+                    - parseFloat(bak.odeme_g || 0) + parseFloat(bak.tahsilat_g || 0),
+                fatura_gelen: parseFloat(bak.fatura_gelen || 0),
+                fatura_giden: parseFloat(bak.fatura_giden || 0),
+                odeme_toplam: parseFloat(bak.odeme_g || 0),
+                tahsilat_toplam: parseFloat(bak.tahsilat_g || 0),
+                acik_projeksiyon: parseFloat(bak.acik_odeme || 0) - parseFloat(bak.acik_tahsilat || 0),
                 cek_once: parseFloat(bak.cek_once || 0),
                 cek_sonra: parseFloat(bak.cek_sonra || 0)
             }
@@ -2361,11 +2371,15 @@ app.get('/api/mali-musteriler', yetkiKontrol, async (req, res, next) => {
             const b = bak[x.id] || {};
             return {
                 ...x,
-                fatura_toplam: parseFloat(b.fatura_toplam || 0),
-                tahsilat_toplam: parseFloat(b.odeme_toplam || 0),
-                projeksiyon_toplam: parseFloat(b.projeksiyon_toplam || 0),
-                plan_toplam: parseFloat(b.plan_toplam || 0),
-                cari_alacak: parseFloat(x.devir_alacak || 0) + parseFloat(b.fatura_toplam || 0) - parseFloat(b.odeme_toplam || 0)
+                fatura_giden: parseFloat(b.fatura_giden || 0),
+                fatura_gelen: parseFloat(b.fatura_gelen || 0),
+                tahsilat_toplam: parseFloat(b.tahsilat_g || 0),
+                odeme_toplam: parseFloat(b.odeme_g || 0),
+                // Açık projeksiyon (net tahsilat beklentisi)
+                plan_toplam: parseFloat(b.acik_tahsilat || 0) - parseFloat(b.acik_odeme || 0),
+                // Alacak = devir + kestiğimiz fatura − gelen fatura(iade) − tahsilat + ödeme(iade)
+                cari_alacak: parseFloat(x.devir_alacak || 0) + parseFloat(b.fatura_giden || 0) - parseFloat(b.fatura_gelen || 0)
+                    - parseFloat(b.tahsilat_g || 0) + parseFloat(b.odeme_g || 0)
             };
         });
         res.json({ ok: true, data });
@@ -2385,10 +2399,13 @@ app.get('/api/mali-musteri/:id', yetkiKontrol, async (req, res, next) => {
         res.json({
             ok: true, musteri: m.rows[0], hareketler: h.rows,
             bakiye: {
-                cari_alacak: parseFloat(m.rows[0].devir_alacak || 0) + parseFloat(bak.fatura_toplam || 0) - parseFloat(bak.odeme_toplam || 0),
-                fatura_toplam: parseFloat(bak.fatura_toplam || 0),
-                tahsilat_toplam: parseFloat(bak.odeme_toplam || 0),
-                projeksiyon_toplam: parseFloat(bak.projeksiyon_toplam || 0)
+                cari_alacak: parseFloat(m.rows[0].devir_alacak || 0) + parseFloat(bak.fatura_giden || 0) - parseFloat(bak.fatura_gelen || 0)
+                    - parseFloat(bak.tahsilat_g || 0) + parseFloat(bak.odeme_g || 0),
+                fatura_giden: parseFloat(bak.fatura_giden || 0),
+                fatura_gelen: parseFloat(bak.fatura_gelen || 0),
+                tahsilat_toplam: parseFloat(bak.tahsilat_g || 0),
+                odeme_toplam: parseFloat(bak.odeme_g || 0),
+                acik_projeksiyon: parseFloat(bak.acik_tahsilat || 0) - parseFloat(bak.acik_odeme || 0)
             }
         });
     } catch (e) { next(e); }
@@ -2426,7 +2443,8 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
         // GIDER = cari kartı olmayan işletme gideri (maaş vb.) — yalnız ödeme, nakit akışa tek kalem
         const tarafTip = ['MUSTERI', 'GIDER'].includes(b.taraf_tip) ? b.taraf_tip : 'TEDARIKCI';
         const tip = String(b.tip || '').toUpperCase();
-        const gecerli = tarafTip === 'TEDARIKCI' ? ['FATURA', 'ODEME', 'CEK'] : tarafTip === 'MUSTERI' ? ['FATURA', 'TAHSILAT', 'PROJEKSIYON'] : ['ODEME'];
+        // Çift yönlü model: her cari tarafta FATURA (Gelen/Giden belge) + ODEME/TAHSILAT (nakit projeksiyonu/gerçekleşmesi)
+        const gecerli = tarafTip === 'GIDER' ? ['ODEME'] : ['FATURA', 'ODEME', 'TAHSILAT'];
         if (tarafTip === 'GIDER' && !(b.aciklama || '').trim()) return res.json({ ok: false, hata: 'Gider kalemi için açıklama zorunludur (örn. "Temmuz maaşları").' });
         if (tarafTip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
             return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
@@ -2446,24 +2464,32 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
         }
         if (!(tutar > 0)) return res.json({ ok: false, hata: 'Tutar sıfırdan büyük olmalı.' });
         if (!b.belge_tarihi) return res.json({ ok: false, hata: 'Tarih zorunludur.' });
-        if (tip === 'CEK' && (!b.cek_no || !String(b.cek_no).trim())) return res.json({ ok: false, hata: 'Çek için çek no zorunludur.' });
-        if (tip === 'CEK' && !b.vade_tarihi) return res.json({ ok: false, hata: 'Çek için vade tarihi zorunludur (nakit akışına girer).' });
-        if (tip === 'PROJEKSIYON' && !['AVANS', 'HAKEDIS', 'CEK'].includes(String(b.projeksiyon_tur || '').toUpperCase()))
-            return res.json({ ok: false, hata: 'Projeksiyon türü Avans / Hakediş / Çek olmalıdır.' });
-        // ODEME/TAHSILAT normalde gerçekleşmiş nakit kaydıdır; "planlı" bayrağıyla ileri tarihli
-        // taksit olarak girilir (kasa/bakiyeye dokunmaz, nakit akışa vadesiyle yazılır)
+        // FATURA: yönlü belge — yalnız cari ekstreye işler, nakit akışına GİRMEZ
+        let faturaYon = null, arac = null;
+        if (tip === 'FATURA') {
+            faturaYon = ['GELEN', 'GIDEN'].includes(String(b.fatura_yon || '').toUpperCase())
+                ? String(b.fatura_yon).toUpperCase()
+                : (tarafTip === 'MUSTERI' ? 'GIDEN' : 'GELEN');
+        } else {
+            // Projeksiyon aracı: Nakit / Çek / Kredi Kartı
+            arac = ['CEK', 'KREDI_KARTI'].includes(String(b.arac || '').toUpperCase()) ? String(b.arac).toUpperCase() : 'NAKIT';
+            if (arac === 'CEK' && (!b.cek_no || !String(b.cek_no).trim())) return res.json({ ok: false, hata: 'Çek için çek no zorunludur.' });
+        }
+        // ODEME/TAHSILAT: planlı = açık projeksiyon; planlı değilse manuel gerçekleşme
+        // (aynı kayıt hem projeksiyon geçmişinde hem cari ekstrede görünür)
         const planli = !!b.planli && (tip === 'ODEME' || tip === 'TAHSILAT');
-        if (planli && !b.vade_tarihi) return res.json({ ok: false, hata: 'Planlı ödeme/tahsilat için ödeme tarihi (vade) zorunludur.' });
+        if ((tip === 'ODEME' || tip === 'TAHSILAT') && planli && !b.vade_tarihi)
+            return res.json({ ok: false, hata: 'Projeksiyon için planlanan tarih zorunludur.' });
         const gerc = (tip === 'ODEME' || tip === 'TAHSILAT') && !planli;
         const i = await pool.query(`
             INSERT INTO cari_hareketler (taraf_tip, taraf_id, tip, belge_tarihi, belge_no, tutar,
                 vade_tarihi, gerceklesen_tarih, gerceklesen_tutar, cek_no, banka, muhlet_oncesi,
-                projeksiyon_tur, aciklama, olusturan_email, hesap, para_birimi, doviz_tutar, sabit_kur)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
+                fatura_yon, arac, aciklama, olusturan_email, hesap, para_birimi, doviz_tutar, sabit_kur)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
             [tarafTip, tarafTip === 'GIDER' ? 0 : parseInt(b.taraf_id), tip, b.belge_tarihi, (b.belge_no || '').trim() || null, tutar,
              b.vade_tarihi || null, gerc ? b.belge_tarihi : null, gerc ? tutar : null,
              (b.cek_no || '').trim() || null, (b.banka || '').trim() || null, !!b.muhlet_oncesi,
-             tip === 'PROJEKSIYON' ? String(b.projeksiyon_tur).toUpperCase() : null,
+             faturaYon, arac,
              (b.aciklama || '').trim() || null, req.user.email, (b.hesap || '').trim() || null,
              para, dovizTutar, gerc && para !== 'TL' ? girisKur : null]);   // anında gerçekleşen döviz kaydında kur baştan sabitlenir
         await auditLogla(req, { eylem: 'CREATE', tablo: 'cari_hareketler', kayit_id: i.rows[0].id, ozet: `${tarafTip} #${b.taraf_id} ${tip} ${tutar} TL` });
@@ -2551,7 +2577,7 @@ app.post('/api/mali-hareket-planla', yetkiKontrol, async (req, res, next) => {
         if (h.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
             return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
         if (h.rows[0].gerceklesen_tarih) return res.json({ ok: false, hata: 'Gerçekleşmiş kalem yeniden planlanamaz.' });
-        if (!['FATURA', 'CEK', 'PROJEKSIYON', 'ODEME', 'TAHSILAT'].includes(h.rows[0].tip)) return res.json({ ok: false, hata: 'Bu kalem planlanamaz.' });
+        if (!['ODEME', 'TAHSILAT'].includes(h.rows[0].tip)) return res.json({ ok: false, hata: 'Yalnız projeksiyon kalemleri (ödeme/tahsilat) planlanabilir; faturalar nakit akışına girmez.' });
         await pool.query('UPDATE cari_hareketler SET planlanan_vade=$1, planlanan_tutar=$2 WHERE id=$3',
             [req.body.planlanan_vade || null, parseFloat(req.body.planlanan_tutar) || null, req.body.id]);
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'cari_hareketler', kayit_id: parseInt(req.body.id), ozet: `Plan: vade=${req.body.planlanan_vade || '-'}, tutar=${req.body.planlanan_tutar || '-'}` });
@@ -2574,31 +2600,17 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
         const hesap = (req.body.hesap || '').trim() || null;
         await cl.query('BEGIN');
         // Atomik: yalnız henüz gerçekleşmemişse damgala (çift tıklama mükerrer kayıt üretmez)
+        // Yalnız projeksiyon kalemleri gerçekleşir (fatura zaten gerçekleşmiş belgedir, ekstreye doğrudan işler)
         // Döviz kaleminde gerçekleşme anında kur SABİTLENİR: TL tutar = gerçekleşen, kur = gerçekleşen/döviz
         const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=$1, gerceklesen_tutar=$2, hesap=COALESCE($4, hesap),
                 tutar = CASE WHEN para_birimi <> 'TL' THEN $2 ELSE tutar END,
                 sabit_kur = CASE WHEN para_birimi <> 'TL' AND COALESCE(doviz_tutar, 0) > 0 THEN ROUND($2 / doviz_tutar, 4) ELSE sabit_kur END
-            WHERE id=$3 AND gerceklesen_tarih IS NULL AND tip IN ('FATURA','CEK','PROJEKSIYON','ODEME','TAHSILAT') RETURNING *`, [tarih, t, id, hesap]);
-        if (!u.rowCount) { await cl.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem bulunamadı, zaten gerçekleşmiş ya da bu tipte gerçekleştirme yapılamaz.' }); }
+            WHERE id=$3 AND gerceklesen_tarih IS NULL AND tip IN ('ODEME','TAHSILAT') RETURNING *`, [tarih, t, id, hesap]);
+        if (!u.rowCount) { await cl.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem bulunamadı, zaten gerçekleşmiş ya da gerçekleştirilebilir tipte değil (yalnız ödeme/tahsilat projeksiyonları).' }); }
         const h = u.rows[0];
-        let karsi = null;
-        // karsi_kayit=false: fatura avans/mahsupla kapatıldı — otomatik ödeme/tahsilat üretilmez
-        if ((h.tip === 'FATURA' || h.tip === 'PROJEKSIYON') && req.body.karsi_kayit !== false) {
-            const yeniTip = h.taraf_tip === 'TEDARIKCI' ? 'ODEME' : 'TAHSILAT';
-            const ozet = h.tip === 'FATURA'
-                ? `Fatura ${h.belge_no || '#' + h.id} ${yeniTip === 'ODEME' ? 'ödemesi' : 'tahsilatı'}`
-                : `Projeksiyon (${h.projeksiyon_tur || ''}) tahsilatı`;
-            const i = await cl.query(`INSERT INTO cari_hareketler (taraf_tip, taraf_id, tip, belge_tarihi, belge_no,
-                tutar, gerceklesen_tarih, gerceklesen_tutar, aciklama, olusturan_email, hesap, kaynak_hareket_id,
-                para_birimi, doviz_tutar, sabit_kur)
-                VALUES ($1,$2,$3,$4,$5,$6,$4,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-                [h.taraf_tip, h.taraf_id, yeniTip, tarih, h.belge_no, t, ozet, req.user.email, hesap, h.id,
-                 h.para_birimi || 'TL', h.doviz_tutar, h.sabit_kur]);
-            karsi = { id: i.rows[0].id, tip: yeniTip };
-        }
         await cl.query('COMMIT');
-        await auditLogla(req, { eylem: 'UPDATE', tablo: 'cari_hareketler', kayit_id: parseInt(id), ozet: `GERÇEKLEŞTİ: ${h.taraf_tip} #${h.taraf_id} ${h.tip} ${t} TL (${tarih})${karsi ? ' → otomatik ' + karsi.tip : ''}` });
-        res.json({ ok: true, mesaj: 'Gerçekleşme işlendi.' + (karsi ? ` Otomatik ${karsi.tip === 'ODEME' ? 'ödeme' : 'tahsilat'} kaydı oluşturuldu.` : ''), karsi });
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'cari_hareketler', kayit_id: parseInt(id), ozet: `GERÇEKLEŞTİ: ${h.taraf_tip} #${h.taraf_id} ${h.tip} ${t} TL (${tarih})` });
+        res.json({ ok: true, mesaj: 'Gerçekleşme işlendi — kayıt cari ekstreye ve kasaya düştü.' });
     } catch (e) { await cl.query('ROLLBACK').catch(() => {}); next(e); }
     finally { cl.release(); }
 });
@@ -2671,7 +2683,9 @@ app.post('/api/mali-hareket-guncelle', yetkiKontrol, async (req, res, next) => {
         if (!h.rowCount) return res.json({ ok: false, hata: 'Hareket bulunamadı.' });
         if (h.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
             return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
-        if (h.rows[0].gerceklesen_tarih) return res.json({ ok: false, hata: 'Gerçekleşmiş kalem düzeltilemez — önce gerçekleşmeyi geri alın.' });
+        // Fatura her zaman düzeltilebilir (belge katmanı); projeksiyon kalemleri yalnız açıkken
+        if (h.rows[0].tip !== 'FATURA' && h.rows[0].gerceklesen_tarih)
+            return res.json({ ok: false, hata: 'Gerçekleşmiş kalem düzeltilemez — önce gerçekleşmeyi geri alın.' });
         let tutar, dovizTutar = h.rows[0].doviz_tutar;
         if (h.rows[0].para_birimi !== 'TL') {
             // Döviz kaleminde döviz tutarı düzeltilir; TL karşılığı güncel kurla hesaplanır
@@ -2718,8 +2732,7 @@ async function maliKasaBakiye() {
         : [{ ad: 'Kasa', acilis: parseFloat(d.kasa_acilis) || 0 }];
     const r = await pool.query(`SELECT COALESCE(NULLIF(TRIM(hesap), ''), '__VARSAYILAN__') AS h,
             COALESCE(SUM(CASE WHEN tip='TAHSILAT' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS giris,
-            COALESCE(SUM(CASE WHEN tip='ODEME' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS cikis_odeme,
-            COALESCE(SUM(CASE WHEN tip='CEK' AND gerceklesen_tarih IS NOT NULL THEN gerceklesen_tutar END), 0) AS cikis_cek
+            COALESCE(SUM(CASE WHEN tip='ODEME' AND gerceklesen_tarih IS NOT NULL THEN COALESCE(gerceklesen_tutar, tutar) END), 0) AS cikis_odeme
         FROM cari_hareketler GROUP BY 1`);
     const varsayilanAd = hesapTanim[0].ad;
     const hesaplar = hesapTanim.map(h => ({ ...h, bakiye: h.acilis }));
@@ -2727,7 +2740,7 @@ async function maliKasaBakiye() {
         const ad = x.h === '__VARSAYILAN__' ? varsayilanAd : x.h;
         let hedef = hesaplar.find(h => h.ad === ad);
         if (!hedef) { hedef = { ad, acilis: 0, bakiye: 0 }; hesaplar.push(hedef); }   // tanımdan silinmiş hesap kaybolmasın
-        hedef.bakiye += parseFloat(x.giris) - parseFloat(x.cikis_odeme) - parseFloat(x.cikis_cek);
+        hedef.bakiye += parseFloat(x.giris) - parseFloat(x.cikis_odeme);
     }
     const acilis = hesaplar.reduce((s, h) => s + h.acilis, 0);
     return { acilis, bakiye: hesaplar.reduce((s, h) => s + h.bakiye, 0), hesaplar, varsayilanAd };
@@ -2752,41 +2765,45 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
                    h.tutar, h.planlanan_tutar, h.vade_tarihi, h.planlanan_vade,
                    COALESCE(h.planlanan_vade, h.vade_tarihi) AS etkin_vade,
                    COALESCE(h.planlanan_tutar, h.tutar) AS etkin_tutar,
+                   h.arac,
                    CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi WHEN h.taraf_tip='MUSTERI' THEN m.firma_adi
                         ELSE 'Diğer Ödeme' END AS firma_adi,
-                   CASE WHEN h.taraf_tip='MUSTERI' THEN 'GIRIS' ELSE 'CIKIS' END AS yon
+                   CASE WHEN h.tip='TAHSILAT' THEN 'GIRIS' ELSE 'CIKIS' END AS yon
             FROM cari_hareketler h
             LEFT JOIN tedarikciler t ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             LEFT JOIN musteriler m ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
             WHERE h.gerceklesen_tarih IS NULL
-              AND ((h.taraf_tip='TEDARIKCI' AND h.tip IN ('FATURA','CEK','ODEME'))
-                OR (h.taraf_tip='MUSTERI' AND h.tip IN ('FATURA','PROJEKSIYON','TAHSILAT'))
-                OR (h.taraf_tip='GIDER' AND h.tip='ODEME'))
-              AND NOT (h.tip='CEK' AND h.muhlet_oncesi)
+              AND h.tip IN ('ODEME','TAHSILAT')
+              AND NOT COALESCE(h.muhlet_oncesi, false)
             ORDER BY etkin_vade NULLS LAST, h.id`);
-        // Mühlet öncesi çekler nakit akışa GİRMEZ (konkordato/yapılandırma kapsamı, ödenmeyecek)
-        // Faturasız cari borç (devir kısmı): bakiye − açık faturalar; varsayılan ödeme vadesiyle akışa girer
+        // Nakit akışın TEK kaynağı projeksiyondur: FATURA'lar yalnız cari ekstre/bakiyeye işler.
+        // Mühlet öncesi işaretli kalemler (açılış çekleri) akışa GİRMEZ (yapılandırma kapsamı).
+        // Projeksiyonla karşılanmayan bakiye "devir" emniyet kalemiyle akışta kalır — borç kaybolmaz.
         const ayarR = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_ayar'");
         const varsayilanVade = ayarR.rows[0]?.deger?.varsayilan_odeme_vadesi || '2026-07-13';
         const varsayilanTahsilat = ayarR.rows[0]?.deger?.varsayilan_tahsilat_vadesi || '2026-07-13';
         const devirler = await pool.query(`
             SELECT t.id, t.firma_adi,
                    COALESCE(t.muhlet_sonrasi_devir, 0)
-                   + COALESCE(SUM(CASE WHEN h.tip='FATURA' THEN h.tutar END), 0)
-                   - COALESCE(SUM(CASE WHEN h.tip IN ('ODEME','TAHSILAT') AND h.gerceklesen_tarih IS NOT NULL THEN COALESCE(h.gerceklesen_tutar, h.tutar) END), 0) AS bakiye,
-                   COALESCE(SUM(CASE WHEN h.tip='FATURA' AND h.gerceklesen_tarih IS NULL THEN h.tutar END), 0) AS acik_fatura,
-                   COALESCE(SUM(CASE WHEN h.tip='ODEME' AND h.gerceklesen_tarih IS NULL THEN COALESCE(h.planlanan_tutar, h.tutar) END), 0) AS acik_plan
+                   + COALESCE(SUM(CASE WHEN h.tip='FATURA' AND COALESCE(h.fatura_yon,'GELEN')='GELEN' THEN h.tutar END), 0)
+                   - COALESCE(SUM(CASE WHEN h.tip='FATURA' AND h.fatura_yon='GIDEN' THEN h.tutar END), 0)
+                   - COALESCE(SUM(CASE WHEN h.tip='ODEME' AND h.gerceklesen_tarih IS NOT NULL THEN COALESCE(h.gerceklesen_tutar, h.tutar) END), 0)
+                   + COALESCE(SUM(CASE WHEN h.tip='TAHSILAT' AND h.gerceklesen_tarih IS NOT NULL THEN COALESCE(h.gerceklesen_tutar, h.tutar) END), 0) AS bakiye,
+                   COALESCE(SUM(CASE WHEN h.tip='ODEME' AND h.gerceklesen_tarih IS NULL THEN COALESCE(h.planlanan_tutar, h.tutar) END), 0)
+                   - COALESCE(SUM(CASE WHEN h.tip='TAHSILAT' AND h.gerceklesen_tarih IS NULL THEN COALESCE(h.planlanan_tutar, h.tutar) END), 0) AS acik_plan
             FROM tedarikciler t
             LEFT JOIN cari_hareketler h ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             GROUP BY t.id, t.firma_adi`);
-        // Müşteri simetriği: faturayla/tahsilat planıyla açıklanamayan alacak → GİRİŞ kalemi
+        // Müşteri simetriği: projeksiyonla karşılanmayan alacak → GİRİŞ kalemi
         const alacakDevirler = await pool.query(`
             SELECT m.id, m.firma_adi,
                    COALESCE(m.devir_alacak, 0)
-                   + COALESCE(SUM(CASE WHEN h.tip='FATURA' THEN h.tutar END), 0)
-                   - COALESCE(SUM(CASE WHEN h.tip='TAHSILAT' AND h.gerceklesen_tarih IS NOT NULL THEN COALESCE(h.gerceklesen_tutar, h.tutar) END), 0) AS bakiye,
-                   COALESCE(SUM(CASE WHEN h.tip='FATURA' AND h.gerceklesen_tarih IS NULL THEN h.tutar END), 0) AS acik_fatura,
-                   COALESCE(SUM(CASE WHEN h.tip='TAHSILAT' AND h.gerceklesen_tarih IS NULL THEN COALESCE(h.planlanan_tutar, h.tutar) END), 0) AS acik_plan
+                   + COALESCE(SUM(CASE WHEN h.tip='FATURA' AND h.fatura_yon='GIDEN' THEN h.tutar END), 0)
+                   - COALESCE(SUM(CASE WHEN h.tip='FATURA' AND COALESCE(h.fatura_yon,'GELEN')='GELEN' THEN h.tutar END), 0)
+                   - COALESCE(SUM(CASE WHEN h.tip='TAHSILAT' AND h.gerceklesen_tarih IS NOT NULL THEN COALESCE(h.gerceklesen_tutar, h.tutar) END), 0)
+                   + COALESCE(SUM(CASE WHEN h.tip='ODEME' AND h.gerceklesen_tarih IS NOT NULL THEN COALESCE(h.gerceklesen_tutar, h.tutar) END), 0) AS bakiye,
+                   COALESCE(SUM(CASE WHEN h.tip='TAHSILAT' AND h.gerceklesen_tarih IS NULL THEN COALESCE(h.planlanan_tutar, h.tutar) END), 0)
+                   - COALESCE(SUM(CASE WHEN h.tip='ODEME' AND h.gerceklesen_tarih IS NULL THEN COALESCE(h.planlanan_tutar, h.tutar) END), 0) AS acik_plan
             FROM musteriler m
             LEFT JOIN cari_hareketler h ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
             GROUP BY m.id, m.firma_adi`);
@@ -2801,7 +2818,7 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             const kalem = { id: h.id, taraf_tip: h.taraf_tip, taraf_id: h.taraf_id, firma_adi: h.firma_adi,
                 tip: h.tip, belge_no: h.belge_no, cek_no: h.cek_no, projeksiyon_tur: h.projeksiyon_tur,
                 aciklama: h.aciklama, para_birimi: h.para_birimi || 'TL', doviz_tutar: h.doviz_tutar ? parseFloat(h.doviz_tutar) : null,
-                yon: h.yon, tutar: parseFloat(h.etkin_tutar), asil_vade: ymdStr(h.vade_tarihi),
+                arac: h.arac, yon: h.yon, tutar: parseFloat(h.etkin_tutar), asil_vade: ymdStr(h.vade_tarihi),
                 planlanan_vade: ymdStr(h.planlanan_vade), vade };
             // Plan kalemleri (ödeme/tahsilat planı) gecikmişe DÜŞMEZ: o gün ödenmediyse
             // ve yeni vade girilmediyse otomatik bugüne taşınır (kullanıcı kuralı)
@@ -2810,27 +2827,7 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             }
             ham.push(kalem);
         }
-        // NETLEŞTİRME: aynı firmanın açık ödeme/tahsilat planları, o firmanın açık faturalarını
-        // karşılar — fatura + elle girilen taksitler akışta ÇİFT sayılmaz (planlar önceliklidir,
-        // faturaların yalnız planla karşılanmayan kısmı akışta kalır)
-        const planHavuz = {};
-        for (const k of ham) {
-            if ((k.taraf_tip === 'TEDARIKCI' && k.tip === 'ODEME') || (k.taraf_tip === 'MUSTERI' && k.tip === 'TAHSILAT'))
-                planHavuz[k.taraf_tip + '#' + k.taraf_id] = (planHavuz[k.taraf_tip + '#' + k.taraf_id] || 0) + k.tutar;
-        }
-        ham.filter(k => k.tip === 'FATURA').sort((a, b) => String(a.vade || '9999') < String(b.vade || '9999') ? -1 : 1)
-            .forEach(k => {
-                const anah = k.taraf_tip + '#' + k.taraf_id;
-                const havuz = planHavuz[anah] || 0;
-                if (havuz > 0) {
-                    const dusen = Math.min(havuz, k.tutar);
-                    k.tutar = Math.round((k.tutar - dusen) * 100) / 100;
-                    k.plan_dusuldu = Math.round(dusen * 100) / 100;
-                    planHavuz[anah] = havuz - dusen;
-                }
-            });
         for (const kalem of ham) {
-            if (kalem.tip === 'FATURA' && kalem.tutar <= 0.005) continue;   // tamamı planla karşılandı
             const vade = kalem.vade;
             if (!vade) vadesiz.push(kalem);
             else if (vade < bugun) gecikmis.push(kalem);
@@ -2839,8 +2836,8 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
         // Devir kalemleri de plan niteliğindedir — varsayılan vade geçtiyse bugüne taşınır
         const devirVade = varsayilanVade < bugun ? bugun : varsayilanVade;
         for (const d of devirler.rows) {
-            // Devir kalemi = bakiye − açık faturalar − planlı ödeme taksitleri (taksitler kendi tarihinde ayrı kalem)
-            const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_fatura) - parseFloat(d.acik_plan)) * 100) / 100;
+            // Devir kalemi = cari bakiye − açık projeksiyon (net): projeksiyonu girilmemiş borç akışta kaybolmaz
+            const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_plan)) * 100) / 100;
             if (tutar <= 0) continue;
             const kalem = { id: null, taraf_tip: 'TEDARIKCI', taraf_id: d.id, firma_adi: d.firma_adi,
                 tip: 'DEVIR', belge_no: null, cek_no: null, projeksiyon_tur: null,
@@ -2850,7 +2847,7 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
         }
         const tahsilatVade = varsayilanTahsilat < bugun ? bugun : varsayilanTahsilat;
         for (const d of alacakDevirler.rows) {
-            const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_fatura) - parseFloat(d.acik_plan)) * 100) / 100;
+            const tutar = Math.round((parseFloat(d.bakiye) - parseFloat(d.acik_plan)) * 100) / 100;
             if (tutar <= 0) continue;
             const kalem = { id: null, taraf_tip: 'MUSTERI', taraf_id: d.id, firma_adi: d.firma_adi,
                 tip: 'DEVIR', belge_no: null, cek_no: null, projeksiyon_tur: null,
@@ -2876,7 +2873,7 @@ app.get('/api/mali-kasa', yetkiKontrol, async (req, res, next) => {
             FROM cari_hareketler h
             LEFT JOIN tedarikciler t ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             LEFT JOIN musteriler m ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
-            WHERE (h.tip IN ('ODEME','TAHSILAT') AND h.gerceklesen_tarih IS NOT NULL) OR (h.tip='CEK' AND h.gerceklesen_tarih IS NOT NULL)
+            WHERE h.tip IN ('ODEME','TAHSILAT') AND h.gerceklesen_tarih IS NOT NULL
             ORDER BY tarih, h.id`);
         const kasa = await maliKasaBakiye();
         res.json({ ok: true, kasa_acilis: kasa.acilis, kasa_bugun: kasa.bakiye, hesaplar: kasa.hesaplar, varsayilan_hesap: kasa.varsayilanAd, data: r.rows });
@@ -8323,7 +8320,17 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS hesap TEXT,
             ADD COLUMN IF NOT EXISTS para_birimi TEXT DEFAULT 'TL',
             ADD COLUMN IF NOT EXISTS doviz_tutar NUMERIC,
-            ADD COLUMN IF NOT EXISTS sabit_kur NUMERIC`).catch(e => console.error('⚠️ cari kolon ek:', e.message));
+            ADD COLUMN IF NOT EXISTS sabit_kur NUMERIC,
+            ADD COLUMN IF NOT EXISTS fatura_yon TEXT,
+            ADD COLUMN IF NOT EXISTS arac TEXT`).catch(e => console.error('⚠️ cari kolon ek:', e.message));
+        // PROJEKSİYON MODELİ dönüşümü (2026-07-13, idempotent): fatura=belge (yönlü), nakit=ODEME/TAHSILAT
+        // (araç: NAKIT/CEK/KREDI_KARTI); eski CEK ve PROJEKSIYON tipleri yeni modele göçer
+        await pool.query(`UPDATE cari_hareketler SET fatura_yon = CASE WHEN taraf_tip='MUSTERI' THEN 'GIDEN' ELSE 'GELEN' END WHERE tip='FATURA' AND fatura_yon IS NULL`).catch(e => console.error('⚠️ göç fatura_yon:', e.message));
+        await pool.query(`UPDATE cari_hareketler SET arac='NAKIT' WHERE tip IN ('ODEME','TAHSILAT') AND arac IS NULL`).catch(e => console.error('⚠️ göç arac:', e.message));
+        await pool.query(`UPDATE cari_hareketler SET tip='ODEME', arac='CEK' WHERE tip='CEK'`).catch(e => console.error('⚠️ göç çek:', e.message));
+        await pool.query(`UPDATE cari_hareketler SET tip='TAHSILAT', arac='NAKIT',
+            aciklama = TRIM(CONCAT('Projeksiyon', COALESCE('(' || projeksiyon_tur || ')', ''), CASE WHEN COALESCE(aciklama,'') <> '' THEN ': ' || aciklama ELSE '' END))
+            WHERE tip='PROJEKSIYON'`).catch(e => console.error('⚠️ göç projeksiyon:', e.message));
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_cari_vade ON cari_hareketler(vade_tarihi) WHERE vade_tarihi IS NOT NULL`);
         // Mali İşler izin tohumları: ADMIN=TAM, MUHASEBE=YAZMA, YONETIM=OKUMA (yalnız satır yoksa)
         for (const [rolAd, seviye] of [['ADMIN', 'TAM'], ['MUHASEBE', 'YAZMA'], ['YONETIM', 'OKUMA']]) {

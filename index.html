@@ -270,7 +270,7 @@
               <th style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','tur','metin')">Tür <i class="mali-ok" data-t="tedarikci" data-a="tur"></i></th>
               <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','muhlet_oncesi_borc','sayi')">Mühlet Öncesi Borç <i class="mali-ok" data-t="tedarikci" data-a="muhlet_oncesi_borc"></i></th>
               <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','muhlet_sonrasi_bakiye','sayi')">Mühlet Sonrası Bakiye <i class="mali-ok" data-t="tedarikci" data-a="muhlet_sonrasi_bakiye"></i></th>
-              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','plan_toplam','sayi')">Planlanan Ödeme <i class="mali-ok" data-t="tedarikci" data-a="plan_toplam"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','plan_toplam','sayi')">Projeksiyon (Net Ödeme) <i class="mali-ok" data-t="tedarikci" data-a="plan_toplam"></i></th>
               <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('tedarikci','_cek','sayi')">Çekler (Ö / S) <i class="mali-ok" data-t="tedarikci" data-a="_cek"></i></th>
             </tr></thead>
             <tbody id="maliTedarikciTbody"><tr><td colspan="6" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
@@ -297,10 +297,9 @@
               <th style="cursor:pointer;" onclick="maliSiralaTikla('musteri','firma_adi','metin')">Firma <i class="mali-ok" data-t="musteri" data-a="firma_adi"></i></th>
               <th style="cursor:pointer;" onclick="maliSiralaTikla('musteri','tur','metin')">Tür <i class="mali-ok" data-t="musteri" data-a="tur"></i></th>
               <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('musteri','cari_alacak','sayi')">Cari Alacak <i class="mali-ok" data-t="musteri" data-a="cari_alacak"></i></th>
-              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('musteri','plan_toplam','sayi')">Planlanan Tahsilat <i class="mali-ok" data-t="musteri" data-a="plan_toplam"></i></th>
-              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('musteri','projeksiyon_toplam','sayi')">Alacak Projeksiyonu <i class="mali-ok" data-t="musteri" data-a="projeksiyon_toplam"></i></th>
+              <th class="text-end" style="cursor:pointer;" onclick="maliSiralaTikla('musteri','plan_toplam','sayi')">Projeksiyon (Net Tahsilat) <i class="mali-ok" data-t="musteri" data-a="plan_toplam"></i></th>
             </tr></thead>
-            <tbody id="maliMusteriTbody"><tr><td colspan="5" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
+            <tbody id="maliMusteriTbody"><tr><td colspan="4" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
             <tfoot id="maliMusteriTfoot" class="fw-bold"></tfoot>
           </table>
         </div>
@@ -4135,7 +4134,7 @@ function maliTedarikciRender() {
             <td>${esc(t.tur || 'Tedarikçi')}</td>
             <td class="text-end">${maliTL(t.muhlet_oncesi_borc)}</td>
             <td class="text-end ${msb > 0.005 ? 'text-danger fw-semibold' : msb < -0.005 ? 'text-success fw-semibold' : ''}" ${msb < -0.005 ? 'title="Eksi bakiye = tedarikçiye verilmiş avans / ondan alacağımız"' : ''}>${maliTL(t.muhlet_sonrasi_bakiye)}</td>
-            <td class="text-end ${parseFloat(t.plan_toplam) > 0 ? 'text-primary' : 'text-muted'}">${parseFloat(t.plan_toplam) > 0 ? maliTL(t.plan_toplam) : '-'}</td>
+            <td class="text-end ${Math.abs(parseFloat(t.plan_toplam)) > 0.005 ? 'text-primary' : 'text-muted'}">${Math.abs(parseFloat(t.plan_toplam)) > 0.005 ? maliTL(t.plan_toplam) : '-'}</td>
             <td class="text-end small">${maliTL(t.cek_once)} / ${maliTL(t.cek_sonra)}</td>
         </tr>`;
     }).join('');
@@ -4155,30 +4154,28 @@ async function maliMusteriYukle() {
 function maliMusteriRender() {
     const q = (document.getElementById('maliMusteriAra').value || '').toLocaleLowerCase('tr');
     const sifirGizle = document.getElementById('maliMusteriSifirGizle').checked;
-    // "Sıfır bakiye" = cari alacak ve açık projeksiyonların tümü sıfır
-    const bakiyeVar = m => Math.abs(parseFloat(m.cari_alacak) || 0) + (parseFloat(m.projeksiyon_toplam) || 0) > 0.005;
+    // "Sıfır bakiye" = cari alacak ve açık projeksiyonun tümü sıfır
+    const bakiyeVar = m => Math.abs(parseFloat(m.cari_alacak) || 0) + Math.abs(parseFloat(m.plan_toplam) || 0) > 0.005;
     const liste = maliSiralaUygula('musteri', (window._maliMusteriler || []).filter(m =>
         (!q || (m.firma_adi || '').toLocaleLowerCase('tr').includes(q) || (m.yetkili_kisi || '').toLocaleLowerCase('tr').includes(q))
         && (!sifirGizle || bakiyeVar(m))));
     window._maliSonMusteriListe = liste;   // CSV dışa aktarım görünen listeyi kullanır
     const tb = document.getElementById('maliMusteriTbody');
-    if (!liste.length) { tb.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Kayıt yok. "Yeni Müşteri" ile ekleyebilirsiniz.</td></tr>'; document.getElementById('maliMusteriTfoot').innerHTML = ''; return; }
-    let topAlacak = 0, topProj = 0, topPlan = 0;
+    if (!liste.length) { tb.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Kayıt yok. "Yeni Müşteri" ile ekleyebilirsiniz.</td></tr>'; document.getElementById('maliMusteriTfoot').innerHTML = ''; return; }
+    let topAlacak = 0, topPlan = 0;
     tb.innerHTML = liste.map(m => {
         topAlacak += parseFloat(m.cari_alacak) || 0;
-        topProj += parseFloat(m.projeksiyon_toplam) || 0;
         topPlan += parseFloat(m.plan_toplam) || 0;
         return `<tr style="cursor:pointer;" onclick="maliKartAc('MUSTERI', ${m.id})">
             <td class="fw-semibold">${esc(m.firma_adi)}</td>
             <td>${esc(m.tur || 'Kurumsal')}</td>
             <td class="text-end ${parseFloat(m.cari_alacak) > 0 ? 'text-success fw-semibold' : ''}">${maliTL(m.cari_alacak)}</td>
-            <td class="text-end ${parseFloat(m.plan_toplam) > 0 ? 'text-primary' : 'text-muted'}">${parseFloat(m.plan_toplam) > 0 ? maliTL(m.plan_toplam) : '-'}</td>
-            <td class="text-end small">${maliTL(m.projeksiyon_toplam)}</td>
+            <td class="text-end ${Math.abs(parseFloat(m.plan_toplam)) > 0.005 ? 'text-primary' : 'text-muted'}">${Math.abs(parseFloat(m.plan_toplam)) > 0.005 ? maliTL(m.plan_toplam) : '-'}</td>
         </tr>`;
     }).join('');
     document.getElementById('maliMusteriTfoot').innerHTML =
         `<tr class="table-light"><td colspan="2" class="text-end">TOPLAM (${liste.length} firma):</td>
-         <td class="text-end text-success">${maliTL(topAlacak)}</td><td class="text-end text-primary">${maliTL(topPlan)}</td><td class="text-end">${maliTL(topProj)}</td></tr>`;
+         <td class="text-end text-success">${maliTL(topAlacak)}</td><td class="text-end text-primary">${maliTL(topPlan)}</td></tr>`;
 }
 
 // ---- Cari kart (modal) ----
@@ -4237,10 +4234,10 @@ function maliTedarikciKartHTML(r) {
     <div class="row row-cols-2 row-cols-md-6 g-2 mb-3">
         ${maliBakiyeKutu('Mühlet Öncesi Borç', b.muhlet_oncesi_borc, '#6c757d')}
         ${maliBakiyeKutu('Mühlet Sonrası Bakiye', b.muhlet_sonrasi_bakiye, b.muhlet_sonrasi_bakiye > 0 ? '#dc3545' : '#198754')}
-        ${maliBakiyeKutu('Fatura Toplamı', b.fatura_toplam, '#0d6efd')}
-        ${maliBakiyeKutu('Ödeme Toplamı', b.odeme_toplam, '#198754')}
+        ${maliBakiyeKutu('Gelen Fatura', b.fatura_gelen, '#0d6efd')}
+        ${maliBakiyeKutu('Ödemeler', b.odeme_toplam, '#198754')}
+        ${maliBakiyeKutu('Açık Projeksiyon (net)', b.acik_projeksiyon, '#0d6efd')}
         ${maliBakiyeKutu('Çekler (Mühlet Ö.)', b.cek_once, '#6c757d')}
-        ${maliBakiyeKutu('Çekler (Mühlet S.)', b.cek_sonra, '#fd7e14')}
     </div>
     <div class="border rounded p-3 mb-3">
         <h6 class="mb-3"><i class="bi bi-bank me-1"></i>Mali Bilgiler</h6>
@@ -4267,8 +4264,9 @@ function maliTedarikciKartHTML(r) {
         </div>
         ${yazma ? `<div class="text-end mt-2"><button class="btn btn-sm btn-success" onclick="maliTedarikciKaydet(${t.id})"><i class="bi bi-check-lg me-1"></i>Mali Bilgileri Kaydet</button></div>` : ''}
     </div>
-    ${maliPlanBolumHTML('TEDARIKCI', r.hareketler, yazma)}
-    ${maliHareketBolumHTML('TEDARIKCI', r.hareketler, yazma)}`;
+    ${maliProjeksiyonHTML('TEDARIKCI', r.hareketler, yazma)}
+    ${maliFaturaFormHTML('TEDARIKCI', yazma)}
+    ${maliEkstreHTML('TEDARIKCI', r.tedarikci, r.hareketler, yazma)}`;
 }
 
 function maliMusteriFormHTML(m, yeniMi) {
@@ -4319,13 +4317,14 @@ function maliMusteriKartHTML(r) {
     return `
     <div class="row row-cols-2 row-cols-md-4 g-2 mb-3">
         ${maliBakiyeKutu('Cari Alacak', b.cari_alacak, b.cari_alacak > 0 ? '#198754' : '#6c757d')}
-        ${maliBakiyeKutu('Fatura Toplamı', b.fatura_toplam, '#0d6efd')}
-        ${maliBakiyeKutu('Tahsilat Toplamı', b.tahsilat_toplam, '#198754')}
-        ${maliBakiyeKutu('Alacak Projeksiyonu', b.projeksiyon_toplam, '#fd7e14')}
+        ${maliBakiyeKutu('Kesilen Fatura', b.fatura_giden, '#0d6efd')}
+        ${maliBakiyeKutu('Tahsilatlar', b.tahsilat_toplam, '#198754')}
+        ${maliBakiyeKutu('Açık Projeksiyon (net)', b.acik_projeksiyon, '#fd7e14')}
     </div>
     ${maliMusteriFormHTML(m, false)}
-    ${maliPlanBolumHTML('MUSTERI', r.hareketler, yazma)}
-    ${maliHareketBolumHTML('MUSTERI', r.hareketler, yazma)}`;
+    ${maliProjeksiyonHTML('MUSTERI', r.hareketler, yazma)}
+    ${maliFaturaFormHTML('MUSTERI', yazma)}
+    ${maliEkstreHTML('MUSTERI', r.musteri, r.hareketler, yazma)}`;
 }
 
 // ---- Ödeme/Tahsilat Planı bölümü (kart içinde) ----
@@ -4411,6 +4410,212 @@ function maliDovizEk(h) {
     return `<div class="small text-muted text-nowrap">${formatTR(parseFloat(h.doviz_tutar) || 0)} ${h.para_birimi}${h.sabit_kur ? ' @' + formatTR(parseFloat(h.sabit_kur)) : ''}</div>`;
 }
 
+// ============ PROJEKSİYON + FATURA + CARİ EKSTRE (2026-07-13 modeli) ============
+// Fatura = belge: yalnız cari bakiye/ekstreye işler. Projeksiyon (ODEME/TAHSILAT) = nakit
+// katmanı: açıkken nakit akışını besler, gerçekleşince ekstreye ve kasaya düşer.
+const MALI_ARAC_AD = { NAKIT: 'Nakit', CEK: 'Çek', KREDI_KARTI: 'Kredi Kartı' };
+
+function maliProjeksiyonHTML(tarafTip, hareketler, yazma) {
+    const planlar = (hareketler || []).filter(h => (h.tip === 'ODEME' || h.tip === 'TAHSILAT') && !h.gerceklesen_tarih)
+        .sort((a, b) => String(maliYmd10(a.planlanan_vade || a.vade_tarihi) || '9999') < String(maliYmd10(b.planlanan_vade || b.vade_tarihi) || '9999') ? -1 : 1);
+    const bugun = maliBugunYMD();
+    const anaYon = tarafTip === 'TEDARIKCI' ? 'ODEME' : 'TAHSILAT';
+    // Özet: ana yönde net açık projeksiyon (ödeme − tahsilat ya da tersi)
+    const net = planlar.reduce((s, h) => s + (h.tip === anaYon ? 1 : -1) * parseFloat(h.planlanan_tutar || h.tutar), 0);
+    window._maliPlanBakiye = tarafTip === 'TEDARIKCI'
+        ? parseFloat(window._maliKartBakiye?.muhlet_sonrasi_bakiye) || 0
+        : parseFloat(window._maliKartBakiye?.cari_alacak) || 0;
+    window._maliPlanToplam = net;
+    window._maliPlanEtiket = tarafTip === 'TEDARIKCI' ? 'Mühlet Sonrası Bakiye' : 'Cari Alacak';
+    const silYetki = izinVarMi(tarafTip === 'TEDARIKCI' ? 'mali.tedarikci' : 'mali.musteri', 'TAM');
+    const form = !yazma ? '' : `
+        <div class="row g-2 align-items-end mb-2">
+            <div class="col-md-2"><label class="form-label small mb-0">Yön</label>
+                <select id="mpYon" class="form-select form-select-sm" onchange="maliPlanOzetGuncelle()">
+                    <option value="ODEME" ${anaYon === 'ODEME' ? 'selected' : ''}>Ödeme (−)</option>
+                    <option value="TAHSILAT" ${anaYon === 'TAHSILAT' ? 'selected' : ''}>Tahsilat (+)</option>
+                </select></div>
+            <div class="col-md-2"><label class="form-label small mb-0">Tür</label>
+                <select id="mpArac" class="form-select form-select-sm" onchange="document.querySelectorAll('.mp-cek').forEach(e=>e.classList.toggle('d-none',this.value!=='CEK'))">
+                    <option value="NAKIT">Nakit</option><option value="CEK">Çek</option><option value="KREDI_KARTI">Kredi Kartı</option>
+                </select></div>
+            <div class="col-md-2 mp-cek d-none"><label class="form-label small mb-0">Çek No</label>
+                <input id="mpCekNo" class="form-control form-control-sm"></div>
+            <div class="col-md-2 mp-cek d-none"><label class="form-label small mb-0">Banka</label>
+                <input id="mpBanka" class="form-control form-control-sm"></div>
+            <div class="col-md-2"><label class="form-label small mb-0">Planlanan Tarih</label>
+                <input id="mpTarih" type="date" class="form-control form-control-sm"></div>
+            <div class="col-md-2"><label class="form-label small mb-0">Para Birimi</label>
+                <select id="mpPara" class="form-select form-select-sm" onchange="maliKurHint('mp');maliPlanOzetGuncelle()">
+                    <option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option>
+                </select></div>
+            <div class="col-md-2"><label class="form-label small mb-0" id="mpTutarEtiket">Tutar (TL)</label>
+                <input id="mpTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliKurHint('mp');maliPlanOzetGuncelle()">
+                <small class="text-muted" id="mpKurHint"></small></div>
+            <div class="col-md-3"><label class="form-label small mb-0">Açıklama</label>
+                <input id="mpAciklama" class="form-control form-control-sm" placeholder="örn. 1. taksit"></div>
+            <div class="col-md-3"><div class="form-check">
+                <input id="mpGerceklesti" type="checkbox" class="form-check-input">
+                <label class="form-check-label small" for="mpGerceklesti" title="Manuel giriş: kayıt anında gerçekleşmiş sayılır, ekstreye ve kasaya hemen işler">Gerçekleşti (ödendi/tahsil edildi)</label></div></div>
+            <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" onclick="maliProjEkle()"><i class="bi bi-calendar-plus me-1"></i>Ekle</button></div>
+        </div>`;
+    const liste = !planlar.length
+        ? '<div class="small text-muted">Açık projeksiyon yok.</div>'
+        : `<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-1">
+            <thead class="table-light"><tr><th>Planlanan Tarih</th><th>Yön / Tür</th><th class="text-end">Tutar</th><th>Açıklama</th><th style="width:130px;"></th></tr></thead>
+            <tbody>${planlar.map(h => {
+                const pTarih = maliYmd10(h.planlanan_vade || h.vade_tarihi);
+                const gecti = pTarih && pTarih < bugun;
+                const giris = h.tip === 'TAHSILAT';
+                return `<tr>
+                    <td>${pTarih ? formatTarihTR(pTarih) : '<span class="text-danger">tarihsiz</span>'}${gecti && !h.muhlet_oncesi ? ' <span class="badge text-bg-warning" title="Gerçekleşmedi ve yeni tarih girilmedi — nakit akışında otomatik bugüne taşınır">bugüne taşındı</span>' : ''}${h.muhlet_oncesi ? ' <span class="badge bg-secondary" title="Mühlet öncesi — nakit akışına girmez (yapılandırma kapsamı)">mühlet öncesi</span>' : ''}</td>
+                    <td>${giris ? '<span class="badge bg-success-subtle text-dark">Tahsilat +</span>' : '<span class="badge bg-danger-subtle text-dark">Ödeme −</span>'}
+                        <span class="badge bg-light text-dark border">${MALI_ARAC_AD[h.arac] || 'Nakit'}${h.arac === 'CEK' && h.cek_no ? ' ' + esc(h.cek_no) : ''}</span></td>
+                    <td class="text-end ${giris ? 'text-success' : 'text-danger'}">${giris ? '+' : '−'}${maliTL(h.planlanan_tutar || h.tutar)}${maliDovizEk(h)}</td>
+                    <td class="small">${esc(h.aciklama || '')}</td>
+                    <td class="text-nowrap text-center">
+                        ${yazma ? `<button class="btn btn-sm btn-outline-primary py-0 me-1" onclick="maliPlanAcId(${h.id})" title="Tarihi/tutarı değiştir"><i class="bi bi-calendar-week"></i></button>
+                        <button class="btn btn-sm btn-outline-success py-0" onclick="maliGerceklestirAcId(${h.id})" title="Gerçekleşti"><i class="bi bi-check2-circle"></i></button>` : ''}
+                        ${silYetki ? `<button class="btn btn-sm btn-outline-danger py-0 ms-1" onclick="maliHareketSil(${h.id})" title="Sil"><i class="bi bi-trash"></i></button>` : ''}
+                    </td></tr>`;
+            }).join('')}</tbody></table></div>`;
+    return `<div class="border rounded p-3 mb-3" style="border-left:4px solid #0d6efd !important;">
+        <h6 class="mb-2"><i class="bi bi-calendar-week me-1"></i>Projeksiyon
+            ${planlar.length ? `<span class="text-muted small">(${planlar.length} açık kalem — net ${maliTL(net)})</span>` : ''}</h6>
+        <div class="border rounded p-2 mb-2 small" style="background:#f0f6ff;" id="mpOzet">${maliPlanOzetHTML(0)}</div>
+        ${form}${liste}
+        <small class="text-muted">Projeksiyon kalemleri gerçekleşene kadar bakiyeye/kasaya İŞLEMEZ, yalnız nakit akışını besler. Gerçekleşince (✓ ya da "Gerçekleşti" tikiyle manuel giriş) cari ekstreye ve kasaya düşer. Faturalar nakit akışına girmez.</small>
+    </div>`;
+}
+
+async function maliProjEkle() {
+    const k = window._maliKart;
+    if (!k || !k.id) return;
+    const gercek = document.getElementById('mpGerceklesti')?.checked;
+    const tarih = document.getElementById('mpTarih').value;
+    if (!tarih) return showToast('Planlanan tarih zorunludur.', 'error');
+    const para = document.getElementById('mpPara')?.value || 'TL';
+    const r = await secureFetch('/mali-hareket-ekle', {
+        method: 'POST',
+        body: JSON.stringify({
+            taraf_tip: k.tip, taraf_id: k.id,
+            tip: document.getElementById('mpYon').value,
+            arac: document.getElementById('mpArac').value,
+            cek_no: document.getElementById('mpCekNo')?.value || '',
+            banka: document.getElementById('mpBanka')?.value || '',
+            planli: !gercek,
+            belge_tarihi: gercek ? tarih : maliBugunYMD(),
+            vade_tarihi: tarih,
+            tutar: document.getElementById('mpTutar').value,
+            para_birimi: para,
+            doviz_tutar: para !== 'TL' ? document.getElementById('mpTutar').value : null,
+            aciklama: document.getElementById('mpAciklama').value || ''
+        })
+    });
+    if (!r.ok) return showToast(r.hata || 'Kaydedilemedi.', 'error');
+    showToast(gercek ? 'Gerçekleşmiş hareket kaydedildi — ekstreye ve kasaya işledi.' : 'Projeksiyon kaydedildi.', 'success');
+    maliKartAc(k.tip, k.id);
+    maliAkisYenile();
+}
+
+// Fatura girişi — yalnız belge katmanı (cari ekstre + bakiye); nakit akışına girmez
+function maliFaturaFormHTML(tarafTip, yazma) {
+    if (!yazma) return '';
+    const varsayilanYon = tarafTip === 'MUSTERI' ? 'GIDEN' : 'GELEN';
+    return `<div class="border rounded p-3 mb-3" style="background:#f8f9fa;">
+        <h6 class="mb-2"><i class="bi bi-receipt me-1"></i>Fatura Girişi
+            ${tarafTip === 'TEDARIKCI' ? '<button class="btn btn-sm btn-outline-success ms-2" onclick="maliSiparisKopruAc()"><i class="bi bi-cart-check me-1"></i>Siparişten Getir</button>' : ''}</h6>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-2"><label class="form-label small mb-0">Yön</label>
+                <select id="mfYon" class="form-select form-select-sm">
+                    <option value="GELEN" ${varsayilanYon === 'GELEN' ? 'selected' : ''}>Gelen Fatura</option>
+                    <option value="GIDEN" ${varsayilanYon === 'GIDEN' ? 'selected' : ''}>Giden Fatura</option>
+                </select></div>
+            <div class="col-md-2"><label class="form-label small mb-0">Belge Tarihi</label>
+                <input id="mfTarih" type="date" class="form-control form-control-sm" value="${maliBugunYMD()}"></div>
+            <div class="col-md-2"><label class="form-label small mb-0">Belge No</label>
+                <input id="mfBelgeNo" class="form-control form-control-sm"></div>
+            <div class="col-md-2"><label class="form-label small mb-0">Para Birimi</label>
+                <select id="mfPara" class="form-select form-select-sm" onchange="maliKurHint('mf')">
+                    <option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option>
+                </select></div>
+            <div class="col-md-2"><label class="form-label small mb-0" id="mfTutarEtiket">Tutar (TL)</label>
+                <input id="mfTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliKurHint('mf')">
+                <small class="text-muted" id="mfKurHint"></small></div>
+            <div class="col-md-3"><label class="form-label small mb-0">Açıklama</label>
+                <input id="mfAciklama" class="form-control form-control-sm"></div>
+            <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" onclick="maliFaturaEkle()"><i class="bi bi-plus-lg me-1"></i>Ekle</button></div>
+        </div>
+        <small class="text-muted">Fatura yalnız cari ekstreye/bakiyeye işler; ödeme-tahsilat takvimi Projeksiyon bölümünden yönetilir.</small>
+    </div>`;
+}
+
+async function maliFaturaEkle() {
+    const k = window._maliKart;
+    if (!k || !k.id) return;
+    const para = document.getElementById('mfPara')?.value || 'TL';
+    const r = await secureFetch('/mali-hareket-ekle', {
+        method: 'POST',
+        body: JSON.stringify({
+            taraf_tip: k.tip, taraf_id: k.id, tip: 'FATURA',
+            fatura_yon: document.getElementById('mfYon').value,
+            belge_tarihi: document.getElementById('mfTarih').value,
+            belge_no: document.getElementById('mfBelgeNo').value,
+            tutar: document.getElementById('mfTutar').value,
+            para_birimi: para,
+            doviz_tutar: para !== 'TL' ? document.getElementById('mfTutar').value : null,
+            aciklama: document.getElementById('mfAciklama').value || ''
+        })
+    });
+    if (!r.ok) return showToast(r.hata || 'Fatura kaydedilemedi.', 'error');
+    showToast('Fatura kaydedildi — cari ekstreye işledi.', 'success');
+    maliKartAc(k.tip, k.id);
+    maliAkisYenile();
+}
+
+// Cari ekstre: açılış devri + faturalar + gerçekleşen ödeme/tahsilatlar, Borç/Alacak/Bakiye
+function maliEkstreHTML(tarafTip, kayit, hareketler, yazma) {
+    const silYetki = izinVarMi(tarafTip === 'TEDARIKCI' ? 'mali.tedarikci' : 'mali.musteri', 'TAM');
+    const devir = parseFloat(tarafTip === 'TEDARIKCI' ? kayit.muhlet_sonrasi_devir : kayit.devir_alacak) || 0;
+    const satirlar = (hareketler || [])
+        .filter(h => h.tip === 'FATURA' || ((h.tip === 'ODEME' || h.tip === 'TAHSILAT') && h.gerceklesen_tarih))
+        .map(h => ({ ...h, _t: maliYmd10(h.tip === 'FATURA' ? h.belge_tarihi : h.gerceklesen_tarih) || '0000-00-00' }))
+        .sort((a, b) => a._t < b._t ? -1 : a._t > b._t ? 1 : a.id - b.id);
+    // Borç sütunu = bakiyeyi (tedarikçide borcumuzu, müşteride alacağımızı) ARTIRAN hareket
+    const borcMu = h => tarafTip === 'TEDARIKCI'
+        ? (h.tip === 'FATURA' ? (h.fatura_yon || 'GELEN') === 'GELEN' : h.tip === 'TAHSILAT')
+        : (h.tip === 'FATURA' ? h.fatura_yon === 'GIDEN' : h.tip === 'ODEME');
+    let bakiye = devir;
+    let govde = `<tr class="table-light"><td>—</td><td class="fw-semibold">Açılış (${tarafTip === 'TEDARIKCI' ? 'mühlet sonrası devir' : 'devir alacak'})</td>
+        <td></td><td></td><td class="text-end fw-bold">${maliTL(devir)}</td><td></td></tr>`;
+    govde += satirlar.map(h => {
+        const t = parseFloat(h.gerceklesen_tutar ?? h.tutar) || 0;
+        const borc = borcMu(h);
+        bakiye += borc ? t : -t;
+        const ad = h.tip === 'FATURA'
+            ? `${(h.fatura_yon || 'GELEN') === 'GELEN' ? 'Gelen' : 'Giden'} Fatura${h.belge_no ? ' ' + esc(h.belge_no) : ''}`
+            : `${MALI_HAREKET_AD[h.tip]}${h.arac && h.arac !== 'NAKIT' ? ' (' + (MALI_ARAC_AD[h.arac] || h.arac) + (h.cek_no ? ' ' + esc(h.cek_no) : '') + ')' : ''}`;
+        return `<tr title="Giren: ${esc(h.olusturan_email || '')}">
+            <td class="text-nowrap">${formatTarihTR(h._t)}</td>
+            <td class="small">${ad}${h.aciklama ? ' <span class="text-muted">— ' + esc(h.aciklama) + '</span>' : ''}${maliDovizEk(h)}</td>
+            <td class="text-end text-danger">${borc ? maliTL(t) : ''}</td>
+            <td class="text-end text-success">${!borc ? maliTL(t) : ''}</td>
+            <td class="text-end ${bakiye < -0.005 ? 'text-success fw-semibold' : ''}">${maliTL(bakiye)}</td>
+            <td class="text-nowrap text-center">
+                ${h.tip === 'FATURA' && yazma ? `<button class="btn btn-sm btn-outline-secondary py-0" onclick="maliDuzenleAc(${h.id})" title="Faturayı düzelt"><i class="bi bi-pencil"></i></button>` : ''}
+                ${h.tip !== 'FATURA' && silYetki ? `<button class="btn btn-sm btn-outline-warning py-0" onclick="maliGeriAl(${h.id})" title="Gerçekleşmeyi geri al (projeksiyona döner)"><i class="bi bi-arrow-counterclockwise"></i></button>` : ''}
+                ${silYetki ? `<button class="btn btn-sm btn-outline-danger py-0 ms-1" onclick="maliHareketSil(${h.id})" title="Sil"><i class="bi bi-trash"></i></button>` : ''}
+            </td></tr>`;
+    }).join('');
+    return `<div class="border rounded p-3">
+        <h6 class="mb-1"><i class="bi bi-journal-text me-1"></i>Cari Ekstre <span class="text-muted small">(mühlet sonrası)</span></h6>
+        <div class="small text-muted mb-2">Borç = ${tarafTip === 'TEDARIKCI' ? 'borcumuzu' : 'müşterinin borcunu'} artıran hareket; Alacak = azaltan. Bakiye kümülatiftir; eksi bakiye ${tarafTip === 'TEDARIKCI' ? 'tedarikçiye verilmiş avansı' : 'müşteriye borçlu olduğumuzu'} gösterir.</div>
+        <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th>Tarih</th><th>Hareket</th><th class="text-end">Borç</th><th class="text-end">Alacak</th><th class="text-end">Bakiye</th><th style="width:110px;"></th></tr></thead>
+            <tbody>${govde}</tbody></table></div>
+    </div>`;
+}
+
 // Plan kutusu canlı özeti: bakiye · planlanan · planlanmamış kalan (yazarken güncellenir)
 function maliPlanOzetHTML(yeniTutar) {
     const b = window._maliPlanBakiye || 0, p = window._maliPlanToplam || 0;
@@ -4425,7 +4630,11 @@ function maliPlanOzetGuncelle() {
     const el = document.getElementById('mpOzet');
     if (!el) return;
     const para = document.getElementById('mpPara')?.value || 'TL';
-    el.innerHTML = maliPlanOzetHTML(maliTLKarsiligi(para, parseFloat(document.getElementById('mpTutar')?.value) || 0));
+    const anaYon = window._maliKart?.tip === 'MUSTERI' ? 'TAHSILAT' : 'ODEME';
+    const yon = document.getElementById('mpYon')?.value || anaYon;
+    const tl = maliTLKarsiligi(para, parseFloat(document.getElementById('mpTutar')?.value) || 0);
+    // Ana yönde girilen tutar planlananı artırır; ters yön (iade) azaltır
+    el.innerHTML = maliPlanOzetHTML(yon === anaYon ? tl : -tl);
 }
 
 async function maliPlanEkle(tip) {
@@ -4675,8 +4884,7 @@ function maliNakitRender() {
                 ${k.tip === 'TAHSILAT' ? '<span class="badge bg-primary-subtle text-dark ms-1">Planlı Tahsilat</span>' : ''}
                 ${k.tasindi ? '<span class="badge text-bg-warning ms-1" title="Planlanan gün geçti, ödenmedi ve yeni tarih girilmedi — otomatik bugüne taşındı">bugüne taşındı</span>' : ''}
                 ${k.plan_dusuldu ? `<span class="badge bg-info-subtle text-dark ms-1" title="Bu faturanın ${maliTL(k.plan_dusuldu)} tutarındaki kısmı ödeme planı taksitleriyle karşılandı — akışta kalan kısmı görünür">plan düşüldü</span>` : ''}
-                ${k.tip === 'CEK' ? `<span class="badge text-bg-secondary ms-1">Çek ${esc(k.cek_no || '')}</span>` : ''}
-                ${k.tip === 'FATURA' && k.belge_no ? `<span class="text-muted ms-1">${esc(k.belge_no)}</span>` : ''}
+                ${k.arac && k.arac !== 'NAKIT' ? `<span class="badge text-bg-secondary ms-1">${MALI_ARAC_AD[k.arac] || k.arac}${k.cek_no ? ' ' + esc(k.cek_no) : ''}</span>` : ''}
                 ${k.para_birimi && k.para_birimi !== 'TL' ? `<span class="badge bg-warning-subtle text-dark ms-1" title="TL karşılığı günün kuruyla hesaplanır; gerçekleşince kur sabitlenir">${formatTR(k.doviz_tutar || 0)} ${k.para_birimi}</span>` : ''}
                 ${k.planlanan_vade ? `<span class="badge bg-info-subtle text-dark ms-1" title="Asıl vade: ${k.asil_vade ? formatTarihTR(k.asil_vade) : '-'}">plan</span>` : ''}</td>
             <td class="small text-muted">${esc(k.aciklama || '')}</td>
@@ -4796,7 +5004,7 @@ function maliKasaRender() {
         return `<tr style="cursor:pointer;" title="Giren: ${esc(h.olusturan_email || '')}" onclick="${h.taraf_tip === 'GIDER' ? 'maliGiderAc()' : `maliKartAc('${h.taraf_tip}', ${h.taraf_id})`}">
             <td>${h.tarih ? formatTarihTR(h.tarih) : '-'}</td>
             <td>${esc(h.firma_adi || '?')}</td>
-            <td>${h.tip === 'CEK' ? 'Çek (ödendi)' : MALI_HAREKET_AD[h.tip] || h.tip}</td>
+            <td>${MALI_HAREKET_AD[h.tip] || h.tip}${h.arac && h.arac !== 'NAKIT' ? ' (' + (MALI_ARAC_AD[h.arac] || h.arac) + ')' : ''}</td>
             <td class="small">${esc(hesapAdi(h))}</td>
             <td>${esc(h.cek_no || h.belge_no || '-')}</td>
             <td class="small text-muted">${esc(h.aciklama || '')}${maliDovizEk(h)}</td>
@@ -4831,8 +5039,8 @@ function maliCSV(tablo) {
             l.map(t => [t.firma_adi, t.tur || '', parseFloat(t.muhlet_oncesi_borc) || 0, parseFloat(t.muhlet_sonrasi_bakiye) || 0, parseFloat(t.plan_toplam) || 0, parseFloat(t.cek_once) || 0, parseFloat(t.cek_sonra) || 0]));
     } else if (tablo === 'musteri') {
         const l = window._maliSonMusteriListe || [];
-        maliCSVYaz('Musteri-Cari-' + tarih, ['Firma', 'Tür', 'Cari Alacak', 'Planlanan Tahsilat', 'Alacak Projeksiyonu'],
-            l.map(m => [m.firma_adi, m.tur || '', parseFloat(m.cari_alacak) || 0, parseFloat(m.plan_toplam) || 0, parseFloat(m.projeksiyon_toplam) || 0]));
+        maliCSVYaz('Musteri-Cari-' + tarih, ['Firma', 'Tür', 'Cari Alacak', 'Projeksiyon (Net Tahsilat)'],
+            l.map(m => [m.firma_adi, m.tur || '', parseFloat(m.cari_alacak) || 0, parseFloat(m.plan_toplam) || 0]));
     } else if (tablo === 'kasa') {
         const r = window._maliKasaVeri || { data: [] };
         const hesapAdi = h => (h.hesap || '').trim() || r.varsayilan_hesap || 'Kasa';
@@ -5049,9 +5257,8 @@ function maliPlanAc(hareketId, vade, tutar, planVade, planTutar, etiket) {
 }
 function maliGerceklestirAc(hareketId, etkinVade, etkinTutar, etiket, tip) {
     window._maliIslem = { mod: 'GERCEK', hareketId };
-    // Avans/mahsup seçeneği yalnız otomatik karşı kayıt üreten tiplerde anlamlı
-    document.getElementById('maliIslemKarsiWrap').classList.toggle('d-none', !(tip === 'FATURA' || tip === 'PROJEKSIYON'));
-    document.getElementById('maliIslemKarsiYok').checked = false;
+    // Yeni modelde otomatik karşı kayıt yok (fatura gerçekleştirilmez) — seçenek gizli kalır
+    document.getElementById('maliIslemKarsiWrap').classList.add('d-none');
     // Birden çok hesap tanımlıysa nakit hangi hesaptan aktı sorulur
     const hesaplar = window._maliAyar?.hesaplar || [];
     document.getElementById('maliIslemHesapWrap').classList.toggle('d-none', hesaplar.length < 2);
@@ -5071,11 +5278,9 @@ async function maliIslemKaydet() {
     if (!isl) return;
     const tarih = document.getElementById('maliIslemTarih').value;
     const tutar = document.getElementById('maliIslemTutar').value;
-    const karsiYok = !document.getElementById('maliIslemKarsiWrap').classList.contains('d-none')
-        && document.getElementById('maliIslemKarsiYok').checked;
     const r = isl.mod === 'PLAN'
         ? await secureFetch('/mali-hareket-planla', { method: 'POST', body: JSON.stringify({ id: isl.hareketId, planlanan_vade: tarih || null, planlanan_tutar: tutar || null }) })
-        : await secureFetch('/mali-hareket-gerceklestir', { method: 'POST', body: JSON.stringify({ id: isl.hareketId, tarih, tutar, karsi_kayit: karsiYok ? false : true,
+        : await secureFetch('/mali-hareket-gerceklestir', { method: 'POST', body: JSON.stringify({ id: isl.hareketId, tarih, tutar,
             hesap: document.getElementById('maliIslemHesapWrap').classList.contains('d-none') ? null : document.getElementById('maliIslemHesap').value }) });
     if (!r.ok) return showToast(r.hata || 'Kaydedilemedi.', 'error');
     showToast(r.mesaj || 'Kaydedildi.', 'success');
