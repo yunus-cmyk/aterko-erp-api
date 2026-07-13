@@ -4037,7 +4037,8 @@ async function maliSekmeInit() {
         roz.innerHTML = r.ayar.muhlet_tarihi
             ? '<i class="bi bi-calendar-event me-1"></i>Mühlet tarihi: <b>' + formatTarihTR(r.ayar.muhlet_tarihi) + '</b>'
             : '<i class="bi bi-exclamation-triangle me-1 text-warning"></i>Mühlet tarihi tanımlı değil';
-        if (kullaniciYetki === 'ADMIN' || kullaniciYetki === 'Admin') document.getElementById('btnMaliAyar').classList.remove('d-none');
+        // Ayarlar butonu: ADMIN ya da mali.tedarikci TAM yetkisi olan roller (örn. MUHASEBE)
+        document.getElementById('btnMaliAyar').classList.toggle('d-none', !izinVarMi('mali.tedarikci', 'TAM'));
     });
     switchMaliSekme(!tOk && mOk ? 'musteri' : _maliAktifSekme);
 }
@@ -6616,7 +6617,7 @@ function renderIzinMatrisi() {
         rollerCache.map(r => `<th class="text-center" style="min-width:120px;">${esc(r.ad)}${r.sistem_rol ? '' : ' <i class=\"bi bi-pencil-square small text-warning\" title=\"Özel rol\"></i>'}</th>`).join('');
 
     // Body: Modül başına satır. Gruplara göre alt başlık satırı
-    const grupSiralama = ['Genel','İş Akışı','Satınalma','Operasyon','Rapor','Yönetim'];
+    const grupSiralama = ['Genel','İş Akışı','Satınalma','Mali İşler','Operasyon','Rapor','Yönetim'];
     const gruplandirilmis = {};
     modulKatalogCache.forEach(m => {
         if (!gruplandirilmis[m.grup]) gruplandirilmis[m.grup] = [];

@@ -2500,8 +2500,11 @@ app.get('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
 });
 app.post('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
     try {
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
-            return res.status(403).json({ ok: false, hata: 'Mali ayarları yalnızca ADMIN değiştirebilir.' });
+        // ADMIN ya da mali.tedarikci TAM yetkisi (örn. MUHASEBE) ayar yazabilir
+        const tamMi = (req.user.rol === 'ADMIN' || req.user.rol === 'Admin')
+            || (await getKullaniciIzinleri(req.user.rol))['mali.tedarikci'] === 'TAM';
+        if (!tamMi)
+            return res.status(403).json({ ok: false, hata: 'Mali ayarları yalnızca ADMIN ya da TAM yetkili roller değiştirebilir.' });
         let hesaplar = Array.isArray(req.body.hesaplar) ? req.body.hesaplar
             .map(h => ({ ad: String(h.ad || '').trim(), acilis: parseFloat(h.acilis) || 0 }))
             .filter(h => h.ad) : null;
