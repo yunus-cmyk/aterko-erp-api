@@ -5053,6 +5053,19 @@ function maliCSV(tablo) {
 
 // ---- FAZ 2: Planla / Gerçekleştir ----
 const maliYmd10 = v => v ? String(v).slice(0, 10) : '';
+// Üst üste modal: işlem pencereleri hangi modaldan açılırsa açılsın EN ÜSTTE görünsün
+// (Bootstrap aynı z-index'i verdiği için DOM sırası kazanıyordu — örn. Diğer Ödemeler'in arkasında kalma)
+function maliModalUstteAc(modalId) {
+    const el = document.getElementById(modalId);
+    bootstrap.Modal.getOrCreateInstance(el).show();
+    const z = 1060 + document.querySelectorAll('.modal.show').length * 20;
+    el.style.zIndex = z;
+    setTimeout(() => {
+        const bdler = document.querySelectorAll('.modal-backdrop');
+        const bd = bdler[bdler.length - 1];
+        if (bd) bd.style.zIndex = z - 10;
+    }, 0);
+}
 // Kart hareket satırındaki durum hücresi: gerçekleşti rozeti / plan rozeti + işlem butonları
 function maliHareketDurumHTML(h, yazma) {
     const tamYetki = izinVarMi(h.taraf_tip === 'MUSTERI' ? 'mali.musteri' : 'mali.tedarikci', 'TAM');
@@ -5096,7 +5109,7 @@ function maliDuzenleAc(id) {
     document.getElementById('mdAciklama').value = h.aciklama || '';
     document.querySelectorAll('.md-cek').forEach(el => el.classList.toggle('d-none', h.tip !== 'CEK'));
     document.querySelectorAll('.md-belge').forEach(el => el.classList.toggle('d-none', h.tip === 'CEK'));
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMaliDuzenle')).show();
+    maliModalUstteAc('modalMaliDuzenle');
 }
 async function maliDuzenleKaydet() {
     const r = await secureFetch('/mali-hareket-guncelle', {
@@ -5253,7 +5266,7 @@ function maliPlanAc(hareketId, vade, tutar, planVade, planTutar, etiket) {
     document.getElementById('maliIslemTarih').value = planVade || vade || '';
     document.getElementById('maliIslemTutar').value = planTutar || tutar || '';
     document.getElementById('maliIslemPlanNot').classList.remove('d-none');
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMaliIslem')).show();
+    maliModalUstteAc('modalMaliIslem');
 }
 function maliGerceklestirAc(hareketId, etkinVade, etkinTutar, etiket, tip) {
     window._maliIslem = { mod: 'GERCEK', hareketId };
@@ -5271,7 +5284,7 @@ function maliGerceklestirAc(hareketId, etkinVade, etkinTutar, etiket, tip) {
     document.getElementById('maliIslemTarih').value = maliBugunYMD();
     document.getElementById('maliIslemTutar').value = etkinTutar || '';
     document.getElementById('maliIslemPlanNot').classList.add('d-none');
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMaliIslem')).show();
+    maliModalUstteAc('modalMaliIslem');
 }
 async function maliIslemKaydet() {
     const isl = window._maliIslem;
