@@ -244,9 +244,9 @@
         </div>
       </div>
       <ul class="nav nav-tabs mb-3">
-        <li class="nav-item"><a class="nav-link active" id="maliTabTedarikci" style="cursor:pointer;" onclick="switchMaliSekme('tedarikci')"><i class="bi bi-truck me-1"></i>Tedarikçiler</a></li>
+        <li class="nav-item"><a class="nav-link active" id="maliTabNakit" style="cursor:pointer;" onclick="switchMaliSekme('nakit')"><i class="bi bi-graph-up-arrow me-1"></i>Nakit Akış</a></li>
+        <li class="nav-item"><a class="nav-link" id="maliTabTedarikci" style="cursor:pointer;" onclick="switchMaliSekme('tedarikci')"><i class="bi bi-truck me-1"></i>Tedarikçiler</a></li>
         <li class="nav-item"><a class="nav-link" id="maliTabMusteri" style="cursor:pointer;" onclick="switchMaliSekme('musteri')"><i class="bi bi-people me-1"></i>Müşteriler</a></li>
-        <li class="nav-item"><a class="nav-link" id="maliTabNakit" style="cursor:pointer;" onclick="switchMaliSekme('nakit')"><i class="bi bi-graph-up-arrow me-1"></i>Nakit Akış</a></li>
         <li class="nav-item"><a class="nav-link" id="maliTabKasa" style="cursor:pointer;" onclick="switchMaliSekme('kasa')"><i class="bi bi-safe me-1"></i>Kasa</a></li>
       </ul>
 
@@ -4016,7 +4016,7 @@ function sekmeGuard(tab) {
 // İlke: bakiyeler backend'de hareketlerden HESAPLANIR; burada yalnız gösterilir.
 const MALI_HAREKET_AD = { FATURA: 'Fatura', ODEME: 'Ödeme', TAHSILAT: 'Tahsilat', CEK: 'Çek', PROJEKSIYON: 'Projeksiyon', DEVIR: 'Cari Borç (Devir)' };
 const MALI_PROJ_AD = { AVANS: 'Avans', HAKEDIS: 'Hakediş', CEK: 'Çek' };
-let _maliAktifSekme = 'tedarikci';
+let _maliAktifSekme = 'nakit';   // varsayılan açılış sekmesi: Nakit Akış
 function maliTL(x) { return formatTR(parseFloat(x) || 0) + ' TL'; }
 function maliBugunYMD() {
     const d = new Date(), p = n => String(n).padStart(2, '0');
@@ -4043,6 +4043,9 @@ async function maliSekmeInit() {
     const tOk = izinVarMi('mali.tedarikci', 'OKUMA'), mOk = izinVarMi('mali.musteri', 'OKUMA');
     document.getElementById('maliTabTedarikci').closest('li').classList.toggle('d-none', !tOk);
     document.getElementById('maliTabMusteri').closest('li').classList.toggle('d-none', !mOk);
+    // Nakit Akış ve Kasa tedarikçi verisi içerir — o izin yoksa sekmeleri de gizle
+    document.getElementById('maliTabNakit').closest('li').classList.toggle('d-none', !tOk);
+    document.getElementById('maliTabKasa').closest('li').classList.toggle('d-none', !tOk);
     document.getElementById('btnMaliMusteriYeni').classList.toggle('d-none', !izinVarMi('mali.musteri', 'YAZMA'));
     if (!window._maliEkip) secureFetch('/mali-ekip').then(r => { if (r.ok) window._maliEkip = r.data; });
     secureFetch('/mali-ayar').then(r => {
