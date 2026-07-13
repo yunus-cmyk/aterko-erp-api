@@ -4023,7 +4023,22 @@ function maliBugunYMD() {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+// Nakit Akış canlı kalır: yerel her değişiklikten sonra + 30 sn'de bir (BAŞKA kullanıcıların
+// değişiklikleri için) + pencereye geri dönüldüğünde otomatik yenilenir
+function maliAkisYenile() {
+    const alan = document.getElementById('maliArea');
+    if (!alan || alan.classList.contains('d-none')) return;
+    if (_maliAktifSekme === 'nakit') maliNakitYukle();
+    else if (_maliAktifSekme === 'kasa') maliKasaYukle();
+}
+function maliOtoYenileKur() {
+    if (window._maliOtoTimer) return;
+    window._maliOtoTimer = setInterval(() => { if (!document.hidden) maliAkisYenile(); }, 30000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) maliAkisYenile(); });
+}
+
 async function maliSekmeInit() {
+    maliOtoYenileKur();
     // Sekme görünürlükleri izne göre (mali.tedarikci / mali.musteri ayrı satırlar)
     const tOk = izinVarMi('mali.tedarikci', 'OKUMA'), mOk = izinVarMi('mali.musteri', 'OKUMA');
     document.getElementById('maliTabTedarikci').closest('li').classList.toggle('d-none', !tOk);
@@ -4392,6 +4407,7 @@ async function maliPlanEkle(tip) {
     if (!r.ok) return showToast(r.hata || 'Plan kaydedilemedi.', 'error');
     showToast('Plan kaydedildi.', 'success');
     maliKartAc(k.tip, k.id);
+    maliAkisYenile();
 }
 
 // ---- Hareket defteri bölümü (kart içinde) ----
@@ -4509,6 +4525,7 @@ async function maliHareketEkle() {
     showToast('Hareket kaydedildi.', 'success');
     maliKartAc(k.tip, k.id);
     if (k.tip === 'TEDARIKCI') maliTedarikciYukle(); else maliMusteriYukle();
+    maliAkisYenile();
 }
 
 async function maliHareketSil(id) {
@@ -4522,8 +4539,8 @@ async function maliHareketSil(id) {
         if (k.tip === 'TEDARIKCI') maliTedarikciYukle(); else maliMusteriYukle();
     } else if (document.getElementById('modalMaliGider')?.classList.contains('show')) {
         maliGiderYukle();
-        if (_maliAktifSekme === 'nakit') maliNakitYukle();
     }
+    maliAkisYenile();
 }
 
 async function maliTedarikciKaydet(id) {
@@ -4545,6 +4562,7 @@ async function maliTedarikciKaydet(id) {
     showToast('Mali bilgiler kaydedildi.', 'success');
     maliKartAc('TEDARIKCI', id);
     maliTedarikciYukle();
+    maliAkisYenile();   // devir alanları nakit akıştaki devir kalemini etkiler
 }
 
 async function maliMusteriKaydet(id) {
@@ -4570,6 +4588,7 @@ async function maliMusteriKaydet(id) {
     showToast(r.mesaj || 'Kaydedildi.', 'success');
     maliKartAc('MUSTERI', r.id || id);
     maliMusteriYukle();
+    maliAkisYenile();   // devir alacağı nakit akıştaki giriş kalemini etkiler
 }
 
 // ---- FAZ 2: Nakit Akış ----
@@ -4796,8 +4815,7 @@ async function maliGeriAl(id) {
     const k = window._maliKart;
     if (k && k.id) maliKartAc(k.tip, k.id);
     else if (document.getElementById('modalMaliGider')?.classList.contains('show')) maliGiderYukle();
-    else if (_maliAktifSekme === 'kasa') maliKasaYukle();
-    else if (_maliAktifSekme === 'nakit') maliNakitYukle();
+    maliAkisYenile();
 }
 
 // Hareket düzeltme (yalnız gerçekleşmemiş kalemler)
@@ -4836,6 +4854,7 @@ async function maliDuzenleKaydet() {
     const k = window._maliKart;
     if (k && k.id) maliKartAc(k.tip, k.id);
     else if (document.getElementById('modalMaliGider')?.classList.contains('show')) maliGiderYukle();
+    maliAkisYenile();
 }
 
 // Hızlı taksitlendirme: devir kalemini farklı tarihlere planlı ödeme/tahsilat olarak böl
@@ -4904,7 +4923,7 @@ async function maliTaksitKaydet() {
     }
     showToast(satirlar.length + ' taksit planlandı.', 'success');
     bootstrap.Modal.getInstance(document.getElementById('modalMaliTaksit'))?.hide();
-    maliNakitYukle();
+    maliAkisYenile();
 }
 
 // Siparişten fatura getir (tedarikçi kartı)
@@ -5003,10 +5022,9 @@ async function maliIslemKaydet() {
     showToast(r.mesaj || 'Kaydedildi.', 'success');
     bootstrap.Modal.getInstance(document.getElementById('modalMaliIslem'))?.hide();
     const k = window._maliKart;
-    if (k && k.id) { maliKartAc(k.tip, k.id); return; }
-    if (document.getElementById('modalMaliGider')?.classList.contains('show')) { maliGiderYukle(); if (_maliAktifSekme === 'nakit') maliNakitYukle(); return; }
-    if (_maliAktifSekme === 'nakit') maliNakitYukle();
-    else if (_maliAktifSekme === 'kasa') maliKasaYukle();
+    if (k && k.id) maliKartAc(k.tip, k.id);
+    else if (document.getElementById('modalMaliGider')?.classList.contains('show')) maliGiderYukle();
+    maliAkisYenile();
 }
 
 // ---- Diğer Ödemeler (kart dışı giderler) ----
@@ -5057,6 +5075,7 @@ async function maliGiderEkle() {
     showToast('Gider planı kaydedildi.', 'success');
     document.getElementById('mgTutar').value = ''; document.getElementById('mgAciklama').value = '';
     maliGiderYukle();
+    maliAkisYenile();
 }
 
 // ---- Ayarlar (yalnız ADMIN) ----
