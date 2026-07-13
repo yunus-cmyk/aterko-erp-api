@@ -2673,12 +2673,12 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
     try {
         const gun = Math.min(parseInt(req.query.gun) || 60, 365);
         const r = await pool.query(`
-            SELECT h.id, h.taraf_tip, h.taraf_id, h.tip, h.belge_no, h.cek_no, h.projeksiyon_tur,
+            SELECT h.id, h.taraf_tip, h.taraf_id, h.tip, h.belge_no, h.cek_no, h.projeksiyon_tur, h.aciklama,
                    h.tutar, h.planlanan_tutar, h.vade_tarihi, h.planlanan_vade,
                    COALESCE(h.planlanan_vade, h.vade_tarihi) AS etkin_vade,
                    COALESCE(h.planlanan_tutar, h.tutar) AS etkin_tutar,
                    CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi WHEN h.taraf_tip='MUSTERI' THEN m.firma_adi
-                        ELSE COALESCE(h.aciklama, 'Diğer gider') END AS firma_adi,
+                        ELSE 'Diğer Ödeme' END AS firma_adi,
                    CASE WHEN h.taraf_tip='MUSTERI' THEN 'GIRIS' ELSE 'CIKIS' END AS yon
             FROM cari_hareketler h
             LEFT JOIN tedarikciler t ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
@@ -2720,17 +2720,42 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
         const bitis = new Date(Date.now() + gun * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' });
         const ymdStr = v => v ? String(v instanceof Date ? v.toLocaleDateString('sv-SE') : v).slice(0, 10) : null;
         const kalemler = [], gecikmis = [], vadesiz = [];
+        const ham = [];
         for (const h of r.rows) {
             let vade = ymdStr(h.etkin_vade);
             const kalem = { id: h.id, taraf_tip: h.taraf_tip, taraf_id: h.taraf_id, firma_adi: h.firma_adi,
                 tip: h.tip, belge_no: h.belge_no, cek_no: h.cek_no, projeksiyon_tur: h.projeksiyon_tur,
-                yon: h.yon, tutar: parseFloat(h.etkin_tutar), asil_vade: ymdStr(h.vade_tarihi),
+                aciklama: h.aciklama, yon: h.yon, tutar: parseFloat(h.etkin_tutar), asil_vade: ymdStr(h.vade_tarihi),
                 planlanan_vade: ymdStr(h.planlanan_vade), vade };
             // Plan kalemleri (ödeme/tahsilat planı) gecikmişe DÜŞMEZ: o gün ödenmediyse
             // ve yeni vade girilmediyse otomatik bugüne taşınır (kullanıcı kuralı)
             if ((h.tip === 'ODEME' || h.tip === 'TAHSILAT') && vade && vade < bugun) {
                 kalem.tasindi = true; kalem.vade = vade = bugun;
             }
+            ham.push(kalem);
+        }
+        // NETLEŞTİRME: aynı firmanın açık ödeme/tahsilat planları, o firmanın açık faturalarını
+        // karşılar — fatura + elle girilen taksitler akışta ÇİFT sayılmaz (planlar önceliklidir,
+        // faturaların yalnız planla karşılanmayan kısmı akışta kalır)
+        const planHavuz = {};
+        for (const k of ham) {
+            if ((k.taraf_tip === 'TEDARIKCI' && k.tip === 'ODEME') || (k.taraf_tip === 'MUSTERI' && k.tip === 'TAHSILAT'))
+                planHavuz[k.taraf_tip + '#' + k.taraf_id] = (planHavuz[k.taraf_tip + '#' + k.taraf_id] || 0) + k.tutar;
+        }
+        ham.filter(k => k.tip === 'FATURA').sort((a, b) => String(a.vade || '9999') < String(b.vade || '9999') ? -1 : 1)
+            .forEach(k => {
+                const anah = k.taraf_tip + '#' + k.taraf_id;
+                const havuz = planHavuz[anah] || 0;
+                if (havuz > 0) {
+                    const dusen = Math.min(havuz, k.tutar);
+                    k.tutar = Math.round((k.tutar - dusen) * 100) / 100;
+                    k.plan_dusuldu = Math.round(dusen * 100) / 100;
+                    planHavuz[anah] = havuz - dusen;
+                }
+            });
+        for (const kalem of ham) {
+            if (kalem.tip === 'FATURA' && kalem.tutar <= 0.005) continue;   // tamamı planla karşılandı
+            const vade = kalem.vade;
             if (!vade) vadesiz.push(kalem);
             else if (vade < bugun) gecikmis.push(kalem);
             else if (vade <= bitis) kalemler.push(kalem);
@@ -2770,7 +2795,7 @@ app.get('/api/mali-kasa', yetkiKontrol, async (req, res, next) => {
                    COALESCE(h.gerceklesen_tarih, h.belge_tarihi) AS tarih,
                    COALESCE(h.gerceklesen_tutar, h.tutar) AS tutar,
                    CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi WHEN h.taraf_tip='MUSTERI' THEN m.firma_adi
-                        ELSE COALESCE(h.aciklama, 'Diğer gider') END AS firma_adi
+                        ELSE 'Diğer Ödeme' END AS firma_adi
             FROM cari_hareketler h
             LEFT JOIN tedarikciler t ON h.taraf_tip='TEDARIKCI' AND h.taraf_id = t.id
             LEFT JOIN musteriler m ON h.taraf_tip='MUSTERI' AND h.taraf_id = m.id
