@@ -4635,9 +4635,8 @@ function maliNakitRender() {
                 ${k.tip === 'FATURA' && k.belge_no ? `<span class="text-muted ms-1">${esc(k.belge_no)}</span>` : ''}
                 ${k.planlanan_vade ? `<span class="badge bg-info-subtle text-dark ms-1" title="Asıl vade: ${k.asil_vade ? formatTarihTR(k.asil_vade) : '-'}">plan</span>` : ''}</td>
             <td class="small text-muted">${esc(k.aciklama || '')}</td>
-            <td class="text-end text-success">${k.yon === 'GIRIS' ? '+' + maliTL(k.tutar) : ''}</td>
-            <td class="text-end text-danger">${k.yon === 'CIKIS' ? '−' + maliTL(k.tutar) : ''}</td>
-            <td></td><td></td>
+            <td class="text-end ${k.yon === 'GIRIS' ? 'text-success' : 'text-danger'}">${k.yon === 'GIRIS' ? '+' : '−'}${maliTL(k.tutar)}</td>
+            <td></td>
         </tr>`;
 
     let html = '';
@@ -4669,20 +4668,18 @@ function maliNakitRender() {
             const giris = g.filter(k => k.yon === 'GIRIS').reduce((s, k) => s + k.tutar, 0);
             const cikis = g.filter(k => k.yon === 'CIKIS').reduce((s, k) => s + k.tutar, 0);
             kasa += giris - cikis;
+            const net = giris - cikis;
             govde += `<tr class="table-light fw-semibold">
                 <td class="text-nowrap">${formatTarihTR(t)}</td>
                 <td class="small text-muted">${g.length} kalem</td>
                 <td></td>
-                <td class="text-end text-success">${giris ? '+' + maliTL(giris) : '-'}</td>
-                <td class="text-end text-danger">${cikis ? '−' + maliTL(cikis) : '-'}</td>
-                <td class="text-end">${maliTL(giris - cikis)}</td>
+                <td class="text-end ${net < 0 ? 'text-danger' : 'text-success'}">${net < 0 ? '−' : '+'}${maliTL(Math.abs(net))}</td>
                 <td class="text-end ${kasa < 0 ? 'text-danger fw-bold' : 'text-success'}">${maliTL(kasa)}</td></tr>`;
             govde += g.map(kalemSatir).join('');
         }
         html += `<div class="table-responsive"><table class="table table-sm align-middle">
             <thead class="table-dark"><tr><th>Tarih</th><th>Firma / Kalem</th><th>Açıklama</th>
-            <th class="text-end">Giriş</th><th class="text-end">Çıkış</th>
-            <th class="text-end">Günlük Net</th><th class="text-end">Kümülatif Kasa</th></tr></thead>
+            <th class="text-end">Tutar / Günlük Net</th><th class="text-end">Kümülatif Kasa</th></tr></thead>
             <tbody>${govde}</tbody></table></div>`;
     }
     // Kümülatif kasa grafiği (Chart.js — projede yüklü)
