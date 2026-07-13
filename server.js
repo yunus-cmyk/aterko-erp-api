@@ -2426,7 +2426,19 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
         if (tarafTip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
             return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
         if (!gecerli.includes(tip)) return res.json({ ok: false, hata: `Geçersiz hareket tipi (${tarafTip} için: ${gecerli.join(', ')}).` });
-        const tutar = parseFloat(b.tutar);
+        // Döviz kalemi: doviz_tutar orijinal, TL karşılığı günün kuruyla hesaplanır
+        const para = ['USD', 'EUR'].includes(String(b.para_birimi || '').toUpperCase()) ? String(b.para_birimi).toUpperCase() : 'TL';
+        let tutar, dovizTutar = null, girisKur = null;
+        if (para !== 'TL') {
+            dovizTutar = parseFloat(b.doviz_tutar);
+            if (!(dovizTutar > 0)) return res.json({ ok: false, hata: 'Döviz tutarı sıfırdan büyük olmalı.' });
+            const kurlar = await maliKurlariYenile();
+            if (!kurlar || !(kurlar[para] > 0)) return res.json({ ok: false, hata: 'Güncel kur alınamadı — lütfen tekrar deneyin ya da TL girin.' });
+            girisKur = kurlar[para];
+            tutar = Math.round(dovizTutar * girisKur * 100) / 100;
+        } else {
+            tutar = parseFloat(b.tutar);
+        }
         if (!(tutar > 0)) return res.json({ ok: false, hata: 'Tutar sıfırdan büyük olmalı.' });
         if (!b.belge_tarihi) return res.json({ ok: false, hata: 'Tarih zorunludur.' });
         if (tip === 'CEK' && (!b.cek_no || !String(b.cek_no).trim())) return res.json({ ok: false, hata: 'Çek için çek no zorunludur.' });
@@ -2441,13 +2453,14 @@ app.post('/api/mali-hareket-ekle', yetkiKontrol, async (req, res, next) => {
         const i = await pool.query(`
             INSERT INTO cari_hareketler (taraf_tip, taraf_id, tip, belge_tarihi, belge_no, tutar,
                 vade_tarihi, gerceklesen_tarih, gerceklesen_tutar, cek_no, banka, muhlet_oncesi,
-                projeksiyon_tur, aciklama, olusturan_email, hesap)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+                projeksiyon_tur, aciklama, olusturan_email, hesap, para_birimi, doviz_tutar, sabit_kur)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
             [tarafTip, tarafTip === 'GIDER' ? 0 : parseInt(b.taraf_id), tip, b.belge_tarihi, (b.belge_no || '').trim() || null, tutar,
              b.vade_tarihi || null, gerc ? b.belge_tarihi : null, gerc ? tutar : null,
              (b.cek_no || '').trim() || null, (b.banka || '').trim() || null, !!b.muhlet_oncesi,
              tip === 'PROJEKSIYON' ? String(b.projeksiyon_tur).toUpperCase() : null,
-             (b.aciklama || '').trim() || null, req.user.email, (b.hesap || '').trim() || null]);
+             (b.aciklama || '').trim() || null, req.user.email, (b.hesap || '').trim() || null,
+             para, dovizTutar, gerc && para !== 'TL' ? girisKur : null]);   // anında gerçekleşen döviz kaydında kur baştan sabitlenir
         await auditLogla(req, { eylem: 'CREATE', tablo: 'cari_hareketler', kayit_id: i.rows[0].id, ozet: `${tarafTip} #${b.taraf_id} ${tip} ${tutar} TL` });
         res.json({ ok: true, id: i.rows[0].id, mesaj: 'Hareket kaydedildi.' });
     } catch (e) { next(e); }
@@ -2556,7 +2569,10 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
         const hesap = (req.body.hesap || '').trim() || null;
         await cl.query('BEGIN');
         // Atomik: yalnız henüz gerçekleşmemişse damgala (çift tıklama mükerrer kayıt üretmez)
-        const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=$1, gerceklesen_tutar=$2, hesap=COALESCE($4, hesap)
+        // Döviz kaleminde gerçekleşme anında kur SABİTLENİR: TL tutar = gerçekleşen, kur = gerçekleşen/döviz
+        const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=$1, gerceklesen_tutar=$2, hesap=COALESCE($4, hesap),
+                tutar = CASE WHEN para_birimi <> 'TL' THEN $2 ELSE tutar END,
+                sabit_kur = CASE WHEN para_birimi <> 'TL' AND COALESCE(doviz_tutar, 0) > 0 THEN ROUND($2 / doviz_tutar, 4) ELSE sabit_kur END
             WHERE id=$3 AND gerceklesen_tarih IS NULL AND tip IN ('FATURA','CEK','PROJEKSIYON','ODEME','TAHSILAT') RETURNING *`, [tarih, t, id, hesap]);
         if (!u.rowCount) { await cl.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem bulunamadı, zaten gerçekleşmiş ya da bu tipte gerçekleştirme yapılamaz.' }); }
         const h = u.rows[0];
@@ -2568,9 +2584,11 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
                 ? `Fatura ${h.belge_no || '#' + h.id} ${yeniTip === 'ODEME' ? 'ödemesi' : 'tahsilatı'}`
                 : `Projeksiyon (${h.projeksiyon_tur || ''}) tahsilatı`;
             const i = await cl.query(`INSERT INTO cari_hareketler (taraf_tip, taraf_id, tip, belge_tarihi, belge_no,
-                tutar, gerceklesen_tarih, gerceklesen_tutar, aciklama, olusturan_email, hesap, kaynak_hareket_id)
-                VALUES ($1,$2,$3,$4,$5,$6,$4,$6,$7,$8,$9,$10) RETURNING id`,
-                [h.taraf_tip, h.taraf_id, yeniTip, tarih, h.belge_no, t, ozet, req.user.email, hesap, h.id]);
+                tutar, gerceklesen_tarih, gerceklesen_tutar, aciklama, olusturan_email, hesap, kaynak_hareket_id,
+                para_birimi, doviz_tutar, sabit_kur)
+                VALUES ($1,$2,$3,$4,$5,$6,$4,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+                [h.taraf_tip, h.taraf_id, yeniTip, tarih, h.belge_no, t, ozet, req.user.email, hesap, h.id,
+                 h.para_birimi || 'TL', h.doviz_tutar, h.sabit_kur]);
             karsi = { id: i.rows[0].id, tip: yeniTip };
         }
         await cl.query('COMMIT');
@@ -2578,6 +2596,40 @@ app.post('/api/mali-hareket-gerceklestir', yetkiKontrol, async (req, res, next) 
         res.json({ ok: true, mesaj: 'Gerçekleşme işlendi.' + (karsi ? ` Otomatik ${karsi.tip === 'ODEME' ? 'ödeme' : 'tahsilat'} kaydı oluşturuldu.` : ''), karsi });
     } catch (e) { await cl.query('ROLLBACK').catch(() => {}); next(e); }
     finally { cl.release(); }
+});
+
+// ---- DÖVİZ KURLARI (TCMB günlük satış; günde bir tazelenir) ----
+// Gerçekleşmemiş döviz kalemlerinin TL karşılığı her kur tazelemesinde güncellenir;
+// gerçekleşen kalemler sabit_kur ile kilitli kalır (tutar'a dokunulmaz)
+async function maliKurlariYenile() {
+    const bugun = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' });
+    const r = await pool.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_kurlar'");
+    let kur = r.rows[0]?.deger || null;
+    if (kur && kur.tarih === bugun) return kur;
+    try {
+        const yanit = await fetch('https://www.tcmb.gov.tr/kurlar/today.xml', { signal: AbortSignal.timeout(8000) });
+        const xml = await yanit.text();
+        const al = kod => {
+            const m = new RegExp(`Kod="${kod}"[\\s\\S]*?<ForexSelling>([\\d.]+)</ForexSelling>`).exec(xml);
+            return m ? parseFloat(m[1]) : null;
+        };
+        const usd = al('USD'), eur = al('EUR');
+        if (usd > 0 && eur > 0) {
+            kur = { USD: usd, EUR: eur, tarih: bugun, kaynak: 'TCMB döviz satış' };
+            await pool.query(`INSERT INTO sistem_ayarlari (anahtar, deger, guncelleme) VALUES ('mali_kurlar', $1, now())
+                ON CONFLICT (anahtar) DO UPDATE SET deger=$1, guncelleme=now()`, [JSON.stringify(kur)]);
+            for (const [para, deger] of [['USD', usd], ['EUR', eur]]) {
+                await pool.query(`UPDATE cari_hareketler SET tutar = ROUND(doviz_tutar * $1, 2)
+                    WHERE para_birimi=$2 AND gerceklesen_tarih IS NULL AND COALESCE(doviz_tutar, 0) > 0`, [deger, para]);
+            }
+            console.log(`💱 Kurlar tazelendi: USD ${usd} / EUR ${eur} (${bugun})`);
+        }
+    } catch (e) { console.error('⚠️ TCMB kuru çekilemedi (eski kur kullanılacak):', e.message); }
+    return kur;
+}
+
+app.get('/api/mali-kurlar', yetkiKontrol, async (req, res, next) => {
+    try { res.json({ ok: true, kurlar: await maliKurlariYenile() }); } catch (e) { next(e); }
 });
 
 // Gerçekleşmeyi geri al (yalnız TAM): damga kalkar, otomatik karşı kayıt silinir
@@ -2588,9 +2640,15 @@ app.post('/api/mali-hareket-geri-al', yetkiKontrol, async (req, res, next) => {
         if (on.rowCount && on.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'TAM')))
             return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için tam yetki gerekir.' });
         await cl.query('BEGIN');
-        const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=NULL, gerceklesen_tutar=NULL
-            WHERE id=$1 AND gerceklesen_tarih IS NOT NULL RETURNING taraf_tip, taraf_id, tip, tutar`, [req.body.id]);
+        const u = await cl.query(`UPDATE cari_hareketler SET gerceklesen_tarih=NULL, gerceklesen_tutar=NULL, sabit_kur=NULL
+            WHERE id=$1 AND gerceklesen_tarih IS NOT NULL RETURNING taraf_tip, taraf_id, tip, tutar, para_birimi, doviz_tutar`, [req.body.id]);
         if (!u.rowCount) { await cl.query('ROLLBACK'); return res.json({ ok: false, hata: 'Kalem bulunamadı ya da zaten gerçekleşmemiş.' }); }
+        // Döviz kalemi yeniden yüzer duruma döner: TL karşılığı kayıtlı güncel kurla tazelenir
+        if (u.rows[0].para_birimi !== 'TL' && parseFloat(u.rows[0].doviz_tutar) > 0) {
+            const kr = await cl.query("SELECT deger FROM sistem_ayarlari WHERE anahtar='mali_kurlar'");
+            const guncel = kr.rows[0]?.deger?.[u.rows[0].para_birimi];
+            if (guncel > 0) await cl.query('UPDATE cari_hareketler SET tutar = ROUND(doviz_tutar * $1, 2) WHERE id=$2', [guncel, req.body.id]);
+        }
         const d = await cl.query('DELETE FROM cari_hareketler WHERE kaynak_hareket_id=$1 RETURNING id', [req.body.id]);
         await cl.query('COMMIT');
         const h = u.rows[0];
@@ -2609,13 +2667,23 @@ app.post('/api/mali-hareket-guncelle', yetkiKontrol, async (req, res, next) => {
         if (h.rows[0].taraf_tip === 'MUSTERI' && !(await maliMusteriYetkiVar(req, 'YAZMA')))
             return res.status(403).json({ ok: false, izin_hatasi: true, hata: 'Müşteri carisi için yazma yetkiniz yok.' });
         if (h.rows[0].gerceklesen_tarih) return res.json({ ok: false, hata: 'Gerçekleşmiş kalem düzeltilemez — önce gerçekleşmeyi geri alın.' });
-        const tutar = parseFloat(b.tutar);
+        let tutar, dovizTutar = h.rows[0].doviz_tutar;
+        if (h.rows[0].para_birimi !== 'TL') {
+            // Döviz kaleminde döviz tutarı düzeltilir; TL karşılığı güncel kurla hesaplanır
+            dovizTutar = parseFloat(b.doviz_tutar ?? b.tutar);
+            if (!(dovizTutar > 0)) return res.json({ ok: false, hata: 'Döviz tutarı sıfırdan büyük olmalı.' });
+            const kurlar = await maliKurlariYenile();
+            if (!kurlar || !(kurlar[h.rows[0].para_birimi] > 0)) return res.json({ ok: false, hata: 'Güncel kur alınamadı.' });
+            tutar = Math.round(dovizTutar * kurlar[h.rows[0].para_birimi] * 100) / 100;
+        } else {
+            tutar = parseFloat(b.tutar);
+        }
         if (!(tutar > 0)) return res.json({ ok: false, hata: 'Tutar sıfırdan büyük olmalı.' });
         if (h.rows[0].tip === 'CEK' && !b.vade_tarihi) return res.json({ ok: false, hata: 'Çek için vade zorunludur.' });
         await pool.query(`UPDATE cari_hareketler SET belge_tarihi=COALESCE($1, belge_tarihi), belge_no=$2, tutar=$3,
-            vade_tarihi=$4, cek_no=COALESCE(NULLIF($5,''), cek_no), banka=$6, aciklama=$7 WHERE id=$8`,
+            vade_tarihi=$4, cek_no=COALESCE(NULLIF($5,''), cek_no), banka=$6, aciklama=$7, doviz_tutar=$9 WHERE id=$8`,
             [b.belge_tarihi || null, (b.belge_no || '').trim() || null, tutar, b.vade_tarihi || null,
-             (b.cek_no || '').trim(), (b.banka || '').trim() || null, (b.aciklama || '').trim() || null, b.id]);
+             (b.cek_no || '').trim(), (b.banka || '').trim() || null, (b.aciklama || '').trim() || null, b.id, dovizTutar]);
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'cari_hareketler', kayit_id: parseInt(b.id), ozet: `Hareket düzeltildi: ${h.rows[0].tip} → ${tutar} TL` });
         res.json({ ok: true, mesaj: 'Hareket güncellendi.' });
     } catch (e) { next(e); }
@@ -2672,8 +2740,10 @@ async function maliMusteriYetkiVar(req, gerekli) {
 app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
     try {
         const gun = Math.min(parseInt(req.query.gun) || 60, 365);
+        await maliKurlariYenile();   // günde bir: açık döviz kalemlerinin TL karşılığı tazelenir
         const r = await pool.query(`
             SELECT h.id, h.taraf_tip, h.taraf_id, h.tip, h.belge_no, h.cek_no, h.projeksiyon_tur, h.aciklama,
+                   h.para_birimi, h.doviz_tutar,
                    h.tutar, h.planlanan_tutar, h.vade_tarihi, h.planlanan_vade,
                    COALESCE(h.planlanan_vade, h.vade_tarihi) AS etkin_vade,
                    COALESCE(h.planlanan_tutar, h.tutar) AS etkin_tutar,
@@ -2725,7 +2795,8 @@ app.get('/api/mali-nakit-akis', yetkiKontrol, async (req, res, next) => {
             let vade = ymdStr(h.etkin_vade);
             const kalem = { id: h.id, taraf_tip: h.taraf_tip, taraf_id: h.taraf_id, firma_adi: h.firma_adi,
                 tip: h.tip, belge_no: h.belge_no, cek_no: h.cek_no, projeksiyon_tur: h.projeksiyon_tur,
-                aciklama: h.aciklama, yon: h.yon, tutar: parseFloat(h.etkin_tutar), asil_vade: ymdStr(h.vade_tarihi),
+                aciklama: h.aciklama, para_birimi: h.para_birimi || 'TL', doviz_tutar: h.doviz_tutar ? parseFloat(h.doviz_tutar) : null,
+                yon: h.yon, tutar: parseFloat(h.etkin_tutar), asil_vade: ymdStr(h.vade_tarihi),
                 planlanan_vade: ymdStr(h.planlanan_vade), vade };
             // Plan kalemleri (ödeme/tahsilat planı) gecikmişe DÜŞMEZ: o gün ödenmediyse
             // ve yeni vade girilmediyse otomatik bugüne taşınır (kullanıcı kuralı)
@@ -2792,6 +2863,7 @@ app.get('/api/mali-kasa', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query(`
             SELECT h.id, h.taraf_tip, h.taraf_id, h.tip, h.belge_no, h.cek_no, h.aciklama, h.hesap, h.olusturan_email,
+                   h.para_birimi, h.doviz_tutar, h.sabit_kur,
                    COALESCE(h.gerceklesen_tarih, h.belge_tarihi) AS tarih,
                    COALESCE(h.gerceklesen_tutar, h.tutar) AS tutar,
                    CASE WHEN h.taraf_tip='TEDARIKCI' THEN t.firma_adi WHEN h.taraf_tip='MUSTERI' THEN m.firma_adi
@@ -5833,7 +5905,7 @@ const ENDPOINT_IZIN_KURALLARI = [
 
     // Mali İşler — cari takip (hareket silme yalnız TAM; ayar yazma uç içinde ayrıca ADMIN)
     { pattern: /^\/api\/mali-hareket-(sil|geri-al)/, modul: 'mali.tedarikci', seviye: 'TAM' },
-    { pattern: /^\/api\/mali-(tedarikci|ayar|ekip|nakit-akis|kasa|gider)/, method: 'GET', modul: 'mali.tedarikci', seviye: 'OKUMA' },
+    { pattern: /^\/api\/mali-(tedarikci|ayar|ekip|nakit-akis|kasa|gider|kurlar)/, method: 'GET', modul: 'mali.tedarikci', seviye: 'OKUMA' },
     { pattern: /^\/api\/mali-musteri/, method: 'GET', modul: 'mali.musteri', seviye: 'OKUMA' },
     { pattern: /^\/api\/mali-musteri-kaydet/, modul: 'mali.musteri', seviye: 'YAZMA' },
     { pattern: /^\/api\/mali-(tedarikci-guncelle|hareket-ekle|hareket-planla|hareket-gerceklestir|hareket-guncelle|ayar)/, modul: 'mali.tedarikci', seviye: 'YAZMA' },
@@ -8240,9 +8312,13 @@ async function semaGuvence() {
         )`);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_cari_taraf ON cari_hareketler(taraf_tip, taraf_id)`);
         // Faz 2+ ekleri: otomatik karşı kayıt bağı (geri alma için) + çoklu kasa/banka hesabı
+        // + döviz desteği (para_birimi TL/USD/EUR; doviz_tutar orijinal; sabit_kur gerçekleşmede kilitlenir)
         await pool.query(`ALTER TABLE cari_hareketler
             ADD COLUMN IF NOT EXISTS kaynak_hareket_id INTEGER,
-            ADD COLUMN IF NOT EXISTS hesap TEXT`).catch(e => console.error('⚠️ cari kolon ek:', e.message));
+            ADD COLUMN IF NOT EXISTS hesap TEXT,
+            ADD COLUMN IF NOT EXISTS para_birimi TEXT DEFAULT 'TL',
+            ADD COLUMN IF NOT EXISTS doviz_tutar NUMERIC,
+            ADD COLUMN IF NOT EXISTS sabit_kur NUMERIC`).catch(e => console.error('⚠️ cari kolon ek:', e.message));
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_cari_vade ON cari_hareketler(vade_tarihi) WHERE vade_tarihi IS NOT NULL`);
         // Mali İşler izin tohumları: ADMIN=TAM, MUHASEBE=YAZMA, YONETIM=OKUMA (yalnız satır yoksa)
         for (const [rolAd, seviye] of [['ADMIN', 'TAM'], ['MUHASEBE', 'YAZMA'], ['YONETIM', 'OKUMA']]) {

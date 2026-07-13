@@ -239,6 +239,7 @@
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h4 class="mb-0" style="color:#198754;"><i class="bi bi-cash-stack me-2"></i>Mali İşler</h4>
         <div class="d-flex align-items-center gap-2">
+          <span id="maliKurRozet" class="badge bg-light text-dark border"></span>
           <span id="maliMuhletRozet" class="badge bg-light text-dark border"></span>
           <button class="btn btn-sm btn-outline-secondary d-none" id="btnMaliAyar" onclick="maliAyarAc()"><i class="bi bi-gear me-1"></i>Ayarlar</button>
         </div>
@@ -3602,7 +3603,7 @@ STK-002		50	adet
             <div class="row g-2">
               <div class="col-6"><label class="form-label small mb-0">Tarih</label>
                 <input id="mdTarih" type="date" class="form-control form-control-sm"></div>
-              <div class="col-6"><label class="form-label small mb-0">Tutar (TL)</label>
+              <div class="col-6"><label class="form-label small mb-0" id="mdTutarEtiket">Tutar (TL)</label>
                 <input id="mdTutar" type="number" step="0.01" class="form-control form-control-sm"></div>
               <div class="col-6 md-belge"><label class="form-label small mb-0">Belge No</label>
                 <input id="mdBelgeNo" class="form-control form-control-sm"></div>
@@ -4048,6 +4049,12 @@ async function maliSekmeInit() {
     document.getElementById('maliTabKasa').closest('li').classList.toggle('d-none', !tOk);
     document.getElementById('btnMaliMusteriYeni').classList.toggle('d-none', !izinVarMi('mali.musteri', 'YAZMA'));
     if (!window._maliEkip) secureFetch('/mali-ekip').then(r => { if (r.ok) window._maliEkip = r.data; });
+    secureFetch('/mali-kurlar').then(r => {
+        if (!r.ok || !r.kurlar) return;
+        window._maliKurlar = r.kurlar;
+        document.getElementById('maliKurRozet').innerHTML =
+            `<i class="bi bi-currency-exchange me-1"></i>USD ${formatTR(r.kurlar.USD)} · EUR ${formatTR(r.kurlar.EUR)} <span class="text-muted">(${r.kurlar.kaynak || 'TCMB'})</span>`;
+    });
     secureFetch('/mali-ayar').then(r => {
         if (!r.ok) return;
         window._maliAyar = r.ayar;
@@ -4342,10 +4349,15 @@ function maliPlanBolumHTML(tarafTip, hareketler, yazma) {
     window._maliPlanEtiket = tarafTip === 'TEDARIKCI' ? 'Mühlet Sonrası Bakiye' : 'Cari Alacak';
     const form = !yazma ? '' : `
         <div class="row g-2 align-items-end mb-2">
-            <div class="col-md-3"><label class="form-label small mb-0">Planlanan Tarih</label>
+            <div class="col-md-2"><label class="form-label small mb-0">Planlanan Tarih</label>
                 <input id="mpTarih" type="date" class="form-control form-control-sm"></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Tutar (TL)</label>
-                <input id="mpTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliPlanOzetGuncelle()"></div>
+            <div class="col-md-2"><label class="form-label small mb-0">Para Birimi</label>
+                <select id="mpPara" class="form-select form-select-sm" onchange="maliKurHint('mp');maliPlanOzetGuncelle()">
+                    <option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option>
+                </select></div>
+            <div class="col-md-2"><label class="form-label small mb-0" id="mpTutarEtiket">Tutar (TL)</label>
+                <input id="mpTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliKurHint('mp');maliPlanOzetGuncelle()">
+                <small class="text-muted" id="mpKurHint"></small></div>
             <div class="col-md-4"><label class="form-label small mb-0">Açıklama</label>
                 <input id="mpAciklama" class="form-control form-control-sm" placeholder="örn. 1. taksit"></div>
             <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" onclick="maliPlanEkle('${tip}')"><i class="bi bi-calendar-plus me-1"></i>Planla</button></div>
@@ -4361,7 +4373,7 @@ function maliPlanBolumHTML(tarafTip, hareketler, yazma) {
                 return `<tr>
                     <td>${pTarih ? formatTarihTR(pTarih) : '<span class="text-danger">vadesiz</span>'}${gecti && !faturaMi ? ' <span class="badge text-bg-warning" title="Ödenmedi ve yeni tarih girilmedi — nakit akışında otomatik bugüne taşınır">bugüne taşındı</span>' : ''}${gecti && faturaMi ? ' <span class="badge text-bg-danger">gecikmiş</span>' : ''}</td>
                     <td>${faturaMi ? `<span class="badge bg-secondary-subtle text-dark">Fatura ${esc(h.belge_no || '')}</span>` : '<span class="badge bg-primary-subtle text-dark">Plan</span>'}</td>
-                    <td class="text-end">${maliTL(h.planlanan_tutar || h.tutar)}</td>
+                    <td class="text-end">${maliTL(h.planlanan_tutar || h.tutar)}${maliDovizEk(h)}</td>
                     <td class="small">${esc(h.aciklama || '')}</td>
                     <td class="text-nowrap text-center">
                         ${yazma ? `<button class="btn btn-sm btn-outline-primary py-0 me-1" onclick="maliPlanAcId(${h.id})" title="Tarihi/tutarı değiştir"><i class="bi bi-calendar-week"></i></button>
@@ -4378,6 +4390,27 @@ function maliPlanBolumHTML(tarafTip, hareketler, yazma) {
     </div>`;
 }
 
+// Döviz yardımcıları: seçilen para birimine göre etiket + TL karşılığı ipucu (günün kuru)
+function maliTLKarsiligi(para, tutar) {
+    const kur = window._maliKurlar?.[para];
+    return (para !== 'TL' && kur > 0) ? Math.round(tutar * kur * 100) / 100 : tutar;
+}
+function maliKurHint(onek) {
+    const para = document.getElementById(onek + 'Para')?.value || 'TL';
+    const etiket = document.getElementById(onek + 'TutarEtiket');
+    const hint = document.getElementById(onek + 'KurHint');
+    if (etiket) etiket.textContent = 'Tutar (' + para + ')';
+    if (!hint) return;
+    const t = parseFloat(document.getElementById(onek + 'Tutar')?.value) || 0;
+    const kur = window._maliKurlar?.[para];
+    hint.textContent = (para !== 'TL' && kur > 0 && t > 0) ? `≈ ${formatTR(maliTLKarsiligi(para, t))} TL (kur ${formatTR(kur)})` : '';
+}
+// Döviz kalemi rozet metni (defter/plan/kasa satırları için)
+function maliDovizEk(h) {
+    if (!h.para_birimi || h.para_birimi === 'TL') return '';
+    return `<div class="small text-muted text-nowrap">${formatTR(parseFloat(h.doviz_tutar) || 0)} ${h.para_birimi}${h.sabit_kur ? ' @' + formatTR(parseFloat(h.sabit_kur)) : ''}</div>`;
+}
+
 // Plan kutusu canlı özeti: bakiye · planlanan · planlanmamış kalan (yazarken güncellenir)
 function maliPlanOzetHTML(yeniTutar) {
     const b = window._maliPlanBakiye || 0, p = window._maliPlanToplam || 0;
@@ -4390,7 +4423,9 @@ function maliPlanOzetHTML(yeniTutar) {
 }
 function maliPlanOzetGuncelle() {
     const el = document.getElementById('mpOzet');
-    if (el) el.innerHTML = maliPlanOzetHTML(parseFloat(document.getElementById('mpTutar')?.value) || 0);
+    if (!el) return;
+    const para = document.getElementById('mpPara')?.value || 'TL';
+    el.innerHTML = maliPlanOzetHTML(maliTLKarsiligi(para, parseFloat(document.getElementById('mpTutar')?.value) || 0));
 }
 
 async function maliPlanEkle(tip) {
@@ -4404,6 +4439,8 @@ async function maliPlanEkle(tip) {
             taraf_tip: k.tip, taraf_id: k.id, tip, planli: true,
             belge_tarihi: maliBugunYMD(), vade_tarihi: tarih,
             tutar: document.getElementById('mpTutar').value,
+            para_birimi: document.getElementById('mpPara')?.value || 'TL',
+            doviz_tutar: (document.getElementById('mpPara')?.value || 'TL') !== 'TL' ? document.getElementById('mpTutar').value : null,
             aciklama: document.getElementById('mpAciklama').value || ''
         })
     });
@@ -4442,8 +4479,13 @@ function maliHareketBolumHTML(tarafTip, hareketler, yazma) {
                 <select id="mhProjTur" class="form-select form-select-sm">
                     <option value="AVANS">Avans</option><option value="HAKEDIS">Hakediş</option><option value="CEK">Çek</option>
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Tutar (TL)</label>
-                <input id="mhTutar" type="number" step="0.01" class="form-control form-control-sm"></div>
+            <div class="col-md-2"><label class="form-label small mb-0">Para Birimi</label>
+                <select id="mhPara" class="form-select form-select-sm" onchange="maliKurHint('mh')">
+                    <option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option>
+                </select></div>
+            <div class="col-md-2"><label class="form-label small mb-0" id="mhTutarEtiket">Tutar (TL)</label>
+                <input id="mhTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliKurHint('mh')">
+                <small class="text-muted" id="mhKurHint"></small></div>
             <div class="col-md-2 mh-vade"><label class="form-label small mb-0" id="mhVadeEtiket">Vade</label>
                 <input id="mhVade" type="date" class="form-control form-control-sm"></div>
             <div class="col-md-2 mh-cek d-none"><div class="form-check mt-3">
@@ -4478,7 +4520,7 @@ function maliHareketBolumHTML(tarafTip, hareketler, yazma) {
                         : tip === 'PROJEKSIYON'
                         ? `<td>${MALI_PROJ_AD[h.projeksiyon_tur] || esc(h.projeksiyon_tur || '-')}</td><td>${h.vade_tarihi ? formatTarihTR(h.vade_tarihi) : '-'}</td>`
                         : `<td>${esc(h.belge_no || '-')}</td><td>${h.vade_tarihi ? formatTarihTR(h.vade_tarihi) : '-'}</td>`}
-                    <td class="text-end">${maliTL(h.tutar)}</td>
+                    <td class="text-end">${maliTL(h.tutar)}${maliDovizEk(h)}</td>
                     <td class="small">${esc(h.aciklama || '')}</td>
                     ${vadeliMi ? `<td class="text-nowrap">${maliHareketDurumHTML(h, yazma)}</td>` : ''}
                     ${silYetki ? `<td class="text-center"><button class="btn btn-sm btn-outline-danger py-0" onclick="maliHareketSil(${h.id})" title="Sil"><i class="bi bi-trash"></i></button></td>` : ''}
@@ -4520,6 +4562,8 @@ async function maliHareketEkle() {
             cek_no: document.getElementById('mhCekNo')?.value || '',
             banka: document.getElementById('mhBanka')?.value || '',
             muhlet_oncesi: document.getElementById('mhMuhletOnce')?.checked || false,
+            para_birimi: document.getElementById('mhPara')?.value || 'TL',
+            doviz_tutar: (document.getElementById('mhPara')?.value || 'TL') !== 'TL' ? document.getElementById('mhTutar').value : null,
             projeksiyon_tur: document.getElementById('mhProjTur')?.value || null,
             aciklama: document.getElementById('mhAciklama')?.value || ''
         })
@@ -4633,6 +4677,7 @@ function maliNakitRender() {
                 ${k.plan_dusuldu ? `<span class="badge bg-info-subtle text-dark ms-1" title="Bu faturanın ${maliTL(k.plan_dusuldu)} tutarındaki kısmı ödeme planı taksitleriyle karşılandı — akışta kalan kısmı görünür">plan düşüldü</span>` : ''}
                 ${k.tip === 'CEK' ? `<span class="badge text-bg-secondary ms-1">Çek ${esc(k.cek_no || '')}</span>` : ''}
                 ${k.tip === 'FATURA' && k.belge_no ? `<span class="text-muted ms-1">${esc(k.belge_no)}</span>` : ''}
+                ${k.para_birimi && k.para_birimi !== 'TL' ? `<span class="badge bg-warning-subtle text-dark ms-1" title="TL karşılığı günün kuruyla hesaplanır; gerçekleşince kur sabitlenir">${formatTR(k.doviz_tutar || 0)} ${k.para_birimi}</span>` : ''}
                 ${k.planlanan_vade ? `<span class="badge bg-info-subtle text-dark ms-1" title="Asıl vade: ${k.asil_vade ? formatTarihTR(k.asil_vade) : '-'}">plan</span>` : ''}</td>
             <td class="small text-muted">${esc(k.aciklama || '')}</td>
             <td class="text-end ${k.yon === 'GIRIS' ? 'text-success' : 'text-danger'}">${k.yon === 'GIRIS' ? '+' : '−'}${maliTL(k.tutar)}</td>
@@ -4647,7 +4692,7 @@ function maliNakitRender() {
             <div class="table-responsive"><table class="table table-sm mb-0"><tbody>
             ${gecikmis.map(k => `<tr class="small" style="cursor:pointer;" onclick="${k.taraf_tip === 'GIDER' ? 'maliGiderAc()' : `maliKartAc('${k.taraf_tip}', ${k.taraf_id})`}">
                 <td>${formatTarihTR(k.vade)}</td><td title="${esc(k.firma_adi || '')}">${esc(maliKisaAd(k.firma_adi))}</td>
-                <td>${MALI_HAREKET_AD[k.tip] || k.tip}${k.cek_no ? ' ' + esc(k.cek_no) : ''}${k.belge_no ? ' ' + esc(k.belge_no) : ''}${k.plan_dusuldu ? ' <span class="badge bg-info-subtle text-dark">plan düşüldü</span>' : ''}</td>
+                <td>${MALI_HAREKET_AD[k.tip] || k.tip}${k.cek_no ? ' ' + esc(k.cek_no) : ''}${k.belge_no ? ' ' + esc(k.belge_no) : ''}${k.plan_dusuldu ? ' <span class="badge bg-info-subtle text-dark">plan düşüldü</span>' : ''}${k.para_birimi && k.para_birimi !== 'TL' ? ` <span class="badge bg-warning-subtle text-dark">${formatTR(k.doviz_tutar || 0)} ${k.para_birimi}</span>` : ''}</td>
                 <td class="small text-muted">${esc(k.aciklama || '')}</td>
                 <td class="text-end ${k.yon === 'GIRIS' ? 'text-success' : 'text-danger'}">${k.yon === 'GIRIS' ? '+' : '−'}${maliTL(k.tutar)}</td>
             </tr>`).join('')}</tbody></table></div>
@@ -4665,6 +4710,7 @@ function maliNakitRender() {
         let govde = '';
         for (const t of tarihler) {
             const g = gunler[t];
+            g.sort((a, b) => a.yon === b.yon ? 0 : (a.yon === 'GIRIS' ? -1 : 1));   // önce tahsilatlar, sonra ödemeler
             const giris = g.filter(k => k.yon === 'GIRIS').reduce((s, k) => s + k.tutar, 0);
             const cikis = g.filter(k => k.yon === 'CIKIS').reduce((s, k) => s + k.tutar, 0);
             kasa += giris - cikis;
@@ -4753,7 +4799,7 @@ function maliKasaRender() {
             <td>${h.tip === 'CEK' ? 'Çek (ödendi)' : MALI_HAREKET_AD[h.tip] || h.tip}</td>
             <td class="small">${esc(hesapAdi(h))}</td>
             <td>${esc(h.cek_no || h.belge_no || '-')}</td>
-            <td class="small text-muted">${esc(h.aciklama || '')}</td>
+            <td class="small text-muted">${esc(h.aciklama || '')}${maliDovizEk(h)}</td>
             <td class="text-end text-success">${giris ? '+' + maliTL(giris) : ''}</td>
             <td class="text-end text-danger">${cikis ? '−' + maliTL(cikis) : ''}</td>
             <td class="text-end ${bakiye < 0 ? 'text-danger fw-bold' : ''}">${maliTL(bakiye)}</td>
@@ -4831,8 +4877,10 @@ function maliDuzenleAc(id) {
     const h = (window._maliKartHareketler || []).find(x => x.id === id);
     if (!h) return;
     window._maliDuzenleId = id;
+    const fx = h.para_birimi && h.para_birimi !== 'TL';
+    document.getElementById('mdTutarEtiket').textContent = 'Tutar (' + (fx ? h.para_birimi : 'TL') + ')';
     document.getElementById('mdTarih').value = maliYmd10(h.belge_tarihi);
-    document.getElementById('mdTutar').value = parseFloat(h.tutar) || '';
+    document.getElementById('mdTutar').value = fx ? (parseFloat(h.doviz_tutar) || '') : (parseFloat(h.tutar) || '');
     document.getElementById('mdBelgeNo').value = h.belge_no || '';
     document.getElementById('mdVade').value = maliYmd10(h.vade_tarihi);
     document.getElementById('mdCekNo').value = h.cek_no || '';
@@ -4971,7 +5019,10 @@ function maliSiparisSec(json) {
 function maliHareketEtiket(h) {
     const ad = MALI_HAREKET_AD[h.tip] || h.tip;
     const no = h.cek_no || h.belge_no || ('#' + h.id);
-    return `<b>${ad} ${esc(no)}</b>${h.projeksiyon_tur ? ' (' + (MALI_PROJ_AD[h.projeksiyon_tur] || h.projeksiyon_tur) + ')' : ''}`;
+    const doviz = (h.para_birimi && h.para_birimi !== 'TL')
+        ? ` — <b>${formatTR(parseFloat(h.doviz_tutar) || 0)} ${h.para_birimi}</b>${window._maliKurlar?.[h.para_birimi] ? ` <span class="text-muted">(günün kuru ${formatTR(window._maliKurlar[h.para_birimi])} — gerçekleşen TL tutara göre kur sabitlenir)</span>` : ''}`
+        : '';
+    return `<b>${ad} ${esc(no)}</b>${h.projeksiyon_tur ? ' (' + (MALI_PROJ_AD[h.projeksiyon_tur] || h.projeksiyon_tur) + ')' : ''}${doviz}`;
 }
 function maliPlanAcId(id) {
     const h = (window._maliKartHareketler || []).find(x => x.id === id);
