@@ -4600,6 +4600,11 @@ async function maliNakitYukle() {
     maliNakitRender();
 }
 
+// Nakit akışta firma adının yalnız ilk iki kelimesi yazılır (tam ad araç ipucunda)
+function maliKisaAd(ad) {
+    const p = String(ad || '?').trim().split(/\s+/);
+    return p.length <= 2 ? p.join(' ') : p.slice(0, 2).join(' ') + '…';
+}
 function maliNakitRender() {
     const r = window._maliNakit;
     if (!r) return;
@@ -4612,7 +4617,7 @@ function maliNakitRender() {
     const kalemSatir = k => `
         <tr class="small" style="cursor:pointer;" onclick="${k.taraf_tip === 'GIDER' ? 'maliGiderAc()' : `maliKartAc('${k.taraf_tip}', ${k.taraf_id})`}">
             <td></td>
-            <td class="ps-3">${esc(k.firma_adi || '?')}
+            <td class="ps-3" title="${esc(k.firma_adi || '')}">${esc(maliKisaAd(k.firma_adi))}
                 ${k.tip === 'PROJEKSIYON' ? `<span class="badge text-bg-warning ms-1">Projeksiyon${k.projeksiyon_tur ? ' · ' + (MALI_PROJ_AD[k.projeksiyon_tur] || k.projeksiyon_tur) : ''}</span>` : ''}
                 ${k.tip === 'DEVIR' ? (k.yon === 'GIRIS'
                     ? '<span class="badge bg-success-subtle text-dark ms-1" title="Faturası/tahsilat planı olmayan müşteri alacağı — vade Ayarlar\'daki varsayılan tahsilat vadesi">Cari Alacak (Devir)</span>'
@@ -4639,7 +4644,7 @@ function maliNakitRender() {
             <div class="fw-bold text-danger mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Vadesi geçmiş — gerçekleşmemiş (${gecikmis.length} kalem, net ${maliTL(gTop)})</div>
             <div class="table-responsive"><table class="table table-sm mb-0"><tbody>
             ${gecikmis.map(k => `<tr class="small" style="cursor:pointer;" onclick="${k.taraf_tip === 'GIDER' ? 'maliGiderAc()' : `maliKartAc('${k.taraf_tip}', ${k.taraf_id})`}">
-                <td>${formatTarihTR(k.vade)}</td><td>${esc(k.firma_adi || '?')}</td>
+                <td>${formatTarihTR(k.vade)}</td><td title="${esc(k.firma_adi || '')}">${esc(maliKisaAd(k.firma_adi))}</td>
                 <td>${MALI_HAREKET_AD[k.tip] || k.tip}${k.cek_no ? ' ' + esc(k.cek_no) : ''}${k.belge_no ? ' ' + esc(k.belge_no) : ''}${k.plan_dusuldu ? ' <span class="badge bg-info-subtle text-dark">plan düşüldü</span>' : ''}</td>
                 <td class="small text-muted">${esc(k.aciklama || '')}</td>
                 <td class="text-end ${k.yon === 'GIRIS' ? 'text-success' : 'text-danger'}">${k.yon === 'GIRIS' ? '+' : '−'}${maliTL(k.tutar)}</td>
