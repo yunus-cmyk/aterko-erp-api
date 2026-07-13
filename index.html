@@ -12840,12 +12840,14 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
             <td class="text-muted small">${esc(t.bina_yeri || '-')}</td>
             <td class="text-center small">${formatTarihTR(t.sevkiyat_baslangici) || '-'}</td>
             <td class="text-end fw-bold">${fiyatHucre(formatTR(tKdvli) + ' ' + esc(proje.para_birimi || 'TL'))}</td>
-            <td class="text-center">${getDurumBadge(t.durum)}</td>
+            <td class="text-center">${proje.durum === 'TASLAK'
+                ? '<span class="badge st-taslak" title="Proje TASLAK aşamasında — teslimat yaşam döngüsü ADMIN onayıyla (SÖZLEŞME) başlar">TASLAK</span>'
+                : getDurumBadge(t.durum)}</td>
             <td class="text-center">
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary py-0" onclick="openTeknikSartname(${t.id})" title="Teknik Şartname"><i class="bi bi-file-earmark-text"></i></button>
                     <button class="btn btn-outline-warning py-0" ${proje.durum === 'TASLAK' ? 'disabled title="İş emri için önce ADMIN proje onayı (Sözleşme) gerekli"' : `onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"`}><i class="bi bi-clipboard2-check"></i></button>
-                    <button class="btn btn-outline-dark py-0" onclick="durumSecAc(${t.id}, '${escJs(t.durum || '')}', ${proje.id}, '${escJs(t.bina_adi || '')}')">Durum</button>
+                    <button class="btn btn-outline-dark py-0" ${proje.durum === 'TASLAK' ? 'disabled title="Teslimat durumları proje onaylanınca (SÖZLEŞME) yönetilir"' : `onclick="durumSecAc(${t.id}, '${escJs(t.durum || '')}', ${proje.id}, '${escJs(t.bina_adi || '')}')"`}>Durum</button>
                 </div>
             </td>
         </tr>`;

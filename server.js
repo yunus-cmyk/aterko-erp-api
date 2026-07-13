@@ -696,6 +696,11 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
 app.post('/api/teslimat-durum-guncelle', yetkiKontrol, async (req, res, next) => {
     try {
         const { teslimat_id, yeni_durum } = req.body;
+        // TASLAK projede teslimat yaşam döngüsü henüz başlamaz — önce ADMIN onayı (SÖZLEŞME) gerekir
+        const p = await pool.query(
+            "SELECT p.durum FROM proje_teslimatlari t JOIN projeler p ON t.proje_id = p.id WHERE t.id = $1", [teslimat_id]);
+        if (p.rows[0]?.durum === 'TASLAK')
+            return res.json({ ok: false, hata: 'Proje TASLAK aşamasında — teslimat durumları proje ADMIN onayı alıp SÖZLEŞME olduktan sonra yönetilir.' });
         await pool.query("UPDATE proje_teslimatlari SET durum = $1 WHERE id = $2", [yeni_durum, teslimat_id]);
         res.json({ ok: true, mesaj: "Bina statüsü başarıyla güncellendi." });
     } catch (error) { next(error); }
