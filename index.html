@@ -9967,9 +9967,11 @@ function saveNewRequest() {
     if (isEdit) payload.id = duzenlenenTalepId;
 
     const endpoint = isEdit ? '/talep-guncelle' : '/yeni-talep';
-    showLoading();
+    // Çift tıklama koruması: yanıt gelene kadar tam ekran kilit — ikinci basış mükerrer talep üretemez
+    if (typeof _saAksiyonKilit !== 'undefined' && _saAksiyonKilit) return;
+    saAksiyonBaslat(isEdit ? 'Talep güncelleniyor…' : 'Talep kaydediliyor…');
     secureFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) }).then(async res => {
-        hideLoading();
+        saAksiyonBitir();
         if(res.ok) {
             // Yeni talepte bekleyen dosyaları şimdi yükle (düzenlemede dosyalar zaten anında yüklendi)
             if (!isEdit && (window.ntBekleyenDosyalar || []).length) {
@@ -9985,7 +9987,7 @@ function saveNewRequest() {
             if (isEdit && dTId) satinalmaIslemSonrasi('talep', dTId);
             else satinalmaIslemSonrasi();
         } else { showToast(res.hata, "error"); }
-    });
+    }).catch(() => { saAksiyonBitir(); showToast('Talep kaydedilemedi — bağlantıyı kontrol edin.', 'error'); });
 }
 
 // --- SATINALMA ONAY VE DURUM MOTORU ---

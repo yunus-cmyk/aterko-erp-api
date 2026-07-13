@@ -1182,6 +1182,18 @@ app.post('/api/yeni-talep', yetkiKontrol, async (req, res, next) => {
         const { proje_id, istenen_tarih, teslim_yeri, genel_aciklama, kalemler } = req.body;
         const talep_eden = req.user.adSoyad;
 
+        // Mükerrer koruması: aynı kullanıcı aynı projeye son 15 saniye içinde talep açtıysa reddet
+        // (çift tıklama / yavaş bağlantıda arka arkaya kaydetme — bkz. 40000-T-5889/5890 vakası)
+        const mukerrer = await client.query(`
+            SELECT talep_no FROM satinalma_talepleri
+            WHERE talep_eden = $1 AND COALESCE(proje_id, 0) = COALESCE($2, 0)
+              AND kayit_tarihi > now() - interval '15 seconds'
+            ORDER BY id DESC LIMIT 1`, [talep_eden, proje_id || null]);
+        if (mukerrer.rowCount) {
+            await client.query('ROLLBACK');
+            return res.json({ ok: false, hata: `Mükerrer kayıt koruması: az önce ${mukerrer.rows[0].talep_no} numaralı talebi oluşturdunuz. Değişiklik gerekiyorsa listeden talebi açıp "Düzenle" ile güncelleyin.` });
+        }
+
         // Proje kodunu al (numara formatı için)
         let projeKodu = 'GENEL';
         if (proje_id) {
