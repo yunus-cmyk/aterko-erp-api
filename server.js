@@ -4393,6 +4393,55 @@ app.get('/api/talep-dosyalari/:talepId', yetkiKontrol, async (req, res, next) =>
     } catch (e) { next(e); }
 });
 
+// ---- PROJE DOSYALARI: Sözleşme (proje bazlı) + Mimari Proje (teslimat bazlı), yalnız PDF ----
+app.get('/api/proje-dosyalari/:projeId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query('SELECT * FROM proje_dosyalari WHERE proje_id=$1 ORDER BY kayit_tarihi DESC', [req.params.projeId]);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/proje-dosya-yukle', yetkiKontrol, dosyaUpload.single('dosya'), async (req, res, next) => {
+    if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
+    try {
+        const { proje_id, teslimat_id } = req.body;
+        const tur = ['SOZLESME', 'MIMARI'].includes(String(req.body.tur || '').toUpperCase()) ? String(req.body.tur).toUpperCase() : null;
+        if (!tur || !proje_id) return res.json({ ok: false, hata: 'Proje ve dosya türü gerekli.' });
+        if (tur === 'MIMARI' && !teslimat_id) return res.json({ ok: false, hata: 'Mimari proje teslimat (bina) bazlıdır — teslimat seçilmedi.' });
+        if (!req.file) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
+        const pdfMi = req.file.mimetype === 'application/pdf' || /\.pdf$/i.test(req.file.originalname);
+        if (!pdfMi) return res.json({ ok: false, hata: 'Yalnız PDF dosyası yüklenebilir.' });
+        const pR = await pool.query('SELECT proje_kodu FROM projeler WHERE id=$1', [proje_id]);
+        if (!pR.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
+        const safeName = req.file.originalname.replace(/[^A-Za-z0-9._\-]/g, '_');
+        const storagePath = `proje/${pR.rows[0].proje_kodu}/${tur.toLowerCase()}/${Date.now()}-${safeName}`;
+        const { error: upErr } = await supabaseStorage.storage
+            .from(SIPARIS_BUCKET).upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
+        if (upErr) return res.json({ ok: false, hata: 'Yükleme hatası: ' + upErr.message });
+        const { data: urlData } = supabaseStorage.storage.from(SIPARIS_BUCKET).getPublicUrl(storagePath);
+        const r = await pool.query(`
+            INSERT INTO proje_dosyalari
+            (proje_id, teslimat_id, tur, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
+        `, [proje_id, teslimat_id || null, tur, req.file.originalname, storagePath, urlData.publicUrl,
+            req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email]);
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'proje_dosyalari', kayit_id: r.rows[0].id, ozet: `${tur === 'SOZLESME' ? 'Sözleşme' : 'Mimari proje'} yüklendi: ${req.file.originalname}` });
+        res.json({ ok: true, mesaj: 'Dosya yüklendi.', data: r.rows[0] });
+    } catch (e) { console.error('Proje dosya yükleme:', e); next(e); }
+});
+
+app.delete('/api/proje-dosya-sil/:dosyaId', yetkiKontrol, async (req, res, next) => {
+    if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
+    try {
+        const r = await pool.query('SELECT storage_path, dosya_adi FROM proje_dosyalari WHERE id=$1', [req.params.dosyaId]);
+        if (!r.rowCount) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
+        await supabaseStorage.storage.from(SIPARIS_BUCKET).remove([r.rows[0].storage_path]);
+        await pool.query('DELETE FROM proje_dosyalari WHERE id=$1', [req.params.dosyaId]);
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'proje_dosyalari', kayit_id: parseInt(req.params.dosyaId), ozet: `Proje dosyası silindi: ${r.rows[0].dosya_adi}` });
+        res.json({ ok: true, mesaj: 'Dosya silindi.' });
+    } catch (e) { next(e); }
+});
+
 app.post('/api/talep-dosya-yukle/:talepId', yetkiKontrol, dosyaUpload.single('dosya'), async (req, res, next) => {
     if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
     try {
@@ -5906,8 +5955,8 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/quick-search/, modul: 'anasayfa', seviye: 'OKUMA' },
 
     // Projeler
-    { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
-    { pattern: /^\/api\/(proje-kaydet|proje-sil|proje-onay|teslimat-durum)/, modul: 'projeler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat|proje-dosyalari)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
+    { pattern: /^\/api\/(proje-kaydet|proje-sil|proje-onay|proje-dosya|teslimat-durum)/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/proje-karlilik/, modul: 'rapor.karlilik', seviye: 'OKUMA' },
 
     // Bina Listeleri (Ürün Listesi)
@@ -8255,6 +8304,21 @@ async function semaGuvence() {
             )
         `);
         await pool.query(`CREATE INDEX IF NOT EXISTS idx_talep_dosyalari_talep ON talep_dosyalari(talep_id)`);
+        // Proje dosyaları: proje bazlı SÖZLEŞME + teslimat bazlı MİMARİ proje (PDF)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS proje_dosyalari (
+                id SERIAL PRIMARY KEY,
+                proje_id INTEGER NOT NULL REFERENCES projeler(id) ON DELETE CASCADE,
+                teslimat_id INTEGER REFERENCES proje_teslimatlari(id) ON DELETE CASCADE,
+                tur TEXT NOT NULL,
+                dosya_adi TEXT NOT NULL,
+                storage_path TEXT NOT NULL,
+                public_url TEXT,
+                mime_type TEXT, boyut INTEGER,
+                yukleyen_adsoyad TEXT, yukleyen_email TEXT,
+                kayit_tarihi TIMESTAMPTZ DEFAULT NOW()
+            )`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_proje_dosyalari_proje ON proje_dosyalari(proje_id)`);
 
         // Siparişi oluşturan kişi (PDF'te "Satınalma Yetkilisi" alanı için)
         await pool.query(`
