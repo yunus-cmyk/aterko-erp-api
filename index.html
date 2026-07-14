@@ -3489,7 +3489,7 @@ STK-002		50	adet
     </div>
 
     <!-- Teslimat durum seçimi (akordiyon satırındaki dropdown yerine — ekran ortasında, kesin görünür) -->
-    <!-- Proje dosyaları: Sözleşme (proje bazlı) / Mimari Proje (teslimat bazlı) — yalnız PDF -->
+    <!-- Proje dosyaları: Sözleşme (proje bazlı) / Mimari Proje (teslimat bazlı) — PDF/DWG/JPG/PNG/ZIP -->
     <div class="modal fade" id="modalProjeDosya" tabindex="-1">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -3499,8 +3499,8 @@ STK-002		50	adet
           </div>
           <div class="modal-body">
             <div class="row g-2 align-items-end mb-3 d-none" id="prjDosyaForm">
-              <div class="col-md-8"><label class="form-label small mb-0">PDF Dosyası</label>
-                <input id="prjDosyaInput" type="file" accept="application/pdf,.pdf" class="form-control form-control-sm"></div>
+              <div class="col-md-8"><label class="form-label small mb-0">Dosya (PDF, DWG, JPG, PNG, ZIP)</label>
+                <input id="prjDosyaInput" type="file" accept=".pdf,.dwg,.jpg,.jpeg,.png,.zip" class="form-control form-control-sm"></div>
               <div class="col-md-4"><button class="btn btn-sm btn-primary w-100" onclick="prjDosyaYukle()"><i class="bi bi-upload me-1"></i>Yükle</button></div>
             </div>
             <div id="prjDosyaListe"><div class="text-center text-muted py-3">Yükleniyor...</div></div>
@@ -13159,7 +13159,7 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
                 <div class="btn-group btn-group-sm">
                     <button class="btn btn-outline-primary py-0" onclick="openTeknikSartname(${t.id})" title="Teknik Şartname"><i class="bi bi-file-earmark-text"></i></button>
                     <button class="btn btn-outline-warning py-0" ${proje.durum === 'TASLAK' ? 'disabled title="İş emri için önce ADMIN proje onayı (Sözleşme) gerekli"' : `onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"`}><i class="bi bi-clipboard2-check"></i></button>
-                    <button class="btn btn-outline-info py-0" onclick="prjDosyaAc(${proje.id}, ${t.id}, 'MIMARI', '${escJs(t.bina_adi || '')} — Mimari Proje')" title="Mimari Proje (PDF)"><i class="bi bi-bounding-box"></i></button>
+                    <button class="btn btn-outline-info py-0" onclick="prjDosyaAc(${proje.id}, ${t.id}, 'MIMARI', '${escJs(t.bina_adi || '')} — Mimari Proje')" title="Mimari Proje Dosyaları"><i class="bi bi-bounding-box"></i></button>
                     <button class="btn btn-outline-dark py-0" ${proje.durum === 'TASLAK' ? 'disabled title="Teslimat durumları proje onaylanınca (SÖZLEŞME) yönetilir"' : `onclick="durumSecAc(${t.id}, '${escJs(t.durum || '')}', ${proje.id}, '${escJs(t.bina_adi || '')}')"`}>Durum</button>
                 </div>
             </td>
@@ -14184,7 +14184,7 @@ async function openProjeDuzenle(projeId) {
 let pdAktifProjeId = null;
 
 // ===== PROJE ONAY AKIŞI (TASLAK → SÖZLEŞME) — yalnız ADMIN =====
-// ---- Proje dosyaları: Sözleşme (proje) / Mimari Proje (teslimat) — yalnız PDF ----
+// ---- Proje dosyaları: Sözleşme (proje) / Mimari Proje (teslimat) — PDF/DWG/JPG/PNG/ZIP ----
 window._prjDosyaCtx = null;   // { projeId, teslimatId, tur }
 async function prjDosyaAc(projeId, teslimatId, tur, baslik) {
     window._prjDosyaCtx = { projeId, teslimatId, tur };
@@ -14211,7 +14211,7 @@ async function prjDosyaListele() {
         : `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light"><tr><th>Dosya</th><th>Boyut</th><th>Yükleyen</th><th>Tarih</th><th style="width:60px;"></th></tr></thead>
             <tbody>${liste.map(d => `<tr>
-                <td><a href="${esc(d.public_url)}" target="_blank" rel="noopener" class="text-decoration-none"><i class="bi bi-file-earmark-pdf text-danger me-1"></i>${esc(d.dosya_adi)}</a></td>
+                <td><a href="${esc(d.public_url)}" target="_blank" rel="noopener" class="text-decoration-none"><i class="bi ${/\.pdf$/i.test(d.dosya_adi) ? 'bi-file-earmark-pdf text-danger' : /\.(jpe?g|png)$/i.test(d.dosya_adi) ? 'bi-file-earmark-image text-primary' : /\.zip$/i.test(d.dosya_adi) ? 'bi-file-earmark-zip text-warning' : 'bi-file-earmark-ruled text-secondary'} me-1"></i>${esc(d.dosya_adi)}</a></td>
                 <td class="small">${d.boyut ? (d.boyut / 1048576).toFixed(2) + ' MB' : '-'}</td>
                 <td class="small">${esc(d.yukleyen_adsoyad || '-')}</td>
                 <td class="small">${formatTarihTR(d.kayit_tarihi)}</td>
@@ -14549,7 +14549,7 @@ function renderProjeDetay(proje, teslimatlar) {
         <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-person-badge me-1"></i>Satış Temsilcisi</span><span class="fw-bold text-dark">${esc(proje.satis_temsilcisi || '-')}</span></div></div>
         <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-link-45deg me-1"></i>ASET</span>${proje.aset_link ? `<a class="fw-bold small text-decoration-none" target="_blank" rel="noopener" href="${esc(proje.aset_link)}">${esc(proje.aset_link)}</a>` : '<span class="text-muted">-</span>'}</div></div>
         <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-google me-1"></i>DRIVE</span>${proje.drive_link ? `<a class="fw-bold small text-decoration-none" target="_blank" rel="noopener" href="${esc(proje.drive_link)}">${esc(proje.drive_link)}</a>` : '<span class="text-muted">-</span>'}</div></div>
-        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-file-earmark-pdf me-1"></i>Sözleşme (PDF)</span>
+        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-file-earmark-pdf me-1"></i>Sözleşme</span>
             <button class="btn btn-sm btn-outline-primary py-0" onclick="prjDosyaAc(${proje.id}, null, 'SOZLESME', '${escJs(proje.proje_kodu || '')} Sözleşme Dosyaları')"><i class="bi bi-folder2-open me-1"></i>Görüntüle / Yükle</button></div></div>
 
         <div class="col-12 mt-2">

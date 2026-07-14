@@ -4409,8 +4409,9 @@ app.post('/api/proje-dosya-yukle', yetkiKontrol, dosyaUpload.single('dosya'), as
         if (!tur || !proje_id) return res.json({ ok: false, hata: 'Proje ve dosya türü gerekli.' });
         if (tur === 'MIMARI' && !teslimat_id) return res.json({ ok: false, hata: 'Mimari proje teslimat (bina) bazlıdır — teslimat seçilmedi.' });
         if (!req.file) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
-        const pdfMi = req.file.mimetype === 'application/pdf' || /\.pdf$/i.test(req.file.originalname);
-        if (!pdfMi) return res.json({ ok: false, hata: 'Yalnız PDF dosyası yüklenebilir.' });
+        // İzinli biçimler: PDF, DWG (AutoCAD), JPG/JPEG, PNG, ZIP
+        if (!/\.(pdf|dwg|jpe?g|png|zip)$/i.test(req.file.originalname))
+            return res.json({ ok: false, hata: 'İzinli dosya biçimleri: PDF, DWG, JPG, PNG, ZIP.' });
         const pR = await pool.query('SELECT proje_kodu FROM projeler WHERE id=$1', [proje_id]);
         if (!pR.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
         const safeName = req.file.originalname.replace(/[^A-Za-z0-9._\-]/g, '_');
