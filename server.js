@@ -4037,6 +4037,30 @@ app.post('/api/siparis-tamamen-sil', yetkiKontrol, async (req, res, next) => {
 
 // MAL KABUL: Otomatik Stok Hareketi + Kısmi Teslim + Tam Teslim Otomasyonu
 // Body: { siparis_id, depo_id (opsiyonel), kalemler: [{ siparis_kalem_id, miktar, stok_kart_id, aciklama }] }
+// Mal kabul geçmişi: hangi tarihte, kim, hangi siparişten ne kadar ürün teslim aldı
+app.get('/api/mal-kabul-gecmisi', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT mk.id, mk.kayit_tarihi, mk.teslim_alinan_miktar, mk.yonlendirme, mk.teslimat_notu,
+                   mk.kullanici_adsoyad, d.ad AS depo_adi,
+                   s.id AS siparis_id, s.siparis_no, COALESCE(s.para_birimi, 'TL') AS para_birimi,
+                   ted.firma_adi AS tedarikci,
+                   COALESCE(stk.stok_adi, tu.ozel_urun_adi, '-') AS urun_adi,
+                   COALESCE(stk.birim, tu.ozel_urun_birim, '') AS birim,
+                   sk.birim_fiyat
+            FROM mal_kabul_loglari mk
+            JOIN siparis_kalemleri sk ON mk.siparis_kalem_id = sk.id
+            JOIN satinalma_siparisleri s ON sk.siparis_id = s.id
+            LEFT JOIN tedarikciler ted ON s.tedarikci_id = ted.id
+            JOIN talep_urunleri tu ON sk.talep_urun_id = tu.id
+            LEFT JOIN stok_kartlari stk ON tu.stok_kart_id = stk.id
+            LEFT JOIN depolar d ON mk.depo_id = d.id
+            ORDER BY mk.kayit_tarihi DESC, mk.id DESC
+            LIMIT 1000`);
+        res.json({ ok: true, data: r.rows });
+    } catch (e) { next(e); }
+});
+
 app.post('/api/siparis-teslim-al', yetkiKontrol, async (req, res, next) => {
     const client = await pool.connect();
     try {
@@ -5911,6 +5935,7 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/(siparis-kaydet|siparis-guncelle|siparis-onayla|siparis-gonder|siparis-iptal|siparis-arsivle|siparis-gerial|siparis-dosya-yukle|siparis-dosya-sil)/, modul: 'satinalma.siparisler', seviye: 'TAM' },
 
     // Satınalma — Mal Kabul
+    { pattern: /^\/api\/mal-kabul-gecmisi/, method: 'GET', modul: 'satinalma.mal_kabul', seviye: 'OKUMA' },
     { pattern: /^\/api\/mal-kabul/, modul: 'satinalma.mal_kabul', seviye: 'YAZMA' },
 
     // Tedarikçiler

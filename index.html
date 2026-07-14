@@ -660,6 +660,9 @@
             <button class="btn btn-outline-dark" id="btnSubSiparisler" onclick="switchSatinalmaSubTab('siparisler')">
                 <i class="bi bi-file-earmark-text-fill me-1"></i> Sipariş Listesi (PO)
             </button>
+            <button class="btn btn-outline-dark" id="btnSubMalKabul" onclick="switchSatinalmaSubTab('malkabul')">
+                <i class="bi bi-box-arrow-in-down me-1"></i>Mal Kabul
+            </button>
             <button class="btn btn-outline-dark" id="btnSubTedarikciler" onclick="switchSatinalmaSubTab('tedarikciler')">
                 <i class="bi bi-shop me-1"></i> Tedarikçiler
             </button>
@@ -789,6 +792,25 @@
 
     <div id="satinalmaSiparislerDiv" class="d-none">
         <div id="siparisTableBody"></div>
+    </div>
+
+    <!-- Mal Kabul geçmişi: kim, ne zaman, hangi siparişten ne kadar teslim aldı -->
+    <div id="satinalmaMalKabulDiv" class="d-none">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <input id="mkgAra" class="form-control form-control-sm" style="max-width:300px;" placeholder="Sipariş no / tedarikçi / ürün / kişi ara..." oninput="malKabulGecmisiRender()">
+        <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Teslim alma kayıtları — satıra tıklayınca sipariş detayı açılır.</small>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+          <thead class="table-light"><tr>
+            <th>Tarih</th><th>Sipariş No</th><th>Tedarikçi</th><th>Ürün</th>
+            <th class="text-end">Miktar</th><th class="text-end">Tutar</th>
+            <th>Depo / Yönlendirme</th><th>Teslim Alan</th><th>Not</th>
+          </tr></thead>
+          <tbody id="mkgTbody"><tr><td colspan="9" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
+          <tfoot id="mkgTfoot" class="fw-bold"></tfoot>
+        </table>
+      </div>
     </div>
 
     <div id="satinalmaArsivDiv" class="d-none">
@@ -3970,6 +3992,7 @@ function izinleriUygula() {
         'btnSubTeklif':       'satinalma.teklif',    // Teklif Havuzu — talepten ayrı izin satırı
         'btnSubSiparisler':   'satinalma.siparisler',
         'btnSubTedarikciler': 'satinalma.tedarikci',
+        'btnSubMalKabul':     'satinalma.mal_kabul',
         'btnSubArsiv':        'satinalma.arsiv'      // Arşiv — ayrı izin satırı (sipariş tutarları içerir)
     };
     for (const [btnId, modul] of Object.entries(altSekmeMap)) {
@@ -10776,6 +10799,7 @@ function switchSatinalmaSubTab(target) {
         teklif:   document.getElementById("satinalmaTeklifDiv"),
         siparisler: document.getElementById("satinalmaSiparislerDiv"),
         tedarikciler: document.getElementById("tedarikciArea"),
+        malkabul: document.getElementById("satinalmaMalKabulDiv"),
         arsiv:    document.getElementById("satinalmaArsivDiv")
     };
     const btns = {
@@ -10784,6 +10808,7 @@ function switchSatinalmaSubTab(target) {
         teklif:   document.getElementById("btnSubTeklif"),
         siparisler: document.getElementById("btnSubSiparisler"),
         tedarikciler: document.getElementById("btnSubTedarikciler"),
+        malkabul: document.getElementById("btnSubMalKabul"),
         arsiv:    document.getElementById("btnSubArsiv")
     };
     const btnYeniTalep = document.getElementById("btnYeniTalepUst");
@@ -10808,6 +10833,8 @@ function switchSatinalmaSubTab(target) {
         fetchTeklifHavuzu();
     } else if (target === 'siparisler') {
         fetchSiparisListesi();
+    } else if (target === 'malkabul') {
+        malKabulGecmisiYukle();
     } else if (target === 'tedarikciler') {
         btnYeniTedarikci.classList.remove("d-none");
         if (typeof fetchTedarikciler === 'function') fetchTedarikciler();
@@ -11274,6 +11301,50 @@ async function satinalmaTimelineYukle(tur, id, containerId) {
 // kapatır, O AN AÇIK satınalma alt-sekmesini yeniler ve — istenirse — ilgili kaydın
 // DETAY modalını güncel veriyle yeniden açar (ekran "kapanıp güncel detaya düşer").
 // reAcTur: 'siparis' | 'talep' | yok (yok → sadece listeye dön; arşiv/iptal/yeni için).
+// ---- Mal Kabul Geçmişi (kim, ne zaman, ne kadar teslim aldı) ----
+async function malKabulGecmisiYukle() {
+    const r = await secureFetch('/mal-kabul-gecmisi');
+    if (!r.ok) return showToast(r.hata || 'Mal kabul geçmişi yüklenemedi.', 'error');
+    window._malKabulGecmisi = r.data || [];
+    malKabulGecmisiRender();
+}
+
+function malKabulGecmisiRender() {
+    const q = (document.getElementById('mkgAra').value || '').toLocaleLowerCase('tr');
+    const liste = (window._malKabulGecmisi || []).filter(k => !q ||
+        [k.siparis_no, k.tedarikci, k.urun_adi, k.kullanici_adsoyad, k.depo_adi, k.teslimat_notu]
+            .some(v => (v || '').toLocaleLowerCase('tr').includes(q)));
+    const tb = document.getElementById('mkgTbody');
+    if (!liste.length) {
+        tb.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Kayıt yok.</td></tr>';
+        document.getElementById('mkgTfoot').innerHTML = '';
+        return;
+    }
+    const YON_AD = { 'STOĞA': 'Stoğa', 'ÜRETİME': 'Üretime', 'DİREKT_SEVKIYAT': 'Direkt Sevkiyat' };
+    const tutarlar = {};   // para birimi bazında toplam
+    tb.innerHTML = liste.map(k => {
+        const miktar = parseFloat(k.teslim_alinan_miktar) || 0;
+        const tutar = miktar * (parseFloat(k.birim_fiyat) || 0);
+        tutarlar[k.para_birimi] = (tutarlar[k.para_birimi] || 0) + tutar;
+        return `<tr style="cursor:pointer;" onclick="openSiparisDetayModal(${k.siparis_id})">
+            <td class="text-nowrap">${formatTarihTR(k.kayit_tarihi)} <span class="text-muted small">${new Date(k.kayit_tarihi).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span></td>
+            <td class="fw-semibold">${esc(k.siparis_no)}</td>
+            <td>${esc(k.tedarikci || '-')}</td>
+            <td>${esc(k.urun_adi)}</td>
+            <td class="text-end">${formatTR(miktar)} ${esc(k.birim || '')}</td>
+            <td class="text-end">${tutar > 0 ? formatTR(tutar) + ' ' + esc(k.para_birimi) : '-'}</td>
+            <td class="small">${esc(k.depo_adi || '')}${k.depo_adi ? ' · ' : ''}${YON_AD[k.yonlendirme] || esc(k.yonlendirme || '-')}</td>
+            <td>${esc(k.kullanici_adsoyad || '-')}</td>
+            <td class="small text-muted">${esc(k.teslimat_notu || '')}</td>
+        </tr>`;
+    }).join('');
+    const toplamMetni = Object.entries(tutarlar).filter(([, v]) => v > 0)
+        .map(([pb, v]) => formatTR(v) + ' ' + pb).join(' + ') || '-';
+    document.getElementById('mkgTfoot').innerHTML =
+        `<tr class="table-light"><td colspan="5" class="text-end">TOPLAM (${liste.length} teslim alma):</td>
+         <td class="text-end">${toplamMetni}</td><td colspan="3"></td></tr>`;
+}
+
 function satinalmaIslemSonrasi(reAcTur, reAcId) {
     ['modalSiparisDetay', 'modalTalepDetay', 'modalSiparisOlustur', 'modalYeniTalep', 'modalSiparisTeslimAl'].forEach(id => {
         const el = document.getElementById(id);
