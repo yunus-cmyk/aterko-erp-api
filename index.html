@@ -14744,7 +14744,10 @@ function addTeslimatRow(data) {
     div.innerHTML = `
         <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
             <span class="fw-bold text-dark small"><i class="bi bi-building me-1 text-primary"></i>Teslimat ${teslimatId ? '#' + teslimatId : '(Yeni)'}</span>
-            <button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('.teslimat-row').remove()"><i class="bi bi-trash"></i></button>
+            <span class="d-flex gap-1">
+                ${teslimatId ? `<button type="button" class="btn btn-sm btn-outline-info py-0" title="Mimari Proje (PDF)" onclick="prjDosyaAc(duzenlenenProjeId, ${teslimatId}, 'MIMARI', (this.closest('.teslimat-row').querySelector('.t-ad').value || 'Teslimat #${teslimatId}') + ' — Mimari Proje')"><i class="bi bi-bounding-box"></i> Mimari PDF</button>` : '<span class="small text-muted me-2" title="Mimari proje yüklemek için önce teslimatı kaydedin">Mimari PDF: önce kaydedin</span>'}
+                <button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="this.closest('.teslimat-row').remove()"><i class="bi bi-trash"></i></button>
+            </span>
         </div>
         <div class="card-body p-3 row g-3">
             <div class="col-md-3">
