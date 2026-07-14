@@ -796,9 +796,8 @@
 
     <!-- Mal Kabul geçmişi: kim, ne zaman, hangi siparişten ne kadar teslim aldı -->
     <div id="satinalmaMalKabulDiv" class="d-none">
-      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <input id="mkgAra" class="form-control form-control-sm" style="max-width:300px;" placeholder="Sipariş no / tedarikçi / ürün / kişi ara..." oninput="malKabulGecmisiRender()">
-        <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Teslim alma kayıtları — satıra tıklayınca sipariş detayı açılır.</small>
+      <div class="text-end mb-2">
+        <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Teslim alma kayıtları — üstteki ortak arama kutusuyla süzülür; satıra tıklayınca sipariş detayı açılır.</small>
       </div>
       <div class="table-responsive">
         <table class="table table-sm table-hover align-middle">
@@ -10789,6 +10788,7 @@ function satinalmaGlobalAramaDegisti() {
     else if (sekme === 'siparisler') renderSiparisTableFiltered();
     else if (sekme === 'teklif') renderTeklifHavuzu(window.teklifHavuzuCache || []);
     else if (sekme === 'arsiv') renderArsivFiltered();
+    else if (sekme === 'malkabul') malKabulGecmisiRender();
 }
 
 function switchSatinalmaSubTab(target) {
@@ -11310,10 +11310,11 @@ async function malKabulGecmisiYukle() {
 }
 
 function malKabulGecmisiRender() {
-    const q = (document.getElementById('mkgAra').value || '').toLocaleLowerCase('tr');
+    // Ortak (sticky) satınalma araması bu sekmeyi de süzer
+    const q = trAra(document.getElementById('satinalmaGlobalArama')?.value || '');
     const liste = (window._malKabulGecmisi || []).filter(k => !q ||
         [k.siparis_no, k.tedarikci, k.urun_adi, k.kullanici_adsoyad, k.depo_adi, k.teslimat_notu]
-            .some(v => (v || '').toLocaleLowerCase('tr').includes(q)));
+            .some(v => trAra(v).includes(q)));
     const tb = document.getElementById('mkgTbody');
     if (!liste.length) {
         tb.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Kayıt yok.</td></tr>';
