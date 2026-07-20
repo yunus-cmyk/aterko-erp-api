@@ -3248,7 +3248,7 @@ function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, 
   <div style="max-width:660px;margin:0 auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.08);">
     <div style="border-bottom:3px solid #ff4c00;padding:20px 26px;">
       <table style="width:100%;border-collapse:collapse;"><tr>
-        <td style="vertical-align:top;"><img src="https://www.aterko.com/wp-content/uploads/2022/07/aterko-logo-dark.png" alt="ATERKO" height="34" style="height:34px;width:auto;display:block;border:0;"></td>
+        <td style="vertical-align:top;"><img src="https://workspace.aterko.com/assets/aterko-logo-dark.png" alt="ATERKO" height="34" style="height:34px;width:auto;display:block;border:0;"></td>
         <td style="text-align:right;vertical-align:top;"><div style="font-size:16px;font-weight:700;color:#ff4c00;">TEKLİF TALEBİ</div><div style="font-size:12px;font-weight:600;color:#212529;">${esc2(talepEtiket)}</div></td>
       </tr></table>
     </div>
@@ -3313,7 +3313,7 @@ function bildirimMailHTML({ baslik, mesaj, detaylar, kalemler }) {
     return `
     <div style="max-width:580px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;background:#fff;border:1px solid #e9ecef;border-radius:8px;overflow:hidden;">
       <div style="padding:18px 26px;border-bottom:3px solid #ff4c00;">
-        <img src="https://www.aterko.com/wp-content/uploads/2022/07/aterko-logo-dark.png" alt="ATERKO" height="30" style="height:30px;width:auto;display:block;border:0;">
+        <img src="https://workspace.aterko.com/assets/aterko-logo-dark.png" alt="ATERKO" height="30" style="height:30px;width:auto;display:block;border:0;">
       </div>
       <div style="padding:24px 26px;">
         <div style="font-size:17px;font-weight:700;color:#212529;margin-bottom:10px;">${esc2(baslik)}</div>
