@@ -152,7 +152,7 @@
           </select>
         </div>
         <div class="modal-footer bg-white">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
           <button type="button" class="btn fw-bold px-4 text-white" style="background:#6f42c1;" onclick="simulasyonBaslat()">
             <i class="bi bi-check2-circle me-1"></i>Uygula
           </button>
@@ -475,7 +475,7 @@
                 </div>
                 <select id="tedarikciDurumFiltre" class="form-select form-select-sm" style="width:140px;" onchange="renderTedarikciTable()">
                     <option value="">Tüm Durumlar</option>
-                    <option value="AKTİF" selected>Aktif</option>
+                    <option value="AKTIF" selected>Aktif</option>
                     <option value="PASİF">Pasif</option>
                 </select>
                 <span class="text-muted small ms-auto" id="tedarikciSayacLabel"></span>
@@ -505,7 +505,7 @@
     </div>
 
     <!-- TEDARİKÇİ MODAL -->
-    <div class="modal fade" id="modalTedarikci" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalTedarikci" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-primary text-white">
@@ -522,7 +522,7 @@
               <div class="col-md-4">
                 <label class="small fw-bold text-muted mb-1">Durum</label>
                 <select id="tdDurum" class="form-select form-select-sm">
-                  <option value="AKTİF">Aktif</option>
+                  <option value="AKTIF">Aktif</option>
                   <option value="PASİF">Pasif</option>
                 </select>
               </div>
@@ -579,8 +579,8 @@
       </div>
     </div>
 
-    <div class="modal fade" id="modalStokHareket" tabindex="-1" data-bs-backdrop="static">
-      <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal fade" id="modalStokHareket" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title fw-bold"><i class="bi bi-arrow-left-right me-2"></i><span id="shModalBaslik">Yeni Stok Hareketi</span></h5>
@@ -1067,7 +1067,7 @@
     </div>
 
     <!-- Uygulama Kaydet Modal -->
-    <div class="modal fade" id="modalMontajUygulama" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalMontajUygulama" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3" style="background:#6f42c1; color:white;">
@@ -1100,7 +1100,7 @@
             </div>
           </div>
           <div class="modal-footer bg-white">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
             <button type="button" class="btn fw-bold px-4 text-white" style="background:#6f42c1;" onclick="montajUygulamaOnayla()">
               <i class="bi bi-check2-circle me-1"></i>Uygulamayı Kaydet
             </button>
@@ -1110,7 +1110,7 @@
     </div>
 
     <!-- Sevkiyat Belgesi Oluştur Modal -->
-    <div class="modal fade" id="modalSevkiyatBelgesi" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalSevkiyatBelgesi" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-primary text-white">
@@ -1164,7 +1164,7 @@
             </div>
           </div>
           <div class="modal-footer bg-white">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
             <button type="button" class="btn btn-primary fw-bold px-4" onclick="sevkiyatBelgesiOnayla()">
               <i class="bi bi-check2-circle me-1"></i>Sevkiyat Belgesini Oluştur
             </button>
@@ -1174,7 +1174,7 @@
     </div>
 
     <!-- Sevkiyat Belgesi Detay Modal -->
-    <div class="modal fade" id="modalSevkiyatDetay" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalSevkiyatDetay" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-dark text-white">
@@ -1259,7 +1259,7 @@
     </div>
 
     <!-- Kullanıcı Ekle/Düzenle Modal -->
-    <div class="modal fade" id="modalKullanici" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalKullanici" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-md modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-dark text-white">
@@ -1300,7 +1300,7 @@
                 </div>
                 <div class="modal-footer bg-white">
                     <button id="kulSilBtn" type="button" class="btn btn-outline-danger me-auto d-none" onclick="kullaniciSil()"><i class="bi bi-trash me-1"></i>Sil</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
                     <button type="button" class="btn btn-dark fw-bold px-4" onclick="kullaniciKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                 </div>
             </div>
@@ -1472,7 +1472,7 @@
     </div>
 
     <!-- Rol Ekle/Düzenle Modal -->
-    <div class="modal fade" id="modalRol" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalRol" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-md modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-dark text-white">
@@ -1493,7 +1493,7 @@
                 </div>
                 <div class="modal-footer bg-white">
                     <button id="rolSilBtn" type="button" class="btn btn-outline-danger me-auto d-none" onclick="rolSil()"><i class="bi bi-trash me-1"></i>Sil</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
                     <button type="button" class="btn btn-dark fw-bold px-4" onclick="rolKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                 </div>
             </div>
@@ -1691,7 +1691,7 @@
         </div>
     </div>
 
-    <div class="modal fade" id="modalFormTanimi" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalFormTanimi" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-dark text-white">
@@ -1780,7 +1780,7 @@
                     </div>
                 </div>
                 <div class="modal-footer bg-white">
-                    <button class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
                     <button class="btn btn-dark fw-bold px-4" onclick="formTanimiKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                 </div>
             </div>
@@ -1862,7 +1862,7 @@
     </div>
 
     <!-- Görev Düzenle Modal -->
-    <div class="modal fade" id="modalGorevDuzenle" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+    <div class="modal fade" id="modalGorevDuzenle" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false"><div class="modal-dialog"><div class="modal-content">
         <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Görev Düzenle</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <input type="hidden" id="gdId">
@@ -1887,7 +1887,7 @@
             </div>
             <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Bitiş tarihini değiştirirsen ledger izi için otomatik not düşülür.</div>
         </div>
-        <div class="modal-footer py-2"><button id="gdSilBtn" class="btn btn-sm btn-outline-danger me-auto d-none" onclick="gorevSil()"><i class="bi bi-trash me-1"></i>Kalıcı Sil</button><button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">İptal</button><button class="btn btn-sm btn-primary" onclick="gorevDuzenleKaydet()">Kaydet</button></div>
+        <div class="modal-footer py-2"><button id="gdSilBtn" class="btn btn-sm btn-outline-danger me-auto d-none" onclick="gorevSil()"><i class="bi bi-trash me-1"></i>Kalıcı Sil</button><button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Vazgeç</button><button class="btn btn-sm btn-primary" onclick="gorevDuzenleKaydet()">Kaydet</button></div>
     </div></div></div>
 
     <div id="auditArea" class="d-none p-3">
@@ -2154,7 +2154,7 @@
     </div>
 
     <!-- İş Emri Oluştur Modal -->
-    <div class="modal fade" id="modalIsEmriOlustur" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalIsEmriOlustur" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-warning">
@@ -2198,7 +2198,7 @@
             </div>
           </div>
           <div class="modal-footer bg-white">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
             <button type="button" class="btn btn-warning fw-bold px-4" onclick="isEmriOlusturOnayla()">
               <i class="bi bi-check2-circle me-1"></i>İş Emrini Oluştur
             </button>
@@ -2208,7 +2208,7 @@
     </div>
 
     <!-- Stoktan Karşıla Modal -->
-    <div class="modal fade" id="modalStoktanKarsila" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalStoktanKarsila" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-info text-white">
@@ -2237,7 +2237,7 @@
             </div>
           </div>
           <div class="modal-footer bg-white">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
             <button type="button" class="btn btn-info fw-bold px-4 text-white" onclick="stoktanKarsilaOnayla()">
               <i class="bi bi-check2-circle me-1"></i>Stoktan Ayır
             </button>
@@ -2247,7 +2247,7 @@
     </div>
 
     <!-- Üretim → Satınalma Talebi Modal -->
-    <div class="modal fade" id="modalUretimSatinalma" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalUretimSatinalma" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-success text-white">
@@ -2293,7 +2293,7 @@
             </div>
           </div>
           <div class="modal-footer bg-white">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
             <button type="button" class="btn btn-success fw-bold px-4" onclick="urtSatinalmaOnayla()">
               <i class="bi bi-check2-circle me-1"></i>Talep(leri) Oluştur
             </button>
@@ -2303,7 +2303,7 @@
     </div>
 
     <!-- İş Emri Detay Modal -->
-    <div class="modal fade" id="modalIsEmriDetay" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalIsEmriDetay" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-dark text-white">
@@ -2623,7 +2623,7 @@
   </div>
 
     <!-- Liste Kopyala Modal -->
-    <div class="modal fade" id="modalListeKopyala" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalListeKopyala" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-primary text-white">
@@ -2664,7 +2664,7 @@
                     </div>
                 </div>
                 <div class="modal-footer bg-white">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
                     <button type="button" class="btn btn-primary fw-bold px-4" onclick="listeKopyalaOnayla()">
                         <i class="bi bi-clipboard2-check me-1"></i>Seçili Listeyi Kopyala
                     </button>
@@ -2674,7 +2674,7 @@
     </div>
 
     <!-- Liste Import Modal -->
-    <div class="modal fade" id="modalListeImport" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalListeImport" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-success text-white">
@@ -2695,7 +2695,7 @@ STK-002		50	adet
                     <div id="liImportOnizleme" class="mt-3"></div>
                 </div>
                 <div class="modal-footer bg-white">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
                     <button type="button" class="btn btn-outline-info" onclick="liImportOnizle()">
                         <i class="bi bi-eye me-1"></i>Önizle
                     </button>
@@ -2708,7 +2708,7 @@ STK-002		50	adet
     </div>
 
     <!-- Versiyon Geçmişi Modal -->
-    <div class="modal fade" id="modalVersiyon" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalVersiyon" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-dark text-white">
@@ -2740,7 +2740,7 @@ STK-002		50	adet
     </div>
 
   <!-- Ürün Listesi → Satınalma Talebi Oluşturma Modal'ı -->
-  <div class="modal fade" id="modalTalepOlustur" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalTalepOlustur" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content border-0 shadow-lg">
         <div class="modal-header py-3 bg-success text-white">
@@ -2791,7 +2791,7 @@ STK-002		50	adet
           </div>
         </div>
         <div class="modal-footer bg-white">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
           <button type="button" class="btn btn-success fw-bold px-4" onclick="talepOlusturOnayla()">
             <i class="bi bi-check2-circle me-1"></i>Talebi Oluştur
           </button>
@@ -2801,7 +2801,7 @@ STK-002		50	adet
   </div>
 
 <div class="modal fade" id="modalYeniTalep" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-        <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
           <div class="modal-content border-0 shadow-lg">
             
             <div class="modal-header py-3 border-bottom border-2 border-primary bg-light">
@@ -2882,8 +2882,8 @@ STK-002		50	adet
           </div>
         </div>
     </div>
-  <div class="modal fade" id="modalTalepDetay" tabindex="-1" data-bs-backdrop="static">
-        <div class="modal-dialog modal-xl modal-dialog-centered">
+  <div class="modal fade" id="modalTalepDetay" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold" id="dtModalTitle">Talep İnceleme</h5>
@@ -2950,8 +2950,8 @@ STK-002		50	adet
             </div>
         </div>
     </div>
-  <div class="modal fade" id="modalSiparisOlustur" tabindex="-1" data-bs-backdrop="static">
-        <div class="modal-dialog modal-xl modal-dialog-centered">
+  <div class="modal fade" id="modalSiparisOlustur" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-primary text-white">
                     <h5 class="modal-title fw-bold"><i class="bi bi-currency-dollar me-2"></i>Yeni Satınalma Siparişi Düzenle</h5>
@@ -3033,7 +3033,7 @@ STK-002		50	adet
                     </div>
 
                     <!-- Cross-Talep Picker Modal (inline alt-modal) -->
-                    <div class="modal fade" id="modalCrossTalep" tabindex="-1">
+                    <div class="modal fade" id="modalCrossTalep" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
                       <div class="modal-dialog modal-lg modal-dialog-centered">
                         <div class="modal-content">
                           <div class="modal-header py-2 bg-info text-dark">
@@ -3062,7 +3062,7 @@ STK-002		50	adet
         </div>
     </div>
   <!-- TEKLİF İSTE MODALI -->
-  <div class="modal fade" id="modalTeklifIste" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalTeklifIste" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content border-0 shadow-lg">
         <div class="modal-header py-3 bg-warning text-dark">
@@ -3116,7 +3116,7 @@ STK-002		50	adet
 
   <!-- SİPARİŞ DETAY MODALI (salt-okunur özet) -->
   <!-- Teklif Kayıtları Modal -->
-  <div class="modal fade" id="modalTeklifKayitlari" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalTeklifKayitlari" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content border-0 shadow-lg">
         <div class="modal-header py-3 bg-warning">
@@ -3223,7 +3223,7 @@ STK-002		50	adet
     </div>
   </div>
 
-  <div class="modal fade" id="modalSiparisTeslimAl" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalSiparisTeslimAl" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-success text-white">
@@ -3270,7 +3270,7 @@ STK-002		50	adet
             </div>
         </div>
     </div>
-  <div class="modal fade" id="modalStokKart" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalStokKart" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-md modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-primary text-white">
@@ -3355,7 +3355,7 @@ STK-002		50	adet
         </div>
     </div>
     
-    <div class="modal fade" id="modalYeniProje" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalYeniProje" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header py-3 bg-dark text-white">
@@ -3443,7 +3443,7 @@ STK-002		50	adet
     </div>
 </div>
 
-    <div class="modal fade" id="modalTeknikSartname" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalTeknikSartname" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-dark text-white">
@@ -3522,7 +3522,7 @@ STK-002		50	adet
     </div>
 
     <!-- Mali İşler — cari kart (tedarikçi/müşteri) -->
-    <div class="modal fade" id="modalMaliKart" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalMaliKart" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header text-white" style="background:#198754;">
@@ -3535,7 +3535,7 @@ STK-002		50	adet
     </div>
 
     <!-- Mali İşler — planla / gerçekleştir (Faz 2) -->
-    <div class="modal fade" id="modalMaliIslem" tabindex="-1">
+    <div class="modal fade" id="modalMaliIslem" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header text-white" style="background:#198754;">
@@ -3572,7 +3572,7 @@ STK-002		50	adet
     </div>
 
     <!-- Mali İşler — Diğer Ödemeler (kart dışı giderler: maaş vb.) -->
-    <div class="modal fade" id="modalMaliGider" tabindex="-1">
+    <div class="modal fade" id="modalMaliGider" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-header text-white" style="background:#6c757d;">
@@ -3600,7 +3600,7 @@ STK-002		50	adet
     </div>
 
     <!-- Mali İşler — hızlı taksitlendirme (devir borcu/alacağı için) -->
-    <div class="modal fade" id="modalMaliTaksit" tabindex="-1">
+    <div class="modal fade" id="modalMaliTaksit" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header text-white" style="background:#0d6efd;">
@@ -3634,7 +3634,7 @@ STK-002		50	adet
     </div>
 
     <!-- Mali İşler — hareket düzeltme (yalnız gerçekleşmemiş kalemler) -->
-    <div class="modal fade" id="modalMaliDuzenle" tabindex="-1">
+    <div class="modal fade" id="modalMaliDuzenle" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Hareket Düzelt</h5>
@@ -3683,7 +3683,7 @@ STK-002		50	adet
     </div>
 
     <!-- Mali İşler — ayarlar (mühlet tarihi, kasa açılışı) — yalnız ADMIN -->
-    <div class="modal fade" id="modalMaliAyar" tabindex="-1">
+    <div class="modal fade" id="modalMaliAyar" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear me-2"></i>Mali İşler Ayarları</h5>
@@ -3723,7 +3723,7 @@ STK-002		50	adet
       </div>
     </div>
 
-    <div class="modal fade" id="modalTeslimatIsEmri" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalTeslimatIsEmri" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 text-white" style="background:#4b0082;">
@@ -3740,7 +3740,7 @@ STK-002		50	adet
         </div>
     </div>
 
-    <div class="modal fade" id="modalProjeDetay" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal fade" id="modalProjeDetay" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header py-3 bg-light border-bottom">
@@ -4828,7 +4828,9 @@ async function maliHareketEkle() {
 
 async function maliHareketSil(id) {
     if (!confirm('Bu hareket silinsin mi? (İz audit kaydında kalır)')) return;
+    showLoading();
     const r = await secureFetch('/mali-hareket-sil', { method: 'POST', body: JSON.stringify({ id }) });
+    hideLoading();
     if (!r.ok) return showToast(r.hata || 'Silinemedi.', 'error');
     showToast('Hareket silindi.', 'success');
     const k = window._maliKart;
@@ -5126,7 +5128,9 @@ function maliHareketDurumHTML(h, yazma) {
 // Gerçekleşmeyi geri al (TAM yetki)
 async function maliGeriAl(id) {
     if (!confirm('Gerçekleşme geri alınsın mı? Otomatik oluşan ödeme/tahsilat kaydı da silinir.')) return;
+    showLoading();
     const r = await secureFetch('/mali-hareket-geri-al', { method: 'POST', body: JSON.stringify({ id }) });
+    hideLoading();
     if (!r.ok) return showToast(r.hata || 'Geri alınamadı.', 'error');
     showToast(r.mesaj || 'Geri alındı.', 'success');
     const k = window._maliKart;
@@ -6063,7 +6067,9 @@ async function formTanimiKaydet() {
 
 async function formTanimiSil(id) {
     if (!confirm('Bu soru silinecek. Devam?')) return;
+    showLoading();
     const r = await secureFetch('/form-tanimi-sil/' + id, { method:'DELETE' });
+    hideLoading();
     if (r.ok) { showToast(r.mesaj, 'success'); formTanimlariYukle(); }
     else showToast(r.hata, 'error');
 }
@@ -6185,7 +6191,9 @@ async function tsTurSifirla() {
     const bt = document.getElementById('tsBinaTur').value;
     if (!confirm(`"${bt}" türündeki TÜM form soruları ve teknik şartname şablonu silinecek. Sonrasında Prefabrik'ten yeniden çoğaltabilirsiniz.\n\nDevam edilsin mi?`)) return;
     if (!confirm(`Son onay: "${bt}" içeriği tamamen silinecek (geri alınamaz).`)) return;
+    saAksiyonBaslat('İşlem yapılıyor…');
     const r = await secureFetch('/teknik-sartname-turu-sifirla/' + encodeURIComponent(bt), { method: 'DELETE' });
+    saAksiyonBitir();
     if (r && r.ok) { showToast(r.mesaj || 'Sıfırlandı', 'success'); tsSablonYukle(); }
     else showToast((r && r.hata) || 'Sıfırlama hatası', 'error');
 }
@@ -6236,7 +6244,9 @@ async function tsBolumSil(bolumNo) {
     const say = tsSablonCache.filter(s => s.bolum_no === bolumNo).length;
     const ad = (tsSablonCache.find(s => s.bolum_no === bolumNo) || {}).bolum_adi || '(başlıksız)';
     if (!confirm(`"${ad}" bölümü ve içindeki ${say} satır kalıcı olarak SİLİNECEK.\n\nEmin misiniz?`)) return;
+    showLoading();
     const r = await secureFetch('/teknik-sartname-bolum-sil', { method: 'POST', body: JSON.stringify({ bina_turu: bt, bolum_no: bolumNo }) });
+    hideLoading();
     if (r && r.ok) { showToast(`Bölüm silindi (${r.silinen} satır).`, 'success'); tsSeciliId = null; await tsSablonYukle(); }
     else showToast((r && r.hata) || 'Silinemedi', 'error');
 }
@@ -6421,7 +6431,7 @@ function tsYeniSatir() {
         <div id="tsYeniIcerik"></div>
         <div class="form-check mt-3"><input class="form-check-input" type="checkbox" id="tsYeniTablo"><label class="form-check-label small" for="tsYeniTablo">Bu satırdan itibaren ayrı (başlıksız) tablo başlasın</label></div>
         <div class="d-flex justify-content-end gap-2 mt-3">
-            <button class="btn btn-sm btn-outline-secondary" onclick="tsSablonYukle()">İptal</button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="tsSablonYukle()">Vazgeç</button>
             <button class="btn btn-sm btn-dark" onclick="tsYeniKaydet()"><i class="bi bi-plus-lg me-1"></i>Ekle</button>
         </div>`;
     tsYeniTipDegis();
@@ -6492,7 +6502,9 @@ async function tsYeniKaydet() {
 async function tsSatirSil(id) {
     const s = tsSablonCache.find(x => x.id === id);
     if (!confirm(`"${s ? s.soru : 'Bu satır'}" silinecek. Devam edilsin mi?`)) return;
+    showLoading();
     const r = await secureFetch('/teknik-sartname-sablonu-sil/' + id, { method: 'DELETE' });
+    hideLoading();
     if (r && r.ok) { showToast('Satır silindi', 'success'); tsSablonYukle(); }
     else showToast((r && r.hata) || 'Silme hatası', 'error');
 }
@@ -6594,7 +6606,7 @@ function renderKullanicilar() {
         const renk = KUL_ROL_RENK[u.rol] || 'secondary';
         const sonGiris = u.son_giris ? new Date(u.son_giris).toLocaleString('tr-TR') : '<span class="text-muted small">Hiç giriş yok</span>';
         const kayit = u.kayit_tarihi ? new Date(u.kayit_tarihi).toLocaleDateString('tr-TR') : '-';
-        const durumBadge = u.durum === 'AKTIF' ? '<span class="badge bg-success">AKTİF</span>' : '<span class="badge bg-secondary">PASİF</span>';
+        const durumBadge = u.durum === 'AKTIF' ? '<span class="badge bg-success">Aktif</span>' : '<span class="badge bg-secondary">Pasif</span>';
         return `<tr>
             <td class="fw-bold">${esc(u.ad_soyad)}${u.cekirdek_ekip ? ' <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle" title="Görev Takip / Pazartesi masası"><i class="bi bi-check2-square"></i> Çekirdek</span>' : ''}</td>
             <td><code class="small">${esc(u.email)}</code></td>
@@ -6676,7 +6688,9 @@ async function kullaniciSil() {
     if (!id) return;
     const u = kullanicilarCache.find(x => x.id === id);
     if (!confirm(`${u?.ad_soyad || 'Bu kullanıcı'} silinecek. Sisteme giriş yapamayacak. Devam?`)) return;
+    showLoading();
     const r = await secureFetch('/kullanici-sil/' + id, { method:'DELETE' });
+    hideLoading();
     if (r.ok) {
         bootstrap.Modal.getInstance(document.getElementById('modalKullanici')).hide();
         showToast(r.mesaj, 'success');
@@ -6789,7 +6803,9 @@ async function rolSil() {
     bootstrap.Modal.getInstance(document.getElementById('modalRol'))?.hide();
 }
 async function rolSilHardId(id) {
+    showLoading();
     const r = await secureFetch('/rol-sil/' + id, { method:'DELETE' });
+    hideLoading();
     if (r.ok) { showToast(r.mesaj, 'success'); rollerYukle(); }
     else showToast(r.hata, 'error');
 }
@@ -11864,7 +11880,9 @@ async function siparisNotEkle(siparisId) {
 
 async function siparisNotSil(notId, siparisId) {
     if (!confirm('Bu notu silmek istediğinize emin misiniz?')) return;
+    showLoading();
     const r = await secureFetch('/siparis-not-sil/' + notId, { method: 'DELETE' });
+    hideLoading();
     if (r.ok) siparisNotlariYukle(siparisId);
     else showToast(r.hata || 'Silinemedi.', 'error');
 }
@@ -12783,7 +12801,7 @@ function renderTedarikciTable() {
 
     let html = '';
     filtered.forEach(t => {
-        const durumBadge = t.durum === 'AKTİF'
+        const durumBadge = t.durum === 'AKTIF'
             ? '<span class="badge bg-success">Aktif</span>'
             : '<span class="badge bg-secondary">Pasif</span>';
         const telefon = t.telefon ? `<a href="tel:${esc(t.telefon)}" class="text-decoration-none" onclick="event.stopPropagation();">${esc(t.telefon)}</a>` : '<span class="text-muted">-</span>';
@@ -12830,7 +12848,7 @@ function openTedarikciModal(data) {
     document.getElementById('tdVergiNo').value = d.vergi_no || '';
     document.getElementById('tdVergiDaire').value = d.vergi_dairesi || '';
     document.getElementById('tdAdres').value = d.adres || '';
-    document.getElementById('tdDurum').value = d.durum || 'AKTİF';
+    document.getElementById('tdDurum').value = d.durum || 'AKTIF';
     document.getElementById('tdModalBaslik').textContent = d.id ? `Tedarikçi #${d.id} - Düzenle` : 'Yeni Tedarikçi';
     document.getElementById('tdSilBtn').classList.toggle('d-none', !d.id);
     new bootstrap.Modal(document.getElementById('modalTedarikci')).show();
@@ -14243,7 +14261,9 @@ async function prjDosyaYukle() {
 
 async function prjDosyaSil(id) {
     if (!confirm('Dosya silinsin mi?')) return;
+    showLoading();
     const r = await secureFetch('/proje-dosya-sil/' + id, { method: 'DELETE' });
+    hideLoading();
     if (!r.ok) return showToast(r.hata || 'Silinemedi.', 'error');
     showToast('Dosya silindi.', 'success');
     prjDosyaListele();

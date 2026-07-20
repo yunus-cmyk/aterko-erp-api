@@ -181,7 +181,7 @@ app.post('/api/stok-kaydet', yetkiKontrol, async (req, res, next) => {
 // =================================================================
 app.get('/api/depolar', yetkiKontrol, async (req, res, next) => {
     try {
-        const r = await pool.query("SELECT * FROM depolar WHERE durum='AKTİF' ORDER BY ad ASC");
+        const r = await pool.query("SELECT * FROM depolar WHERE durum='AKTIF' ORDER BY ad ASC");
         res.json({ ok: true, data: r.rows });
     } catch (e) { next(e); }
 });
@@ -191,10 +191,10 @@ app.post('/api/depo-kaydet', yetkiKontrol, async (req, res, next) => {
         const { id, ad, adres, durum } = req.body;
         if (id) {
             await pool.query('UPDATE depolar SET ad=$1, adres=$2, durum=$3 WHERE id=$4',
-                [ad, adres || null, durum || 'AKTİF', id]);
+                [ad, adres || null, durum || 'AKTIF', id]);
         } else {
             await pool.query('INSERT INTO depolar (ad, adres, durum) VALUES ($1,$2,$3)',
-                [ad, adres || null, durum || 'AKTİF']);
+                [ad, adres || null, durum || 'AKTIF']);
         }
         res.json({ ok: true });
     } catch (e) {
@@ -1375,7 +1375,7 @@ app.post('/api/talep-durum-guncelle', yetkiKontrol, async (req, res, next) => {
 app.get('/api/tedarikciler', yetkiKontrol, async (req, res, next) => {
     try {
         const sadeceAktif = req.query.sadece_aktif === '1';
-        const wh = sadeceAktif ? "WHERE t.durum = 'AKTİF'" : '';
+        const wh = sadeceAktif ? "WHERE t.durum = 'AKTIF'" : '';
         const result = await pool.query(`
             SELECT t.*,
                    COUNT(s.id) FILTER (WHERE COALESCE(s.arsiv,false) = false) as aktif_siparis_sayisi,
@@ -1411,14 +1411,14 @@ app.post('/api/tedarikci-kaydet', yetkiKontrol, async (req, res, next) => {
                                         vergi_no=$5, vergi_dairesi=$6, adres=$7, durum=$8
                 WHERE id=$9
             `, [firma_adi.trim(), yetkili_kisi || null, email || null, telefon || null,
-                vergi_no || null, vergi_dairesi || null, adres || null, durum || 'AKTİF', id]);
+                vergi_no || null, vergi_dairesi || null, adres || null, durum || 'AKTIF', id]);
             res.json({ ok: true, mesaj: 'Tedarikçi güncellendi.' });
         } else {
             const r = await pool.query(`
                 INSERT INTO tedarikciler (firma_adi, yetkili_kisi, email, telefon, vergi_no, vergi_dairesi, adres, durum)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id
             `, [firma_adi.trim(), yetkili_kisi || null, email || null, telefon || null,
-                vergi_no || null, vergi_dairesi || null, adres || null, durum || 'AKTİF']);
+                vergi_no || null, vergi_dairesi || null, adres || null, durum || 'AKTIF']);
             res.json({ ok: true, id: r.rows[0].id, mesaj: 'Tedarikçi eklendi.' });
         }
     } catch (e) { next(e); }
