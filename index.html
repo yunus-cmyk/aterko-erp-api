@@ -25,6 +25,9 @@
 
     /* DURUM ROZETLERİ */
     .badge-status { padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; text-transform: uppercase; font-weight: 700; display: inline-block; letter-spacing: 0.3px; }
+    /* --- FORM ETİKETİ (Y-05) — tek stil; 14 farklı yazım buraya bağlandı --- */
+    .form-label { font-size: 0.78rem; font-weight: 600; color: #5a6169; margin-bottom: 4px; }
+    .form-label .text-danger { font-weight: 700; }
     /* --- MODÜL RENK SÖZLÜĞÜ (Y-03) — her modül ayrık bir renk; semantik renklerden bağımsız --- */
     :root {
       --mod-satinalma: #198754; --mod-uretim: #b45309; --mod-montaj: #6f42c1;
@@ -171,7 +174,7 @@
   <div class="modal fade" id="modalSimulasyon" tabindex="-1">
     <div class="modal-dialog modal-md modal-dialog-centered">
       <div class="modal-content border-0 shadow-lg">
-        <div class="modal-header py-3" style="background: linear-gradient(90deg, #6f42c1, #d63384); color: white;">
+        <div class="modal-header py-3 bg-dark text-white" style="background: linear-gradient(90deg, #6f42c1, #d63384); color: white;">
           <h5 class="modal-title fw-bold"><i class="bi bi-incognito me-2"></i>Rol Simülasyonu</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
@@ -179,7 +182,7 @@
           <div class="alert alert-info py-2 small">
             <i class="bi bi-info-circle me-1"></i>Test amaçlı başka bir rolün ekranını görmek için kullanılır. Sadece <strong>arayüz simüle edilir</strong>; gerçek backend yetkisi <strong>değişmez</strong>. ADMIN olarak kalırsın.
           </div>
-          <label class="form-label small fw-bold text-muted mb-1">Simüle Edilecek Rol</label>
+          <label class="form-label">Simüle Edilecek Rol</label>
           <select id="simulasyonRolSecim" class="form-select form-select-sm">
             <option value="">-- Gerçek rolüme dön (ADMIN) --</option>
           </select>
@@ -541,7 +544,7 @@
     <div class="modal fade" id="modalTedarikci" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
-          <div class="modal-header py-3 bg-primary text-white">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title fw-bold"><i class="bi bi-shop me-2"></i><span id="tdModalBaslik">Yeni Tedarikçi</span></h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
@@ -549,45 +552,45 @@
             <input type="hidden" id="tdId">
             <div class="row g-3">
               <div class="col-md-8">
-                <label class="small fw-bold text-muted mb-1">Firma Adı <span class="text-danger">*</span></label>
+                <label class="form-label">Firma Adı <span class="text-danger">*</span></label>
                 <input type="text" id="tdFirma" class="form-control form-control-sm fw-bold">
               </div>
               <div class="col-md-4">
-                <label class="small fw-bold text-muted mb-1">Durum</label>
+                <label class="form-label">Durum</label>
                 <select id="tdDurum" class="form-select form-select-sm">
                   <option value="AKTIF">Aktif</option>
                   <option value="PASİF">Pasif</option>
                 </select>
               </div>
               <div class="col-md-6">
-                <label class="small fw-bold text-muted mb-1">Yetkili Kişi</label>
+                <label class="form-label">Yetkili Kişi</label>
                 <input type="text" id="tdYetkili" class="form-control form-control-sm">
               </div>
               <div class="col-md-6">
-                <label class="small fw-bold text-muted mb-1">Telefon</label>
+                <label class="form-label">Telefon</label>
                 <input type="tel" id="tdTelefon" class="form-control form-control-sm" placeholder="+90 ...">
               </div>
               <div class="col-md-12">
-                <label class="small fw-bold text-muted mb-1">E-posta</label>
+                <label class="form-label">E-posta</label>
                 <input type="email" id="tdEmail" class="form-control form-control-sm">
               </div>
               <div class="col-md-6">
-                <label class="small fw-bold text-muted mb-1">Vergi No</label>
+                <label class="form-label">Vergi No</label>
                 <input type="text" id="tdVergiNo" class="form-control form-control-sm">
               </div>
               <div class="col-md-6">
-                <label class="small fw-bold text-muted mb-1">Vergi Dairesi</label>
+                <label class="form-label">Vergi Dairesi</label>
                 <input type="text" id="tdVergiDaire" class="form-control form-control-sm">
               </div>
               <div class="col-md-12">
-                <label class="small fw-bold text-muted mb-1">Adres</label>
+                <label class="form-label">Adres</label>
                 <textarea id="tdAdres" class="form-control form-control-sm" rows="2"></textarea>
               </div>
             </div>
           </div>
           <div class="modal-footer py-3 bg-white border-top">
             <button type="button" class="btn btn-outline-danger btn-sm me-auto d-none" id="tdSilBtn" onclick="deleteTedarikci()">
-              <i class="bi bi-trash3 me-1"></i> Sil
+              <i class="bi bi-trash me-1"></i> Sil
             </button>
             <button type="button" class="btn btn-light border btn-sm px-4" data-bs-dismiss="modal">Vazgeç</button>
             <button type="button" class="btn btn-primary btn-sm px-4 fw-bold" onclick="saveTedarikci()">
@@ -623,14 +626,14 @@
             <input type="hidden" id="shId">
             <div class="row g-3">
               <div class="col-md-4">
-                <label class="small fw-bold text-muted mb-1">İşlem Tipi <span class="text-danger">*</span></label>
+                <label class="form-label">İşlem Tipi <span class="text-danger">*</span></label>
                 <select id="shTip" class="form-select form-select-sm fw-bold">
                   <option value="Giriş" style="color:green;">⬆ Giriş (+)</option>
                   <option value="Çıkış" style="color:red;">⬇ Çıkış (−)</option>
                 </select>
               </div>
               <div class="col-md-4">
-                <label class="small fw-bold text-muted mb-1">Stok Tipi</label>
+                <label class="form-label">Stok Tipi</label>
                 <select id="shStokTipi" class="form-select form-select-sm" onchange="shKategoriDoldur()">
                   <option value="">Tüm Tipler</option>
                   <option value="Hammadde">Hammadde</option>
@@ -639,39 +642,39 @@
                 </select>
               </div>
               <div class="col-md-4">
-                <label class="small fw-bold text-muted mb-1">Kategori</label>
+                <label class="form-label">Kategori</label>
                 <select id="shKategori" class="form-select form-select-sm" onchange="shUrunDoldur()">
                   <option value="">Tüm Kategoriler</option>
                 </select>
               </div>
               <div class="col-md-12">
-                <label class="small fw-bold text-muted mb-1">Stok / Ürün <span class="text-danger">*</span></label>
+                <label class="form-label">Stok / Ürün <span class="text-danger">*</span></label>
                 <select id="shStokKart" class="form-select form-select-sm" required onchange="shUrunSecildi()">
                   <option value="">-- Stok Seçin --</option>
                 </select>
                 <div class="small text-muted mt-1" id="shStokBilgi"></div>
               </div>
               <div class="col-md-4">
-                <label class="small fw-bold text-muted mb-1">Miktar <span class="text-danger">*</span></label>
+                <label class="form-label">Miktar <span class="text-danger">*</span></label>
                 <input type="number" id="shMiktar" class="form-control form-control-sm text-end fw-bold" step="0.001" placeholder="0,000">
               </div>
               <div class="col-md-4">
-                <label class="small fw-bold text-muted mb-1">Proje (opsiyonel)</label>
+                <label class="form-label">Proje (opsiyonel)</label>
                 <select id="shProje" class="form-select form-select-sm"><option value="">-- Proje Seçin --</option></select>
               </div>
               <div class="col-md-4">
-                <label class="small fw-bold text-muted mb-1">Depo (opsiyonel)</label>
+                <label class="form-label">Depo (opsiyonel)</label>
                 <select id="shDepo" class="form-select form-select-sm"><option value="">-- Depo Seçin --</option></select>
               </div>
               <div class="col-md-12">
-                <label class="small fw-bold text-muted mb-1">Açıklama / Not</label>
+                <label class="form-label">Açıklama / Not</label>
                 <input type="text" id="shAciklama" class="form-control form-control-sm" placeholder="İrsaliye no, not, vs.">
               </div>
             </div>
           </div>
           <div class="modal-footer py-3 bg-white border-top">
             <button type="button" class="btn btn-outline-danger btn-sm me-auto d-none" id="shSilBtn" onclick="deleteStokHareket()">
-              <i class="bi bi-trash3 me-1"></i>Sil
+              <i class="bi bi-trash me-1"></i>Sil
             </button>
             <button type="button" class="btn btn-light border btn-sm px-4" data-bs-dismiss="modal">Vazgeç</button>
             <button type="button" class="btn btn-primary btn-sm px-4 fw-bold" onclick="saveStokHareket()">
@@ -1103,7 +1106,7 @@
     <div class="modal fade" id="modalMontajUygulama" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-          <div class="modal-header py-3" style="background:#6f42c1; color:white;">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title fw-bold"><i class="bi bi-wrench-adjustable me-2"></i>Uygulama Miktarı Kaydet</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
@@ -1128,7 +1131,7 @@
               </div>
             </div>
             <div class="mt-3">
-              <label class="form-label small fw-bold text-muted mb-1">Genel Not (opsiyonel)</label>
+              <label class="form-label">Genel Not (opsiyonel)</label>
               <textarea id="muyNot" class="form-control form-control-sm" rows="2" placeholder="Uygulama notu, ekip, sahadaki durum..."></textarea>
             </div>
           </div>
@@ -1146,34 +1149,34 @@
     <div class="modal fade" id="modalSevkiyatBelgesi" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-          <div class="modal-header py-3 bg-primary text-white">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-plus me-2"></i>Yeni Sevkiyat Belgesi</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body p-4" style="background:#f8f9fa;">
             <div class="row g-3 mb-3">
               <div class="col-md-3">
-                <label class="form-label small fw-bold text-muted mb-1">Plaka <span class="text-danger">*</span></label>
+                <label class="form-label">Plaka <span class="text-danger">*</span></label>
                 <input type="text" id="sbPlaka" class="form-control form-control-sm" placeholder="34 ABC 123">
               </div>
               <div class="col-md-3">
-                <label class="form-label small fw-bold text-muted mb-1">Şoför Adı</label>
+                <label class="form-label">Şoför Adı</label>
                 <input type="text" id="sbSofor" class="form-control form-control-sm">
               </div>
               <div class="col-md-2">
-                <label class="form-label small fw-bold text-muted mb-1">Şoför Telefon</label>
+                <label class="form-label">Şoför Telefon</label>
                 <input type="text" id="sbSoforTel" class="form-control form-control-sm" placeholder="05XX...">
               </div>
               <div class="col-md-2">
-                <label class="form-label small fw-bold text-muted mb-1">İrsaliye No</label>
+                <label class="form-label">İrsaliye No</label>
                 <input type="text" id="sbIrsaliye" class="form-control form-control-sm">
               </div>
               <div class="col-md-2">
-                <label class="form-label small fw-bold text-muted mb-1">Sevk Tarihi</label>
+                <label class="form-label">Sevk Tarihi</label>
                 <input type="date" id="sbTarih" class="form-control form-control-sm">
               </div>
               <div class="col-md-12">
-                <label class="form-label small fw-bold text-muted mb-1">Notlar</label>
+                <label class="form-label">Notlar</label>
                 <textarea id="sbNotlar" class="form-control form-control-sm" rows="2" placeholder="Sevkiyat ile ilgili not..."></textarea>
               </div>
             </div>
@@ -1303,21 +1306,21 @@
                     <input type="hidden" id="kulId">
                     <div class="row g-3">
                         <div class="col-md-12">
-                            <label class="form-label small fw-bold text-muted mb-1">Ad Soyad <span class="text-danger">*</span></label>
+                            <label class="form-label">Ad Soyad <span class="text-danger">*</span></label>
                             <input id="kulAdSoyad" class="form-control form-control-sm" placeholder="Örn: Mehmet Yılmaz">
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label small fw-bold text-muted mb-1">E-posta (@aterko.com) <span class="text-danger">*</span></label>
+                            <label class="form-label">E-posta (@aterko.com) <span class="text-danger">*</span></label>
                             <input id="kulEmail" class="form-control form-control-sm" type="email" placeholder="kullaniciadi@aterko.com">
                             <small class="text-muted">Bu e-posta ile Google'dan giriş yapabilecek.</small>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold text-muted mb-1">Rol <span class="text-danger">*</span></label>
+                            <label class="form-label">Rol <span class="text-danger">*</span></label>
                             <select id="kulRol" class="form-select form-select-sm"></select>
                             <small class="text-muted" id="kulRolBilgi"></small>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold text-muted mb-1">Durum</label>
+                            <label class="form-label">Durum</label>
                             <select id="kulDurum" class="form-select form-select-sm">
                                 <option value="AKTIF">Aktif</option>
                                 <option value="PASIF">Pasif (giriş yapamaz)</option>
@@ -1334,7 +1337,7 @@
                 <div class="modal-footer bg-white">
                     <button id="kulSilBtn" type="button" class="btn btn-outline-danger me-auto d-none" onclick="kullaniciSil()"><i class="bi bi-trash me-1"></i>Sil</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
-                    <button type="button" class="btn btn-dark fw-bold px-4" onclick="kullaniciKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                    <button type="button" class="btn btn-primary fw-bold px-4" onclick="kullaniciKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                 </div>
             </div>
         </div>
@@ -1355,7 +1358,7 @@
                 <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" id="btnYeniRol" onclick="openRolModal()">
                     <i class="bi bi-plus-lg me-1"></i> Yeni Rol
                 </button>
-                <button class="btn btn-success btn-sm fw-bold shadow-sm px-3 d-none" id="btnMatrisKaydet" onclick="izinMatrisiKaydet()">
+                <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnMatrisKaydet" onclick="izinMatrisiKaydet()">
                     <i class="bi bi-save me-1"></i> Matrisi Kaydet
                 </button>
             </div>
@@ -1448,7 +1451,7 @@
                 </div>
                 <div class="small text-muted mt-2" id="grBilgi"></div>
                 <div class="d-flex gap-2 mt-3 flex-wrap">
-                    <button class="btn btn-sm btn-dark fw-bold" onclick="grAyarKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                    <button class="btn btn-sm btn-primary fw-bold" onclick="grAyarKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                     <button class="btn btn-sm btn-outline-secondary" onclick="grTestGonder()"><i class="bi bi-send me-1"></i>Şimdi bana test gönder</button>
                 </div>
             </div>
@@ -1495,7 +1498,7 @@
                 </div>
                 <div class="small text-muted mt-2" id="grvRaporBilgi"></div>
                 <div class="d-flex gap-2 mt-3 flex-wrap">
-                    <button class="btn btn-sm btn-dark fw-bold" onclick="grvRaporAyarKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                    <button class="btn btn-sm btn-primary fw-bold" onclick="grvRaporAyarKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                     <button class="btn btn-sm btn-outline-secondary" onclick="grvRaporTestGonder()"><i class="bi bi-send me-1"></i>Şimdi bana test gönder</button>
                 </div>
             </div>
@@ -1515,19 +1518,19 @@
                 <div class="modal-body p-4" style="background:#f8f9fa;">
                     <input type="hidden" id="rolId">
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-muted mb-1">Rol Adı <span class="text-danger">*</span></label>
+                        <label class="form-label">Rol Adı <span class="text-danger">*</span></label>
                         <input id="rolAd" class="form-control form-control-sm" placeholder="ÖRN: SATIS_PLUS, URETIM_SAHA">
                         <small class="text-muted">Büyük harf, rakam ve alt çizgi (_). Otomatik formatlanır.</small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-muted mb-1">Açıklama</label>
+                        <label class="form-label">Açıklama</label>
                         <textarea id="rolAciklama" class="form-control form-control-sm" rows="3" placeholder="Bu rolün ne yaptığını kısaca açıkla..."></textarea>
                     </div>
                 </div>
                 <div class="modal-footer bg-white">
                     <button id="rolSilBtn" type="button" class="btn btn-outline-danger me-auto d-none" onclick="rolSil()"><i class="bi bi-trash me-1"></i>Sil</button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
-                    <button type="button" class="btn btn-dark fw-bold px-4" onclick="rolKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                    <button type="button" class="btn btn-primary fw-bold px-4" onclick="rolKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                 </div>
             </div>
         </div>
@@ -1547,7 +1550,7 @@
         <div class="card shadow-sm border-0 mb-3">
             <div class="card-body py-2 px-3 d-flex gap-2 flex-wrap align-items-end">
                 <div style="min-width:200px;">
-                    <label class="form-label small mb-0">Bina Türü Filtresi</label>
+                    <label class="form-label">Bina Türü Filtresi</label>
                     <select id="ftBinaTurFiltre" class="form-select form-select-sm" onchange="formTanimlariYukle()">
                         <option value="">Tüm Türler</option>
                         <option value="Prefabrik">Prefabrik</option>
@@ -1557,7 +1560,7 @@
                     </select>
                 </div>
                 <div style="min-width:240px;">
-                    <label class="form-label small mb-0">Arama</label>
+                    <label class="form-label">Arama</label>
                     <input id="ftArama" class="form-control form-control-sm" placeholder="Bölüm veya soru metninde ara..." oninput="formTanimlariRender()">
                 </div>
                 <span class="ms-auto small text-muted" id="ftSayac">0 soru</span>
@@ -1636,7 +1639,7 @@
     <div class="modal fade" id="modalTsYardim" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header bg-dark text-white">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold"><i class="bi bi-book me-2"></i>Kullanım Kılavuzu — Teknik Şartname Yönetimi</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -1735,7 +1738,7 @@
                     <input type="hidden" id="ftId">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold text-muted mb-1">Bina Türü <span class="text-danger">*</span></label>
+                            <label class="form-label">Bina Türü <span class="text-danger">*</span></label>
                             <select id="ftBinaTuru" class="form-select form-select-sm">
                                 <option value="Prefabrik">Prefabrik</option>
                                 <option value="Konteyner">Konteyner</option>
@@ -1743,24 +1746,24 @@
                             </select>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label small fw-bold text-muted mb-1">Bölüm Sırası</label>
+                            <label class="form-label">Bölüm Sırası</label>
                             <input id="ftBolumSira" type="number" min="1" value="1" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label small fw-bold text-muted mb-1">Soru Sırası</label>
+                            <label class="form-label">Soru Sırası</label>
                             <input id="ftSoruSira" type="number" min="1" value="1" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label small fw-bold text-muted mb-1">Bölüm Adı <span class="text-danger">*</span></label>
+                            <label class="form-label">Bölüm Adı <span class="text-danger">*</span></label>
                             <input id="ftBolumAdi" class="form-control form-control-sm" placeholder="Örn: Bina Bilgileri, Yalıtım, Elektrik...">
                             <small class="text-muted">Aynı bölüm adı kullanılırsa o bölümün altına eklenir.</small>
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label small fw-bold text-muted mb-1">Soru Metni <span class="text-danger">*</span></label>
+                            <label class="form-label">Soru Metni <span class="text-danger">*</span></label>
                             <input id="ftSoru" class="form-control form-control-sm" placeholder="Müşteriye sorulacak soru...">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold text-muted mb-1">Giriş Tipi <span class="text-danger">*</span></label>
+                            <label class="form-label">Giriş Tipi <span class="text-danger">*</span></label>
                             <select id="ftGirisTipi" class="form-select form-select-sm" onchange="ftSecenekAlaniGoster()">
                                 <option value="TEXT">Kısa Metin</option>
                                 <option value="METIN">Uzun Metin (Paragraf)</option>
@@ -1772,14 +1775,14 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold text-muted mb-1">Zorunlu mu?</label>
+                            <label class="form-label">Zorunlu mu?</label>
                             <div class="form-check form-switch mt-2">
                                 <input id="ftZorunlu" type="checkbox" class="form-check-input">
                                 <label class="form-check-label small" for="ftZorunlu">Bu soru zorunlu olarak doldurulsun</label>
                             </div>
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label small fw-bold text-muted mb-1">Otomatik Dolum Kaynağı (Salt Okunur)</label>
+                            <label class="form-label">Otomatik Dolum Kaynağı (Salt Okunur)</label>
                             <select id="ftKaynakKolon" class="form-select form-select-sm">
                                 <option value="">— Manuel (kullanıcı doldurur) —</option>
                                 <option value="bina_tipi">Bina Tipi</option>
@@ -1797,16 +1800,16 @@
                             <div class="form-text small">Seçilirse alan proje/bina bilgisinden otomatik dolar, kullanıcı değiştiremez.</div>
                         </div>
                         <div class="col-md-12" id="ftSecenekAlani" style="display:none;">
-                            <label class="form-label small fw-bold text-muted mb-1">Seçenekler</label>
+                            <label class="form-label">Seçenekler</label>
                             <textarea id="ftSecenekler" class="form-control form-control-sm" rows="4" placeholder="Her satıra bir seçenek yaz..."></textarea>
                             <small class="text-muted">Her satıra bir seçenek (Radio / Checkbox / Dropdown için). <b>Not:</b> Seçeneğe göre PDF'te yazılacak metinler artık <b>Teknik Şartname Şablonu</b> panelinden yönetilir.</small>
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label small fw-bold text-muted mb-1">Kurallar (opsiyonel)</label>
+                            <label class="form-label">Kurallar (opsiyonel)</label>
                             <input id="ftKurallar" class="form-control form-control-sm" placeholder="Örn: min=10, max=100">
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label small fw-bold text-muted mb-1">Koşullar (opsiyonel)</label>
+                            <label class="form-label">Koşullar (opsiyonel)</label>
                             <input id="ftKosullar" class="form-control form-control-sm" placeholder="Örn: 'Bina Tipi = Çift Katlı' ise göster">
                             <small class="text-muted">Bu soru sadece belirli bir koşul sağlanırsa görünür (gelişmiş — şimdilik el ile yazılır).</small>
                         </div>
@@ -1814,7 +1817,7 @@
                 </div>
                 <div class="modal-footer bg-white">
                     <button class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
-                    <button class="btn btn-dark fw-bold px-4" onclick="formTanimiKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
+                    <button class="btn btn-primary fw-bold px-4" onclick="formTanimiKaydet()"><i class="bi bi-save me-1"></i>Kaydet</button>
                 </div>
             </div>
         </div>
@@ -1863,13 +1866,13 @@
         <div class="card border-0 shadow-sm mb-3"><div class="card-body py-2">
             <div class="small text-muted mb-2"><i class="bi bi-funnel me-1"></i><b>Görev mi?</b> Ölçülebilir (bitti/bitmedi net) · tarihli · rutin dışı · Pazartesi masasına değer. Değilse kişisel ajandada kalmalı — sürekli sorumluluk görev değildir.</div>
             <div class="row g-2 align-items-end">
-                <div class="col-md-4"><label class="form-label small fw-semibold m-0">Görev</label><input id="grvBaslik" class="form-control form-control-sm" placeholder="Net çıktı — örn. 'En büyük 10 alacağın arama planı'"></div>
-                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Sahip <span class="text-danger">*</span></label><select id="grvSahip" class="form-select form-select-sm"></select></div>
-                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Bitiş <span class="text-danger">*</span></label><input id="grvBitis" type="date" class="form-control form-control-sm"></div>
-                <div class="col-md-2"><label class="form-label small fw-semibold m-0">Alan</label>
+                <div class="col-md-4"><label class="form-label">Görev</label><input id="grvBaslik" class="form-control form-control-sm" placeholder="Net çıktı — örn. 'En büyük 10 alacağın arama planı'"></div>
+                <div class="col-md-2"><label class="form-label">Sahip <span class="text-danger">*</span></label><select id="grvSahip" class="form-select form-select-sm"></select></div>
+                <div class="col-md-2"><label class="form-label">Bitiş <span class="text-danger">*</span></label><input id="grvBitis" type="date" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label">Alan</label>
                     <select id="grvAlan" class="form-select form-select-sm" onchange="grvAlanSecimDegis('grvAlan','grvAlanYeni')"></select>
                     <input id="grvAlanYeni" class="form-control form-control-sm mt-1 d-none" placeholder="Yeni alan adı" maxlength="40"></div>
-                <div class="col-md-1"><label class="form-label small fw-semibold m-0">Öncelik</label><select id="grvOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
+                <div class="col-md-1"><label class="form-label">Öncelik</label><select id="grvOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
                 <div class="col-md-1"><button class="btn btn-primary btn-sm w-100" onclick="gorevHizliEkle()" title="Görev ekle"><i class="bi bi-plus-lg"></i></button></div>
             </div>
             <div class="d-flex align-items-center gap-3 mt-2">
@@ -1896,23 +1899,23 @@
 
     <!-- Görev Düzenle Modal -->
     <div class="modal fade" id="modalGorevDuzenle" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false"><div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Görev Düzenle</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header py-3 bg-dark text-white"><h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Görev Düzenle</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <input type="hidden" id="gdId">
-            <div class="mb-2"><label class="form-label small fw-semibold">Görev</label><input id="gdBaslik" class="form-control form-control-sm"></div>
-            <div class="mb-2"><label class="form-label small fw-semibold">Açıklama</label><textarea id="gdAciklama" class="form-control form-control-sm" rows="2"></textarea></div>
+            <div class="mb-2"><label class="form-label">Görev</label><input id="gdBaslik" class="form-control form-control-sm"></div>
+            <div class="mb-2"><label class="form-label">Açıklama</label><textarea id="gdAciklama" class="form-control form-control-sm" rows="2"></textarea></div>
             <div class="mb-2">
-                <label class="form-label small fw-semibold"><i class="bi bi-sticky me-1 text-warning"></i>Notlar <span class="text-muted fw-normal">— her not tarihli; revize edilse de ilk tarih korunur</span></label>
+                <label class="form-label"><i class="bi bi-sticky me-1 text-warning"></i>Notlar <span class="text-muted fw-normal">— her not tarihli; revize edilse de ilk tarih korunur</span></label>
                 <div id="gdNotlarListe"></div>
                 <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="gdNotEkle()"><i class="bi bi-plus-lg me-1"></i>Not ekle</button>
             </div>
             <div class="row g-2">
-                <div class="col-6"><label class="form-label small fw-semibold">Sahip</label><select id="gdSahip" class="form-select form-select-sm"></select></div>
-                <div class="col-6"><label class="form-label small fw-semibold">Bitiş</label><input id="gdBitis" type="date" class="form-control form-control-sm"></div>
-                <div class="col-6"><label class="form-label small fw-semibold">Alan</label>
+                <div class="col-6"><label class="form-label">Sahip</label><select id="gdSahip" class="form-select form-select-sm"></select></div>
+                <div class="col-6"><label class="form-label">Bitiş</label><input id="gdBitis" type="date" class="form-control form-control-sm"></div>
+                <div class="col-6"><label class="form-label">Alan</label>
                     <select id="gdAlan" class="form-select form-select-sm" onchange="grvAlanSecimDegis('gdAlan','gdAlanYeni')"></select>
                     <input id="gdAlanYeni" class="form-control form-control-sm mt-1 d-none" placeholder="Yeni alan adı" maxlength="40"></div>
-                <div class="col-6"><label class="form-label small fw-semibold">Öncelik</label><select id="gdOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
+                <div class="col-6"><label class="form-label">Öncelik</label><select id="gdOncelik" class="form-select form-select-sm"><option value="NORMAL">Normal</option><option value="YUKSEK">Yüksek</option><option value="KRITIK">Kritik</option></select></div>
             </div>
             <div class="d-flex align-items-center gap-3 mt-2">
                 <div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="gdTaahhut" onchange="grvVadeToggle('gdTaahhut','gdVadeWrap')"><label class="form-check-label small" for="gdTaahhut">Taahhüt</label></div>
@@ -1936,7 +1939,7 @@
         <div class="card shadow-sm border-0 mb-3">
             <div class="card-body py-2 px-3 d-flex gap-2 flex-wrap align-items-end">
                 <div style="min-width:160px;">
-                    <label class="form-label small mb-0">Tablo</label>
+                    <label class="form-label">Tablo</label>
                     <select id="auditTablo" class="form-select form-select-sm">
                         <option value="">Tümü</option>
                         <option value="satinalma_talepleri">satinalma_talepleri</option>
@@ -1948,7 +1951,7 @@
                     </select>
                 </div>
                 <div style="min-width:120px;">
-                    <label class="form-label small mb-0">Eylem</label>
+                    <label class="form-label">Eylem</label>
                     <select id="auditEylem" class="form-select form-select-sm">
                         <option value="">Tümü</option>
                         <option value="CREATE">Oluşturma</option>
@@ -1964,15 +1967,15 @@
                     </select>
                 </div>
                 <div style="min-width:180px;">
-                    <label class="form-label small mb-0">Kullanıcı</label>
+                    <label class="form-label">Kullanıcı</label>
                     <input id="auditKullanici" class="form-control form-control-sm" placeholder="ad veya e-posta">
                 </div>
                 <div>
-                    <label class="form-label small mb-0">Başlangıç</label>
+                    <label class="form-label">Başlangıç</label>
                     <input id="auditBaslangic" type="date" class="form-control form-control-sm">
                 </div>
                 <div>
-                    <label class="form-label small mb-0">Bitiş</label>
+                    <label class="form-label">Bitiş</label>
                     <input id="auditBitis" type="date" class="form-control form-control-sm">
                 </div>
                 <button class="btn btn-sm btn-primary" onclick="auditYukle()"><i class="bi bi-search"></i> Filtrele</button>
@@ -2190,22 +2193,22 @@
     <div class="modal fade" id="modalIsEmriOlustur" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-          <div class="modal-header py-3 bg-warning">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title fw-bold"><i class="bi bi-clipboard-plus me-2"></i>Yeni İş Emri Oluştur</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body p-4" style="background:#f8f9fa;">
             <div class="row g-3 mb-3">
               <div class="col-md-8">
-                <label class="form-label small fw-bold text-muted mb-1">Ustabaşı Adı <span class="text-danger">*</span></label>
+                <label class="form-label">Ustabaşı Adı <span class="text-danger">*</span></label>
                 <input type="text" id="ieUstabasi" class="form-control form-control-sm" placeholder="İş emrinin teslim edileceği ustabaşı adı...">
               </div>
               <div class="col-md-4">
-                <label class="form-label small fw-bold text-muted mb-1">Tarih</label>
+                <label class="form-label">Tarih</label>
                 <input type="text" class="form-control form-control-sm" id="ieTarih" readonly>
               </div>
               <div class="col-md-12">
-                <label class="form-label small fw-bold text-muted mb-1">Notlar</label>
+                <label class="form-label">Notlar</label>
                 <textarea id="ieNotlar" class="form-control form-control-sm" rows="2" placeholder="İş emri ile ilgili not (opsiyonel)..."></textarea>
               </div>
             </div>
@@ -2244,7 +2247,7 @@
     <div class="modal fade" id="modalStoktanKarsila" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-          <div class="modal-header py-3 bg-info text-white">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title fw-bold"><i class="bi bi-box-arrow-right me-2"></i>Stoktan Karşılama</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
@@ -2283,7 +2286,7 @@
     <div class="modal fade" id="modalUretimSatinalma" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-          <div class="modal-header py-3 bg-success text-white">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title fw-bold"><i class="bi bi-cart-plus me-2"></i>Satınalma Talebi Oluştur (Üretim Planı)</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
@@ -2310,17 +2313,17 @@
             </div>
             <div class="row g-3">
               <div class="col-md-6">
-                <label class="form-label small fw-bold text-muted mb-1">İstenen Tarih</label>
+                <label class="form-label">İstenen Tarih</label>
                 <input type="date" id="urtSatTarih" class="form-control form-control-sm">
               </div>
               <div class="col-md-6">
-                <label class="form-label small fw-bold text-muted mb-1">Teslim Yeri (Depo) <span class="text-danger">*</span></label>
+                <label class="form-label">Teslim Yeri (Depo) <span class="text-danger">*</span></label>
                 <select id="urtSatTeslim" class="form-select form-select-sm">
                   <option value="">-- Depo seçin --</option>
                 </select>
               </div>
               <div class="col-md-12">
-                <label class="form-label small fw-bold text-muted mb-1">Genel Açıklama</label>
+                <label class="form-label">Genel Açıklama</label>
                 <textarea id="urtSatNot" class="form-control form-control-sm" rows="2" placeholder="Talep notu (opsiyonel)..."></textarea>
               </div>
             </div>
@@ -2368,7 +2371,7 @@
               <i class="bi bi-x-circle me-1"></i>İş Emrini İptal Et
             </button>
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
-            <button type="button" id="iedKaydetBtn" class="btn btn-success fw-bold px-4" onclick="isEmriTamamlamaKaydet()">
+            <button type="button" id="iedKaydetBtn" class="btn btn-primary fw-bold px-4" onclick="isEmriTamamlamaKaydet()">
               <i class="bi bi-save me-1"></i>Tamamlama Bilgisini Kaydet
             </button>
           </div>
@@ -2524,13 +2527,13 @@
         <div class="card shadow-sm border-0 mb-4 bg-white">
             <div class="card-body d-flex align-items-end gap-3 flex-wrap">
                 <div style="flex: 1 1 320px; min-width: 280px;">
-                    <label class="form-label small fw-bold text-muted">1. Proje Seç <span class="text-danger">*</span></label>
+                    <label class="form-label">1. Proje Seç <span class="text-danger">*</span></label>
                     <select id="ulProjeSecimi" class="form-select form-select-lg fw-bold" onchange="ulProjeDegisti()">
                         <option value="">-- Önce Proje Seçin --</option>
                     </select>
                 </div>
                 <div style="flex: 1 1 320px; min-width: 280px;">
-                    <label class="form-label small fw-bold text-muted">2. Teslimat (Bina) Seç <span class="text-danger">*</span></label>
+                    <label class="form-label">2. Teslimat (Bina) Seç <span class="text-danger">*</span></label>
                     <select id="aktifTeslimatSecimi" class="form-select form-select-lg fw-bold text-primary" onchange="teslimatDegisti()" disabled>
                         <option value="">-- Önce proje seçin --</option>
                     </select>
@@ -2548,7 +2551,7 @@
                     <div class="card-header bg-white fw-bold"><i class="bi bi-plus-circle me-2"></i>Listeye Ürün Ekle</div>
                     <div class="card-body">
                         <div class="mb-3">
-                            <label class="form-label small fw-bold text-muted">Ürün Tipi</label>
+                            <label class="form-label">Ürün Tipi</label>
                             <div class="d-flex gap-3">
                                 <div class="form-check"><input class="form-check-input" type="radio" name="urunTipi" id="tipKatalog" value="katalog" checked onchange="toggleUrunTipi()"><label class="form-check-label" for="tipKatalog">Katalogdan Seç</label></div>
                                 <div class="form-check"><input class="form-check-input" type="radio" name="urunTipi" id="tipOzel" value="ozel" onchange="toggleUrunTipi()"><label class="form-check-label text-warning" for="tipOzel">Özel Ürün</label></div>
@@ -2556,7 +2559,7 @@
                         </div>
 
                         <div id="katalogSecimAlani" class="mb-3">
-                            <label class="form-label small fw-bold text-muted">Stok Kartı Seç <span class="text-danger">*</span></label>
+                            <label class="form-label">Stok Kartı Seç <span class="text-danger">*</span></label>
                             <select id="urunTipiFiltresi" class="form-select form-select-sm mb-2" onchange="fetchStokKartlariForDropdown()">
                                 <option value="">Tüm Tipler</option>
                                 <option value="Ürün">Sadece Ürünler</option>
@@ -2570,14 +2573,14 @@
                         </div>
 
                         <div id="ozelUrunAlani" class="mb-3 d-none p-3 bg-light rounded border">
-                            <div class="mb-2"><label class="form-label small fw-bold text-muted">Ürün Adı <span class="text-danger">*</span></label><input type="text" id="ozelUrunAdi" class="form-control" placeholder="Örn: Projeye Özel Menteşe"></div>
-                            <div><label class="form-label small fw-bold text-muted">Birim <span class="text-danger">*</span></label><select id="ozelUrunBirim" class="form-select"><option value="ADET">Adet</option><option value="METRE">Metre</option><option value="KG">Kg</option><option value="M2">m²</option></select></div>
+                            <div class="mb-2"><label class="form-label">Ürün Adı <span class="text-danger">*</span></label><input type="text" id="ozelUrunAdi" class="form-control" placeholder="Örn: Projeye Özel Menteşe"></div>
+                            <div><label class="form-label">Birim <span class="text-danger">*</span></label><select id="ozelUrunBirim" class="form-select"><option value="ADET">Adet</option><option value="METRE">Metre</option><option value="KG">Kg</option><option value="M2">m²</option></select></div>
                         </div>
 
                         <div class="row g-2 mb-3">
-                            <div class="col-12"><label class="form-label small fw-bold text-muted">Miktar <span class="text-danger">*</span></label><input type="number" id="urunMiktar" class="form-control" value="1.00" step="0.01"></div>
+                            <div class="col-12"><label class="form-label">Miktar <span class="text-danger">*</span></label><input type="number" id="urunMiktar" class="form-control" value="1.00" step="0.01"></div>
                         </div>
-                        <div class="mb-3"><label class="form-label small fw-bold text-muted">Açıklama / Not</label><input type="text" id="urunAciklama" class="form-control" placeholder="Teknik, Üretim veya Satın Alma için not..."></div>
+                        <div class="mb-3"><label class="form-label">Açıklama / Not</label><input type="text" id="urunAciklama" class="form-control" placeholder="Teknik, Üretim veya Satın Alma için not..."></div>
                         <button class="btn btn-primary w-100 fw-bold" onclick="listeyeEkle()"><i class="bi bi-check2-all me-2"></i>Ekle</button>
                     </div>
                 </div>
@@ -2659,14 +2662,14 @@
     <div class="modal fade" id="modalListeKopyala" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-3 bg-primary text-white">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold"><i class="bi bi-clipboard2-data me-2"></i>Başka Bir Listeden Kopyala</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body p-4" style="background:#f8f9fa;">
                     <div class="row g-2 mb-3">
                         <div class="col-md-4">
-                            <label class="form-label small fw-bold text-muted mb-1">Bina Türü Filtresi</label>
+                            <label class="form-label">Bina Türü Filtresi</label>
                             <select id="lkBinaTurFiltre" class="form-select form-select-sm" onchange="lkKaynaklariYukle()">
                                 <option value="">Tümü</option>
                                 <option value="Prefabrik">Prefabrik</option>
@@ -2675,7 +2678,7 @@
                             </select>
                         </div>
                         <div class="col-md-8">
-                            <label class="form-label small fw-bold text-muted mb-1">Arama</label>
+                            <label class="form-label">Arama</label>
                             <input id="lkArama" class="form-control form-control-sm" placeholder="🔍 Proje, müşteri, bina..." oninput="lkKaynaklariRender()">
                         </div>
                     </div>
@@ -2710,7 +2713,7 @@
     <div class="modal fade" id="modalListeImport" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-3 bg-success text-white">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Excel / CSV'den Toplu Ürün Ekle</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -2720,7 +2723,7 @@
                         <br>Sütun sırası: <code>stok_kodu | ozel_urun_adi | miktar | birim | aciklama</code> — sekme veya virgülle ayrılmış.
                         <br>Stok kodu varsa katalogdan eşleştirilir; yoksa "özel ürün" olarak eklenir.
                     </div>
-                    <label class="form-label small fw-bold text-muted mb-1">Veriyi Yapıştır</label>
+                    <label class="form-label">Veriyi Yapıştır</label>
                     <textarea id="liImportText" class="form-control form-control-sm font-monospace" rows="12" placeholder="STK-001	Civata M8	100	adet	Üst panel için
 STK-002		50	adet
 		Özel Vida	20	adet	Katalog dışı"></textarea>
@@ -2776,7 +2779,7 @@ STK-002		50	adet
   <div class="modal fade" id="modalTalepOlustur" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content border-0 shadow-lg">
-        <div class="modal-header py-3 bg-success text-white">
+        <div class="modal-header py-3 bg-dark text-white">
           <h5 class="modal-title fw-bold"><i class="bi bi-cart-plus me-2"></i>Satınalma Talebi Oluştur</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
@@ -2807,18 +2810,18 @@ STK-002		50	adet
 
           <div class="row g-3">
             <div class="col-md-6">
-              <label class="form-label small fw-bold text-muted mb-1">İstenen Tarih</label>
+              <label class="form-label">İstenen Tarih</label>
               <input type="date" id="tom-istenen-tarih" class="form-control form-control-sm">
               <div class="small text-muted mt-1">Boş bırakırsanız belirtilmez.</div>
             </div>
             <div class="col-md-6">
-              <label class="form-label small fw-bold text-muted mb-1">Teslim Yeri (Depo) <span class="text-danger">*</span></label>
+              <label class="form-label">Teslim Yeri (Depo) <span class="text-danger">*</span></label>
               <select id="tom-teslim-yeri" class="form-select form-select-sm">
                 <option value="">-- Depo seçin --</option>
               </select>
             </div>
             <div class="col-md-12">
-              <label class="form-label small fw-bold text-muted mb-1">Genel Açıklama</label>
+              <label class="form-label">Genel Açıklama</label>
               <textarea id="tom-aciklama" class="form-control form-control-sm" rows="2" placeholder="Talep ile ilgili not, öncelik, hatırlatma vb. (opsiyonel)"></textarea>
             </div>
           </div>
@@ -2852,19 +2855,19 @@ STK-002		50	adet
                   </div>
                   <div class="card-body row g-3">
                      <div class="col-md-3">
-                        <label class="small fw-bold text-muted mb-1"><i class="bi bi-person me-1"></i>Talep Eden</label>
+                        <label class="form-label"><i class="bi bi-person me-1"></i>Talep Eden</label>
                         <input type="text" id="ntPersonel" class="form-control form-control-sm bg-light text-secondary border-0" readonly>
                      </div>
                      <div class="col-md-3">
-                        <label class="small fw-bold text-muted mb-1"><i class="bi bi-briefcase me-1"></i>Proje <span class="text-danger">*</span></label>
+                        <label class="form-label"><i class="bi bi-briefcase me-1"></i>Proje <span class="text-danger">*</span></label>
                         <select id="ntProje" class="form-select form-select-sm border-info border-opacity-50 shadow-none"></select>
                      </div>
                      <div class="col-md-3">
-                        <label class="small fw-bold text-muted mb-1"><i class="bi bi-calendar3 me-1"></i>İstenen Tarih</label>
+                        <label class="form-label"><i class="bi bi-calendar3 me-1"></i>İstenen Tarih</label>
                         <input type="date" id="ntTarih" class="form-control form-control-sm border-info border-opacity-50 shadow-none">
                      </div>
                      <div class="col-md-3">
-                        <label class="small fw-bold text-muted mb-1"><i class="bi bi-geo-alt me-1"></i>Teslim Yeri (Depo)</label>
+                        <label class="form-label"><i class="bi bi-geo-alt me-1"></i>Teslim Yeri (Depo)</label>
                         <select id="ntYer" class="form-select form-select-sm border-info border-opacity-50 shadow-none">
                           <option value="">-- Depo seçin --</option>
                         </select>
@@ -2888,7 +2891,7 @@ STK-002		50	adet
               <div class="card border-0 shadow-sm rounded-3">
                   <div class="card-body row g-3">
                      <div class="col-md-12">
-                        <label class="small fw-bold text-muted mb-1"><i class="bi bi-card-text me-1"></i>Genel Not / Açıklama</label>
+                        <label class="form-label"><i class="bi bi-card-text me-1"></i>Genel Not / Açıklama</label>
                         <textarea id="ntNot" class="form-control form-control-sm" rows="2" placeholder="Talebe ait genel açıklamalar..."></textarea>
                      </div>
                   </div>
@@ -2897,7 +2900,7 @@ STK-002		50	adet
               <div class="card border-0 shadow-sm rounded-3 mt-3">
                   <div class="card-body">
                      <div class="d-flex justify-content-between align-items-center mb-2">
-                        <label class="small fw-bold text-muted mb-0"><i class="bi bi-paperclip me-1"></i>Dosyalar (teknik çizim, numune fotoğrafı, vb.)</label>
+                        <label class="form-label"><i class="bi bi-paperclip me-1"></i>Dosyalar (teknik çizim, numune fotoğrafı, vb.)</label>
                         <label class="btn btn-sm btn-outline-primary mb-0 py-0"><i class="bi bi-upload me-1"></i>Dosya Ekle<input type="file" class="d-none" id="ntDosyaInput" onchange="ntDosyaEkle(this)"></label>
                      </div>
                      <div id="ntDosyaListe" class="d-flex flex-wrap gap-2"><span class="small text-muted fst-italic">Henüz dosya eklenmedi.</span></div>
@@ -2986,7 +2989,7 @@ STK-002		50	adet
   <div class="modal fade" id="modalSiparisOlustur" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-3 bg-primary text-white">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold"><i class="bi bi-currency-dollar me-2"></i>Yeni Satınalma Siparişi Düzenle</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -2995,19 +2998,19 @@ STK-002		50	adet
                     <div class="card border-0 shadow-sm mb-4 rounded-3">
                         <div class="card-body row g-3">
                             <div class="col-md-4">
-                                <label class="small fw-bold text-muted mb-1">Tedarikçi Firma <span class="text-danger">*</span></label>
+                                <label class="form-label">Tedarikçi Firma <span class="text-danger">*</span></label>
                                 <select id="soTedarikci" class="form-select form-select-sm border-primary border-opacity-50"></select>
                             </div>
                             <div class="col-md-2">
-                                <label class="small fw-bold text-muted mb-1">Termin Tarihi</label>
+                                <label class="form-label">Termin Tarihi</label>
                                 <input type="date" id="soTermin" class="form-control form-control-sm">
                             </div>
                             <div class="col-md-2">
-                                <label class="small fw-bold text-muted mb-1">Ödeme Vadesi</label>
+                                <label class="form-label">Ödeme Vadesi</label>
                                 <input type="text" id="soVade" class="form-control form-control-sm" placeholder="Örn: 45 Gün Çek">
                             </div>
                             <div class="col-md-2">
-                                <label class="small fw-bold text-muted mb-1">Para Birimi</label>
+                                <label class="form-label">Para Birimi</label>
                                 <select id="soPara" class="form-select form-select-sm">
                                     <option value="TL">TRY (₺)</option>
                                     <option value="USD">USD ($)</option>
@@ -3016,7 +3019,7 @@ STK-002		50	adet
                                 </select>
                             </div>
                             <div class="col-md-2">
-                                <label class="small fw-bold text-muted mb-1">KDV Oranı (%)</label>
+                                <label class="form-label">KDV Oranı (%)</label>
                                 <select id="soKdv" class="form-select form-select-sm">
                                     <option value="20">%20 Standart</option>
                                     <option value="10">%10 İndirimli</option>
@@ -3025,15 +3028,15 @@ STK-002		50	adet
                                 </select>
                             </div>
                             <div class="col-md-3">
-                                <label class="small fw-bold text-muted mb-1">Nakliye Şekli</label>
+                                <label class="form-label">Nakliye Şekli</label>
                                 <input type="text" id="soNakliye" class="form-control form-control-sm" placeholder="Örn: Tedarikçi Öder / Ambar">
                             </div>
                             <div class="col-md-5">
-                                <label class="small fw-bold text-muted mb-1">Teslimat Adresi</label>
+                                <label class="form-label">Teslimat Adresi</label>
                                 <input type="text" id="soAdres" class="form-control form-control-sm" placeholder="Şantiye adresi veya merkez depo...">
                             </div>
                             <div class="col-md-4">
-                                <label class="small fw-bold text-muted mb-1">Sipariş Notu</label>
+                                <label class="form-label">Sipariş Notu</label>
                                 <input type="text" id="soNot" class="form-control form-control-sm" placeholder="Faturaya veya irsaliyeye yazılacak not...">
                             </div>
                         </div>
@@ -3069,9 +3072,9 @@ STK-002		50	adet
                     <div class="modal fade" id="modalCrossTalep" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
                       <div class="modal-dialog modal-lg modal-dialog-centered">
                         <div class="modal-content">
-                          <div class="modal-header py-2 bg-info text-dark">
+                          <div class="modal-header py-3 bg-dark text-white">
                             <h6 class="modal-title fw-bold mb-0"><i class="bi bi-diagram-3 me-2"></i>Aynı Projeden Diğer Talep Kalemleri</h6>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                           </div>
                           <div class="modal-body p-2" style="max-height:60vh;overflow-y:auto;">
                             <div id="crossTalepHavuz" class="small"></div>
@@ -3098,16 +3101,16 @@ STK-002		50	adet
   <div class="modal fade" id="modalTeklifIste" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content border-0 shadow-lg">
-        <div class="modal-header py-3 bg-warning text-dark">
+        <div class="modal-header py-3 bg-dark text-white">
           <h5 class="modal-title fw-bold"><i class="bi bi-envelope-paper me-2"></i>Teklif İste</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-4" style="background-color:#f8f9fa;">
           <p class="text-muted small mb-3"><i class="bi bi-info-circle me-1"></i>Seçili kalemler için <strong>seçtiğin her tedarikçiye ayrı ayrı</strong> teklif talebi e-postası gönderilir (tedarikçiler birbirini görmez). Bilgi kopyası seni ve Admin'i de bulur.</p>
 
           <div class="row g-3">
             <div class="col-md-6">
-              <label class="small fw-bold text-muted mb-1">Tedarikçi(ler) <span id="tiSeciliSayi" class="badge bg-secondary">0</span></label>
+              <label class="form-label">Tedarikçi(ler) <span id="tiSeciliSayi" class="badge bg-secondary">0</span></label>
               <!-- Arama kutusu + açılır sonuç listesi -->
               <div class="position-relative mb-2">
                 <input id="tiArama" type="text" class="form-control form-control-sm" placeholder="Tedarikçi ara... (yazmaya başla)" autocomplete="off"
@@ -3119,11 +3122,11 @@ STK-002		50	adet
               <div class="small text-muted mt-1"><i class="bi bi-envelope me-1"></i>E-postası olmayan tedarikçilere mail gitmez, yalnızca kayıt tutulur.</div>
             </div>
             <div class="col-md-6">
-              <label class="small fw-bold text-muted mb-1">Açıklama / Not (e-postaya eklenir)</label>
+              <label class="form-label">Açıklama / Not (e-postaya eklenir)</label>
               <textarea id="tiAciklama" class="form-control form-control-sm" rows="7" placeholder="Termin tarihi, ödeme şartları, özel talimat vb."></textarea>
             </div>
             <div class="col-12">
-              <label class="small fw-bold text-muted mb-1">Teklif istenecek kalemler (<span id="tiKalemSayi">0</span>)</label>
+              <label class="form-label">Teklif istenecek kalemler (<span id="tiKalemSayi">0</span>)</label>
               <div class="card border">
                 <div class="table-responsive" style="max-height:240px;overflow-y:auto;">
                   <table class="table table-sm mb-0" style="font-size:0.82rem;">
@@ -3152,9 +3155,9 @@ STK-002		50	adet
   <div class="modal fade" id="modalTeklifKayitlari" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content border-0 shadow-lg">
-        <div class="modal-header py-3 bg-warning">
+        <div class="modal-header py-3 bg-dark text-white">
           <h5 class="modal-title fw-bold"><i class="bi bi-card-list me-2"></i>Teklif Kayıtları — <span id="tkBaslik">-</span></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body p-4" style="background:#f8f9fa;">
           <div class="alert alert-info py-2 small mb-3">
@@ -3195,17 +3198,17 @@ STK-002		50	adet
               <input type="hidden" id="tkTalepUrunId">
               <div class="row g-2">
                 <div class="col-md-4">
-                  <label class="form-label small fw-bold text-muted mb-1">Tedarikçi <span class="text-danger">*</span></label>
+                  <label class="form-label">Tedarikçi <span class="text-danger">*</span></label>
                   <select id="tkTedarikci" class="form-select form-select-sm">
                     <option value="">-- Tedarikçi seçin --</option>
                   </select>
                 </div>
                 <div class="col-md-3">
-                  <label class="form-label small fw-bold text-muted mb-1">Birim Fiyat</label>
+                  <label class="form-label">Birim Fiyat</label>
                   <input type="number" step="0.01" id="tkBirimFiyat" class="form-control form-control-sm">
                 </div>
                 <div class="col-md-2">
-                  <label class="form-label small fw-bold text-muted mb-1">Para Birimi</label>
+                  <label class="form-label">Para Birimi</label>
                   <select id="tkParaBirimi" class="form-select form-select-sm">
                     <option value="TL">TL</option>
                     <option value="USD">USD</option>
@@ -3213,23 +3216,23 @@ STK-002		50	adet
                   </select>
                 </div>
                 <div class="col-md-3">
-                  <label class="form-label small fw-bold text-muted mb-1">Miktar (opsiyonel)</label>
+                  <label class="form-label">Miktar (opsiyonel)</label>
                   <input type="number" step="0.01" id="tkMiktar" class="form-control form-control-sm">
                 </div>
                 <div class="col-md-4">
-                  <label class="form-label small fw-bold text-muted mb-1">Ödeme Vadesi</label>
+                  <label class="form-label">Ödeme Vadesi</label>
                   <input type="text" id="tkVade" class="form-control form-control-sm" placeholder="örn. 30 gün, peşin">
                 </div>
                 <div class="col-md-3">
-                  <label class="form-label small fw-bold text-muted mb-1">Termin Tarihi</label>
+                  <label class="form-label">Termin Tarihi</label>
                   <input type="date" id="tkTermin" class="form-control form-control-sm">
                 </div>
                 <div class="col-md-5">
-                  <label class="form-label small fw-bold text-muted mb-1">Alternatif Ürün</label>
+                  <label class="form-label">Alternatif Ürün</label>
                   <input type="text" id="tkAlternatif" class="form-control form-control-sm" placeholder="varsa farklı ürün/marka önerisi">
                 </div>
                 <div class="col-md-12">
-                  <label class="form-label small fw-bold text-muted mb-1">Yorum</label>
+                  <label class="form-label">Yorum</label>
                   <textarea id="tkYorum" class="form-control form-control-sm" rows="2" placeholder="Serbest not — paketleme, garanti, ek ücretler, vs."></textarea>
                 </div>
               </div>
@@ -3259,7 +3262,7 @@ STK-002		50	adet
   <div class="modal fade" id="modalSiparisTeslimAl" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-3 bg-success text-white">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold" id="mKabulTitle"><i class="bi bi-box-seam-fill me-2"></i>Şantiye Mal Kabul Onayı</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -3268,13 +3271,13 @@ STK-002		50	adet
 
                     <div class="row g-2 mb-3 align-items-end">
                         <div class="col-md-6">
-                            <label class="small fw-bold text-muted mb-1"><i class="bi bi-geo-alt me-1"></i>Teslim Alındığı Depo</label>
+                            <label class="form-label"><i class="bi bi-geo-alt me-1"></i>Teslim Alındığı Depo</label>
                             <select id="mKabulDepo" class="form-select form-select-sm">
                                 <option value="">-- Depo seçin --</option>
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="small fw-bold text-muted mb-1"><i class="bi bi-card-text me-1"></i>Genel Açıklama (irsaliye no vb.)</label>
+                            <label class="form-label"><i class="bi bi-card-text me-1"></i>Genel Açıklama (irsaliye no vb.)</label>
                             <input type="text" id="mKabulNot" class="form-control form-control-sm" placeholder="Bu mal kabul tüm kalemlere açıklama olarak eklenir">
                         </div>
                     </div>
@@ -3306,7 +3309,7 @@ STK-002		50	adet
   <div class="modal fade" id="modalStokKart" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-md modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-3 bg-primary text-white">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold"><i class="bi bi-tag-fill me-2"></i>Yeni Stok Kartı Tanımla</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -3314,7 +3317,7 @@ STK-002		50	adet
                     
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="small fw-bold text-muted mb-1">Stok Tipi <span class="text-danger">*</span></label>
+                            <label class="form-label">Stok Tipi <span class="text-danger">*</span></label>
                             <select id="skTipi" class="form-select form-select-sm">
                                 <option value="Hammadde">Hammadde</option>
                                 <option value="Yarımamül">Yarımamül</option>
@@ -3323,16 +3326,16 @@ STK-002		50	adet
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="small fw-bold text-muted mb-1">Kategori <span class="text-danger">*</span></label>
+                            <label class="form-label">Kategori <span class="text-danger">*</span></label>
                             <input type="text" id="skKategori" class="form-control form-control-sm" list="skKategoriListesi" placeholder="Örn: Galvanizli Sac">
                             <datalist id="skKategoriListesi"></datalist>
                         </div>
                         <div class="col-md-6">
-                            <label class="small fw-bold text-muted mb-1">Stok Kodu <span class="text-danger">*</span></label>
+                            <label class="form-label">Stok Kodu <span class="text-danger">*</span></label>
                             <input type="text" id="skKodu" class="form-control form-control-sm text-uppercase fw-bold border-primary border-opacity-50" placeholder="Boş bırakırsanız otomatik üretilir">
                         </div>
                         <div class="col-md-6">
-                            <label class="small fw-bold text-muted mb-1">Ölçü Birimi <span class="text-danger">*</span></label>
+                            <label class="form-label">Ölçü Birimi <span class="text-danger">*</span></label>
                             <select id="skBirim" class="form-select form-select-sm" required>
                                 <option value="ADET">ADET</option>
                                 <option value="KG">KG</option>
@@ -3347,15 +3350,15 @@ STK-002		50	adet
                             </select>
                         </div>
                         <div class="col-md-12">
-                            <label class="small fw-bold text-muted mb-1">Stok / Malzeme Adı <span class="text-danger">*</span></label>
+                            <label class="form-label">Stok / Malzeme Adı <span class="text-danger">*</span></label>
                             <input type="text" id="skAdi" class="form-control form-control-sm fw-bold" placeholder="Örn: Rulo Sac Galvanizli 0,7 mm / 80 Açınım">
                         </div>
                         <div class="col-md-6">
-                            <label class="small fw-bold text-muted mb-1">Kritik Stok Seviyesi</label>
+                            <label class="form-label">Kritik Stok Seviyesi</label>
                             <input type="number" id="skKritik" class="form-control form-control-sm text-center fw-bold" value="0.00" step="0.01">
                         </div>
                         <div class="col-md-6">
-                            <label class="small fw-bold text-muted mb-1">Para Birimi</label>
+                            <label class="form-label">Para Birimi</label>
                             <select id="skPara" class="form-select form-select-sm">
                                 <option value="TL">TL (₺)</option>
                                 <option value="USD">USD ($)</option>
@@ -3368,7 +3371,7 @@ STK-002		50	adet
                     <hr class="my-3">
                     <div>
                         <div class="d-flex align-items-center justify-content-between mb-2">
-                            <label class="small fw-bold text-muted mb-0">
+                            <label class="form-label">
                                 <i class="bi bi-shield-check me-1"></i>Geçerlilik Koşulları
                                 <span class="text-muted">(opsiyonel — bu ürün hangi teknik şartname şartında kullanılır)</span>
                             </label>
@@ -3403,51 +3406,51 @@ STK-002		50	adet
                     </div>
                     <div class="card-body row g-3">
                         <div class="col-md-2">
-                            <label class="small fw-bold text-muted mb-1">Proje No <span class="text-danger">*</span></label>
+                            <label class="form-label">Proje No <span class="text-danger">*</span></label>
                             <input type="text" id="pjKodu" class="form-control form-control-sm fw-bold border-primary" maxlength="5" placeholder="10001">
                         </div>
                         <div class="col-md-5">
-                            <label class="small fw-bold text-muted mb-1">Müşteri Adı <span class="text-danger">*</span></label>
+                            <label class="form-label">Müşteri Adı <span class="text-danger">*</span></label>
                             <input type="text" id="pjMusteri" class="form-control form-control-sm fw-bold">
                         </div>
                         <div class="col-md-5">
-                            <label class="small fw-bold text-muted mb-1">Proje Adı <span class="text-danger">*</span></label>
+                            <label class="form-label">Proje Adı <span class="text-danger">*</span></label>
                             <input type="text" id="pjAdi" class="form-control form-control-sm fw-bold">
                         </div>
                         <div class="col-md-3">
-                            <label class="small fw-bold text-muted mb-1">Sözleşme Tarihi <span class="text-danger">*</span></label>
+                            <label class="form-label">Sözleşme Tarihi <span class="text-danger">*</span></label>
                             <input type="date" id="pjSozlesme" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-3">
-                            <label class="small fw-bold text-muted mb-1">Satış Türü <span class="text-danger">*</span></label>
+                            <label class="form-label">Satış Türü <span class="text-danger">*</span></label>
                             <select id="pjSatisTuru" class="form-select form-select-sm">
                                 <option value="Yurtiçi">Yurtiçi</option><option value="İhraç Kayıtlı">İhraç Kayıtlı</option><option value="İhracat">İhracat</option>
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <label class="small fw-bold text-muted mb-1">Nakliye <span class="text-danger">*</span></label>
+                            <label class="form-label">Nakliye <span class="text-danger">*</span></label>
                             <select id="pjNakliye" class="form-select form-select-sm">
                                 <option value="Aterko">Aterko</option><option value="Müşteri">Müşteri</option>
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <label class="small fw-bold text-muted mb-1">Para Birimi</label>
+                            <label class="form-label">Para Birimi</label>
                             <select id="pjPara" class="form-select form-select-sm"><option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option></select>
                         </div>
                         <div class="col-md-2">
-                            <label class="small fw-bold text-muted mb-1">KDV (%)</label>
+                            <label class="form-label">KDV (%)</label>
                             <select id="pjKdv" class="form-select form-select-sm"><option value="20">%20</option><option value="10">%10</option><option value="1">%1</option><option value="0">%0</option></select>
                         </div>
                         <div class="col-md-4">
-                            <label class="small fw-bold text-muted mb-1"><i class="bi bi-person-badge me-1"></i>Satış Temsilcisi</label>
+                            <label class="form-label"><i class="bi bi-person-badge me-1"></i>Satış Temsilcisi</label>
                             <input type="text" id="pjSatisTemsilcisi" class="form-control form-control-sm" placeholder="örn. Ayşe Bilgin">
                         </div>
                         <div class="col-md-4">
-                            <label class="small fw-bold text-muted mb-1"><i class="bi bi-link-45deg me-1"></i>ASET (link)</label>
+                            <label class="form-label"><i class="bi bi-link-45deg me-1"></i>ASET (link)</label>
                             <input type="url" id="pjAsetLink" class="form-control form-control-sm" placeholder="https://aset.aterko.com/entity/project/...">
                         </div>
                         <div class="col-md-4">
-                            <label class="small fw-bold text-muted mb-1"><i class="bi bi-google me-1"></i>DRIVE (link)</label>
+                            <label class="form-label"><i class="bi bi-google me-1"></i>DRIVE (link)</label>
                             <input type="url" id="pjDriveLink" class="form-control form-control-sm" placeholder="https://drive.google.com/open?id=...">
                         </div>
                     </div>
@@ -3508,7 +3511,7 @@ STK-002		50	adet
     <div class="modal fade" id="modalTsKopya" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-2 bg-dark text-white">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h6 class="modal-title fw-bold"><i class="bi bi-copy me-2"></i>Başka Teslimattan Kopyala <span class="fw-normal small" id="tskBinaTuru"></span></h6>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -3526,13 +3529,13 @@ STK-002		50	adet
     <div class="modal fade" id="modalProjeDosya" tabindex="-1">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
-          <div class="modal-header text-white" style="background:#0d6efd;">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title" id="prjDosyaBaslik"><i class="bi bi-file-earmark-pdf me-2"></i>Dosyalar</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
             <div class="row g-2 align-items-end mb-3 d-none" id="prjDosyaForm">
-              <div class="col-md-8"><label class="form-label small mb-0">Dosya (PDF, DWG, JPG, PNG, ZIP)</label>
+              <div class="col-md-8"><label class="form-label">Dosya (PDF, DWG, JPG, PNG, ZIP)</label>
                 <input id="prjDosyaInput" type="file" accept=".pdf,.dwg,.jpg,.jpeg,.png,.zip" class="form-control form-control-sm"></div>
               <div class="col-md-4"><button class="btn btn-sm btn-primary w-100" onclick="prjDosyaYukle()"><i class="bi bi-upload me-1"></i>Yükle</button></div>
             </div>
@@ -3545,7 +3548,7 @@ STK-002		50	adet
     <div class="modal fade" id="modalDurumSec" tabindex="-1">
         <div class="modal-dialog modal-sm modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-2 bg-dark text-white">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h6 class="modal-title fw-bold" id="dsBaslik"><i class="bi bi-arrow-repeat me-2"></i>Durum Değiştir</h6>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -3558,7 +3561,7 @@ STK-002		50	adet
     <div class="modal fade" id="modalMaliKart" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-          <div class="modal-header text-white" style="background:#198754;">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title" id="maliKartBaslik"><i class="bi bi-person-vcard me-2"></i>Cari Kart</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
@@ -3571,22 +3574,22 @@ STK-002		50	adet
     <div class="modal fade" id="modalMaliIslem" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog">
         <div class="modal-content">
-          <div class="modal-header text-white" style="background:#198754;">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title" id="maliIslemBaslik">İşlem</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
             <div id="maliIslemBilgi" class="alert alert-light border small mb-3"></div>
             <div class="mb-3">
-              <label class="form-label fw-bold" id="maliIslemTarihEtiket">Tarih</label>
+              <label class="form-label" id="maliIslemTarihEtiket">Tarih</label>
               <input type="date" id="maliIslemTarih" class="form-control">
             </div>
             <div class="mb-2">
-              <label class="form-label fw-bold" id="maliIslemTutarEtiket">Tutar (TL)</label>
+              <label class="form-label" id="maliIslemTutarEtiket">Tutar (TL)</label>
               <input type="number" step="0.01" id="maliIslemTutar" class="form-control">
             </div>
             <div class="mb-3 d-none" id="maliIslemHesapWrap">
-              <label class="form-label fw-bold">Hesap</label>
+              <label class="form-label">Hesap</label>
               <select id="maliIslemHesap" class="form-select"></select>
               <small class="text-muted">Nakit hangi kasadan/bankadan çıktı ya da girdi.</small>
             </div>
@@ -3598,7 +3601,7 @@ STK-002		50	adet
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
-            <button class="btn btn-success" id="maliIslemKaydetBtn" onclick="maliIslemKaydet()">Kaydet</button>
+            <button class="btn btn-primary" id="maliIslemKaydetBtn" onclick="maliIslemKaydet()">Kaydet</button>
           </div>
         </div>
       </div>
@@ -3608,18 +3611,18 @@ STK-002		50	adet
     <div class="modal fade" id="modalMaliGider" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
-          <div class="modal-header text-white" style="background:#6c757d;">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title"><i class="bi bi-wallet2 me-2"></i>Diğer Ödemeler (kart dışı giderler)</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
             <div class="small text-muted mb-3">Tedarikçi/müşteri kartı olmayan ödemeler (maaş, kira, vergi...) nakit akışına tek kalem olarak yazılır. Günü geçen ödenmemiş kalemler akışta otomatik bugüne taşınır.</div>
             <div class="row g-2 align-items-end mb-3" id="mgForm">
-              <div class="col-md-3"><label class="form-label small mb-0">Planlanan Tarih</label>
+              <div class="col-md-3"><label class="form-label">Planlanan Tarih</label>
                 <input id="mgTarih" type="date" class="form-control form-control-sm"></div>
-              <div class="col-md-3"><label class="form-label small mb-0">Tutar (TL)</label>
+              <div class="col-md-3"><label class="form-label">Tutar (TL)</label>
                 <input id="mgTutar" type="number" step="0.01" class="form-control form-control-sm"></div>
-              <div class="col-md-4"><label class="form-label small mb-0">Açıklama *</label>
+              <div class="col-md-4"><label class="form-label">Açıklama <span class="text-danger">*</span></label>
                 <input id="mgAciklama" class="form-control form-control-sm" placeholder="örn. Temmuz maaşları"></div>
               <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" onclick="maliGiderEkle()"><i class="bi bi-plus-lg me-1"></i>Ekle</button></div>
             </div>
@@ -3636,18 +3639,18 @@ STK-002		50	adet
     <div class="modal fade" id="modalMaliTaksit" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
-          <div class="modal-header text-white" style="background:#0d6efd;">
+          <div class="modal-header py-3 bg-dark text-white">
             <h5 class="modal-title"><i class="bi bi-calendar-range me-2"></i>Hızlı Taksitlendirme</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
             <div class="alert alert-light border small" id="mtxBilgi"></div>
             <div class="row g-2 align-items-end mb-3">
-              <div class="col-md-3"><label class="form-label small mb-0">Taksit Sayısı</label>
+              <div class="col-md-3"><label class="form-label">Taksit Sayısı</label>
                 <input id="mtxAdet" type="number" min="1" max="36" value="3" class="form-control form-control-sm"></div>
-              <div class="col-md-3"><label class="form-label small mb-0">İlk Taksit Tarihi</label>
+              <div class="col-md-3"><label class="form-label">İlk Taksit Tarihi</label>
                 <input id="mtxIlk" type="date" class="form-control form-control-sm"></div>
-              <div class="col-md-3"><label class="form-label small mb-0">Aralık (gün)</label>
+              <div class="col-md-3"><label class="form-label">Aralık (gün)</label>
                 <input id="mtxAralik" type="number" min="1" value="30" class="form-control form-control-sm"></div>
               <div class="col-md-3"><button class="btn btn-sm btn-outline-primary w-100" onclick="maliTaksitOnizle()"><i class="bi bi-magic me-1"></i>Eşit Böl</button></div>
             </div>
@@ -3670,29 +3673,29 @@ STK-002		50	adet
     <div class="modal fade" id="modalMaliDuzenle" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog">
         <div class="modal-content">
-          <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Hareket Düzelt</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-header py-3 bg-dark text-white"><h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Hareket Düzelt</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <div class="row g-2">
-              <div class="col-6"><label class="form-label small mb-0">Tarih</label>
+              <div class="col-6"><label class="form-label">Tarih</label>
                 <input id="mdTarih" type="date" class="form-control form-control-sm"></div>
-              <div class="col-6"><label class="form-label small mb-0" id="mdTutarEtiket">Tutar (TL)</label>
+              <div class="col-6"><label class="form-label" id="mdTutarEtiket">Tutar (TL)</label>
                 <input id="mdTutar" type="number" step="0.01" class="form-control form-control-sm"></div>
-              <div class="col-6 md-belge"><label class="form-label small mb-0">Belge No</label>
+              <div class="col-6 md-belge"><label class="form-label">Belge No</label>
                 <input id="mdBelgeNo" class="form-control form-control-sm"></div>
-              <div class="col-6"><label class="form-label small mb-0">Vade</label>
+              <div class="col-6"><label class="form-label">Vade</label>
                 <input id="mdVade" type="date" class="form-control form-control-sm"></div>
-              <div class="col-6 md-cek"><label class="form-label small mb-0">Çek No</label>
+              <div class="col-6 md-cek"><label class="form-label">Çek No</label>
                 <input id="mdCekNo" class="form-control form-control-sm"></div>
-              <div class="col-6 md-cek"><label class="form-label small mb-0">Banka</label>
+              <div class="col-6 md-cek"><label class="form-label">Banka</label>
                 <input id="mdBanka" class="form-control form-control-sm"></div>
-              <div class="col-12"><label class="form-label small mb-0">Açıklama</label>
+              <div class="col-12"><label class="form-label">Açıklama</label>
                 <input id="mdAciklama" class="form-control form-control-sm"></div>
             </div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
-            <button class="btn btn-success" onclick="maliDuzenleKaydet()">Kaydet</button>
+            <button class="btn btn-primary" onclick="maliDuzenleKaydet()">Kaydet</button>
           </div>
         </div>
       </div>
@@ -3702,8 +3705,8 @@ STK-002		50	adet
     <div class="modal fade" id="modalMaliSiparis" tabindex="-1">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
-          <div class="modal-header"><h5 class="modal-title"><i class="bi bi-cart-check me-2"></i>Siparişten Fatura Getir</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-header py-3 bg-dark text-white"><h5 class="modal-title"><i class="bi bi-cart-check me-2"></i>Siparişten Fatura Getir</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <div class="small text-muted mb-2">Satınalma'daki son siparişler. Birine tıklayınca fatura formu sipariş bilgileriyle dolar — kontrol edip kaydedersiniz.</div>
             <div class="table-responsive"><table class="table table-sm table-hover align-middle">
@@ -3719,38 +3722,38 @@ STK-002		50	adet
     <div class="modal fade" id="modalMaliAyar" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog">
         <div class="modal-content">
-          <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear me-2"></i>Mali İşler Ayarları</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="modal-header py-3 bg-dark text-white"><h5 class="modal-title"><i class="bi bi-gear me-2"></i>Mali İşler Ayarları</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
           <div class="modal-body">
             <div class="mb-3">
-              <label class="form-label fw-bold">Mühlet Tarihi</label>
+              <label class="form-label">Mühlet Tarihi</label>
               <input type="date" id="maliAyarMuhlet" class="form-control">
               <small class="text-muted">Mühlet öncesi/sonrası ayrımının kesim tarihi (tek sabit tarih).</small>
             </div>
             <div class="mb-3">
-              <label class="form-label fw-bold">Kasa Açılış Bakiyesi (TL)</label>
+              <label class="form-label">Kasa Açılış Bakiyesi (TL)</label>
               <input type="number" step="0.01" id="maliAyarKasa" class="form-control">
               <small class="text-muted">Kasa defterinin ve nakit akışının başlangıç noktası.</small>
             </div>
             <div class="mb-3">
-              <label class="form-label fw-bold">Varsayılan Ödeme Vadesi</label>
+              <label class="form-label">Varsayılan Ödeme Vadesi</label>
               <input type="date" id="maliAyarVarsayilanVade" class="form-control">
               <small class="text-muted">Faturasız cari borçlar (devir) nakit akışına bu tarihle yazılır.</small>
             </div>
             <div class="mb-3">
-              <label class="form-label fw-bold">Varsayılan Tahsilat Vadesi</label>
+              <label class="form-label">Varsayılan Tahsilat Vadesi</label>
               <input type="date" id="maliAyarTahsilatVade" class="form-control">
               <small class="text-muted">Müşteri devir alacakları nakit akışına GİRİŞ olarak bu tarihle yazılır.</small>
             </div>
             <div class="mb-2">
-              <label class="form-label fw-bold">Kasa / Banka Hesapları</label>
+              <label class="form-label">Kasa / Banka Hesapları</label>
               <textarea id="maliAyarHesaplar" class="form-control" rows="3" placeholder="Kasa = 100000&#10;Ziraat Bankası = 250000"></textarea>
               <small class="text-muted">Her satıra bir hesap: <b>Hesap Adı = Açılış Bakiyesi</b>. İlk hesap varsayılandır; eski hareketler ona sayılır.</small>
             </div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Vazgeç</button>
-            <button class="btn btn-success" onclick="maliAyarKaydet()">Kaydet</button>
+            <button class="btn btn-primary" onclick="maliAyarKaydet()">Kaydet</button>
           </div>
         </div>
       </div>
@@ -3759,7 +3762,7 @@ STK-002		50	adet
     <div class="modal fade" id="modalTeslimatIsEmri" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-3 text-white" style="background:#4b0082;">
+                <div class="modal-header py-3 bg-dark text-white">
                     <h5 class="modal-title fw-bold" id="tieBaslik"><i class="bi bi-clipboard2-check me-2"></i>İş Emri</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -3785,7 +3788,7 @@ STK-002		50	adet
                         <button type="button" class="btn btn-primary btn-sm fw-bold" id="pdDuzenleBtn" onclick="if(pdAktifProjeId) openProjeDuzenle(pdAktifProjeId)">
                             <i class="bi bi-pencil-square me-1"></i> Düzenle
                         </button>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                 </div>
                 <div class="modal-body p-4" style="background-color: #f8f9fa;">
@@ -3883,6 +3886,19 @@ let kullaniciYetki = '';
 // İzin haritası — login sonrası yüklenir: { modul_kod: 'YOK'|'OKUMA'|'YAZMA'|'TAM' }
 window.kullaniciIzinleri = {};
 const IZIN_SIRA = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
+
+// Zorunlu alan görsel işareti (Y-07): uyarı balonuyla birlikte alan da kırmızı çerçevelenir
+function alanHatasi(...idler) {
+    idler.forEach(id => {
+        const el = typeof id === 'string' ? document.getElementById(id) : id;
+        if (!el) return;
+        el.classList.add('is-invalid');
+        el.addEventListener('input', () => el.classList.remove('is-invalid'), { once: true });
+        el.addEventListener('change', () => el.classList.remove('is-invalid'), { once: true });
+    });
+    const ilk = typeof idler[0] === 'string' ? document.getElementById(idler[0]) : idler[0];
+    if (ilk) { ilk.focus(); ilk.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+}
 
 // İzin kontrol helper'ı: kullanıcının bu modülde en az gerekliSeviye'si var mı?
 function izinVarMi(modul, gerekliSeviye) {
@@ -4317,27 +4333,27 @@ function maliTedarikciKartHTML(r) {
     <div class="border rounded p-3 mb-3">
         <h6 class="mb-3"><i class="bi bi-bank me-1"></i>Mali Bilgiler</h6>
         <div class="row g-2">
-            <div class="col-md-3"><label class="form-label small mb-0">Tedarikçi Türü</label>
+            <div class="col-md-3"><label class="form-label">Tedarikçi Türü</label>
                 <select id="mtTur" class="form-select form-select-sm" ${dis}>
                     ${['Tedarikçi', 'İşletme', 'Nakliyeci'].map(x => `<option ${x === (t.tur || 'Tedarikçi') ? 'selected' : ''}>${x}</option>`).join('')}
                 </select></div>
-            <div class="col-md-5"><label class="form-label small mb-0">IBAN</label>
+            <div class="col-md-5"><label class="form-label">IBAN</label>
                 <input id="mtIban" class="form-control form-control-sm" value="${esc(t.iban || '')}" ${dis}></div>
-            <div class="col-md-4"><label class="form-label small mb-0">Banka / Şube</label>
+            <div class="col-md-4"><label class="form-label">Banka / Şube</label>
                 <input id="mtBanka" class="form-control form-control-sm" value="${esc(t.banka_bilgisi || '')}" ${dis}></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Genel Ödeme Vadesi (gün)</label>
+            <div class="col-md-3"><label class="form-label">Genel Ödeme Vadesi (gün)</label>
                 <input id="mtVade" type="number" class="form-control form-control-sm" value="${t.genel_vade_gun || ''}" ${dis}></div>
-            <div class="col-md-3"><label class="form-label small mb-0">İlgili Kişi (ekipten)</label>
+            <div class="col-md-3"><label class="form-label">İlgili Kişi (ekipten)</label>
                 <select id="mtIlgili" class="form-select form-select-sm" ${dis}>${maliEkipOptions(t.ilgili_kisi_id)}</select></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Mühlet Öncesi Cari Borç (TL)</label>
+            <div class="col-md-3"><label class="form-label">Mühlet Öncesi Cari Borç (TL)</label>
                 <input id="mtOnceBorc" type="number" step="0.01" class="form-control form-control-sm" value="${parseFloat(t.muhlet_oncesi_borc) || 0}" ${dis}></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Mühlet Sonrası Devir (TL)</label>
+            <div class="col-md-3"><label class="form-label">Mühlet Sonrası Devir (TL)</label>
                 <input id="mtSonraDevir" type="number" step="0.01" class="form-control form-control-sm" value="${parseFloat(t.muhlet_sonrasi_devir) || 0}" ${dis}>
                 <small class="text-muted">Bakiye = devir + faturalar − ödemeler</small></div>
-            <div class="col-12"><label class="form-label small mb-0">Açıklamalar ve Görüşler</label>
+            <div class="col-12"><label class="form-label">Açıklamalar ve Görüşler</label>
                 <textarea id="mtAciklama" class="form-control form-control-sm" rows="2" ${dis}>${esc(t.mali_aciklama || '')}</textarea></div>
         </div>
-        ${yazma ? `<div class="text-end mt-2"><button class="btn btn-sm btn-success" onclick="maliTedarikciKaydet(${t.id})"><i class="bi bi-check-lg me-1"></i>Mali Bilgileri Kaydet</button></div>` : ''}
+        ${yazma ? `<div class="text-end mt-2"><button class="btn btn-sm btn-primary" onclick="maliTedarikciKaydet(${t.id})"><i class="bi bi-check-lg me-1"></i>Mali Bilgileri Kaydet</button></div>` : ''}
     </div>
     ${maliProjeksiyonHTML('TEDARIKCI', r.hareketler, yazma)}
     ${maliFaturaFormHTML('TEDARIKCI', yazma)}
@@ -4351,38 +4367,38 @@ function maliMusteriFormHTML(m, yeniMi) {
     <div class="border rounded p-3 mb-3">
         <h6 class="mb-3"><i class="bi bi-person-vcard me-1"></i>Müşteri Bilgileri</h6>
         <div class="row g-2">
-            <div class="col-md-4"><label class="form-label small mb-0">Firma Adı *</label>
+            <div class="col-md-4"><label class="form-label">Firma Adı <span class="text-danger">*</span></label>
                 <input id="mmFirma" class="form-control form-control-sm" value="${esc(m.firma_adi || '')}" ${dis}></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Müşteri Türü</label>
+            <div class="col-md-2"><label class="form-label">Müşteri Türü</label>
                 <select id="mmTur" class="form-select form-select-sm" ${dis}>
                     ${['Kurumsal', 'Bireysel'].map(x => `<option ${x === (m.tur || 'Kurumsal') ? 'selected' : ''}>${x}</option>`).join('')}
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Durum</label>
+            <div class="col-md-2"><label class="form-label">Durum</label>
                 <select id="mmDurum" class="form-select form-select-sm" ${dis}>
                     <option value="AKTIF" ${(m.durum || 'AKTIF') === 'AKTIF' ? 'selected' : ''}>Aktif</option>
                     <option value="PASIF" ${m.durum === 'PASIF' ? 'selected' : ''}>Pasif</option>
                 </select></div>
-            <div class="col-md-4"><label class="form-label small mb-0">Yetkili Kişi</label>
+            <div class="col-md-4"><label class="form-label">Yetkili Kişi</label>
                 <input id="mmYetkili" class="form-control form-control-sm" value="${esc(m.yetkili_kisi || '')}" ${dis}></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Telefon</label>
+            <div class="col-md-3"><label class="form-label">Telefon</label>
                 <input id="mmTelefon" class="form-control form-control-sm" value="${esc(m.telefon || '')}" ${dis}></div>
-            <div class="col-md-3"><label class="form-label small mb-0">E-Posta</label>
+            <div class="col-md-3"><label class="form-label">E-Posta</label>
                 <input id="mmEmail" class="form-control form-control-sm" value="${esc(m.email || '')}" ${dis}></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Vergi No</label>
+            <div class="col-md-3"><label class="form-label">Vergi No</label>
                 <input id="mmVergiNo" class="form-control form-control-sm" value="${esc(m.vergi_no || '')}" ${dis}></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Vergi Dairesi</label>
+            <div class="col-md-3"><label class="form-label">Vergi Dairesi</label>
                 <input id="mmVergiDaire" class="form-control form-control-sm" value="${esc(m.vergi_dairesi || '')}" ${dis}></div>
-            <div class="col-md-6"><label class="form-label small mb-0">Adres</label>
+            <div class="col-md-6"><label class="form-label">Adres</label>
                 <input id="mmAdres" class="form-control form-control-sm" value="${esc(m.adres || '')}" ${dis}></div>
-            <div class="col-md-3"><label class="form-label small mb-0">İlgili Kişi (ekipten)</label>
+            <div class="col-md-3"><label class="form-label">İlgili Kişi (ekipten)</label>
                 <select id="mmIlgili" class="form-select form-select-sm" ${dis}>${maliEkipOptions(m.ilgili_kisi_id)}</select></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Cari Alacak Deviri (TL)</label>
+            <div class="col-md-3"><label class="form-label">Cari Alacak Deviri (TL)</label>
                 <input id="mmDevir" type="number" step="0.01" class="form-control form-control-sm" value="${parseFloat(m.devir_alacak) || 0}" ${dis}>
                 <small class="text-muted">Alacak = devir + faturalar − tahsilatlar</small></div>
-            <div class="col-12"><label class="form-label small mb-0">Açıklamalar ve Görüşler</label>
+            <div class="col-12"><label class="form-label">Açıklamalar ve Görüşler</label>
                 <textarea id="mmAciklama" class="form-control form-control-sm" rows="2" ${dis}>${esc(m.aciklama || '')}</textarea></div>
         </div>
-        ${yazma ? `<div class="text-end mt-2"><button class="btn btn-sm btn-success" onclick="maliMusteriKaydet(${m.id || 'null'})"><i class="bi bi-check-lg me-1"></i>${yeniMi ? 'Müşteriyi Oluştur' : 'Bilgileri Kaydet'}</button></div>` : ''}
+        ${yazma ? `<div class="text-end mt-2"><button class="btn btn-sm btn-primary" onclick="maliMusteriKaydet(${m.id || 'null'})"><i class="bi bi-check-lg me-1"></i>${yeniMi ? 'Müşteriyi Oluştur' : 'Bilgileri Kaydet'}</button></div>` : ''}
     </div>`;
 }
 
@@ -4423,16 +4439,16 @@ function maliPlanBolumHTML(tarafTip, hareketler, yazma) {
     window._maliPlanEtiket = tarafTip === 'TEDARIKCI' ? 'Mühlet Sonrası Bakiye' : 'Cari Alacak';
     const form = !yazma ? '' : `
         <div class="row g-2 align-items-end mb-2">
-            <div class="col-md-2"><label class="form-label small mb-0">Planlanan Tarih</label>
+            <div class="col-md-2"><label class="form-label">Planlanan Tarih</label>
                 <input id="mpTarih" type="date" class="form-control form-control-sm"></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Para Birimi</label>
+            <div class="col-md-2"><label class="form-label">Para Birimi</label>
                 <select id="mpPara" class="form-select form-select-sm" onchange="maliKurHint('mp');maliPlanOzetGuncelle()">
                     <option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option>
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0" id="mpTutarEtiket">Tutar (TL)</label>
+            <div class="col-md-2"><label class="form-label" id="mpTutarEtiket">Tutar (TL)</label>
                 <input id="mpTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliKurHint('mp');maliPlanOzetGuncelle()">
                 <small class="text-muted" id="mpKurHint"></small></div>
-            <div class="col-md-4"><label class="form-label small mb-0">Açıklama</label>
+            <div class="col-md-4"><label class="form-label">Açıklama</label>
                 <input id="mpAciklama" class="form-control form-control-sm" placeholder="örn. 1. taksit"></div>
             <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" onclick="maliPlanEkle('${tip}')"><i class="bi bi-calendar-plus me-1"></i>Planla</button></div>
         </div>`;
@@ -4505,29 +4521,29 @@ function maliProjeksiyonHTML(tarafTip, hareketler, yazma) {
     const silYetki = izinVarMi(tarafTip === 'TEDARIKCI' ? 'mali.tedarikci' : 'mali.musteri', 'TAM');
     const form = !yazma ? '' : `
         <div class="row g-2 align-items-end mb-2">
-            <div class="col-md-2"><label class="form-label small mb-0">Yön</label>
+            <div class="col-md-2"><label class="form-label">Yön</label>
                 <select id="mpYon" class="form-select form-select-sm" onchange="maliPlanOzetGuncelle()">
                     <option value="ODEME" ${anaYon === 'ODEME' ? 'selected' : ''}>Ödeme (−)</option>
                     <option value="TAHSILAT" ${anaYon === 'TAHSILAT' ? 'selected' : ''}>Tahsilat (+)</option>
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Tür</label>
+            <div class="col-md-2"><label class="form-label">Tür</label>
                 <select id="mpArac" class="form-select form-select-sm" onchange="document.querySelectorAll('.mp-cek').forEach(e=>e.classList.toggle('d-none',this.value!=='CEK'))">
                     <option value="NAKIT">Nakit</option><option value="CEK">Çek</option><option value="KREDI_KARTI">Kredi Kartı</option>
                 </select></div>
-            <div class="col-md-2 mp-cek d-none"><label class="form-label small mb-0">Çek No</label>
+            <div class="col-md-2 mp-cek d-none"><label class="form-label">Çek No</label>
                 <input id="mpCekNo" class="form-control form-control-sm"></div>
-            <div class="col-md-2 mp-cek d-none"><label class="form-label small mb-0">Banka</label>
+            <div class="col-md-2 mp-cek d-none"><label class="form-label">Banka</label>
                 <input id="mpBanka" class="form-control form-control-sm"></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Planlanan Tarih</label>
+            <div class="col-md-2"><label class="form-label">Planlanan Tarih</label>
                 <input id="mpTarih" type="date" class="form-control form-control-sm"></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Para Birimi</label>
+            <div class="col-md-2"><label class="form-label">Para Birimi</label>
                 <select id="mpPara" class="form-select form-select-sm" onchange="maliKurHint('mp');maliPlanOzetGuncelle()">
                     <option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option>
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0" id="mpTutarEtiket">Tutar (TL)</label>
+            <div class="col-md-2"><label class="form-label" id="mpTutarEtiket">Tutar (TL)</label>
                 <input id="mpTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliKurHint('mp');maliPlanOzetGuncelle()">
                 <small class="text-muted" id="mpKurHint"></small></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Açıklama</label>
+            <div class="col-md-3"><label class="form-label">Açıklama</label>
                 <input id="mpAciklama" class="form-control form-control-sm" placeholder="örn. 1. taksit"></div>
             <div class="col-md-3"><div class="form-check">
                 <input id="mpGerceklesti" type="checkbox" class="form-check-input">
@@ -4568,7 +4584,7 @@ async function maliProjEkle() {
     if (!k || !k.id) return;
     const gercek = document.getElementById('mpGerceklesti')?.checked;
     const tarih = document.getElementById('mpTarih').value;
-    if (!tarih) return showToast('Planlanan tarih zorunludur.', 'error');
+    if (!tarih) { alanHatasi('mpTarih'); return showToast('Planlanan tarih zorunludur.', 'error'); }
     const para = document.getElementById('mpPara')?.value || 'TL';
     const r = await secureFetch('/mali-hareket-ekle', {
         method: 'POST',
@@ -4601,23 +4617,23 @@ function maliFaturaFormHTML(tarafTip, yazma) {
         <h6 class="mb-2"><i class="bi bi-receipt me-1"></i>Fatura Girişi
             ${tarafTip === 'TEDARIKCI' ? '<button class="btn btn-sm btn-outline-success ms-2" onclick="maliSiparisKopruAc()"><i class="bi bi-cart-check me-1"></i>Siparişten Getir</button>' : ''}</h6>
         <div class="row g-2 align-items-end">
-            <div class="col-md-2"><label class="form-label small mb-0">Yön</label>
+            <div class="col-md-2"><label class="form-label">Yön</label>
                 <select id="mfYon" class="form-select form-select-sm">
                     <option value="GELEN" ${varsayilanYon === 'GELEN' ? 'selected' : ''}>Gelen Fatura</option>
                     <option value="GIDEN" ${varsayilanYon === 'GIDEN' ? 'selected' : ''}>Giden Fatura</option>
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Belge Tarihi</label>
+            <div class="col-md-2"><label class="form-label">Belge Tarihi</label>
                 <input id="mfTarih" type="date" class="form-control form-control-sm" value="${maliBugunYMD()}"></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Belge No</label>
+            <div class="col-md-2"><label class="form-label">Belge No</label>
                 <input id="mfBelgeNo" class="form-control form-control-sm"></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Para Birimi</label>
+            <div class="col-md-2"><label class="form-label">Para Birimi</label>
                 <select id="mfPara" class="form-select form-select-sm" onchange="maliKurHint('mf')">
                     <option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option>
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0" id="mfTutarEtiket">Tutar (TL)</label>
+            <div class="col-md-2"><label class="form-label" id="mfTutarEtiket">Tutar (TL)</label>
                 <input id="mfTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliKurHint('mf')">
                 <small class="text-muted" id="mfKurHint"></small></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Açıklama</label>
+            <div class="col-md-3"><label class="form-label">Açıklama</label>
                 <input id="mfAciklama" class="form-control form-control-sm"></div>
             <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" onclick="maliFaturaEkle()"><i class="bi bi-plus-lg me-1"></i>Ekle</button></div>
         </div>
@@ -4716,7 +4732,7 @@ async function maliPlanEkle(tip) {
     const k = window._maliKart;
     if (!k || !k.id) return;
     const tarih = document.getElementById('mpTarih').value;
-    if (!tarih) return showToast('Planlanan tarih zorunludur.', 'error');
+    if (!tarih) { alanHatasi('mgTarih'); return showToast('Planlanan tarih zorunludur.', 'error'); }
     const r = await secureFetch('/mali-hareket-ekle', {
         method: 'POST',
         body: JSON.stringify({
@@ -4747,35 +4763,35 @@ function maliHareketBolumHTML(tarafTip, hareketler, yazma) {
         <h6 class="mb-2"><i class="bi bi-plus-circle me-1"></i>Yeni Hareket
             ${tarafTip === 'TEDARIKCI' ? '<button class="btn btn-sm btn-outline-success ms-2" onclick="maliSiparisKopruAc()"><i class="bi bi-cart-check me-1"></i>Siparişten Getir</button>' : ''}</h6>
         <div class="row g-2 align-items-end">
-            <div class="col-md-2"><label class="form-label small mb-0">Tip</label>
+            <div class="col-md-2"><label class="form-label">Tip</label>
                 <select id="mhTip" class="form-select form-select-sm" onchange="maliHareketTipDegisti()">
                     ${formTipler.map(([v, a]) => `<option value="${v}">${a}</option>`).join('')}
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0" id="mhTarihEtiket">Belge Tarihi</label>
+            <div class="col-md-2"><label class="form-label" id="mhTarihEtiket">Belge Tarihi</label>
                 <input id="mhTarih" type="date" class="form-control form-control-sm" value="${maliBugunYMD()}"></div>
-            <div class="col-md-2 mh-belge"><label class="form-label small mb-0">Belge No</label>
+            <div class="col-md-2 mh-belge"><label class="form-label">Belge No</label>
                 <input id="mhBelgeNo" class="form-control form-control-sm"></div>
-            <div class="col-md-2 mh-cek d-none"><label class="form-label small mb-0">Çek No</label>
+            <div class="col-md-2 mh-cek d-none"><label class="form-label">Çek No</label>
                 <input id="mhCekNo" class="form-control form-control-sm"></div>
-            <div class="col-md-2 mh-cek d-none"><label class="form-label small mb-0">Banka</label>
+            <div class="col-md-2 mh-cek d-none"><label class="form-label">Banka</label>
                 <input id="mhBanka" class="form-control form-control-sm"></div>
-            <div class="col-md-2 mh-proj d-none"><label class="form-label small mb-0">Projeksiyon Türü</label>
+            <div class="col-md-2 mh-proj d-none"><label class="form-label">Projeksiyon Türü</label>
                 <select id="mhProjTur" class="form-select form-select-sm">
                     <option value="AVANS">Avans</option><option value="HAKEDIS">Hakediş</option><option value="CEK">Çek</option>
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0">Para Birimi</label>
+            <div class="col-md-2"><label class="form-label">Para Birimi</label>
                 <select id="mhPara" class="form-select form-select-sm" onchange="maliKurHint('mh')">
                     <option value="TL">TL</option><option value="USD">USD</option><option value="EUR">EUR</option>
                 </select></div>
-            <div class="col-md-2"><label class="form-label small mb-0" id="mhTutarEtiket">Tutar (TL)</label>
+            <div class="col-md-2"><label class="form-label" id="mhTutarEtiket">Tutar (TL)</label>
                 <input id="mhTutar" type="number" step="0.01" class="form-control form-control-sm" oninput="maliKurHint('mh')">
                 <small class="text-muted" id="mhKurHint"></small></div>
-            <div class="col-md-2 mh-vade"><label class="form-label small mb-0" id="mhVadeEtiket">Vade</label>
+            <div class="col-md-2 mh-vade"><label class="form-label" id="mhVadeEtiket">Vade</label>
                 <input id="mhVade" type="date" class="form-control form-control-sm"></div>
             <div class="col-md-2 mh-cek d-none"><div class="form-check mt-3">
                 <input id="mhMuhletOnce" type="checkbox" class="form-check-input">
                 <label class="form-check-label small" for="mhMuhletOnce">Mühlet öncesi</label></div></div>
-            <div class="col-md-3"><label class="form-label small mb-0">Açıklama</label>
+            <div class="col-md-3"><label class="form-label">Açıklama</label>
                 <input id="mhAciklama" class="form-control form-control-sm"></div>
             <div class="col-md-2"><button class="btn btn-sm btn-primary w-100" onclick="maliHareketEkle()"><i class="bi bi-plus-lg me-1"></i>Ekle</button></div>
         </div>
@@ -6465,7 +6481,7 @@ function tsYeniSatir() {
         <div class="form-check mt-3"><input class="form-check-input" type="checkbox" id="tsYeniTablo"><label class="form-check-label small" for="tsYeniTablo">Bu satırdan itibaren ayrı (başlıksız) tablo başlasın</label></div>
         <div class="d-flex justify-content-end gap-2 mt-3">
             <button class="btn btn-sm btn-outline-secondary" onclick="tsSablonYukle()">Vazgeç</button>
-            <button class="btn btn-sm btn-dark" onclick="tsYeniKaydet()"><i class="bi bi-plus-lg me-1"></i>Ekle</button>
+            <button class="btn btn-sm btn-primary" onclick="tsYeniKaydet()"><i class="bi bi-plus-lg me-1"></i>Ekle</button>
         </div>`;
     tsYeniTipDegis();
 }
@@ -9867,24 +9883,24 @@ function addNewReqRow(data) {
     rowDiv.innerHTML = `
         <div class="row g-2 align-items-end">
             <div class="col-md-3">
-                <label class="form-label small fw-bold text-muted m-0">Kategori</label>
+                <label class="form-label">Kategori</label>
                 <select class="form-select form-select-sm nt-kategori" onchange="ntFiltreUygula(this)">
                     <option value="">Tüm Kategoriler</option>
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label small fw-bold text-muted m-0">Malzeme / Stok Kartı <span class="text-danger">*</span> <small class="text-muted ms-1 nt-sayac"></small></label>
+                <label class="form-label">Malzeme / Stok Kartı <span class="text-danger">*</span> <small class="text-muted ms-1 nt-sayac"></small></label>
                 <select class="form-select form-select-sm nt-u" onchange="checkStockWarning(this)">
                     <option value="">-- Yükleniyor... --</option>
                 </select>
                 <input type="text" class="form-control form-control-sm mt-1 ${isOzel ? '' : 'd-none'} nt-ozel-ad" placeholder="Katalog dışı ürün adı yazın..." value="${esc(d.ozel_urun_adi || '')}">
             </div>
             <div class="col-md-1">
-                <label class="form-label small fw-bold text-muted m-0">Miktar <span class="text-danger">*</span></label>
+                <label class="form-label">Miktar <span class="text-danger">*</span></label>
                 <input type="number" class="form-control form-control-sm text-center nt-m" value="${d.miktar || '1.00'}" step="0.01">
             </div>
             <div class="col-md-2">
-                <label class="form-label small fw-bold text-muted m-0">Birim <span class="text-danger">*</span></label>
+                <label class="form-label">Birim <span class="text-danger">*</span></label>
                 <!-- Katalog seçilince readonly text gösterilir -->
                 <input type="text" class="form-control form-control-sm text-center nt-birim-text ${isOzel ? 'd-none' : ''}" value="${esc(seciliBirim)}" readonly>
                 <!-- Özel ürün seçilince dropdown -->
@@ -9893,7 +9909,7 @@ function addNewReqRow(data) {
                 </select>
             </div>
             <div class="col-md-2">
-                <label class="form-label small fw-bold text-muted m-0">Açıklama</label>
+                <label class="form-label">Açıklama</label>
                 <input type="text" class="form-control form-control-sm nt-a" placeholder="Not..." value="${esc(d.aciklama || '')}">
             </div>
             <div class="col-md-1 text-end">
@@ -10026,7 +10042,7 @@ function saveNewRequest() {
     const teslim_yeri = document.getElementById("ntYer").value;
     const genel_aciklama = document.getElementById("ntNot").value.trim();
 
-    if(!proje_id) return showToast("Lütfen ilgili projeyi seçin!", "error");
+    if(!proje_id) { alanHatasi("ntProje"); return showToast("Lütfen ilgili projeyi seçin.", "error"); }
 
     const kalemler = [];
     const rows = document.querySelectorAll(".nt-row");
@@ -11320,7 +11336,7 @@ const SA_TIMELINE_META = {
     SEND:    { etiket: 'Tedarikçiye gönderildi', ikon: 'bi-send-fill',             renk: '#6f42c1' },
     RECEIVE: { etiket: 'Mal kabul yapıldı',     ikon: 'bi-box-seam-fill',          renk: '#198754' },
     REVERT:  { etiket: 'Geri alındı',           ikon: 'bi-arrow-counterclockwise', renk: '#fd7e14' },
-    UPDATE:  { etiket: 'Güncellendi',           ikon: 'bi-pencil-fill',            renk: '#0dcaf0' },
+    UPDATE:  { etiket: 'Güncellendi',           ikon: 'bi-pencil',            renk: '#0dcaf0' },
     CANCEL:  { etiket: 'İptal edildi',          ikon: 'bi-x-circle-fill',          renk: '#dc3545' },
     ARCHIVE: { etiket: 'Arşivlendi',            ikon: 'bi-archive-fill',           renk: '#6c757d' }
 };
@@ -11779,19 +11795,19 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
             <div class="card-body py-3">
                 <div class="row g-2 align-items-start">
                     <div class="col-md-8">
-                        <label class="form-label small fw-bold text-muted mb-1">Fatura No(ları)</label>
+                        <label class="form-label">Fatura No(ları)</label>
                         <input type="text" id="faturaNolari-${siparisId}" class="form-control form-control-sm"
                                placeholder="Örn: AC2024000123, AC2024000124 (virgülle ayır)"
                                value="${esc((sip?.fatura_nolari || []).join(', '))}">
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label small fw-bold text-muted mb-1">İşlem</label>
+                        <label class="form-label">İşlem</label>
                         <button class="btn btn-success btn-sm w-100 fw-bold" onclick="faturaOnayla(${siparisId})">
                             <i class="bi bi-check2-circle me-1"></i>${sip?.fatura_onay_durumu === 'ONAYLI' ? 'Güncelle' : 'Onayla'}
                         </button>
                     </div>
                     <div class="col-md-12">
-                        <label class="form-label small fw-bold text-muted mb-1">Not (opsiyonel)</label>
+                        <label class="form-label">Not (opsiyonel)</label>
                         <input type="text" id="faturaNotu-${siparisId}" class="form-control form-control-sm"
                                placeholder="Fatura ile ilgili not, eksik kontrol vs."
                                value="${esc(sip?.fatura_notu || '')}">
@@ -13284,9 +13300,9 @@ function tieHTML(ie, notlar) {
     if (!ie) {
         return `
         <div class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>İş emri, bu binanın <b>teknik şartnamesini</b> tek tuşla resmî belgeye dönüştürür: şartname <b>kilitlenir</b>, PDF o anki haliyle <b>dondurulur</b>. Yayınlayınca ekibe PDF ekli bildirim gider ve bina <b>PROJE</b> aşamasına geçer.</div>
-        <div class="mb-2"><label class="form-label small fw-semibold"><i class="bi bi-sticky me-1 text-warning"></i>İş emri notu <span class="text-muted fw-normal">(ekibe yönelik — belgeye basılır, mailde görünür)</span></label>
+        <div class="mb-2"><label class="form-label"><i class="bi bi-sticky me-1 text-warning"></i>İş emri notu <span class="text-muted fw-normal">(ekibe yönelik — belgeye basılır, mailde görünür)</span></label>
             <textarea id="tieNot" class="form-control form-control-sm" rows="3" placeholder="örn. Sevkiyat önceliği, özel imalat detayı, dikkat edilecekler..."></textarea></div>
-        <div class="mb-3"><label class="form-label small fw-semibold">Ek alıcılar <span class="text-muted fw-normal">(virgülle — Bildirim Ayarları kuralına ek olarak)</span></label>
+        <div class="mb-3"><label class="form-label">Ek alıcılar <span class="text-muted fw-normal">(virgülle — Bildirim Ayarları kuralına ek olarak)</span></label>
             <input id="tieEkAlici" class="form-control form-control-sm" placeholder="ornek@aterko.com, birisi@aterko.com"></div>
         <button class="btn btn-sm btn-primary fw-bold" onclick="tieOlustur()"><i class="bi bi-clipboard2-check me-1"></i>İş Emri Oluştur <span class="fw-normal">(şartnameyi kilitler)</span></button>`;
     }
@@ -13698,7 +13714,7 @@ function tsKosullariCalistir() {
 
 function buildFormField(alan, deger) {
     const safeId = 'ts_' + alan.id;
-    const zorunluMark = alan.zorunlu ? '<span class="text-danger ms-1">*</span>' : '';
+    const zorunluMark = alan.zorunlu ? '<span class="text-danger">*</span>' : '';
     const saltOkunur = (alan.kurallar || '').includes('SALT_OKUNUR');
     const kilitMark = saltOkunur ? '<i class="bi bi-lock-fill text-secondary ms-1" title="Bu alan proje kayıt formundan gelir, buradan değiştirilemez"></i>' : '';
     const disabledAttr = saltOkunur ? 'disabled' : '';
@@ -14806,11 +14822,11 @@ function addTeslimatRow(data) {
         </div>
         <div class="card-body p-3 row g-3">
             <div class="col-md-3">
-                <label class="small fw-bold text-muted mb-1">Bina Adı <span class="text-danger">*</span></label>
+                <label class="form-label">Bina Adı <span class="text-danger">*</span></label>
                 <input type="text" class="form-control form-control-sm t-ad" value="${esc(d.bina_adi || '')}">
             </div>
             <div class="col-md-3">
-                <label class="small fw-bold text-muted mb-1">Bina Türü <span class="text-danger">*</span></label>
+                <label class="form-label">Bina Türü <span class="text-danger">*</span></label>
                 <select class="form-select form-select-sm t-tur" onchange="applyBinaKosullari(this)">
                     <option value="">Seçiniz...</option>
                     <option value="Prefabrik" ${d.bina_turu === 'Prefabrik' ? 'selected' : ''}>Prefabrik</option>
@@ -14820,12 +14836,12 @@ function addTeslimatRow(data) {
                 </select>
             </div>
             <div class="col-md-6">
-                <label class="small fw-bold text-muted mb-1">Bina Tipi <span class="text-danger">*</span></label>
+                <label class="form-label">Bina Tipi <span class="text-danger">*</span></label>
                 <select class="form-select form-select-sm t-tip" data-secili="${esc(d.bina_tipi || '')}"><option value="">Önce Tür Seçiniz...</option></select>
             </div>
 
             <div class="col-md-2 kosul-prefabrik" style="display:none;">
-                <label class="small fw-bold text-muted mb-1">Kat Yüksekliği</label>
+                <label class="form-label">Kat Yüksekliği</label>
                 <select class="form-select form-select-sm t-kat-yuksekligi" onchange="const dg=this.parentElement.querySelector('.t-kat-yuksekligi-diger'); dg.classList.toggle('d-none', this.value !== 'DİĞER'); if(this.value==='DİĞER') dg.focus();">
                     <option value="">Seçiniz...</option>
                     <option value="2500" ${d.kat_yuksekligi === '2500' ? 'selected' : ''}>2500 mm</option>
@@ -14836,45 +14852,45 @@ function addTeslimatRow(data) {
                 <input type="number" class="form-control form-control-sm mt-1 t-kat-yuksekligi-diger ${(d.kat_yuksekligi && !['2500','2800','3000','DİĞER'].includes(String(d.kat_yuksekligi))) ? '' : 'd-none'}" placeholder="mm girin (örn. 3200)" value="${(d.kat_yuksekligi && !['2500','2800','3000','DİĞER'].includes(String(d.kat_yuksekligi))) ? esc(d.kat_yuksekligi) : ''}">
             </div>
             <div class="col-md-2 kosul-prefabrik" style="display:none;">
-                <label class="small fw-bold text-muted mb-1">Kat Adedi</label>
+                <label class="form-label">Kat Adedi</label>
                 <select class="form-select form-select-sm t-kat-adedi">
                     <option value="">Seçiniz...</option>
                     ${[1,2,3,4].map(n => `<option value="${n}" ${String(d.kat_adedi) === String(n) ? 'selected' : ''}>${n}</option>`).join('')}
                 </select>
             </div>
             <div class="col-md-2 kosul-prefabrik kosul-hafif" style="display:none;">
-                <label class="small fw-bold text-muted mb-1">Bina Adedi</label>
+                <label class="form-label">Bina Adedi</label>
                 <input type="number" class="form-control form-control-sm t-bina-adedi" value="${esc(d.bina_adedi || '')}" onchange="sevkiyatTarihleriYenile(this)">
             </div>
 
             <div class="col-md-3 kosul-konteyner" style="display:none;">
-                <label class="small fw-bold text-muted mb-1">Konteyner Ebadı</label>
+                <label class="form-label">Konteyner Ebadı</label>
                 <input type="text" class="form-control form-control-sm t-konteyner-ebadi" value="${esc(d.konteyner_ebadi || '')}">
             </div>
             <div class="col-md-3 kosul-konteyner" style="display:none;">
-                <label class="small fw-bold text-muted mb-1">Konteyner Miktarı</label>
+                <label class="form-label">Konteyner Miktarı</label>
                 <input type="number" class="form-control form-control-sm t-konteyner-miktari" value="${esc(d.konteyner_miktari || '')}" onchange="sevkiyatTarihleriYenile(this)">
             </div>
 
             <div class="col-md-3 kosul-hafif" style="display:none;">
-                <label class="small fw-bold text-muted mb-1">Dış Duvar Kesiti</label>
+                <label class="form-label">Dış Duvar Kesiti</label>
                 <input type="text" class="form-control form-control-sm t-dis-duvar" value="${esc(d.dis_duvar_kesiti || '')}">
             </div>
             <div class="col-md-3 kosul-hafif" style="display:none;">
-                <label class="small fw-bold text-muted mb-1">İç Duvar Kesiti</label>
+                <label class="form-label">İç Duvar Kesiti</label>
                 <input type="text" class="form-control form-control-sm t-ic-duvar" value="${esc(d.ic_duvar_kesiti || '')}">
             </div>
 
             <div class="col-md-3">
-                <label class="small fw-bold text-muted mb-1">Büyüklük (m²) <span class="text-danger">*</span></label>
+                <label class="form-label">Büyüklük (m²) <span class="text-danger">*</span></label>
                 <input type="number" class="form-control form-control-sm t-m2" step="0.01" value="${esc(d.buyukluk_m2 || '')}">
             </div>
             <div class="col-md-3">
-                <label class="small fw-bold text-muted mb-1">Kurulum / Bina Yeri <span class="text-danger">*</span></label>
+                <label class="form-label">Kurulum / Bina Yeri <span class="text-danger">*</span></label>
                 <input type="text" class="form-control form-control-sm t-yer" value="${esc(d.bina_yeri || '')}">
             </div>
             <div class="col-md-3">
-                <label class="small fw-bold text-muted mb-1">Tutar (KDV Hariç) <span class="text-danger">*</span></label>
+                <label class="form-label">Tutar (KDV Hariç) <span class="text-danger">*</span></label>
                 <input type="number" class="form-control form-control-sm text-end fw-bold t-tutar" step="0.01" value="${esc(d.kdvsiz_tutar || '')}">
             </div>
 
@@ -14889,7 +14905,7 @@ function addTeslimatRow(data) {
             </div>
 
             <div class="col-12 t-sevkiyat-coklu-container">
-                <label class="small fw-bold text-muted mb-1"><i class="bi bi-calendar-week me-1"></i>Sevkiyat Tarihleri</label>
+                <label class="form-label"><i class="bi bi-calendar-week me-1"></i>Sevkiyat Tarihleri</label>
                 <div class="t-sevkiyat-tarihleri border rounded p-2 bg-light"></div>
             </div>
         </div>
@@ -14953,7 +14969,7 @@ function sevkiyatTarihleriYenile(srcEl, mevcutSevkiyatlar) {
         const not = kaynak.not || '';
         const etiket = miktar === 1 ? esc(binaAdi) : `${esc(binaAdi)} - ${i + 1}`;
         html += `<div class="row g-2 mb-2 sevkiyat-satir align-items-center" data-sira="${i + 1}">
-            <div class="col-md-3"><label class="small fw-bold text-muted mb-0">${etiket}</label></div>
+            <div class="col-md-3"><label class="form-label">${etiket}</label></div>
             <div class="col-md-3"><input type="date" class="form-control form-control-sm sv-tarih" value="${esc(tarih)}"></div>
             <div class="col-md-6"><input type="text" class="form-control form-control-sm sv-not" placeholder="Not (opsiyonel)" value="${esc(not)}"></div>
         </div>`;
