@@ -25,6 +25,37 @@
 
     /* DURUM ROZETLERİ */
     .badge-status { padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; text-transform: uppercase; font-weight: 700; display: inline-block; letter-spacing: 0.3px; }
+    /* --- MODÜL RENK SÖZLÜĞÜ (Y-03) — her modül ayrık bir renk; semantik renklerden bağımsız --- */
+    :root {
+      --mod-satinalma: #198754; --mod-uretim: #b45309; --mod-montaj: #6f42c1;
+      --mod-mali: #1b3a6b;      --mod-sevkiyat: #0e7490; --mod-stok: #475569;
+    }
+    .text-mod-satinalma { color: var(--mod-satinalma) !important; }
+    .text-mod-uretim    { color: var(--mod-uretim) !important; }
+    .text-mod-montaj    { color: var(--mod-montaj) !important; }
+    .text-mod-mali      { color: var(--mod-mali) !important; }
+    .text-mod-sevkiyat  { color: var(--mod-sevkiyat) !important; }
+    .text-mod-stok      { color: var(--mod-stok) !important; }
+    .bg-mod-satinalma { background-color: var(--mod-satinalma) !important; }
+    .bg-mod-uretim    { background-color: var(--mod-uretim) !important; }
+    .bg-mod-montaj    { background-color: var(--mod-montaj) !important; }
+    .bg-mod-mali      { background-color: var(--mod-mali) !important; }
+    .bg-mod-sevkiyat  { background-color: var(--mod-sevkiyat) !important; }
+    .bg-mod-stok      { background-color: var(--mod-stok) !important; }
+    /* --- MARKA: birincil eylem rengi (Y-02) — Bootstrap mavisi yerine Aterko turuncusu --- */
+    .btn-primary {
+      --bs-btn-bg: var(--aterko-primary); --bs-btn-border-color: var(--aterko-primary);
+      --bs-btn-hover-bg: #e34400; --bs-btn-hover-border-color: #e34400;
+      --bs-btn-active-bg: #c93d00; --bs-btn-active-border-color: #c93d00;
+      --bs-btn-disabled-bg: var(--aterko-primary); --bs-btn-disabled-border-color: var(--aterko-primary);
+      --bs-btn-focus-shadow-rgb: 255,76,0;
+    }
+    .btn-outline-primary {
+      --bs-btn-color: #c93d00; --bs-btn-border-color: var(--aterko-primary);
+      --bs-btn-hover-bg: var(--aterko-primary); --bs-btn-hover-border-color: var(--aterko-primary);
+      --bs-btn-active-bg: #c93d00; --bs-btn-active-border-color: #c93d00;
+      --bs-btn-focus-shadow-rgb: 255,76,0;
+    }
     .st-beklemede { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
     .st-taslak { background: #fff3cd; color: #664d03; border: 1px dashed #ffda6a; }
     .st-sozlesme { background: #cfe2ff; color: #084298; border: 1px solid #b6d4fe; }
@@ -82,6 +113,7 @@
     #tsModalBody .ts-alan label { line-height: 1.25; }
 
     /* SATINALMA — Durum rozetleri */
+    .sa-badge-mini { font-size:0.62rem; padding:2px 6px; }
     .sa-badge { display:inline-block; padding:3px 9px; border-radius:4px; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; }
     .sa-onay-bekliyor    { background:#fff3cd; color:#856404; border:1px solid #ffeeba; }
     .sa-onaylandi        { background:#cfe2ff; color:#084298; border:1px solid #b6d4fe; }
@@ -214,14 +246,14 @@
     <ul class="nav nav-pills">
       <li class="nav-item"><a class="nav-link" id="nav-anasayfa" onclick="setTab('anasayfa')"><i class="bi bi-house-door-fill me-2"></i>Ana Sayfa</a></li>
       <li class="nav-item"><a class="nav-link active" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-2"></i>Projeler</a></li>
-      <li class="nav-item"><a class="nav-link text-success" id="nav-satinalma" onclick="setTab('satinalma')"><i class="bi bi-cart-check me-2"></i>Satınalma</a></li>
+      <li class="nav-item"><a class="nav-link text-mod-satinalma" id="nav-satinalma" onclick="setTab('satinalma')"><i class="bi bi-cart-check me-2"></i>Satınalma</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-stok" onclick="setTab('stok')"><i class="bi bi-box-seam me-2"></i>Stok</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-2"></i>Bina Listeleri</a></li>
-      <li class="nav-item"><a class="nav-link text-warning" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-2"></i>Üretim</a></li>
+      <li class="nav-item"><a class="nav-link text-mod-uretim" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-2"></i>Üretim</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-2"></i>Sevkiyat</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-montaj" onclick="setTab('montaj')" style="color:#6f42c1;"><i class="bi bi-wrench-adjustable me-2"></i>Montaj</a></li>
+      <li class="nav-item"><a class="nav-link" id="nav-montaj" onclick="setTab('montaj')" class="text-mod-montaj"><i class="bi bi-wrench-adjustable me-2"></i>Montaj</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Rapor</a></li>
-      <li class="nav-item d-none"><a class="nav-link" id="nav-mali" onclick="setTab('mali')" style="color:#198754;"><i class="bi bi-cash-stack me-2"></i>Mali İşler</a></li>
+      <li class="nav-item d-none"><a class="nav-link" id="nav-mali" onclick="setTab('mali')" class="text-mod-mali"><i class="bi bi-cash-stack me-2"></i>Mali İşler</a></li>
       <li class="nav-item d-none" id="nav-gorevler-wrap"><a class="nav-link" id="nav-gorevler" onclick="setTab('gorevler')" style="color:#0d6efd;"><i class="bi bi-check2-square me-2"></i>Görevler</a></li>
       <!-- Tedarikçi sekmesi Satınalma alt sekmesine taşındı, doğrudan link kaldırıldı -->
       <li class="nav-item d-none"><a id="nav-tedarikci" onclick="setTab('tedarikci')"></a></li>
@@ -237,7 +269,7 @@
     <!-- ============ MALİ İŞLER (cari takip — Faz 1) ============ -->
     <div id="maliArea" class="d-none p-3">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h4 class="mb-0" style="color:#198754;"><i class="bi bi-cash-stack me-2"></i>Mali İşler</h4>
+        <h5 class="mb-0 fw-bold text-mod-mali"><i class="bi bi-cash-stack me-2"></i>Mali İşler</h5>
         <div class="d-flex align-items-center gap-2">
           <span id="maliKurRozet" class="badge bg-light text-dark border"></span>
           <span id="maliMuhletRozet" class="badge bg-light text-dark border"></span>
@@ -5630,15 +5662,15 @@ async function dashboardYukle() {
 
 function dashboardKpiRender(k) {
     const kartlar = [
-        { ad: 'Açık Talepler',         say: k.acikTalep,        renk: 'primary',  ikon: 'bi-cart',           tab: 'satinalma', alt: 'talepler' },
+        { ad: 'Açık Talepler',         say: k.acikTalep,        renk: 'mod-satinalma',  ikon: 'bi-cart',           tab: 'satinalma', alt: 'talepler' },
         { ad: 'Bekleyen Sipariş',      say: k.bekleyenSiparis,  renk: 'warning',  ikon: 'bi-hourglass-split', tab: 'satinalma', alt: 'siparisler' },
         { ad: 'Gecikmiş Sipariş',      say: k.gecikenSiparis || 0, renk: 'danger', ikon: 'bi-exclamation-triangle-fill', tab: 'satinalma', alt: 'siparisler' },
         { ad: 'Termini Yaklaşan (7g)', say: k.terminYaklasan,   renk: 'warning',  ikon: 'bi-alarm',          tab: 'satinalma', alt: 'siparisler' },
         { ad: 'Kritik Stok',           say: k.kritikStok,       renk: 'danger',   ikon: 'bi-exclamation-octagon', tab: 'stok' },
-        { ad: 'Açık İş Emri',          say: k.acikIsEmri,       renk: 'info',     ikon: 'bi-tools',          tab: 'uretim' },
+        { ad: 'Açık İş Emri',          say: k.acikIsEmri,       renk: 'mod-uretim',     ikon: 'bi-tools',          tab: 'uretim' },
         { ad: 'Yayında Teslimat',      say: k.yayindaTeslimat,  renk: 'success',  ikon: 'bi-check2-circle',  tab: 'urun-listesi' },
-        { ad: 'Sahada Bekleyen',       say: k.sahaBekleyen,     renk: 'secondary', ikon: 'bi-wrench-adjustable', tab: 'montaj' },
-        { ad: 'Açık Sevkiyat',         say: k.acikSevkiyat,     renk: 'info',     ikon: 'bi-truck',          tab: 'sevkiyat' }
+        { ad: 'Sahada Bekleyen',       say: k.sahaBekleyen,     renk: 'mod-montaj', ikon: 'bi-wrench-adjustable', tab: 'montaj' },
+        { ad: 'Açık Sevkiyat',         say: k.acikSevkiyat,     renk: 'mod-sevkiyat',     ikon: 'bi-truck',          tab: 'sevkiyat' }
     ];
 
     document.getElementById('dashboardKpiGrid').innerHTML = kartlar.map(c => `
@@ -8561,7 +8593,7 @@ function renderUretimIsEmirleri() {
     const durumMap = {
         'HAZIR': ['secondary','📋 Hazır'],
         'UYGULANIYOR': ['warning','🔧 Uygulanıyor'],
-        'TAMAMLANDI': ['success','✅ Tamamlandı'],
+        'TAMAMLANDI': ['success','Tamamlandı'],
         'IPTAL': ['danger','❌ İptal']
     };
     tbody.innerHTML = uretimEmirlerCache.map(e => {
@@ -8965,9 +8997,9 @@ function renderSevkiyatBelgeleri() {
         return;
     }
     const durumMap = {
-        'HAZIRLANIYOR': ['secondary','📦 Hazırlanıyor'],
-        'YOLDA':        ['warning','🚚 Yolda'],
-        'TESLIM':       ['success','✅ Teslim'],
+        'HAZIRLANIYOR': ['secondary','Hazırlanıyor'],
+        'YOLDA':        ['warning','Yolda'],
+        'TESLIM':       ['success','Teslim'],
         'IPTAL':        ['danger','❌ İptal']
     };
     tbody.innerHTML = sevkiyatBelgelerCache.map(s => {
@@ -9517,7 +9549,7 @@ function getSatinalmaDurumBadge(durum) {
     };
     // KARIŞIK: kalemleri farklı aşamalarda olan talep — özel mor rozet
     if (d === 'KARIŞIK') {
-        return `<span class="badge" style="background:#6f42c1; color:#fff;" title="Kalemler farklı aşamalarda — detaya girip kalem bazlı yönetin"><i class="bi bi-diagram-3 me-1"></i>KARIŞIK</span>`;
+        return `<span class="badge bg-mod-montaj" title="Kalemler farklı aşamalarda — detaya girip kalem bazlı yönetin"><i class="bi bi-diagram-3 me-1"></i>KARIŞIK</span>`;
     }
     const cls = map[d] || 'sa-onay-bekliyor';
     return `<span class="sa-badge ${cls}">${esc(d || 'ONAY BEKLİYOR')}</span>`;
@@ -9641,12 +9673,11 @@ async function toggleTalepKalemSatiri(talepId, btn) {
 }
 
 // Ürün durumu için soluk (göze batmayan) renk
-function talepUrunDurumRenk(durum) {
-    return {
-        'ONAY BEKLİYOR': '#854F0B', 'ONAYLANDI': '#185FA5', 'İŞLEME ALINDI': '#0F6E56',
-        'TEKLİF İSTENDİ': '#0F6E56', 'SİPARİŞ OLUŞTURULDU': '#3B6D11', 'KISMİ TESLİM': '#854F0B',
-        'TAM TESLİM': '#3B6D11', 'İPTAL': '#A32D2D', 'REDDEDİLDİ': '#A32D2D'
-    }[(durum || '').trim()] || '#5F5E5A';
+// Kalem durumu — tek kaynak: getSatinalmaDurumBadge (Y-01).
+// Eskiden burada ayrı bir renk sözlüğü vardı; aynı durum listede/kartta farklı renkte
+// görünüyordu. Artık tüm satınalma durumları aynı pastel rozet setini kullanır.
+function talepUrunDurumBadge(durum) {
+    return getSatinalmaDurumBadge(durum).replace('sa-badge', 'sa-badge sa-badge-mini');
 }
 
 // Kart içi ürün listesi: üstte ad + miktar, altta kategori · açıklama + ürün durumu
@@ -9659,7 +9690,6 @@ function renderTalepKalemMini(kalemler) {
         const ad = isOzel ? (k.ozel_urun_adi || '-') : (k.stok_adi || '-');
         const birim = isOzel ? (k.ozel_urun_birim || '') : (k.stok_birim || '');
         const alt = [k.kategori, k.aciklama].filter(x => x && x !== '-').join(' · ');
-        const renk = talepUrunDurumRenk(k.durum);
         return `<div ${i ? 'style="border-top:0.5px solid #e2e5e9;"' : ''}>
             <div class="d-flex justify-content-between gap-2 pt-2" style="font-size:0.82rem;">
                 <span class="fw-semibold">${isOzel ? '<span class="badge bg-light text-warning border border-warning me-1" style="font-size:0.6rem;">Özel</span>' : ''}${esc(ad)}</span>
@@ -9667,7 +9697,7 @@ function renderTalepKalemMini(kalemler) {
             </div>
             <div class="d-flex justify-content-between gap-2 pb-2" style="font-size:0.74rem;color:#8a8f96;">
                 <span>${alt ? esc(alt) : '-'}</span>
-                <span class="text-nowrap" style="color:${renk};">● ${esc(k.durum)}</span>
+                <span class="text-nowrap">${talepUrunDurumBadge(k.durum)}</span>
             </div>
         </div>`;
     }).join('');
@@ -10308,10 +10338,6 @@ function renderTalepDetayLines(kalemler) {
         const urunAdi = isOzel ? k.ozel_urun_adi : k.stok_adi;
         const birim = isOzel ? k.ozel_urun_birim : k.stok_birim;
 
-        let badgeClass = "bg-warning text-dark";
-        if(k.durum === 'ONAYLANDI') badgeClass = "bg-success";
-        if(k.durum === 'İPTAL' || k.durum === 'REDDEDİLDİ') badgeClass = "bg-danger";
-        if(k.durum === 'İŞLEME ALINDI') badgeClass = "bg-info text-dark";
 
         // Son alış hücresi — async yüklenecek
         const sonAlisId = `sonAlis_${k.id}`;
@@ -10333,7 +10359,7 @@ function renderTalepDetayLines(kalemler) {
                 <td class="text-center fw-bold text-primary">${formatTR(k.miktar)} <small class="text-muted fw-normal">${birim}</small></td>
                 <td>${sonAlisHtml}</td>
                 <td class="text-muted small">${esc(k.aciklama || '-')}</td>
-                <td class="text-center"><span class="badge ${badgeClass}">${esc(k.durum)}</span></td>
+                <td class="text-center">${getSatinalmaDurumBadge(k.durum)}</td>
             </tr>
         `;
 
