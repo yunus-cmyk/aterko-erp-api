@@ -1404,7 +1404,7 @@ app.get('/api/tedarikci/:id', yetkiKontrol, async (req, res, next) => {
 app.post('/api/tedarikci-kaydet', yetkiKontrol, async (req, res, next) => {
     try {
         const { id, firma_adi, yetkili_kisi, email, telefon, vergi_no, vergi_dairesi, adres, durum } = req.body;
-        if (!firma_adi || !firma_adi.trim()) return res.json({ ok: false, hata: 'Firma adı zorunlu.' });
+        if (!firma_adi || !firma_adi.trim()) return res.json({ ok: false, hata: 'Tedarikçi adı zorunludur.' });
         if (id) {
             await pool.query(`
                 UPDATE tedarikciler SET firma_adi=$1, yetkili_kisi=$2, email=$3, telefon=$4,

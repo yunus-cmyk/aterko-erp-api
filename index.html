@@ -2998,7 +2998,7 @@ STK-002		50	adet
                     <div class="card border-0 shadow-sm mb-4 rounded-3">
                         <div class="card-body row g-3">
                             <div class="col-md-4">
-                                <label class="form-label">Tedarikçi Firma <span class="text-danger">*</span></label>
+                                <label class="form-label">Tedarikçi <span class="text-danger">*</span></label>
                                 <select id="soTedarikci" class="form-select form-select-sm border-primary border-opacity-50"></select>
                             </div>
                             <div class="col-md-2">
@@ -3969,7 +3969,7 @@ function simulasyonBaslat() {
     const yeniRol = document.getElementById('simulasyonRolSecim').value;
     if (yeniRol) {
         localStorage.setItem('aterko_simulasyon_rol', yeniRol);
-        showToast(`Simülasyon başladı: ${yeniRol} rolü gibi göreceksin.`, 'success');
+        showToast(`Simülasyon başladı: ${yeniRol} rolü gibi göreceksiniz.`, 'success');
     } else {
         localStorage.removeItem('aterko_simulasyon_rol');
         showToast('Gerçek role dönüldü.', 'success');
@@ -3983,7 +3983,7 @@ function simulasyonCikis() {
     // Güvenli temizlik — hata olsa bile reload'u garanti et
     try {
         localStorage.removeItem('aterko_simulasyon_rol');
-        if (typeof showToast === 'function') showToast('Simülasyon kapatıldı. Yenileniyor...', 'success');
+        if (typeof showToast === 'function') showToast('Simülasyon kapatıldı. Yenileniyor…', 'success');
     } catch(e) { /* sessiz */ }
     // Direkt reload — bekleme yok
     location.reload();
@@ -4876,7 +4876,7 @@ async function maliHareketEkle() {
 }
 
 async function maliHareketSil(id) {
-    if (!confirm('Bu hareket silinsin mi? (İz audit kaydında kalır)')) return;
+    if (!confirm('Bu hareket silinecek. Devam edilsin mi? (İz audit kaydında kalır)')) return;
     showLoading();
     const r = await secureFetch('/mali-hareket-sil', { method: 'POST', body: JSON.stringify({ id }) });
     hideLoading();
@@ -5330,7 +5330,7 @@ function maliSiparisSec(json) {
         document.getElementById('mhVade').value = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
     }
     if (s.para !== 'TL') showToast(`Dikkat: sipariş ${s.para} cinsinden — TL karşılığını elle düzeltin.`, 'error');
-    else showToast('Fatura formu sipariş bilgileriyle dolduruldu. Kontrol edip Ekle deyin.', 'success');
+    else showToast('Fatura formu sipariş bilgileriyle dolduruldu. Kontrol edip Ekle butonuna basın.', 'success');
 }
 function maliHareketEtiket(h) {
     const ad = MALI_HAREKET_AD[h.tip] || h.tip;
@@ -5623,7 +5623,7 @@ function bildirimGoreceTarih(iso) {
     if (fark < 3600) return Math.floor(fark/60) + ' dk önce';
     if (fark < 86400) return Math.floor(fark/3600) + ' sa önce';
     if (fark < 604800) return Math.floor(fark/86400) + ' gün önce';
-    return d.toLocaleDateString('tr-TR');
+    return formatTarihTR(d);
 }
 
 async function bildirimOkundu(ids) {
@@ -5725,7 +5725,7 @@ function dashboardTerminRender(liste) {
         return `<tr ${rowBg} onclick="setTab('satinalma'); setTimeout(()=>switchSatinalmaSubTab('siparisler'),200);">
             <td class="fw-bold text-primary">${esc(s.siparis_no)}</td>
             <td class="small">${esc(s.tedarikci || '-')}</td>
-            <td class="text-end ${cls}">${ikon}${txt}<br><small class="text-muted">${new Date(s.termin_tarihi).toLocaleDateString('tr-TR')}</small></td>
+            <td class="text-end ${cls}">${ikon}${txt}<br><small class="text-muted">${formatTarihTR(s.termin_tarihi)}</small></td>
         </tr>`;
     }).join('');
 }
@@ -6115,7 +6115,7 @@ async function formTanimiKaydet() {
 }
 
 async function formTanimiSil(id) {
-    if (!confirm('Bu soru silinecek. Devam?')) return;
+    if (!confirm('Bu soru silinecek. Devam edilsin mi?')) return;
     showLoading();
     const r = await secureFetch('/form-tanimi-sil/' + id, { method:'DELETE' });
     hideLoading();
@@ -6141,7 +6141,7 @@ let _tsOnizleTimer = null;
 // #3 — Örnek PDF (seçili bina türünün şablonunu temsili verilerle PDF olarak aç)
 async function tsOrnekPdf() {
     const bt = document.getElementById('tsBinaTur').value;
-    showLoading(); showToast('Örnek PDF üretiliyor (5-15 sn)...', 'success');
+    showLoading(); showToast('Örnek PDF üretiliyor (5-15 sn)…', 'success');
     try {
         const token = localStorage.getItem('aterko_token');
         const resp = await fetch(`${API_URL}/teknik-sartname-ornek-pdf/${encodeURIComponent(bt)}`, { headers: { 'Authorization': 'Bearer ' + token } });
@@ -6292,7 +6292,7 @@ async function tsBolumSil(bolumNo) {
     const bt = document.getElementById('tsBinaTur').value;
     const say = tsSablonCache.filter(s => s.bolum_no === bolumNo).length;
     const ad = (tsSablonCache.find(s => s.bolum_no === bolumNo) || {}).bolum_adi || '(başlıksız)';
-    if (!confirm(`"${ad}" bölümü ve içindeki ${say} satır kalıcı olarak SİLİNECEK.\n\nEmin misiniz?`)) return;
+    if (!confirm(`"${ad}" bölümü ve içindeki ${say} satır kalıcı olarak SİLİNECEK.\n\nDevam edilsin mi?`)) return;
     showLoading();
     const r = await secureFetch('/teknik-sartname-bolum-sil', { method: 'POST', body: JSON.stringify({ bina_turu: bt, bolum_no: bolumNo }) });
     hideLoading();
@@ -6427,7 +6427,7 @@ async function tsSatirKaydet(id) {
         govde.metin = document.getElementById('tsMetin').value;
     }
     const r = await secureFetch('/teknik-sartname-sablonu-kaydet', { method:'POST', body: JSON.stringify(govde) });
-    if (r && r.ok) { showToast('Kaydedildi', 'success'); await tsSablonYukle(); tsSatirSec(id); }
+    if (r && r.ok) { showToast('Kaydedildi.', 'success'); await tsSablonYukle(); tsSatirSec(id); }
     else showToast((r && r.hata) || 'Kayıt hatası', 'error');
 }
 
@@ -6554,7 +6554,7 @@ async function tsSatirSil(id) {
     showLoading();
     const r = await secureFetch('/teknik-sartname-sablonu-sil/' + id, { method: 'DELETE' });
     hideLoading();
-    if (r && r.ok) { showToast('Satır silindi', 'success'); tsSablonYukle(); }
+    if (r && r.ok) { showToast('Satır silindi.', 'success'); tsSablonYukle(); }
     else showToast((r && r.hata) || 'Silme hatası', 'error');
 }
 async function tsSatirTasi(id, opts) {
@@ -6589,7 +6589,7 @@ function tsAlanlarRender() {
 }
 function tsAlanEkle(alan) {
     const ta = tsAktifInput;
-    if (!ta || !document.body.contains(ta)) { showToast('Önce eklemek istediğin metin kutusuna tıkla.', 'error'); return; }
+    if (!ta || !document.body.contains(ta)) { showToast('Önce eklemek istediğiniz metin kutusuna tıklayın.', 'error'); return; }
     const ek = '{{' + alan + '}}';
     const s = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
     const e = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
@@ -6654,7 +6654,7 @@ function renderKullanicilar() {
     tbody.innerHTML = liste.map(u => {
         const renk = KUL_ROL_RENK[u.rol] || 'secondary';
         const sonGiris = u.son_giris ? new Date(u.son_giris).toLocaleString('tr-TR') : '<span class="text-muted small">Henüz kayıt yok.</span>';
-        const kayit = u.kayit_tarihi ? new Date(u.kayit_tarihi).toLocaleDateString('tr-TR') : '-';
+        const kayit = u.kayit_tarihi ? formatTarihTR(u.kayit_tarihi) : '-';
         const durumBadge = u.durum === 'AKTIF' ? '<span class="badge bg-success">Aktif</span>' : '<span class="badge bg-secondary">Pasif</span>';
         return `<tr>
             <td class="fw-bold">${esc(u.ad_soyad)}${u.cekirdek_ekip ? ' <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle" title="Görev Takip / Pazartesi masası"><i class="bi bi-check2-square"></i> Çekirdek</span>' : ''}</td>
@@ -6736,7 +6736,7 @@ async function kullaniciSil() {
     const id = parseInt(document.getElementById('kulId').value);
     if (!id) return;
     const u = kullanicilarCache.find(x => x.id === id);
-    if (!confirm(`${u?.ad_soyad || 'Bu kullanıcı'} silinecek. Sisteme giriş yapamayacak. Devam?`)) return;
+    if (!confirm(`${u?.ad_soyad || 'Bu kullanıcı'} silinecek. Sisteme giriş yapamayacak. Devam edilsin mi?`)) return;
     showLoading();
     const r = await secureFetch('/kullanici-sil/' + id, { method:'DELETE' });
     hideLoading();
@@ -6787,7 +6787,7 @@ function renderRolListesi() {
         const tip = r.sistem_rol
             ? '<span class="badge bg-dark">SİSTEM</span>'
             : '<span class="badge bg-info text-dark">ÖZEL</span>';
-        const kayit = r.kayit_tarihi ? new Date(r.kayit_tarihi).toLocaleDateString('tr-TR') : '-';
+        const kayit = r.kayit_tarihi ? formatTarihTR(r.kayit_tarihi) : '-';
         const silBtn = r.sistem_rol
             ? ''
             : `<button class="btn btn-sm btn-outline-danger py-0" onclick="rolDuzenle(${r.id}, true)" title="Sil"><i class="bi bi-trash"></i></button>`;
@@ -6821,7 +6821,7 @@ function rolDuzenle(id, silmeMi) {
     const r = rollerCache.find(x => x.id === id);
     if (!r) return;
     if (silmeMi) {
-        if (!confirm(`'${r.ad}' rolü silinecek. Devam?`)) return;
+        if (!confirm(`'${r.ad}' rolü silinecek. Devam edilsin mi?`)) return;
         rolSilHardId(id);
         return;
     }
@@ -6847,7 +6847,7 @@ async function rolSil() {
     const id = parseInt(document.getElementById('rolId').value);
     if (!id) return;
     const r = rollerCache.find(x => x.id === id);
-    if (!confirm(`'${r?.ad}' rolü silinecek. Devam?`)) return;
+    if (!confirm(`'${r?.ad}' rolü silinecek. Devam edilsin mi?`)) return;
     await rolSilHardId(id);
     bootstrap.Modal.getInstance(document.getElementById('modalRol'))?.hide();
 }
@@ -6894,7 +6894,7 @@ async function grAyarKaydet() {
         ek_alicilar: document.getElementById('grEkAlicilar').value || ''
     };
     const r = await secureFetch('/gunluk-rapor-ayar', { method: 'POST', body: JSON.stringify(govde) });
-    if (r && r.ok) { showToast('Günlük rapor ayarı kaydedildi', 'success'); grAyarYukle(); }
+    if (r && r.ok) { showToast('Günlük rapor ayarı kaydedildi.', 'success'); grAyarYukle(); }
     else showToast((r && r.hata) || 'Kayıt hatası', 'error');
 }
 async function grTestGonder() {
@@ -6931,7 +6931,7 @@ async function grvRaporAyarKaydet() {
         ek_alicilar: document.getElementById('grvRaporEkAlicilar').value || ''
     };
     const r = await secureFetch('/gorev-rapor-ayar', { method: 'POST', body: JSON.stringify(govde) });
-    if (r && r.ok) { showToast('Görev raporu ayarı kaydedildi', 'success'); grvRaporAyarYukle(); }
+    if (r && r.ok) { showToast('Görev raporu ayarı kaydedildi.', 'success'); grvRaporAyarYukle(); }
     else showToast((r && r.hata) || 'Kayıt hatası', 'error');
 }
 async function grvRaporTestGonder() {
@@ -7178,13 +7178,13 @@ async function gorevSekmeInit() {
 function gorevKartHTML(g) {
     const gec = g.gecikmis === true;
     const kayitlar = Array.isArray(g.kayit_notlari) ? g.kayit_notlari : [];
-    const tarih = g.bitis_tarihi ? new Date(g.bitis_tarihi).toLocaleDateString('tr-TR') : '-';
+    const tarih = g.bitis_tarihi ? formatTarihTR(g.bitis_tarihi) : '-';
     const durumSel = ['ACIK', 'DEVAM', 'TAMAMLANDI', 'IPTAL'].map(d => `<option value="${d}" ${g.durum === d ? 'selected' : ''}>${GRV_DURUM_AD[d]}</option>`).join('');
     // Üst: düzenlenebilir Notlar alanı (görevin kalıcı notu)
     const notDizi = Array.isArray(g.notlar) ? g.notlar : [];
-    const notAlaniHTML = notDizi.length ? `<div class="mt-2">${notDizi.map(n => `<div class="p-2 mb-1 rounded bg-warning-subtle border border-warning-subtle small d-flex justify-content-between gap-2" style="white-space:pre-wrap"><span><i class="bi bi-sticky me-1 text-warning-emphasis"></i>${esc(n.metin)}</span><span class="text-muted text-nowrap"><i class="bi bi-calendar3 me-1"></i>${n.tarih ? new Date(n.tarih + 'T00:00:00').toLocaleDateString('tr-TR') : ''}</span></div>`).join('')}</div>` : '';
+    const notAlaniHTML = notDizi.length ? `<div class="mt-2">${notDizi.map(n => `<div class="p-2 mb-1 rounded bg-warning-subtle border border-warning-subtle small d-flex justify-content-between gap-2" style="white-space:pre-wrap"><span><i class="bi bi-sticky me-1 text-warning-emphasis"></i>${esc(n.metin)}</span><span class="text-muted text-nowrap"><i class="bi bi-calendar3 me-1"></i>${n.tarih ? formatTarihTR(n.tarih + 'T00:00:00') : ''}</span></div>`).join('')}</div>` : '';
     // Alt: Kayıt Notları — tarih + kişi damgalı olay/kayıt günlüğü
-    const notHTML = kayitlar.length ? `<div class="mt-2 border-top pt-1"><div class="text-muted fw-semibold" style="font-size:.7rem;letter-spacing:.03em"><i class="bi bi-clock-history me-1"></i>KAYIT NOTLARI</div>${kayitlar.map(n => `<div class="small text-muted"><i class="bi bi-chat-left-text me-1"></i><b>${esc(n.yazan)}</b>: ${esc(n.not_metni)} <span class="text-muted">· ${new Date(n.tarih).toLocaleDateString('tr-TR')}</span></div>`).join('')}</div>` : '';
+    const notHTML = kayitlar.length ? `<div class="mt-2 border-top pt-1"><div class="text-muted fw-semibold" style="font-size:.7rem;letter-spacing:.03em"><i class="bi bi-clock-history me-1"></i>KAYIT NOTLARI</div>${kayitlar.map(n => `<div class="small text-muted"><i class="bi bi-chat-left-text me-1"></i><b>${esc(n.yazan)}</b>: ${esc(n.not_metni)} <span class="text-muted">· ${formatTarihTR(n.tarih)}</span></div>`).join('')}</div>` : '';
     return `<div class="card border-0 shadow-sm mb-2 ${gec ? 'border-start border-danger border-3' : ''}"><div class="card-body py-2">
         <div class="d-flex justify-content-between align-items-start gap-2">
           <div class="flex-grow-1">
@@ -7230,7 +7230,7 @@ async function gorevPdfAl() {
     const fa = document.getElementById('grvFilAlan')?.value; if (fa) p.set('alan', fa);
     if (document.getElementById('grvFilTaahhut')?.checked) p.set('taahhut', '1');
     if (document.getElementById('grvFilGecikmis')?.checked) p.set('gecikmis', '1');
-    showLoading(); showToast('Görev PDF üretiliyor (5-15 sn)...', 'success');
+    showLoading(); showToast('Görev PDF üretiliyor (5-15 sn)…', 'success');
     try {
         const token = localStorage.getItem('aterko_token');
         const resp = await fetch(`${API_URL}/gorevler/pdf?` + p.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
@@ -7260,7 +7260,7 @@ async function gorevHizliEkle() {
     if (!gorevGranularOnay(govde.bitis_tarihi)) return;
     const r = await secureFetch('/gorev-kaydet', { method: 'POST', body: JSON.stringify(govde) });
     if (r && r.ok) {
-        showToast('Görev eklendi', 'success');
+        showToast('Görev eklendi.', 'success');
         document.getElementById('grvBaslik').value = '';
         document.getElementById('grvBitis').value = '';
         document.getElementById('grvTaahhut').checked = false;
@@ -7287,7 +7287,7 @@ function gorevGranularOnay(bitis) {
 
 // --- Düzenle modalı: tarihli not listesi editörü ---
 let gdNotlarData = [];  // [{metin, tarih|null}] — tarih=null ise yeni not (kaydedince bugüne damgalanır)
-function gorevNotTarihKisa(t) { return t ? new Date(t + 'T00:00:00').toLocaleDateString('tr-TR') : 'bugün'; }
+function gorevNotTarihKisa(t) { return t ? formatTarihTR(t + 'T00:00:00') : 'bugün'; }
 function gdNotOku() {  // ekrandaki textarea değerlerini diziye geri yaz (yeniden render öncesi kayıp olmasın)
     document.querySelectorAll('#gdNotlarListe .gdNotMetin').forEach(t => { const i = +t.dataset.i; if (gdNotlarData[i]) gdNotlarData[i].metin = t.value; });
 }
@@ -7335,7 +7335,7 @@ async function gorevSil() {
     if (!confirm(`"${g?.baslik || 'Bu görev'}" KALICI olarak silinecek — geri alınamaz, hiçbir yerde görünmez (notları da silinir).\n\nDevam edilsin mi?`)) return;
     const r = await secureFetch('/gorev-sil/' + id, { method: 'DELETE' });
     if (r && r.ok) {
-        showToast('Görev kalıcı olarak silindi', 'success');
+        showToast('Görev kalıcı olarak silindi.', 'success');
         bootstrap.Modal.getInstance(document.getElementById('modalGorevDuzenle'))?.hide();
         await grvAlanlariYukle();
         gorevListeYukle();
@@ -7363,7 +7363,7 @@ async function gorevDuzenleKaydet() {
     if (!gorevGranularOnay(govde.bitis_tarihi)) return;
     const r = await secureFetch('/gorev-kaydet', { method: 'POST', body: JSON.stringify(govde) });
     if (r && r.ok) {
-        showToast('Görev güncellendi', 'success');
+        showToast('Görev güncellendi.', 'success');
         bootstrap.Modal.getInstance(document.getElementById('modalGorevDuzenle'))?.hide();
         await grvAlanlariYukle();
         gorevListeYukle();
@@ -7382,7 +7382,7 @@ async function gorevKararEkle() {
     if (!govde.sahip_id || !govde.bitis_tarihi) return showToast('Sahip ve tarih zorunlu.', 'error');
     const r = await secureFetch('/gorev-kaydet', { method: 'POST', body: JSON.stringify(govde) });
     if (r && r.ok) {
-        showToast('Karar eklendi', 'success');
+        showToast('Karar eklendi.', 'success');
         document.getElementById('grvKararBaslik').value = '';
         document.getElementById('grvKararBitis').value = '';
         gorevPazartesiYukle();
@@ -7396,7 +7396,7 @@ async function gorevDurumDegis(id, durum) {
         await secureFetch('/gorev-not', { method: 'POST', body: JSON.stringify({ gorev_id: id, not_metni: 'İPTAL: ' + not.trim() }) });
     }
     const r = await secureFetch('/gorev-durum', { method: 'POST', body: JSON.stringify({ id, durum }) });
-    if (r && r.ok) showToast('Durum güncellendi', 'success'); else showToast((r && r.hata) || 'Hata', 'error');
+    if (r && r.ok) showToast('Durum güncellendi.', 'success'); else showToast((r && r.hata) || 'Hata', 'error');
     gorevListeYukle();
 }
 
@@ -7404,7 +7404,7 @@ async function gorevNotEkle(id) {
     const not = prompt('Not ekle:');
     if (!not || !not.trim()) return;
     const r = await secureFetch('/gorev-not', { method: 'POST', body: JSON.stringify({ gorev_id: id, not_metni: not.trim() }) });
-    if (r && r.ok) { showToast('Not eklendi', 'success'); gorevListeYukle(); } else showToast((r && r.hata) || 'Hata', 'error');
+    if (r && r.ok) { showToast('Not eklendi.', 'success'); gorevListeYukle(); } else showToast((r && r.hata) || 'Hata', 'error');
 }
 
 async function gorevPazartesiYukle() {
@@ -7412,7 +7412,7 @@ async function gorevPazartesiYukle() {
     box.innerHTML = '<div class="text-muted p-3">Yükleniyor…</div>';
     const r = await secureFetch('/gorevler/pazartesi').catch(() => null);
     if (!r || !r.ok) { box.innerHTML = '<div class="text-danger p-3">Yüklenemedi.</div>'; return; }
-    const t = g => g.bitis_tarihi ? new Date(g.bitis_tarihi).toLocaleDateString('tr-TR') : '';
+    const t = g => g.bitis_tarihi ? formatTarihTR(g.bitis_tarihi) : '';
     const satir = g => `<li class="d-flex justify-content-between small py-1 border-bottom"><span>${esc(g.baslik)} ${g.taahhut ? '<span class="badge bg-info-subtle text-info-emphasis">T</span>' : ''}</span><span class="text-muted ms-2 text-nowrap">${esc(g.sahip_ad)} · ${t(g)}</span></li>`;
     const grup = arr => {
         const m = {}; arr.forEach(g => { (m[g.sahip_ad] = m[g.sahip_ad] || []).push(g); });
@@ -7856,7 +7856,7 @@ function renderYayinAkisBar() {
             aciklama.textContent = '⏳ ADMIN onayı bekleniyor — liste şu an düzenlemeye kapalı.';
         }
     } else if (durum === 'YAYINDA') {
-        const tarih = y.yayinlama_tarihi ? new Date(y.yayinlama_tarihi).toLocaleDateString('tr-TR') : '';
+        const tarih = y.yayinlama_tarihi ? formatTarihTR(y.yayinlama_tarihi) : '';
         aciklama.textContent = `✅ Yayında (${y.yayinlayan_email || ''} • ${tarih}) — Mevcut kalemler kilitli. Ek ürün eklemek için aşağıdan ekleyin (ADMIN onayına gider).`;
     }
 }
@@ -7874,7 +7874,7 @@ async function urunListesiOnayaGonder() {
 
 async function urunListesiOnayla() {
     const teslimat_id = parseInt(document.getElementById("aktifTeslimatSecimi").value);
-    if (!confirm('Liste YAYINLANACAK. Sonrasında mevcut kalemler kilitlenir, sadece ek ürünler eklenebilir (yine ADMIN onayıyla). Onaylıyor musunuz?')) return;
+    if (!confirm('Liste YAYINLANACAK. Sonrasında mevcut kalemler kilitlenir, sadece ek ürünler eklenebilir (yine ADMIN onayıyla). Devam edilsin mi?')) return;
     showLoading();
     const r = await secureFetch('/urun-listesi-onayla', { method:'POST', body: JSON.stringify({ teslimat_id }) });
     hideLoading();
@@ -7895,14 +7895,14 @@ async function urunListesiReddet() {
 }
 
 async function ekUrunOnayla(teslimat_urun_id) {
-    if (!confirm('Bu ek ürün onaylanacak ve aktif listeye eklenecek. Devam?')) return;
+    if (!confirm('Bu ek ürün onaylanacak ve aktif listeye eklenecek. Devam edilsin mi?')) return;
     const r = await secureFetch('/urun-listesi-ek-urun-onayla', { method:'POST', body: JSON.stringify({ teslimat_urun_id }) });
     if (r.ok) { showToast(r.mesaj, 'success'); fetchTeslimatUrunleri(); }
     else showToast(r.hata, 'error');
 }
 
 async function ekUrunReddet(teslimat_urun_id) {
-    if (!confirm('Bu ek ürün reddedilip silinecek. Devam?')) return;
+    if (!confirm('Bu ek ürün reddedilip silinecek. Devam edilsin mi?')) return;
     const r = await secureFetch('/urun-listesi-ek-urun-reddet', { method:'POST', body: JSON.stringify({ teslimat_urun_id }) });
     if (r.ok) { showToast(r.mesaj, 'success'); fetchTeslimatUrunleri(); }
     else showToast(r.hata, 'error');
@@ -8001,7 +8001,7 @@ async function listeKopyalaOnayla() {
     if (!lkSeciliKaynakId) return showToast('Kaynak teslimat seçin.', 'error');
     const hedef = parseInt(document.getElementById("aktifTeslimatSecimi").value);
     const temizle = document.getElementById('lkTemizle').checked;
-    if (temizle && !confirm('Mevcut listedeki ürünler silinecek (bağlı talepli olanlar korunacak). Devam?')) return;
+    if (temizle && !confirm('Mevcut listedeki ürünler silinecek (bağlı talepli olanlar korunacak). Devam edilsin mi?')) return;
 
     showLoading();
     const r = await secureFetch('/urun-listesi-kopyala', {
@@ -8362,7 +8362,7 @@ async function talepOlusturOnayla() {
 
 function listeyeEkle() {
     const teslimatId = document.getElementById("aktifTeslimatSecimi").value;
-    if(!teslimatId) return showToast("Önce bir proje/teslimat seçmelisiniz!", "error");
+    if(!teslimatId) return showToast("Önce bir proje/teslimat seçmelisiniz.", "error");
 
     const isKatalog = document.getElementById("tipKatalog").checked;
     const miktar = document.getElementById("urunMiktar").value;
@@ -8372,11 +8372,11 @@ function listeyeEkle() {
 
     if(isKatalog) {
         data.stok_kart_id = document.getElementById("seciliStokKart").value;
-        if(!data.stok_kart_id) return showToast("Lütfen katalogdan bir ürün seçin!", "error");
+        if(!data.stok_kart_id) return showToast("Lütfen katalogdan bir ürün seçin.", "error");
     } else {
         data.ozel_urun_adi = document.getElementById("ozelUrunAdi").value.trim();
         data.ozel_urun_birim = document.getElementById("ozelUrunBirim").value;
-        if(!data.ozel_urun_adi) return showToast("Lütfen özel ürün adını yazın!", "error");
+        if(!data.ozel_urun_adi) return showToast("Lütfen özel ürün adını yazın.", "error");
     }
 
     showLoading();
@@ -8411,7 +8411,7 @@ function listeyeEkle() {
 }
 
 function urunSil(id) {
-    if(!confirm("Bu ürünü listeden silmek istediğinize emin misiniz?")) return;
+    if(!confirm("Bu ürünü listeden silmek istiyor musunuz?")) return;
     showLoading();
     secureFetch(`/teslimat-urun-sil/${id}`, { method: 'DELETE' }).then(res => {
         hideLoading();
@@ -8541,7 +8541,7 @@ function openIsEmriOlusturModal() {
 
     document.getElementById('ieUstabasi').value = '';
     document.getElementById('ieNotlar').value = '';
-    document.getElementById('ieTarih').value = new Date().toLocaleDateString('tr-TR');
+    document.getElementById('ieTarih').value = formatTarihTR();
 
     // Kalem tablosunu doldur — varsayılan atanan miktar = "üretilmesi_kalan"
     const tbody = document.getElementById('ieKalemTablosu');
@@ -8615,7 +8615,7 @@ function renderUretimIsEmirleri() {
     };
     tbody.innerHTML = uretimEmirlerCache.map(e => {
         const [cls, txt] = durumMap[e.durum] || ['secondary','-'];
-        const tarih = e.olusturma_tarihi ? new Date(e.olusturma_tarihi).toLocaleDateString('tr-TR') : '-';
+        const tarih = e.olusturma_tarihi ? formatTarihTR(e.olusturma_tarihi) : '-';
         const yuzde = parseFloat(e.toplam_atanan) > 0
             ? Math.round((parseFloat(e.toplam_tamamlanan) / parseFloat(e.toplam_atanan)) * 100)
             : 0;
@@ -8708,7 +8708,7 @@ async function isEmriTamamlamaKaydet() {
 
 async function isEmriIptal() {
     if (!aktifIsEmriId) return;
-    if (!confirm('İş emri iptal edilecek. Tamamlanmış miktarlar üretilen olarak korunur, ama kalan atamalar serbest bırakılır. Devam?')) return;
+    if (!confirm('İş emri iptal edilecek. Tamamlanmış miktarlar üretilen olarak korunur, ama kalan atamalar serbest bırakılır. Devam edilsin mi?')) return;
     showLoading();
     const r = await secureFetch('/uretim-is-emri-iptal/' + aktifIsEmriId, { method: 'POST' });
     hideLoading();
@@ -9021,7 +9021,7 @@ function renderSevkiyatBelgeleri() {
     };
     tbody.innerHTML = sevkiyatBelgelerCache.map(s => {
         const [cls, txt] = durumMap[s.durum] || ['secondary','-'];
-        const tarih = s.sevk_tarihi ? new Date(s.sevk_tarihi).toLocaleDateString('tr-TR') : '-';
+        const tarih = s.sevk_tarihi ? formatTarihTR(s.sevk_tarihi) : '-';
         return `<tr>
             <td class="fw-bold text-primary">${esc(s.sevkiyat_no)}</td>
             <td class="fw-bold">${esc(s.plaka || '-')}</td>
@@ -9058,7 +9058,7 @@ async function openSevkiyatDetay(id) {
             <div class="col-md-3"><small class="text-muted">Plaka</small><div class="fw-bold">${esc(b.plaka || '-')}</div></div>
             <div class="col-md-3"><small class="text-muted">Şoför</small><div>${esc(b.sofor_adi || '-')}${b.sofor_telefon ? ' • ' + esc(b.sofor_telefon) : ''}</div></div>
             <div class="col-md-2"><small class="text-muted">İrsaliye</small><div>${esc(b.irsaliye_no || '-')}</div></div>
-            <div class="col-md-2"><small class="text-muted">Sevk Tarihi</small><div>${b.sevk_tarihi ? new Date(b.sevk_tarihi).toLocaleDateString('tr-TR') : '-'}</div></div>
+            <div class="col-md-2"><small class="text-muted">Sevk Tarihi</small><div>${b.sevk_tarihi ? formatTarihTR(b.sevk_tarihi) : '-'}</div></div>
             <div class="col-md-2"><small class="text-muted">Durum</small><div><span class="badge bg-${cls}">${txt}</span></div></div>
             ${b.notlar ? `<div class="col-md-12 mt-2"><div class="alert alert-light py-2 mb-0 small"><strong>Not:</strong> ${esc(b.notlar)}</div></div>` : ''}
         </div>`;
@@ -9118,7 +9118,7 @@ async function sevkiyatDurumGuncelle(yeni_durum) {
 
 async function sevkiyatIptal() {
     if (!aktifSevkiyatId) return;
-    if (!confirm('Sevkiyat iptal edilecek ve sevk edilen miktarlar geri çekilecek. Devam?')) return;
+    if (!confirm('Sevkiyat iptal edilecek ve sevk edilen miktarlar geri çekilecek. Devam edilsin mi?')) return;
     showLoading();
     const r = await secureFetch('/sevkiyat-iptal/' + aktifSevkiyatId, { method:'POST' });
     hideLoading();
@@ -9357,7 +9357,7 @@ async function montajMusteriyeTeslim() {
     if (!aktifMontajTeslimatId) return;
     const not = prompt('Müşteri teslim notu (opsiyonel — imza, tutanak no vs.):', '');
     if (not === null) return;
-    if (!confirm('Bu binadaki tüm uygulanmış kalemler "Müşteriye Teslim" durumuna alınacak. Devam?')) return;
+    if (!confirm('Bu binadaki tüm uygulanmış kalemler "Müşteriye Teslim" durumuna alınacak. Devam edilsin mi?')) return;
 
     showLoading();
     const r = await secureFetch('/montaj-musteri-teslim', {
@@ -9629,7 +9629,7 @@ function renderTalepTable(talepler) {
     }
     cont.innerHTML = talepler.map(t => {
         const altTalepRozeti = t.parent_talep_id
-            ? `<span class="badge bg-warning text-dark ms-2" title="Bu talep, başka bir talepten bölünerek oluşturuldu (${t.bolunme_tarihi ? new Date(t.bolunme_tarihi).toLocaleDateString('tr-TR') : ''})"><i class="bi bi-diagram-3"></i> Alt-Talep</span>`
+            ? `<span class="badge bg-warning text-dark ms-2" title="Bu talep, başka bir talepten bölünerek oluşturuldu (${t.bolunme_tarihi ? formatTarihTR(t.bolunme_tarihi) : ''})"><i class="bi bi-diagram-3"></i> Alt-Talep</span>`
             : '';
         const proje = `${esc(t.proje_kodu || '')}${t.musteri_adi ? ' / ' + esc(t.musteri_adi) : ''}${t.proje_adi ? ' - ' + esc(t.proje_adi) : ''}`;
         const kategoriChip = t.kategoriler
@@ -9723,7 +9723,7 @@ function renderTalepKalemMini(kalemler) {
 
 // --- Talep aksiyon fonksiyonları ---
 async function talepOnayla(talep_id) {
-    if (!confirm('Bu talebi (tüm kalemlerini) ONAYLAMAK istediğinize emin misiniz?')) return;
+    if (!confirm('Bu talebi (tüm kalemlerini) ONAYLAMAK istiyor musunuz?')) return;
     showLoading();
     const r = await secureFetch('/talep-onayla', { method: 'POST', body: JSON.stringify({ talep_id }) });
     hideLoading();
@@ -9741,7 +9741,7 @@ async function talepReddet(talep_id) {
     else showToast(r.hata, 'error');
 }
 async function talepIslemeAl(talep_id) {
-    if (!confirm('Bu talebi İŞLEME ALINDI durumuna almak istediğinize emin misiniz?')) return;
+    if (!confirm('Bu talebi İŞLEME ALINDI durumuna almak istiyor musunuz?')) return;
     showLoading();
     const r = await secureFetch('/talep-gerial', { method: 'POST', body: JSON.stringify({ talep_id, hedef_durum: 'İŞLEME ALINDI' }) });
     hideLoading();
@@ -9758,7 +9758,7 @@ async function talepGerial(talep_id, hedef_durum) {
     else showToast(r.hata, 'error');
 }
 async function talepArsivle(talep_id) {
-    if (!confirm('Bu talebi arşivlemek istediğinize emin misiniz?')) return;
+    if (!confirm('Bu talebi arşivlemek istiyor musunuz?')) return;
     showLoading();
     const r = await secureFetch('/talep-arsivle', { method: 'POST', body: JSON.stringify({ talep_id }) });
     hideLoading();
@@ -9799,7 +9799,7 @@ function openYeniTalepModal(duzenlemeData) {
     const saveBtn = modalEl.querySelector('.modal-footer .btn-primary');
     if (saveBtn) {
         saveBtn.innerHTML = isEdit
-            ? '<i class="bi bi-check-circle me-2"></i> Değişiklikleri Kaydet'
+            ? '<i class="bi bi-check-circle me-2"></i> Kaydet'
             : '<i class="bi bi-send-fill me-2"></i> Kaydet ve Supabase\'e Gönder';
     }
 
@@ -10073,7 +10073,7 @@ function saveNewRequest() {
         kalemler.push(k);
     });
 
-    if(eksikVar || kalemler.length === 0) return showToast("Lütfen zorunlu alanları (*) ve miktarları doğru doldurun!", "error");
+    if(eksikVar || kalemler.length === 0) return showToast("Lütfen zorunlu alanları (*) ve miktarları doğru doldurun.", "error");
 
     const payload = {
         proje_id: proje_id,
@@ -10119,7 +10119,7 @@ function renderTalepBilgiPanel(t) {
     if (!panel) return;
     if (!t) { panel.innerHTML = '<div class="text-muted small">Talep bilgisi bulunamadı.</div>'; return; }
     const proje = `${esc(t.proje_kodu || '')}${t.musteri_adi ? ' / ' + esc(t.musteri_adi) : ''}${t.proje_adi ? ' - ' + esc(t.proje_adi) : ''}`.trim();
-    const tarih = t.istenen_tarih ? new Date(t.istenen_tarih).toLocaleDateString('tr-TR') : '-';
+    const tarih = t.istenen_tarih ? formatTarihTR(t.istenen_tarih) : '-';
     panel.innerHTML = `
       <div class="row g-3">
         <div class="col-md-5"><div class="small text-muted fw-bold">PROJE</div><div class="fw-semibold">${proje || '-'}</div></div>
@@ -10201,7 +10201,7 @@ async function ntDosyaEkle(inputEl) {
 
 async function ntDosyaSil(idVeyaIndex) {
     if (duzenlenenTalepId) {
-        if (!confirm('Bu dosyayı silmek istediğinize emin misiniz?')) return;
+        if (!confirm('Bu dosyayı silmek istiyor musunuz?')) return;
         showLoading();
         const r = await secureFetch(`/talep-dosya-sil/${idVeyaIndex}`, { method: 'DELETE' });
         hideLoading();
@@ -10399,7 +10399,7 @@ async function sonAlisBilgisiYukle(stokKartId, hedefId, urunAdi) {
             return;
         }
         const son = r.gecmis[0]; // en yeni
-        const tarih = son.siparis_tarihi ? new Date(son.siparis_tarihi).toLocaleDateString('tr-TR') : '-';
+        const tarih = son.siparis_tarihi ? formatTarihTR(son.siparis_tarihi) : '-';
         el.innerHTML = `
             <div class="fw-bold text-success small">${formatTR(son.birim_fiyat)} ${esc(son.para_birimi || '')}</div>
             <small class="text-muted">${esc(son.tedarikci_adi || '-')}</small>
@@ -10477,7 +10477,7 @@ function executeStatusChange(hedefDurum) {
     const idList = [];
     checkedBoxes.forEach(cb => idList.push(parseInt(cb.value)));
 
-    if(!confirm(`Seçilen ${idList.length} adet kalemin durumunu '${hedefDurum}' olarak güncellemek istediğinize emin misiniz?`)) return;
+    if(!confirm(`Seçilen ${idList.length} adet kalemin durumunu '${hedefDurum}' olarak güncellemek istiyor musunuz?`)) return;
 
     showLoading();
     secureFetch('/talep-durum-guncelle', {
@@ -10701,7 +10701,7 @@ function calculateSiparisRowTotal(inputEl) {
 function submitPurchaseOrder() {
     const isEdit = !!duzenlenenSiparisId;
     const tedarikci_id = document.getElementById("soTedarikci").value;
-    if(!tedarikci_id) return showToast("Lütfen sipariş fişi için tedarikçi firma seçin!", "error");
+    if(!tedarikci_id) return showToast("Lütfen sipariş fişi için tedarikçi firma seçin.", "error");
 
     const kalemler = [];
     let hataVar = false;
@@ -10717,7 +10717,7 @@ function submitPurchaseOrder() {
         kalemler.push(k);
     });
 
-    if(hataVar || kalemler.length === 0) return showToast("Lütfen miktar ve fiyat alanlarını sıfırdan büyük doldurun!", "error");
+    if(hataVar || kalemler.length === 0) return showToast("Lütfen miktar ve fiyat alanlarını sıfırdan büyük doldurun.", "error");
 
     const payload = {
         tedarikci_id: tedarikci_id,
@@ -11110,7 +11110,7 @@ async function teklifSayisiYukle(talepUrunId, hedefSpanId) {
     if (g) {
         if (r && r.ok && r.data.length) {
             g.innerHTML = '<i class="bi bi-envelope me-1"></i>İstendi: ' + r.data.map(x => {
-                const t = x.kayit_tarihi ? new Date(x.kayit_tarihi).toLocaleDateString('tr-TR') : '';
+                const t = x.kayit_tarihi ? formatTarihTR(x.kayit_tarihi) : '';
                 const fiyat = x.birim_fiyat ? ` · <span class="text-success fw-bold">${formatTR(x.birim_fiyat)} ${esc(x.para_birimi || '')}</span>` : '';
                 return `${esc(x.tedarikci_adi || '?')} (${t})${fiyat}`;
             }).join(' &nbsp;|&nbsp; ');
@@ -11163,7 +11163,7 @@ async function teklifKayitlariYukle() {
             <td class="text-end fw-bold">${t.birim_fiyat ? formatTR(t.birim_fiyat) + ' ' + esc(t.para_birimi) : '<span class="text-muted">—</span>'}</td>
             <td class="text-end small">${t.miktar ? formatTR(t.miktar) : '—'}</td>
             <td class="small">${esc(t.vade || '-')}</td>
-            <td class="small">${t.termin_tarihi ? new Date(t.termin_tarihi).toLocaleDateString('tr-TR') : '-'}</td>
+            <td class="small">${t.termin_tarihi ? formatTarihTR(t.termin_tarihi) : '-'}</td>
             <td class="small">${esc(t.alternatif_urun || '-')}</td>
             <td class="small text-muted" style="max-width:200px;">${esc(t.yorum || '-')}</td>
             <td class="text-center"><span class="badge bg-${dc}">${dt}</span></td>
@@ -11228,7 +11228,7 @@ async function teklifKaydetSubmit() {
 }
 
 async function teklifSil(id) {
-    if (!confirm('Bu teklif kaydı silinecek. Devam?')) return;
+    if (!confirm('Bu teklif kaydı silinecek. Devam edilsin mi?')) return;
     const r = await secureFetch('/teklif-sil/' + id, { method:'DELETE' });
     if (r.ok) {
         showToast(r.mesaj, 'success');
@@ -11320,7 +11320,7 @@ function renderArsivSiparisleri(siparisler) {
 
 async function arsivdenCikar(tur, id) {
     const turAd = tur === 'talep' ? 'talebi' : 'siparişi';
-    if (!confirm(`Bu ${turAd} arşivden çıkarmak istediğinize emin misiniz? Tekrar aktif listelerde görünecek.`)) return;
+    if (!confirm(`Bu ${turAd} arşivden çıkarmak istiyor musunuz? Tekrar aktif listelerde görünecek.`)) return;
     showLoading();
     const r = await secureFetch('/arsivden-cikar', { method: 'POST', body: JSON.stringify({ tur, id }) });
     hideLoading();
@@ -11538,7 +11538,7 @@ function getSiparisAksiyonlari(s, detayMode) {
 // Sipariş PDF indir
 async function downloadSiparisPdf(siparisId, siparisNo) {
     showLoading();
-    showToast('PDF üretiliyor, lütfen bekleyin (5-10 sn)...', 'success');
+    showToast('PDF üretiliyor, lütfen bekleyin (5-10 sn)…', 'success');
     try {
         const token = localStorage.getItem('aterko_token');
         if (!token) throw new Error('Oturum yok');
@@ -11922,7 +11922,7 @@ async function siparisNotEkle(siparisId) {
 }
 
 async function siparisNotSil(notId, siparisId) {
-    if (!confirm('Bu notu silmek istediğinize emin misiniz?')) return;
+    if (!confirm('Bu notu silmek istiyor musunuz?')) return;
     showLoading();
     const r = await secureFetch('/siparis-not-sil/' + notId, { method: 'DELETE' });
     hideLoading();
@@ -11979,7 +11979,7 @@ async function openFiyatGecmisiModal(stokKartId, urunAdi) {
         html += '<h6 class="fw-bold small mb-2"><i class="bi bi-clock-history me-1"></i>Son 5 Alış</h6>';
         html += '<div class="table-responsive mb-3"><table class="table table-sm table-hover mb-0 align-middle" style="font-size:0.85rem;"><thead class="table-dark"><tr><th>Tarih</th><th>Tedarikçi</th><th>Sipariş No</th><th class="text-end">Birim Fiyat</th><th class="text-end">Miktar</th></tr></thead><tbody>';
         son5.forEach((g, i) => {
-            const tarih = g.siparis_tarihi ? new Date(g.siparis_tarihi).toLocaleDateString('tr-TR') : '-';
+            const tarih = g.siparis_tarihi ? formatTarihTR(g.siparis_tarihi) : '-';
             const yeni = i === 0 ? '<span class="badge bg-success ms-1" style="font-size:0.65rem;">EN YENİ</span>' : '';
             html += `<tr>
                 <td class="small text-muted">${tarih}${yeni}</td>
@@ -12079,7 +12079,7 @@ async function uploadSiparisDosya(siparisId, inputEl) {
 }
 
 async function deleteSiparisDosya(dosyaId, siparisId, siparisNo) {
-    if (!confirm('Bu dosyayı silmek istediğinize emin misiniz?')) return;
+    if (!confirm('Bu dosyayı silmek istiyor musunuz?')) return;
     showLoading();
     const r = await secureFetch(`/siparis-dosya-sil/${dosyaId}`, { method: 'DELETE' });
     hideLoading();
@@ -12188,7 +12188,7 @@ function renderSiparisKalemMini(kalemler, para) {
 // --- Sipariş aksiyon fonksiyonları ---
 async function siparisOnayla(siparis_id) {
     if (_saAksiyonKilit) return;
-    if (!confirm('Bu siparişi ONAYLAMAK istediğinize emin misiniz?')) return;
+    if (!confirm('Bu siparişi ONAYLAMAK istiyor musunuz?')) return;
     saAksiyonBaslat('Sipariş onaylanıyor…');
     const r = await secureFetch('/siparis-onayla', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     saAksiyonBitir();
@@ -12206,7 +12206,7 @@ async function siparisGonder(siparis_id) {
 }
 async function siparisTamamenGerial(siparis_id) {
     if (_saAksiyonKilit) return;
-    if (!confirm('Bu siparişi İPTAL EDİP SİLMEK istediğinize emin misiniz?\n\n⚠️ Sipariş kalıcı olarak SİLİNECEK. Talep kalemleri "İŞLEME ALINDI" durumuna geri dönecek ve yeniden sipariş açılabilir hale gelecek.')) return;
+    if (!confirm('Bu siparişi İPTAL EDİP SİLMEK istiyor musunuz?\n\n⚠️ Sipariş kalıcı olarak SİLİNECEK. Talep kalemleri "İŞLEME ALINDI" durumuna geri dönecek ve yeniden sipariş açılabilir hale gelecek.')) return;
     saAksiyonBaslat('Sipariş siliniyor…');
     const r = await secureFetch('/siparis-tamamen-sil', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     saAksiyonBitir();
@@ -12216,7 +12216,7 @@ async function siparisTamamenGerial(siparis_id) {
 
 async function siparisIptal(siparis_id) {
     if (_saAksiyonKilit) return;
-    if (!confirm('Bu siparişi İPTAL etmek istediğinize emin misiniz? İlgili talepler ONAYLANDI durumuna geri alınacak.')) return;
+    if (!confirm('Bu siparişi İPTAL etmek istiyor musunuz? İlgili talepler ONAYLANDI durumuna geri alınacak.')) return;
     saAksiyonBaslat('Sipariş iptal ediliyor…');
     const r = await secureFetch('/siparis-iptal', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     saAksiyonBitir();
@@ -12234,7 +12234,7 @@ async function siparisGerial(siparis_id, hedef_durum) {
 }
 async function siparisArsivle(siparis_id) {
     if (_saAksiyonKilit) return;
-    if (!confirm('Bu siparişi arşivlemek istediğinize emin misiniz?')) return;
+    if (!confirm('Bu siparişi arşivlemek istiyor musunuz?')) return;
     saAksiyonBaslat('Arşivleniyor…');
     const r = await secureFetch('/siparis-arsivle', { method: 'POST', body: JSON.stringify({ siparis_id }) });
     saAksiyonBitir();
@@ -12345,7 +12345,7 @@ function submitOrderDelivery() {
     if (sayim['ÜRETİME'])  ozetParts.push(`${sayim['ÜRETİME']} üretime`);
     if (sayim['DİREKT_SEVKIYAT']) ozetParts.push(`${sayim['DİREKT_SEVKIYAT']} direkt sevkiyat`);
     const ozet = `${kalemler.length} kalem teslim alınacak — ${ozetParts.join(', ')}.`;
-    if(!confirm(ozet + '\n\nOnaylıyor musunuz?')) return;
+    if(!confirm(ozet + '\n\nDevam edilsin mi?')) return;
 
     showLoading();
     secureFetch('/siparis-teslim-al', {
@@ -12692,7 +12692,7 @@ function saveStokHareket() {
 function deleteStokHareket() {
     const id = document.getElementById("shId").value;
     if (!id) return;
-    if (!confirm("Bu hareketi silmek istediğinize emin misiniz? Stok bakiyesi geri alınacaktır.")) return;
+    if (!confirm("Bu hareketi silmek istiyor musunuz? Stok bakiyesi geri alınacaktır.")) return;
     showLoading();
     secureFetch(`/stok-hareket-sil/${id}`, { method: 'DELETE' }).then(res => {
         hideLoading();
@@ -12899,7 +12899,7 @@ function openTedarikciModal(data) {
 
 function saveTedarikci() {
     const firma = document.getElementById('tdFirma').value.trim();
-    if (!firma) return showToast('Firma adı zorunlu.', 'error');
+    if (!firma) return showToast('Tedarikçi adı zorunludur.', 'error');
     const id = document.getElementById('tdId').value;
     const payload = {
         firma_adi: firma,
@@ -12927,7 +12927,7 @@ function saveTedarikci() {
 function deleteTedarikci() {
     const id = document.getElementById('tdId').value;
     if (!id) return;
-    if (!confirm('Bu tedarikçiyi silmek istediğinize emin misiniz?')) return;
+    if (!confirm('Bu tedarikçiyi silmek istiyor musunuz?')) return;
     showLoading();
     secureFetch(`/tedarikci-sil/${id}`, { method: 'DELETE' }).then(res => {
         hideLoading();
@@ -13405,7 +13405,7 @@ async function tieYayinla(id) {
 }
 async function tieSil(id) {
     if (_saAksiyonKilit) return;
-    if (!confirm('Taslak iş emri silinsin mi?\n\nTeknik şartname yeniden düzenlenebilir hale gelecek.')) return;
+    if (!confirm('Taslak iş emri silinecek. Devam edilsin mi?\n\nTeknik şartname yeniden düzenlenebilir hale gelecek.')) return;
     saAksiyonBaslat('Siliniyor…');
     const r = await secureFetch('/is-emri-sil', { method: 'POST', body: JSON.stringify({ id }) }).catch(() => null);
     saAksiyonBitir();
@@ -13615,7 +13615,7 @@ function tsKopyaRender(filtre) {
     }).join('');
 }
 async function tsKopyaUygula(kaynakId) {
-    if (!confirm('Seçilen teslimatın şartname cevapları bu forma aktarılacak (mevcut girişlerin ÜZERİNE yazar).\n\nBu formun seçeneklerine uymayan değerler boş bırakılır; bina künyesi bu teslimattan kalır. Kaydetmeden önce kontrol edebilirsiniz. Devam?')) return;
+    if (!confirm('Seçilen teslimatın şartname cevapları bu forma aktarılacak (mevcut girişlerin ÜZERİNE yazar).\n\nBu formun seçeneklerine uymayan değerler boş bırakılır; bina künyesi bu teslimattan kalır. Kaydetmeden önce kontrol edebilirsiniz. Devam edilsin mi?')) return;
     showLoading();
     const r = await secureFetch('/teknik-sartname/' + kaynakId).catch(() => null);
     hideLoading();
@@ -13794,7 +13794,7 @@ async function downloadTeknikSartnamePdf() {
     console.log('[PDF] downloadTeknikSartnamePdf çağrıldı, teslimat:', tsAktifTeslimat);
     if (!tsAktifTeslimat) { console.warn('[PDF] Aktif teslimat yok'); return; }
     showLoading();
-    showToast('PDF üretiliyor, lütfen bekleyin (5-15 sn)...', 'success');
+    showToast('PDF üretiliyor, lütfen bekleyin (5-15 sn)…', 'success');
     try {
         const token = localStorage.getItem('aterko_token');
         if (!token) throw new Error('Oturum bulunamadı');
@@ -13965,7 +13965,7 @@ function buildSpCard(c, tip, today) {
         <div class="text-muted small mb-1"><i class="bi bi-building me-1"></i>${esc(c.bina_adi)} — ${esc(c.bina_turu)}</div>
         <div class="text-muted small mb-2"><i class="bi bi-geo-alt me-1"></i>${esc(c.bina_yeri || '-')}</div>
         <div class="d-flex justify-content-between align-items-center pt-2 border-top">
-            <span class="small"><i class="bi bi-calendar3 me-1"></i>${c.tarih.toLocaleDateString('tr-TR')}</span>
+            <span class="small"><i class="bi bi-calendar3 me-1"></i>${formatTarihTR(c.tarih)}</span>
             ${gunLabel}
         </div>
     </div>`;
@@ -14129,7 +14129,7 @@ async function openKarDetay(projeId) {
         : r.siparisler.map(s => `<tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalKarDetay')).hide(); setTimeout(()=>{setTab('satinalma'); setTimeout(()=>switchSatinalmaSubTab('siparisler'), 200);}, 200);">
             <td class="fw-bold text-primary small">${esc(s.siparis_no)}</td>
             <td class="small">${esc(s.tedarikci_adi||'-')}</td>
-            <td class="text-center small">${s.siparis_tarihi ? new Date(s.siparis_tarihi).toLocaleDateString('tr-TR') : '-'}</td>
+            <td class="text-center small">${s.siparis_tarihi ? formatTarihTR(s.siparis_tarihi) : '-'}</td>
             <td class="text-center small">${s.kalem_sayisi}</td>
             <td class="text-end">${formatTR(s.toplam_tutar)} <small class="text-muted">${esc(s.para_birimi)}</small></td>
             <td class="text-center small">${getSatinalmaDurumBadge ? getSatinalmaDurumBadge(s.durum) : esc(s.durum)}</td>
@@ -14194,7 +14194,7 @@ function openYeniProjeModal(duzenlemeData) {
     const kaydetBtn = document.querySelector('#modalYeniProje .modal-footer .btn-dark');
     if (kaydetBtn) {
         kaydetBtn.innerHTML = isEdit
-            ? '<i class="bi bi-pencil-square me-2"></i> Değişiklikleri Kaydet'
+            ? '<i class="bi bi-pencil-square me-2"></i> Kaydet'
             : '<i class="bi bi-cloud-check-fill me-2"></i> Projeyi Kaydet';
     }
 
@@ -14311,7 +14311,7 @@ async function prjDosyaYukle() {
 }
 
 async function prjDosyaSil(id) {
-    if (!confirm('Dosya silinsin mi?')) return;
+    if (!confirm('Dosya silinecek. Devam edilsin mi?')) return;
     showLoading();
     const r = await secureFetch('/proje-dosya-sil/' + id, { method: 'DELETE' });
     hideLoading();
@@ -14573,8 +14573,8 @@ function renderGenelBakisSiparisler(liste, body) {
         const teslimRenk = s.teslim_yuzdesi >= 100 ? 'bg-success' : (s.teslim_yuzdesi >= 50 ? 'bg-info' : (s.teslim_yuzdesi > 0 ? 'bg-warning' : 'bg-secondary'));
         const arsivRoz = s.arsiv ? '<span class="badge bg-secondary ms-1" style="font-size:0.6rem;"><i class="bi bi-archive"></i> ARŞİV</span>' : '';
         const rowStyle = s.arsiv ? 'cursor:pointer; opacity:0.7; background:rgba(0,0,0,0.02);' : 'cursor:pointer;';
-        const sipTarih = s.siparis_tarihi ? new Date(s.siparis_tarihi).toLocaleDateString('tr-TR') : '-';
-        const termTarih = s.termin_tarihi ? new Date(s.termin_tarihi).toLocaleDateString('tr-TR') : '-';
+        const sipTarih = s.siparis_tarihi ? formatTarihTR(s.siparis_tarihi) : '-';
+        const termTarih = s.termin_tarihi ? formatTarihTR(s.termin_tarihi) : '-';
         return `<tr style="${rowStyle}" onclick="switchSatinalmaSubTab('${s.arsiv ? 'arsiv' : 'siparisler'}'); setTimeout(()=>openSiparisDetayModal(${s.id}, '${escJs(s.siparis_no)}'), 300);">
             <td class="fw-bold text-success">${esc(s.siparis_no)}${arsivRoz}</td>
             <td class="small">${esc(s.proje_kodu)}${s.musteri_adi ? ' / ' + esc(s.musteri_adi) : ''}<br><span class="text-muted">${esc(s.proje_adi)}</span></td>
@@ -14769,7 +14769,7 @@ function renderProjeDetay(proje, teslimatlar) {
 
 // 8. Teslimat Durumunu Manuel Günceller
 function updateTeslimatDurumu(teslimatId, yeniDurum, projeId) {
-    if(!confirm(`Bu binanın statüsünü '${yeniDurum}' olarak değiştirmek istediğinize emin misiniz?`)) return;
+    if(!confirm(`Bu binanın statüsünü '${yeniDurum}' olarak değiştirmek istiyor musunuz?`)) return;
     
     showLoading();
     secureFetch('/teslimat-durum-guncelle', {
@@ -15009,7 +15009,7 @@ function applyBinaKosullari(selectEl) {
 function saveProjeGelis() {
     const isEdit = !!duzenlenenProjeId;
     const projeKodu = document.getElementById("pjKodu").value.trim();
-    if(projeKodu.length !== 5) return showToast("Proje Kodu 5 haneli bir sayı olmalıdır!", "error");
+    if(projeKodu.length !== 5) return showToast("Proje Kodu 5 haneli bir sayı olmalıdır.", "error");
 
     const projeObj = {
         proje_kodu: projeKodu,
