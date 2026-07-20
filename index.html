@@ -19,7 +19,7 @@
     .nav-pills .nav-link { color: #555; font-weight: 600; padding: 10px 15px; border-radius: 0; cursor: pointer; }
     .nav-pills .nav-link.active { background-color: var(--aterko-primary) !important; color: white !important; }
     .content-area { padding: 20px; }
-    .stok-table th, .liste-table th { background: var(--aterko-dark); color: white; padding: 10px; font-size: 0.8rem; }
+    .stok-table th, .liste-table th { background: #f2f3f5; color: #212529; padding: 8px 12px; font-size: 0.78rem; font-weight: 600; border-bottom: 1px solid #dee2e6; }
     .stok-table td, .liste-table td { padding: 10px; vertical-align: middle; background: white; border-bottom: 1px solid #eee; }
     .ozel-urun-bg { background-color: #fff3cd !important; }
 
@@ -68,10 +68,11 @@
 
     /* PROJE TABLOSU */
     .proje-flat-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-    .proje-flat-table th { background: var(--aterko-dark); color: white; padding: 12px 15px; text-align: left; font-size: 0.8rem; text-transform: uppercase; white-space: nowrap; }
-    .proje-flat-table td { padding: 12px 15px; border-bottom: 1px solid #f0f0f0; color: #444; vertical-align: middle; }
-    .proje-flat-table tr:hover { background-color: #fff9f0; }
-    .proje-flat-table tr { cursor: pointer; }
+    .proje-flat-table th { background: #f2f3f5; color: #212529; padding: 8px 12px; text-align: left; font-size: 0.78rem; font-weight: 600; border-bottom: 1px solid #dee2e6; white-space: nowrap; }
+    .proje-flat-table td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; color: #444; vertical-align: middle; }
+    .proje-flat-table tbody tr[onclick] { cursor: pointer; }
+    .proje-flat-table tbody tr[onclick]:hover { background-color: #fff9f0; }
+    table tbody tr[onclick] { cursor: pointer; }
 
     /* İSTATİSTİK KARTLARI */
     .stat-card { background: white; padding: 20px; border-radius: 8px; text-align: center; border-bottom: 3px solid var(--aterko-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.05); height: 100%; }
@@ -233,7 +234,7 @@
             <button class="btn btn-sm btn-link p-0 text-decoration-none" onclick="bildirimHepsiniOkundu(event)" id="bildirimOkundu" title="Hepsini okundu işaretle"><i class="bi bi-check2-all"></i> Hepsini okundu işaretle</button>
           </div>
           <div id="bildirimListe">
-            <div class="text-center text-muted small p-4">Yükleniyor...</div>
+            <div class="text-center text-muted small py-4">Yükleniyor...</div>
           </div>
         </div>
       </div>
@@ -776,7 +777,7 @@
         <!-- Sipariş listesi -->
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <table class="table table-hover align-middle mb-0" style="font-size:0.8rem;">
-                <thead class="table-dark fw-bold small">
+                <thead class="table-dark small">
                     <tr>
                         <th>Sipariş No</th>
                         <th>Proje</th>
@@ -1008,7 +1009,7 @@
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
-                        <thead class="bg-light">
+                        <thead class="table-light">
                             <tr>
                                 <th width="36"><input type="checkbox" id="svkHepsiChk" onchange="svkHepsiToggle(this)"></th>
                                 <th>Proje / Bina</th>
@@ -1022,7 +1023,7 @@
                             </tr>
                         </thead>
                         <tbody id="svkHazirBody">
-                            <tr><td colspan="9" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
+                            <tr><td colspan="9" class="text-center text-muted py-4">Henüz yayında ürün listesi yok.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1035,7 +1036,7 @@
                 <div class="card-header bg-white fw-bold"><i class="bi bi-file-earmark-text me-2"></i>Sevkiyat Belgeleri</div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
-                        <thead class="bg-light">
+                        <thead class="table-light">
                             <tr>
                                 <th>Sevk No</th>
                                 <th>Plaka</th>
@@ -1049,7 +1050,7 @@
                             </tr>
                         </thead>
                         <tbody id="svkBelgelerBody">
-                            <tr><td colspan="9" class="text-center text-muted p-4">Henüz sevkiyat belgesi oluşturulmadı.</td></tr>
+                            <tr><td colspan="9" class="text-center text-muted py-4">Henüz sevkiyat belgesi eklenmedi.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1080,7 +1081,7 @@
                     </div>
                     <div class="card-body p-0">
                         <div id="montajTeslimatListe" style="max-height: 70vh; overflow-y:auto;">
-                            <div class="text-center text-muted p-4 small">Yükleniyor...</div>
+                            <div class="text-center text-muted small py-4">Yükleniyor...</div>
                         </div>
                     </div>
                 </div>
@@ -1113,7 +1114,7 @@
             <div class="card border-0 shadow-sm">
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <thead class="bg-dark text-white small">
+                  <thead class="table-dark small">
                     <tr>
                       <th>Ürün</th>
                       <th class="text-end">Sahada Bekleyen</th>
@@ -1181,7 +1182,7 @@
               <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Yüklenecek Kalemler — sevk edilecek miktarı düzenleyebilirsin</div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <thead class="bg-dark text-white small">
+                  <thead class="table-dark small">
                     <tr>
                       <th>Proje / Bina</th>
                       <th>Ürün</th>
@@ -1219,7 +1220,7 @@
               <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Kalemler</div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <thead class="bg-dark text-white small">
+                  <thead class="table-dark small">
                     <tr>
                       <th>Proje / Bina</th>
                       <th>Ürün</th>
@@ -1271,7 +1272,7 @@
         <div class="card shadow-sm border-0">
             <div class="table-responsive">
                 <table class="table table-sm table-hover mb-0" style="font-size:0.85rem;">
-                    <thead class="bg-light">
+                    <thead class="table-light">
                         <tr>
                             <th>Ad Soyad</th>
                             <th>E-posta</th>
@@ -1283,7 +1284,7 @@
                         </tr>
                     </thead>
                     <tbody id="kulTabloBody">
-                        <tr><td colspan="7" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                        <tr><td colspan="7" class="text-center text-muted py-4">Yükleniyor...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1371,7 +1372,7 @@
             <div class="card shadow-sm border-0">
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0" style="font-size:0.85rem;">
-                        <thead class="bg-light">
+                        <thead class="table-light">
                             <tr>
                                 <th>Rol Adı</th>
                                 <th>Açıklama</th>
@@ -1381,7 +1382,7 @@
                                 <th class="text-center">İşlem</th>
                             </tr>
                         </thead>
-                        <tbody id="rolTabloBody"><tr><td colspan="6" class="text-center text-muted p-4">Yükleniyor...</td></tr></tbody>
+                        <tbody id="rolTabloBody"><tr><td colspan="6" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -1402,10 +1403,10 @@
             <div class="card shadow-sm border-0">
                 <div class="table-responsive" style="max-height: 70vh;">
                     <table class="table table-sm table-bordered mb-0" style="font-size:0.8rem;">
-                        <thead class="bg-dark text-white" style="position:sticky; top:0;">
+                        <thead class="table-dark" style="position:sticky; top:0;">
                             <tr id="matrisHeader"></tr>
                         </thead>
-                        <tbody id="matrisBody"><tr><td class="text-center text-muted p-4">Yükleniyor...</td></tr></tbody>
+                        <tbody id="matrisBody"><tr><td class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -1500,7 +1501,7 @@
             </div>
         </div>
         <h6 class="fw-bold text-secondary mb-2"><i class="bi bi-bell me-2"></i>Olay Bildirimleri</h6>
-        <div id="bildirimAyarListe"><div class="text-center text-muted p-4"><div class="spinner-border text-warning"></div></div></div>
+        <div id="bildirimAyarListe"><div class="text-center text-muted py-4"><div class="spinner-border text-warning"></div></div></div>
     </div>
 
     <!-- Rol Ekle/Düzenle Modal -->
@@ -1566,7 +1567,7 @@
         <div class="card shadow-sm border-0">
             <div class="table-responsive">
                 <table class="table table-sm table-hover mb-0" style="font-size:0.82rem;">
-                    <thead class="bg-light">
+                    <thead class="table-light">
                         <tr>
                             <th>Bina Türü</th>
                             <th class="text-center" style="width:50px;">Sıra</th>
@@ -1580,7 +1581,7 @@
                         </tr>
                     </thead>
                     <tbody id="ftTabloBody">
-                        <tr><td colspan="9" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                        <tr><td colspan="9" class="text-center text-muted py-4">Yükleniyor...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1831,7 +1832,7 @@
                         <kbd class="text-muted small ms-2">ESC</kbd>
                     </div>
                     <div id="quickSearchSonuclar" style="max-height: 60vh; overflow-y: auto;">
-                        <div class="text-center text-muted small p-4">
+                        <div class="text-center text-muted small py-4">
                             <i class="bi bi-keyboard me-1"></i>En az 2 harf yazın.
                             <div class="mt-2"><kbd>↑</kbd> <kbd>↓</kbd> ile gezin, <kbd>Enter</kbd> ile aç.</div>
                         </div>
@@ -1987,7 +1988,7 @@
             </div>
             <div class="table-responsive">
                 <table class="table table-sm table-hover mb-0" style="font-size:0.82rem;">
-                    <thead class="bg-light">
+                    <thead class="table-light">
                         <tr>
                             <th class="text-center" style="width:130px;">Zaman</th>
                             <th>Kullanıcı</th>
@@ -1999,7 +2000,7 @@
                         </tr>
                     </thead>
                     <tbody id="auditTabloBody">
-                        <tr><td colspan="7" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                        <tr><td colspan="7" class="text-center text-muted py-4">Yükleniyor...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -2034,7 +2035,7 @@
                     <div class="card-body p-0">
                         <table class="table table-sm table-hover mb-0">
                             <tbody id="dashTerminTablo">
-                                <tr><td colspan="3" class="text-center text-muted small p-4">Yükleniyor...</td></tr>
+                                <tr><td colspan="3" class="text-center text-muted small py-4">Yükleniyor...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2051,7 +2052,7 @@
                     <div class="card-body p-0">
                         <table class="table table-sm table-hover mb-0">
                             <tbody id="dashKritikStokTablo">
-                                <tr><td colspan="3" class="text-center text-muted small p-4">Yükleniyor...</td></tr>
+                                <tr><td colspan="3" class="text-center text-muted small py-4">Yükleniyor...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2066,7 +2067,7 @@
                     </div>
                     <div class="card-body p-0">
                         <table class="table table-sm table-hover mb-0">
-                            <thead class="bg-light">
+                            <thead class="table-light">
                                 <tr>
                                     <th style="width:90px;">Kaynak</th>
                                     <th>Başlık</th>
@@ -2076,7 +2077,7 @@
                                 </tr>
                             </thead>
                             <tbody id="dashSonHareketTablo">
-                                <tr><td colspan="5" class="text-center text-muted small p-4">Yükleniyor...</td></tr>
+                                <tr><td colspan="5" class="text-center text-muted small py-4">Yükleniyor...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2132,7 +2133,7 @@
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
-                        <thead class="bg-light">
+                        <thead class="table-light">
                             <tr>
                                 <th width="36"><input type="checkbox" id="urtHepsiChk" onchange="urtHepsiToggle(this)"></th>
                                 <th>Proje / Bina</th>
@@ -2151,7 +2152,7 @@
                             </tr>
                         </thead>
                         <tbody id="urtPlanBody">
-                            <tr><td colspan="14" class="text-center text-muted p-4">Yayında ürün listesi yok.</td></tr>
+                            <tr><td colspan="14" class="text-center text-muted py-4">Henüz yayında ürün listesi yok.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2164,7 +2165,7 @@
                 <div class="card-header bg-white fw-bold"><i class="bi bi-clipboard-data me-2"></i>İş Emirleri</div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
-                        <thead class="bg-light">
+                        <thead class="table-light">
                             <tr>
                                 <th>Emir No</th>
                                 <th>Ustabaşı</th>
@@ -2177,7 +2178,7 @@
                             </tr>
                         </thead>
                         <tbody id="urtEmirlerBody">
-                            <tr><td colspan="8" class="text-center text-muted p-4">Henüz iş emri oluşturulmadı.</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted py-4">Henüz iş emri eklenmedi.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2213,7 +2214,7 @@
               <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Atanacak Kalemler — atanan miktarı düzenleyebilirsiniz</div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <thead class="bg-dark text-white small">
+                  <thead class="table-dark small">
                     <tr>
                       <th>Proje / Bina</th>
                       <th>Ürün</th>
@@ -2254,7 +2255,7 @@
             <div class="card border-0 shadow-sm">
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <thead class="bg-dark text-white small">
+                  <thead class="table-dark small">
                     <tr>
                       <th>Ürün</th>
                       <th class="text-end">Stokta Olan</th>
@@ -2293,7 +2294,7 @@
             <div class="card border-0 shadow-sm mb-3">
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <thead class="bg-dark text-white small">
+                  <thead class="table-dark small">
                     <tr>
                       <th>Proje / Bina</th>
                       <th>Ürün</th>
@@ -2348,7 +2349,7 @@
               <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Kalemler — tamamlanan miktarı girerek üretimi işle</div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
-                  <thead class="bg-dark text-white small">
+                  <thead class="table-dark small">
                     <tr>
                       <th>Proje / Bina</th>
                       <th>Ürün</th>
@@ -2433,7 +2434,7 @@
             <div class="card shadow-sm border-0">
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0" style="font-size:0.82rem;">
-                        <thead class="bg-light">
+                        <thead class="table-light">
                             <tr>
                                 <th>Proje</th>
                                 <th>Müşteri</th>
@@ -2449,7 +2450,7 @@
                             </tr>
                         </thead>
                         <tbody id="karTabloBody">
-                            <tr><td colspan="11" class="text-center text-muted p-4">Yükleniyor...</td></tr>
+                            <tr><td colspan="11" class="text-center text-muted py-4">Yükleniyor...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2473,7 +2474,7 @@
                                 <div class="card-header bg-white fw-bold"><i class="bi bi-building me-2 text-primary"></i>Teslimatlar (Gelir)</div>
                                 <div class="table-responsive">
                                     <table class="table table-sm mb-0">
-                                        <thead class="bg-light">
+                                        <thead class="table-light">
                                             <tr><th>Bina</th><th>Tür</th><th class="text-end">Tutar</th></tr>
                                         </thead>
                                         <tbody id="kdTeslimatlar"></tbody>
@@ -2486,7 +2487,7 @@
                                 <div class="card-header bg-white fw-bold"><i class="bi bi-shop me-2 text-warning"></i>Tedarikçi Bazlı Maliyet</div>
                                 <div class="table-responsive">
                                     <table class="table table-sm mb-0">
-                                        <thead class="bg-light">
+                                        <thead class="table-light">
                                             <tr><th>Tedarikçi</th><th class="text-center">Sip.</th><th class="text-end">Tutar</th></tr>
                                         </thead>
                                         <tbody id="kdTedarikciler"></tbody>
@@ -2499,7 +2500,7 @@
                                 <div class="card-header bg-white fw-bold"><i class="bi bi-cart me-2 text-success"></i>Bağlı Siparişler</div>
                                 <div class="table-responsive">
                                     <table class="table table-sm table-hover mb-0">
-                                        <thead class="bg-light">
+                                        <thead class="table-light">
                                             <tr>
                                                 <th>Sipariş No</th>
                                                 <th>Tedarikçi</th>
@@ -2644,7 +2645,7 @@
                                         <th class="text-center">İşlem</th>
                                     </tr>
                                 </thead>
-                                <tbody id="teslimatUrunleriBody"><tr><td colspan="6" class="text-center text-muted p-4">Lütfen yukarıdan proje seçin.</td></tr></tbody>
+                                <tbody id="teslimatUrunleriBody"><tr><td colspan="6" class="text-center text-muted py-4">Lütfen yukarıdan proje seçin.</td></tr></tbody>
                             </table>
                         </div>
                     </div>
@@ -2681,10 +2682,10 @@
 
                     <div class="card border-0 shadow-sm" style="max-height: 45vh; overflow-y:auto;">
                         <table class="table table-sm table-hover mb-0">
-                            <thead class="bg-dark text-white small">
+                            <thead class="table-dark small">
                                 <tr><th></th><th>Proje / Bina</th><th class="text-center">Yayın</th><th class="text-center">Kalem</th></tr>
                             </thead>
-                            <tbody id="lkKaynakListe"><tr><td colspan="4" class="text-center text-muted p-4">Yükleniyor...</td></tr></tbody>
+                            <tbody id="lkKaynakListe"><tr><td colspan="4" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
                         </table>
                     </div>
 
@@ -2753,7 +2754,7 @@ STK-002		50	adet
                             <div class="card border-0 shadow-sm h-100">
                                 <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list me-2"></i>Snapshot'lar</div>
                                 <div id="verSnapList" style="max-height:60vh; overflow-y:auto;">
-                                    <div class="text-center text-muted small p-4">Yükleniyor...</div>
+                                    <div class="text-center text-muted small py-4">Yükleniyor...</div>
                                 </div>
                             </div>
                         </div>
@@ -2761,7 +2762,7 @@ STK-002		50	adet
                             <div class="card border-0 shadow-sm h-100">
                                 <div class="card-header bg-white fw-bold py-2"><i class="bi bi-file-earmark-text me-2"></i>Snapshot Detayı</div>
                                 <div id="verSnapDetay" class="p-3">
-                                    <div class="text-center text-muted small p-4">Soldan bir snapshot seçin.</div>
+                                    <div class="text-center text-muted small py-4">Soldan bir snapshot seçin.</div>
                                 </div>
                             </div>
                         </div>
@@ -2789,7 +2790,7 @@ STK-002		50	adet
             <div class="card-header bg-white fw-bold py-2"><i class="bi bi-list-check me-2"></i>Talep Edilecek Kalemler</div>
             <div class="table-responsive">
               <table class="table table-sm align-middle mb-0">
-                <thead class="bg-dark text-white small">
+                <thead class="table-dark small">
                   <tr>
                     <th style="width:34%;">Ürün</th>
                     <th class="text-center" style="width:14%;">Stokta Olan</th>
@@ -3168,7 +3169,7 @@ STK-002		50	adet
             </div>
             <div class="table-responsive">
               <table class="table table-sm table-hover mb-0" style="font-size:0.82rem;">
-                <thead class="bg-light">
+                <thead class="table-light">
                   <tr>
                     <th>Tedarikçi</th>
                     <th class="text-end">Birim Fiyat</th>
@@ -3181,7 +3182,7 @@ STK-002		50	adet
                     <th class="text-center">İşlem</th>
                   </tr>
                 </thead>
-                <tbody id="tkTabloBody"><tr><td colspan="9" class="text-center text-muted p-3">Henüz teklif kaydı yok.</td></tr></tbody>
+                <tbody id="tkTabloBody"><tr><td colspan="9" class="text-center text-muted py-4">Henüz teklif kaydı eklenmedi.</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -3535,7 +3536,7 @@ STK-002		50	adet
                 <input id="prjDosyaInput" type="file" accept=".pdf,.dwg,.jpg,.jpeg,.png,.zip" class="form-control form-control-sm"></div>
               <div class="col-md-4"><button class="btn btn-sm btn-primary w-100" onclick="prjDosyaYukle()"><i class="bi bi-upload me-1"></i>Yükle</button></div>
             </div>
-            <div id="prjDosyaListe"><div class="text-center text-muted py-3">Yükleniyor...</div></div>
+            <div id="prjDosyaListe"><div class="text-center text-muted py-4">Yükleniyor...</div></div>
           </div>
         </div>
       </div>
@@ -3624,7 +3625,7 @@ STK-002		50	adet
             </div>
             <div class="table-responsive"><table class="table table-sm table-bordered align-middle">
               <thead class="table-light"><tr><th>Planlanan Tarih</th><th class="text-end">Tutar</th><th>Açıklama</th><th>Durum</th><th style="width:130px;"></th></tr></thead>
-              <tbody id="maliGiderTbody"><tr><td colspan="5" class="text-center text-muted py-3">Yükleniyor...</td></tr></tbody>
+              <tbody id="maliGiderTbody"><tr><td colspan="5" class="text-center text-muted py-4">Yükleniyor...</td></tr></tbody>
             </table></div>
           </div>
         </div>
@@ -3651,7 +3652,7 @@ STK-002		50	adet
               <div class="col-md-3"><button class="btn btn-sm btn-outline-primary w-100" onclick="maliTaksitOnizle()"><i class="bi bi-magic me-1"></i>Eşit Böl</button></div>
             </div>
             <table class="table table-sm table-bordered align-middle">
-              <thead class="table-light"><tr><th>Tarih</th><th>Tutar (TL)</th><th style="width:40px;"></th></tr></thead>
+              <thead class="table-light"><tr><th>Tarih</th><th class="text-end">Tutar (TL)</th><th style="width:40px;"></th></tr></thead>
               <tbody id="mtxTbody"></tbody>
               <tfoot><tr class="table-light"><td class="text-end fw-bold">Toplam:</td><td class="fw-bold" id="mtxToplam"></td>
                 <td><button class="btn btn-sm btn-outline-secondary py-0" onclick="maliTaksitSatirEkle()" title="Satır ekle"><i class="bi bi-plus"></i></button></td></tr></tfoot>
@@ -4270,7 +4271,7 @@ async function maliKartAc(tip, id) {
         modal.show();
         return;
     }
-    body.innerHTML = '<div class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor...</div>';
+    body.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor...</div>';
     modal.show();
     const r = await secureFetch(tip === 'TEDARIKCI' ? '/mali-tedarikci/' + id : '/mali-musteri/' + id);
     if (!r.ok) { body.innerHTML = '<div class="alert alert-danger">' + esc(r.hata || 'Kart yüklenemedi.') + '</div>'; return; }
@@ -5089,7 +5090,7 @@ function maliKasaRender() {
             <td class="text-end ${bakiye < 0 ? 'text-danger fw-bold' : ''}">${maliTL(bakiye)}</td>
         </tr>`;
     }).join('');
-    if (!veriler.length) html += '<tr><td colspan="9" class="text-center text-muted py-3">Bu hesapta gerçekleşen nakit hareketi yok.</td></tr>';
+    if (!veriler.length) html += '<tr><td colspan="9" class="text-center text-muted py-4">Bu hesapta gerçekleşen nakit hareketi yok.</td></tr>';
     document.getElementById('maliKasaTbody').innerHTML = html;
 }
 
@@ -5295,7 +5296,7 @@ async function maliSiparisKopruAc() {
             <td>${esc(s.durum || '-')}</td>
             <td class="text-end">${formatTR(parseFloat(s.toplam) || 0)}</td>
             <td>${esc(s.para_birimi)}</td>
-        </tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted py-3">Bu tedarikçiye ait sipariş yok.</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="5" class="text-center text-muted py-4">Bu tedarikçiye ait sipariş yok.</td></tr>';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMaliSiparis')).show();
 }
 function maliSiparisSec(json) {
@@ -5397,7 +5398,7 @@ async function maliGiderYukle() {
     const silYetki = izinVarMi('mali.tedarikci', 'TAM');
     const bugun = maliBugunYMD();
     const tb = document.getElementById('maliGiderTbody');
-    if (!r.data.length) { tb.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Kayıt yok.</td></tr>'; return; }
+    if (!r.data.length) { tb.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Kayıt yok.</td></tr>'; return; }
     tb.innerHTML = r.data.map(h => {
         const pTarih = maliYmd10(h.planlanan_vade || h.vade_tarihi || h.belge_tarihi);
         const acik = !h.gerceklesen_tarih;
@@ -5565,7 +5566,7 @@ function bildirimRender(liste, okunmamis) {
 
     const liste_el = document.getElementById('bildirimListe');
     if (!liste || liste.length === 0) {
-        liste_el.innerHTML = '<div class="text-center text-muted small p-4"><i class="bi bi-bell-slash me-1"></i>Hiç bildirim yok.</div>';
+        liste_el.innerHTML = '<div class="text-center text-muted small py-4"><i class="bi bi-bell-slash me-1"></i>Henüz bildirim yok.</div>';
         return;
     }
 
@@ -5693,7 +5694,7 @@ function dashboardKpiRender(k) {
 function dashboardTerminRender(liste) {
     const tbody = document.getElementById('dashTerminTablo');
     if (!liste || liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted small p-4"><i class="bi bi-check-circle text-success me-1"></i>14 gün içinde termini olan sipariş yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted small py-4"><i class="bi bi-check-circle text-success me-1"></i>14 gün içinde termini olan sipariş yok.</td></tr>';
         return;
     }
     tbody.innerHTML = liste.map(s => {
@@ -5716,7 +5717,7 @@ function dashboardTerminRender(liste) {
 function dashboardKritikStokRender(liste) {
     const tbody = document.getElementById('dashKritikStokTablo');
     if (!liste || liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted small p-4"><i class="bi bi-check-circle text-success me-1"></i>Kritik stok altına düşen kalem yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted small py-4"><i class="bi bi-check-circle text-success me-1"></i>Kritik stok altına düşen kalem yok.</td></tr>';
         return;
     }
     tbody.innerHTML = liste.map(s => {
@@ -5739,7 +5740,7 @@ function dashboardKritikStokRender(liste) {
 function dashboardSonHareketRender(liste) {
     const tbody = document.getElementById('dashSonHareketTablo');
     if (!liste || liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted small p-4">Hareket yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted small py-4">Henüz hareket eklenmedi.</td></tr>';
         return;
     }
     const kaynakMap = {
@@ -5797,7 +5798,7 @@ function auditRender(liste) {
     const tbody = document.getElementById('auditTabloBody');
     document.getElementById('auditSayac').textContent = `${liste.length} kayıt`;
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">Eşleşen kayıt yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Eşleşen kayıt bulunamadı.</td></tr>';
         return;
     }
     tbody.innerHTML = liste.map(a => {
@@ -5839,7 +5840,7 @@ function openQuickSearch() {
         if (inp) { inp.value = ''; inp.focus(); }
         quickSearchAktifIndex = -1;
         document.getElementById('quickSearchSonuclar').innerHTML =
-            '<div class="text-center text-muted small p-4"><i class="bi bi-keyboard me-1"></i>En az 2 harf yazın.<div class="mt-2"><kbd>↑</kbd> <kbd>↓</kbd> ile gezin, <kbd>Enter</kbd> ile aç.</div></div>';
+            '<div class="text-center text-muted small py-4"><i class="bi bi-keyboard me-1"></i>En az 2 harf yazın.<div class="mt-2"><kbd>↑</kbd> <kbd>↓</kbd> ile gezin, <kbd>Enter</kbd> ile aç.</div></div>';
         document.getElementById('quickSearchSayac').textContent = '';
     }, 200);
 }
@@ -5849,7 +5850,7 @@ function quickSearchTetikle() {
     if (quickSearchTimer) clearTimeout(quickSearchTimer);
     if (q.length < 2) {
         document.getElementById('quickSearchSonuclar').innerHTML =
-            '<div class="text-center text-muted small p-4"><i class="bi bi-keyboard me-1"></i>En az 2 harf yazın.</div>';
+            '<div class="text-center text-muted small py-4"><i class="bi bi-keyboard me-1"></i>En az 2 harf yazın.</div>';
         document.getElementById('quickSearchSayac').textContent = '';
         return;
     }
@@ -5868,7 +5869,7 @@ function quickSearchRender(sonuclar) {
 
     const div = document.getElementById('quickSearchSonuclar');
     if (sonuclar.length === 0) {
-        div.innerHTML = '<div class="text-center text-muted p-4"><i class="bi bi-emoji-frown"></i> Eşleşen kayıt yok.</div>';
+        div.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-emoji-frown"></i> Eşleşen kayıt bulunamadı.</div>';
         return;
     }
 
@@ -6000,7 +6001,7 @@ function formTanimlariRender() {
     document.getElementById('ftSayac').textContent = `${liste.length} soru`;
     const tbody = document.getElementById('ftTabloBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Eşleşen kayıt yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Eşleşen kayıt bulunamadı.</td></tr>';
         return;
     }
 
@@ -6262,7 +6263,7 @@ function tsSablonRender() {
         html += `<a href="#" class="d-flex justify-content-between align-items-center px-3 py-2 small text-decoration-none border-bottom ${aktif}" onclick="event.preventDefault();tsSatirSec(${s.id})">
             <span class="text-dark">${s.soru ? tsEsc(s.soru) : '<em class="text-muted">(başlıksız)</em>'}</span> ${tipRozet[s.tip]||''}</a>`;
     });
-    document.getElementById('tsListe').innerHTML = html || '<div class="text-muted text-center p-4">Sonuç yok</div>';
+    document.getElementById('tsListe').innerHTML = html || '<div class="text-muted text-center p-4">Eşleşen sonuç bulunamadı.</div>';
 }
 
 // #4 — Bölüm sıra taşıma / silme (tüm bölümü etkiler)
@@ -6630,13 +6631,13 @@ function renderKullanicilar() {
 
     const tbody = document.getElementById('kulTabloBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">Eşleşen kullanıcı yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Eşleşen kullanıcı bulunamadı.</td></tr>';
         return;
     }
 
     tbody.innerHTML = liste.map(u => {
         const renk = KUL_ROL_RENK[u.rol] || 'secondary';
-        const sonGiris = u.son_giris ? new Date(u.son_giris).toLocaleString('tr-TR') : '<span class="text-muted small">Hiç giriş yok</span>';
+        const sonGiris = u.son_giris ? new Date(u.son_giris).toLocaleString('tr-TR') : '<span class="text-muted small">Henüz kayıt yok.</span>';
         const kayit = u.kayit_tarihi ? new Date(u.kayit_tarihi).toLocaleDateString('tr-TR') : '-';
         const durumBadge = u.durum === 'AKTIF' ? '<span class="badge bg-success">Aktif</span>' : '<span class="badge bg-secondary">Pasif</span>';
         return `<tr>
@@ -6763,7 +6764,7 @@ async function rollerYukle() {
 function renderRolListesi() {
     const tbody = document.getElementById('rolTabloBody');
     if (rollerCache.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4">Rol yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Henüz rol eklenmedi.</td></tr>';
         return;
     }
     tbody.innerHTML = rollerCache.map(r => {
@@ -6851,7 +6852,7 @@ const BILDIRIM_DINAMIK_DESTEK = ['TALEP_ONAYA_GONDERILDI', 'TALEP_ONAYLANDI', 'T
 
 async function bildirimAyarYukle() {
     const liste = document.getElementById('bildirimAyarListe');
-    liste.innerHTML = '<div class="text-center text-muted p-4"><div class="spinner-border text-warning"></div></div>';
+    liste.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border text-warning"></div></div>';
     const r = await secureFetch('/bildirim-kurallari');
     if (!r || !r.ok) { liste.innerHTML = `<div class="alert alert-danger">${esc((r && r.hata) || 'Yüklenemedi')}</div>`; return; }
     window.bildirimRoller = r.roller || [];
@@ -7412,7 +7413,7 @@ async function gorevPazartesiYukle() {
         const renk = yuzde === null ? 'text-muted' : yuzde >= 80 ? 'text-success' : yuzde >= 50 ? 'text-warning' : 'text-danger';
         return `<tr><td>${esc(s.sahip_ad)}</td><td class="text-center text-success">${s.zamaninda}</td><td class="text-center">${s.gec}</td><td class="text-center text-danger">${s.kacan}</td><td class="text-center fw-bold ${renk}">${yuzde === null ? '—' : '%' + yuzde}</td></tr>`;
     };
-    const karneTablo = `<table class="table table-sm mb-0"><thead><tr><th>Kişi</th><th class="text-center">Zamanında</th><th class="text-center">Geç</th><th class="text-center">Kaçan</th><th class="text-center">Tutarlılık</th></tr></thead><tbody>${(r.karne || []).map(karneRow).join('')}</tbody></table><div class="small text-muted mt-1">Son 90 gün · sözünü zamanında tutma oranı (90 gün değerlendirmesinin verisi kendiliğinden birikir)</div>`;
+    const karneTablo = `<table class="table table-sm mb-0"><thead class="table-light"><tr><th>Kişi</th><th class="text-center">Zamanında</th><th class="text-center">Geç</th><th class="text-center">Kaçan</th><th class="text-center">Tutarlılık</th></tr></thead><tbody>${(r.karne || []).map(karneRow).join('')}</tbody></table><div class="small text-muted mt-1">Son 90 gün · sözünü zamanında tutma oranı (90 gün değerlendirmesinin verisi kendiliğinden birikir)</div>`;
     // Toplantı kararı hızlı girişi (yazdırmada gizli)
     const kararForm = `<div class="card border-0 shadow-sm mb-3 d-print-none"><div class="card-body py-2">
         <div class="small fw-semibold mb-1"><i class="bi bi-lightning-charge me-1"></i>Toplantı kararı ekle — anında sahip + tarih (tutanağın yerini tutar)</div>
@@ -7430,7 +7431,7 @@ async function gorevPazartesiYukle() {
       ${blok('bg-success-subtle text-success-emphasis', 'bi-check-circle-fill', `Geçen Hafta Tamamlananlar (${r.gecen_hafta_bitenler.length})`, duz(r.gecen_hafta_bitenler))}
       ${blok('bg-info-subtle text-info-emphasis', 'bi-flag-fill', `Taahhütler (${r.taahhutler.length})`, r.taahhutler.length ? '<ul class="list-unstyled mb-0">' + r.taahhutler.map(g => `<li class="d-flex justify-content-between small py-1 border-bottom"><span>${esc(g.baslik)} — ${esc(g.sahip_ad)}</span><span class="badge ${GRV_DURUM_BADGE[g.durum] || 'bg-secondary'}">${GRV_DURUM_AD[g.durum] || g.durum}</span></li>`).join('') + '</ul>' : '<div class="text-muted small">— yok —</div>')}
       ${blok('bg-warning-subtle text-warning-emphasis', 'bi-award-fill', 'Taahhüt Tutarlılığı Karnesi', karneTablo)}
-      ${blok('bg-light', 'bi-people-fill', 'Kişi Özeti', `<table class="table table-sm mb-0"><thead><tr><th>Kişi</th><th class="text-center">Açık</th><th class="text-center">Geciken</th><th class="text-center">Bu ay biten</th></tr></thead><tbody>${ozet}</tbody></table>`)}
+      ${blok('bg-light', 'bi-people-fill', 'Kişi Özeti', `<table class="table table-sm mb-0"><thead class="table-light"><tr><th>Kişi</th><th class="text-center">Açık</th><th class="text-center">Geciken</th><th class="text-center">Bu ay biten</th></tr></thead><tbody>${ozet}</tbody></table>`)}
     `;
 }
 
@@ -7766,7 +7767,7 @@ function teslimatDegisti() {
         islemAlani.style.opacity = "0.4";
         islemAlani.style.pointerEvents = "none";
         document.getElementById("seciliTeslimatBadge").textContent = "Bekleniyor...";
-        document.getElementById("teslimatUrunleriBody").innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">Lütfen yukarıdan proje seçin.</td></tr>';
+        document.getElementById("teslimatUrunleriBody").innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Lütfen yukarıdan proje seçin.</td></tr>';
     }
 }
 
@@ -7951,7 +7952,7 @@ function lkKaynaklariRender() {
 
     const tbody = document.getElementById('lkKaynakListe');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted p-4">Eşleşen kaynak yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Eşleşen kaynak bulunamadı.</td></tr>';
         return;
     }
     const yayinMap = {
@@ -8053,7 +8054,7 @@ function liImportOnizle() {
         </div>
         <div style="max-height:30vh; overflow-y:auto;">
         <table class="table table-sm table-bordered mb-0">
-            <thead class="bg-light small"><tr><th>#</th><th>Stok Kodu</th><th>Özel Ad</th><th>Miktar</th><th>Birim</th><th>Açıklama</th><th></th></tr></thead>
+            <thead class="table-light small"><tr><th>#</th><th>Stok Kodu</th><th>Özel Ad</th><th class="text-end">Miktar</th><th>Birim</th><th>Açıklama</th><th></th></tr></thead>
             <tbody>${html}</tbody>
         </table></div>`;
 }
@@ -8081,7 +8082,7 @@ async function openVersiyonGecmisi() {
 
     new bootstrap.Modal(document.getElementById('modalVersiyon')).show();
     document.getElementById('verSnapList').innerHTML = '<div class="text-center small p-4 text-muted">Yükleniyor...</div>';
-    document.getElementById('verSnapDetay').innerHTML = '<div class="text-center text-muted small p-4">Soldan bir snapshot seçin.</div>';
+    document.getElementById('verSnapDetay').innerHTML = '<div class="text-center text-muted small py-4">Soldan bir snapshot seçin.</div>';
 
     const r = await secureFetch('/urun-listesi-versiyonlar/' + tId);
     if (!r.ok) return;
@@ -8126,7 +8127,7 @@ async function verSnapAc(versiyonId) {
         </div>
         <div class="table-responsive" style="max-height:50vh; overflow-y:auto;">
             <table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
-                <thead class="bg-light"><tr><th>#</th><th>Stok Kodu</th><th>Ürün</th><th class="text-end">Miktar</th><th>Birim</th></tr></thead>
+                <thead class="table-light"><tr><th>#</th><th>Stok Kodu</th><th>Ürün</th><th class="text-end">Miktar</th><th>Birim</th></tr></thead>
                 <tbody>
                     ${kalemler.map((k,i) => `<tr>
                         <td class="small text-muted">${i+1}</td>
@@ -8134,7 +8135,7 @@ async function verSnapAc(versiyonId) {
                         <td class="small fw-bold">${esc(k.stok_adi || k.ozel_urun_adi || '-')}</td>
                         <td class="text-end small fw-bold">${formatTR(k.miktar)}</td>
                         <td class="small">${esc(k.stok_birim || k.ozel_urun_birim || '-')}</td>
-                    </tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted p-3">Snapshot boş</td></tr>'}
+                    </tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted py-4">Snapshot boş</td></tr>'}
                 </tbody>
             </table>
         </div>
@@ -8161,7 +8162,7 @@ async function sablonToggle() {
 function renderTeslimatUrunleri(liste) {
     const tbody = document.getElementById("teslimatUrunleriBody");
     if(!liste || liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4">Bu teslimata henüz ürün eklenmemiş.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Bu teslimata henüz ürün eklenmemiş.</td></tr>';
         return;
     }
 
@@ -8441,7 +8442,7 @@ function renderUretimPlan() {
 
     const tbody = document.getElementById('urtPlanBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="14" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="text-center text-muted py-4">Eşleşen kalem bulunamadı.</td></tr>';
         return;
     }
 
@@ -8587,7 +8588,7 @@ function fetchUretimIsEmirleri() {
 function renderUretimIsEmirleri() {
     const tbody = document.getElementById('urtEmirlerBody');
     if (uretimEmirlerCache.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">Henüz iş emri oluşturulmadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Henüz iş emri eklenmedi.</td></tr>';
         return;
     }
     const durumMap = {
@@ -8877,7 +8878,7 @@ function renderSevkiyatHazir() {
 
     const tbody = document.getElementById('svkHazirBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Eşleşen kalem yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Eşleşen kalem bulunamadı.</td></tr>';
         return;
     }
 
@@ -8993,7 +8994,7 @@ function fetchSevkiyatBelgeleri() {
 function renderSevkiyatBelgeleri() {
     const tbody = document.getElementById('svkBelgelerBody');
     if (sevkiyatBelgelerCache.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Henüz sevkiyat belgesi yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Henüz sevkiyat belgesi eklenmedi.</td></tr>';
         return;
     }
     const durumMap = {
@@ -9137,7 +9138,7 @@ function renderMontajTeslimatListe() {
     document.getElementById('montajTeslimatSayisi').textContent = montajTeslimatCache.length;
     const div = document.getElementById('montajTeslimatListe');
     if (montajTeslimatCache.length === 0) {
-        div.innerHTML = '<div class="text-center text-muted p-4 small">Henüz sahaya teslim olmuş montajlı teslimat yok.<br><br>Bir teslimatın <strong>Montaj gerekli</strong> işaretli olması ve sevkiyatının <strong>"Teslim Edildi"</strong> durumuna geçmesi gerekir.</div>';
+        div.innerHTML = '<div class="text-center text-muted small py-4">Henüz sahaya teslim olmuş montajlı teslimat yok.<br><br>Bir teslimatın <strong>Montaj gerekli</strong> işaretli olması ve sevkiyatının <strong>"Teslim Edildi"</strong> durumuna geçmesi gerekir.</div>';
         return;
     }
 
@@ -9243,7 +9244,7 @@ function renderMontajDetay() {
             </div>
             <div class="table-responsive">
                 <table class="table table-sm table-hover align-middle mb-0" style="font-size:0.82rem;">
-                    <thead class="bg-light">
+                    <thead class="table-light">
                         <tr>
                             <th width="36"><input type="checkbox" id="muyHepsiChk" onchange="muyHepsiToggle(this)"></th>
                             <th>Ürün</th>
@@ -9607,7 +9608,7 @@ function gotoSiparisListesi(siparisAramaKoku) {
 function renderTalepTable(talepler) {
     const cont = document.getElementById("talepTableBody");
     if (talepler.length === 0) {
-        cont.innerHTML = '<div class="text-center text-muted p-5 border rounded-3 bg-white">Sistemde henüz bir satınalma talebi bulunmuyor.</div>';
+        cont.innerHTML = '<div class="text-center text-muted p-5 border rounded-3 bg-white">Henüz talep oluşturulmadı.</div>';
         return;
     }
     cont.innerHTML = talepler.map(t => {
@@ -9683,7 +9684,7 @@ function talepUrunDurumBadge(durum) {
 // Kart içi ürün listesi: üstte ad + miktar, altta kategori · açıklama + ürün durumu
 function renderTalepKalemMini(kalemler) {
     if (!kalemler || kalemler.length === 0) {
-        return '<div class="text-muted small fst-italic">Bu talepte kalem yok.</div>';
+        return '<div class="text-muted small fst-italic">Henüz kalem eklenmedi.</div>';
     }
     const satirlar = kalemler.map((k, i) => {
         const isOzel = !k.stok_kart_id;
@@ -10226,7 +10227,7 @@ async function openTalepDetayModal(talepId, talepNo) {
     renderTalepDetayLevelButtons(talepId);
 
     const tbody = document.getElementById("detayTableBody");
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted p-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Kalemler çekiliyor...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Kalemler çekiliyor...</td></tr>';
 
     // Bağlı sipariş listesi panelini de yükle
     talepOzetVeSiparisleriYukle(talepId);
@@ -10378,7 +10379,7 @@ async function sonAlisBilgisiYukle(stokKartId, hedefId, urunAdi) {
         const el = document.getElementById(hedefId);
         if (!el) return;
         if (!r.ok || !r.gecmis || r.gecmis.length === 0) {
-            el.innerHTML = '<span class="text-muted small fst-italic">Önceki sipariş yok</span>';
+            el.innerHTML = '<span class="text-muted small fst-italic">Henüz önceki sipariş yok</span>';
             return;
         }
         const son = r.gecmis[0]; // en yeni
@@ -10741,7 +10742,7 @@ function submitPurchaseOrder() {
 async function openCrossTalepPicker() {
     if (!crossTalepKaynakId) return showToast('Kaynak talep bulunamadı.', 'error');
     const havuzDiv = document.getElementById('crossTalepHavuz');
-    havuzDiv.innerHTML = '<div class="text-center text-muted p-3"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor...</div>';
+    havuzDiv.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor...</div>';
     const modal = new bootstrap.Modal(document.getElementById('modalCrossTalep'));
     modal.show();
 
@@ -10750,7 +10751,7 @@ async function openCrossTalepPicker() {
     crossTalepProjeId = r.proje_id;
 
     if (!r.kalemler || r.kalemler.length === 0) {
-        havuzDiv.innerHTML = '<div class="text-center text-muted p-3"><i class="bi bi-inbox me-2"></i>Bu projenin başka aktif (İŞLEME ALINDI / TEKLİF İSTENDİ) kalemi yok.</div>';
+        havuzDiv.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-inbox me-2"></i>Bu projenin başka aktif (İŞLEME ALINDI / TEKLİF İSTENDİ) kalemi yok.</div>';
         return;
     }
 
@@ -10782,7 +10783,7 @@ async function openCrossTalepPicker() {
         html += `</tbody></table></div></div>`;
     });
 
-    if (!html) html = '<div class="text-center text-muted p-3"><i class="bi bi-check2-circle me-2"></i>Bu projenin diğer tüm kalemleri zaten bu siparişte.</div>';
+    if (!html) html = '<div class="text-center text-muted py-4"><i class="bi bi-check2-circle me-2"></i>Bu projenin diğer tüm kalemleri zaten bu siparişte.</div>';
     havuzDiv.innerHTML = html;
 }
 
@@ -11133,7 +11134,7 @@ async function teklifKayitlariYukle() {
     const sayac = document.getElementById('tkSayac');
     if (!r || !r.ok || !r.data || r.data.length === 0) {
         sayac.textContent = '0';
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-3">Henüz teklif kaydı yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Henüz teklif kaydı eklenmedi.</td></tr>';
         return;
     }
     sayac.textContent = r.data.length;
@@ -11250,7 +11251,7 @@ function renderArsivTalepleri(talepler) {
     const tb = document.getElementById('arsivTalepBody');
     if (talepler.length === 0) {
         const filtreVar = !!(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
-        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-3">${filtreVar ? 'Aramayla eşleşen arşiv talebi yok.' : 'Arşivlenmiş talep yok.'}</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">${filtreVar ? 'Aramayla eşleşen arşiv talebi yok.' : 'Arşivlenmiş talep yok.'}</td></tr>`;
         return;
     }
     tb.innerHTML = talepler.map(t => `
@@ -11275,7 +11276,7 @@ function renderArsivSiparisleri(siparisler) {
     const tb = document.getElementById('arsivSiparisBody');
     if (siparisler.length === 0) {
         const filtreVar = !!(document.getElementById('satinalmaGlobalArama')?.value || '').trim();
-        tb.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-3">${filtreVar ? 'Aramayla eşleşen arşiv siparişi yok.' : 'Arşivlenmiş sipariş yok.'}</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">${filtreVar ? 'Aramayla eşleşen arşiv siparişi yok.' : 'Arşivlenmiş sipariş yok.'}</td></tr>`;
         return;
     }
     tb.innerHTML = siparisler.map(s => {
@@ -11960,7 +11961,7 @@ async function openFiyatGecmisiModal(stokKartId, urunAdi) {
         // Son 5 alış — ana liste
         const son5 = r.gecmis.slice(0, 5);
         html += '<h6 class="fw-bold small mb-2"><i class="bi bi-clock-history me-1"></i>Son 5 Alış</h6>';
-        html += '<div class="table-responsive mb-3"><table class="table table-sm table-hover mb-0 align-middle" style="font-size:0.85rem;"><thead class="bg-dark text-white"><tr><th>Tarih</th><th>Tedarikçi</th><th>Sipariş No</th><th class="text-end">Birim Fiyat</th><th class="text-end">Miktar</th></tr></thead><tbody>';
+        html += '<div class="table-responsive mb-3"><table class="table table-sm table-hover mb-0 align-middle" style="font-size:0.85rem;"><thead class="table-dark"><tr><th>Tarih</th><th>Tedarikçi</th><th>Sipariş No</th><th class="text-end">Birim Fiyat</th><th class="text-end">Miktar</th></tr></thead><tbody>';
         son5.forEach((g, i) => {
             const tarih = g.siparis_tarihi ? new Date(g.siparis_tarihi).toLocaleDateString('tr-TR') : '-';
             const yeni = i === 0 ? '<span class="badge bg-success ms-1" style="font-size:0.65rem;">EN YENİ</span>' : '';
@@ -11977,7 +11978,7 @@ async function openFiyatGecmisiModal(stokKartId, urunAdi) {
         // Tedarikçi özeti kompakt (eğer 1'den fazla tedarikçi varsa)
         if (r.tedarikci_ozet.length > 1) {
             html += '<h6 class="fw-bold small mb-2 text-muted"><i class="bi bi-shop me-1"></i>Tedarikçi Bazlı Özet</h6>';
-            html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-0" style="font-size:0.78rem;"><thead class="bg-light"><tr><th>Tedarikçi</th><th class="text-end">Son</th><th class="text-end">Min</th><th class="text-end">Ort.</th><th class="text-end">Max</th><th class="text-center">Sip.</th></tr></thead><tbody>';
+            html += '<div class="table-responsive"><table class="table table-sm table-bordered mb-0" style="font-size:0.78rem;"><thead class="table-light"><tr><th>Tedarikçi</th><th class="text-end">Son</th><th class="text-end">Min</th><th class="text-end">Ort.</th><th class="text-end">Max</th><th class="text-center">Sip.</th></tr></thead><tbody>';
             r.tedarikci_ozet.forEach(t => {
                 html += `<tr>
                     <td class="small fw-bold">${esc(t.tedarikci_adi)}</td>
@@ -12077,7 +12078,7 @@ function renderSiparisTable(siparisler) {
     window.siparislerCache = siparisler; // Detay modal için
     const cont = document.getElementById("siparisTableBody");
     if (siparisler.length === 0) {
-        cont.innerHTML = '<div class="text-center text-muted p-5 border rounded-3 bg-white">Sistemde henüz oluşturulmuş bir satınalma sipariş fişi bulunmuyor.</div>';
+        cont.innerHTML = '<div class="text-center text-muted p-5 border rounded-3 bg-white">Henüz sipariş oluşturulmadı.</div>';
         return;
     }
     cont.innerHTML = siparisler.map(s => {
@@ -12243,7 +12244,7 @@ function openSiparisTeslimAlModal(siparisId, siparisNo) {
     } else mKabulDepoDoldur();
 
     const tbody = document.getElementById("mKabulTableBody");
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-4"><div class="spinner-border spinner-border-sm text-success me-2"></div>Sipariş detayları çekiliyor...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-success me-2"></div>Sipariş detayları çekiliyor...</td></tr>';
 
     secureFetch(`/siparis-detay/${siparisId}`).then(res => {
         if(res.ok) {
@@ -12414,7 +12415,7 @@ function renderStokTable() {
     document.getElementById("stokSayacLabel").textContent = `${filtered.length} / ${stoklarGlobal.length} stok`;
 
     if(filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">Gösterilecek stok bulunamadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Eşleşen stok kartı bulunamadı.</td></tr>';
         return;
     }
 
@@ -12724,7 +12725,7 @@ function resetHareketFiltre() {
 function renderHareketTable(hareketler) {
     const tbody = document.getElementById("hareketTableBody");
     if (hareketler.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Hareket bulunamadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Henüz hareket eklenmedi.</td></tr>';
         return;
     }
     let html = '';
@@ -12821,7 +12822,7 @@ function renderTedarikciTable() {
     document.getElementById('tedarikciSayacLabel').textContent = `${filtered.length} / ${tedarikcilerGlobal.length} tedarikçi`;
 
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4">Gösterilecek tedarikçi bulunamadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Eşleşen tedarikçi bulunamadı.</td></tr>';
         return;
     }
 
@@ -13052,7 +13053,7 @@ function renderProjeTable() {
     if(label) label.textContent = `${filtered.length} / ${projelerGlobal.length} proje${toplamSayfa > 1 ? ` — sayfa ${window.projeAktifSayfa + 1}/${toplamSayfa}` : ''}`;
 
     if(filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted p-4">Gösterilecek proje bulunamadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">Eşleşen proje bulunamadı.</td></tr>';
         renderProjeSayfalama(0);
         return;
     }
@@ -13166,12 +13167,12 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
     const durumlar = ['BEKLEMEDE','SÖZLEŞME','İŞ EMRİ','PROJE','ÜRETİM','MONTAJ','TESLİM EDİLDİ','İPTAL'];
 
     if (teslimatlar.length === 0) {
-        container.innerHTML = '<div class="text-muted text-center py-2">Bu projeye bağlı teslimat yok.</div>';
+        container.innerHTML = '<div class="text-muted text-center py-2">Henüz teslimat eklenmedi.</div>';
         return;
     }
 
     let html = `<div class="table-responsive bg-white rounded shadow-sm border"><table class="table align-middle mb-0" style="font-size:0.8rem;">
-        <thead>
+        <thead class="table-light">
             <tr style="background:#fafbfc; color:#8a8f96; border-bottom:1px solid #e9ecef;">
                 <th style="padding:8px 12px; font-size:0.72rem; font-weight:600; text-transform:none;">Bina Adı</th>
                 <th style="padding:8px 12px; font-size:0.72rem; font-weight:600; text-transform:none;">Tür / Tip</th>
@@ -13581,7 +13582,7 @@ function tsKopyaRender(filtre) {
     const liste = f ? tsKopyaKaynaklar.filter(k =>
         trAra(`${k.musteri_adi || ''} ${k.proje_adi || ''} ${k.bina_adi || ''} ${k.proje_kodu || ''} ${k.bina_tipi || ''}`).includes(f)) : tsKopyaKaynaklar;
     const box = document.getElementById('tskListe');
-    if (!liste.length) { box.innerHTML = '<div class="text-muted small text-center p-3">Uygun kaynak yok.</div>'; return; }
+    if (!liste.length) { box.innerHTML = '<div class="text-muted small text-center p-3">Henüz uygun kaynak yok.</div>'; return; }
     box.innerHTML = liste.map(k => {
         // PREFABRİK: Bina Tipi - Kat Yüksekliği - Kat Adedi | KONTEYNER: Bina Tipi - Konteyner Ebadı
         const detay = (tsKopyaBinaTuru === 'Konteyner'
@@ -13916,7 +13917,7 @@ function renderSevkiyatPlani(data) {
         görüntülenecek.gelecek.forEach(c => html += buildSpCard(c, 'gelecek', today));
         html += '</div></div>';
     }
-    if(!html) html = '<div class="text-center text-muted py-5"><i class="bi bi-truck fs-1 d-block mb-2"></i>Planlanmış sevkiyat bulunmuyor.</div>';
+    if(!html) html = '<div class="text-center text-muted py-4"><i class="bi bi-truck fs-1 d-block mb-2"></i>Henüz sevkiyat planlanmadı.</div>';
 
     document.getElementById("sevkiyatContent").innerHTML = html;
 }
@@ -14020,7 +14021,7 @@ function renderKarlilik() {
 
     const tbody = document.getElementById('karTabloBody');
     if (liste.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted p-4">Eşleşen proje yok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4">Eşleşen proje bulunamadı.</td></tr>';
         return;
     }
 
@@ -14090,7 +14091,7 @@ async function openKarDetay(projeId) {
 
     // Teslimatlar
     document.getElementById('kdTeslimatlar').innerHTML = r.teslimatlar.length === 0
-        ? '<tr><td colspan="3" class="text-center text-muted small p-3">Teslimat yok</td></tr>'
+        ? '<tr><td colspan="3" class="text-center text-muted small py-4">Henüz teslimat yok</td></tr>'
         : r.teslimatlar.map(t => `<tr>
             <td><strong class="small">${esc(t.bina_adi)}</strong>${t.bina_turu ? `<br><small class="text-muted">${esc(t.bina_turu)} ${t.buyukluk_m2 ? '• ' + t.buyukluk_m2 + ' m²' : ''}</small>` : ''}</td>
             <td class="small">${esc(t.bina_tipi||'-')}</td>
@@ -14099,7 +14100,7 @@ async function openKarDetay(projeId) {
 
     // Tedarikçi özeti
     document.getElementById('kdTedarikciler').innerHTML = r.tedarikciOzet.length === 0
-        ? '<tr><td colspan="3" class="text-center text-muted small p-3">Sipariş yok</td></tr>'
+        ? '<tr><td colspan="3" class="text-center text-muted small py-4">Henüz sipariş yok</td></tr>'
         : r.tedarikciOzet.map(t => `<tr>
             <td class="small fw-bold">${esc(t.tedarikci||'-')}</td>
             <td class="text-center small">${t.siparis_sayisi}</td>
@@ -14108,7 +14109,7 @@ async function openKarDetay(projeId) {
 
     // Siparişler
     document.getElementById('kdSiparisler').innerHTML = r.siparisler.length === 0
-        ? '<tr><td colspan="6" class="text-center text-muted small p-3">Sipariş yok</td></tr>'
+        ? '<tr><td colspan="6" class="text-center text-muted small py-4">Henüz sipariş yok</td></tr>'
         : r.siparisler.map(s => `<tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalKarDetay')).hide(); setTimeout(()=>{setTab('satinalma'); setTimeout(()=>switchSatinalmaSubTab('siparisler'), 200);}, 200);">
             <td class="fw-bold text-primary small">${esc(s.siparis_no)}</td>
             <td class="small">${esc(s.tedarikci_adi||'-')}</td>
@@ -14116,7 +14117,15 @@ async function openKarDetay(projeId) {
             <td class="text-center small">${s.kalem_sayisi}</td>
             <td class="text-end">${formatTR(s.toplam_tutar)} <small class="text-muted">${esc(s.para_birimi)}</small></td>
             <td class="text-center small">${getSatinalmaDurumBadge ? getSatinalmaDurumBadge(s.durum) : esc(s.durum)}</td>
-          </tr>`).join('');
+          </tr>`).join('') + (function () {
+            // Toplam satırı — para birimi bazında (O-08)
+            const t = {};
+            r.siparisler.forEach(s => { const pb = s.para_birimi || 'TL'; t[pb] = (t[pb] || 0) + (parseFloat(s.toplam_tutar) || 0); });
+            const metin = Object.entries(t).map(([pb, v]) => formatTR(v) + ' ' + pb).join(' + ');
+            return `<tr class="table-light fw-bold"><td colspan="3" class="text-end small">TOPLAM (${r.siparisler.length} sipariş):</td>
+                <td class="text-center small">${r.siparisler.reduce((a, s) => a + (parseInt(s.kalem_sayisi) || 0), 0)}</td>
+                <td class="text-end">${metin}</td><td></td></tr>`;
+          })();
 
     new bootstrap.Modal(document.getElementById('modalKarDetay')).show();
 }
@@ -14141,7 +14150,7 @@ function renderOzet(data) {
             <div class="fw-bold text-dark" style="width:40px; text-align:right;">${d.sayi}</div>
         </div>`;
     });
-    document.getElementById("ozetDurumBars").innerHTML = durumHtml || '<div class="text-muted text-center py-3">Veri yok</div>';
+    document.getElementById("ozetDurumBars").innerHTML = durumHtml || '<div class="text-muted text-center py-3">Henüz veri yok</div>';
 
     // Tutar barları
     let tutarHtml = '';
@@ -14151,7 +14160,7 @@ function renderOzet(data) {
             <span class="fw-bold text-primary fs-5">${formatTR(parseFloat(t.toplam))}</span>
         </div>`;
     });
-    document.getElementById("ozetTutarBars").innerHTML = tutarHtml || '<div class="text-muted text-center py-3">Veri yok</div>';
+    document.getElementById("ozetTutarBars").innerHTML = tutarHtml || '<div class="text-muted text-center py-3">Henüz veri yok</div>';
 }
 
 // Düzenleme modu için global state
@@ -14236,7 +14245,7 @@ async function prjDosyaAc(projeId, teslimatId, tur, baslik) {
         `<i class="bi bi-file-earmark-pdf me-2"></i>${tur === 'SOZLESME' ? 'Sözleşme' : 'Mimari Proje'} — ${esc(baslik || '')}`;
     document.getElementById('prjDosyaForm').classList.toggle('d-none', !izinVarMi('projeler', 'YAZMA'));
     document.getElementById('prjDosyaInput').value = '';
-    document.getElementById('prjDosyaListe').innerHTML = '<div class="text-center text-muted py-3">Yükleniyor...</div>';
+    document.getElementById('prjDosyaListe').innerHTML = '<div class="text-center text-muted py-4">Yükleniyor...</div>';
     // Proje Detay modalının üstünde açılır
     if (typeof maliModalUstteAc === 'function') maliModalUstteAc('modalProjeDosya');
     else bootstrap.Modal.getOrCreateInstance(document.getElementById('modalProjeDosya')).show();
@@ -14251,7 +14260,7 @@ async function prjDosyaListele() {
     const liste = (r.data || []).filter(d => d.tur === c.tur && (c.tur === 'SOZLESME' || d.teslimat_id === c.teslimatId));
     const silYetki = izinVarMi('projeler', 'YAZMA');
     document.getElementById('prjDosyaListe').innerHTML = !liste.length
-        ? '<div class="text-center text-muted py-3">Henüz dosya yüklenmemiş.</div>'
+        ? '<div class="text-center text-muted py-4">Henüz dosya yüklenmemiş.</div>'
         : `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
             <thead class="table-light"><tr><th>Dosya</th><th>Boyut</th><th>Yükleyen</th><th>Tarih</th><th style="width:60px;"></th></tr></thead>
             <tbody>${liste.map(d => `<tr>
@@ -14379,7 +14388,7 @@ async function fetchGenelBakis() {
     const kartlar = document.getElementById('gbOzetKartlar');
     const acikPanel = document.getElementById('gbAcikTalepPanel');
     if (!body) return;
-    body.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor...</td></tr>';
+    body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor...</td></tr>';
 
     const params = new URLSearchParams();
     const arama = document.getElementById('gbArama').value.trim();
@@ -14453,7 +14462,7 @@ function renderGenelBakisGrafikler(g) {
 
 function renderGenelBakisOzetKartlari(ozet, tlToplam, kurlar, container) {
     if (!ozet || ozet.length === 0) {
-        container.innerHTML = '<div class="col-12"><div class="alert alert-light border mb-0 small text-muted"><i class="bi bi-info-circle me-1"></i>Filtreye uyan sipariş yok.</div></div>';
+        container.innerHTML = '<div class="col-12"><div class="alert alert-light border mb-0 small text-muted"><i class="bi bi-info-circle me-1"></i>Eşleşen sipariş bulunamadı.</div></div>';
         return;
     }
 
@@ -14506,7 +14515,7 @@ function renderGenelBakisOzetKartlari(ozet, tlToplam, kurlar, container) {
                     <div class="col-md-${cokParaBirimi ? '7' : '12'}">
                         <div class="small fw-bold text-secondary mb-1"><i class="bi bi-list-ul me-1"></i>Para Birimi Detayı</div>
                         <table class="table table-sm mb-0 align-middle" style="font-size:0.78rem; background:transparent;">
-                            <thead>
+                            <thead class="table-light">
                                 <tr class="small text-muted">
                                     <th width="80">Birim</th>
                                     <th class="text-end">Sipariş</th>
@@ -14541,7 +14550,7 @@ function renderGenelBakisAcikTalep(bilgi, container) {
 
 function renderGenelBakisSiparisler(liste, body) {
     if (!liste || liste.length === 0) {
-        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-4"><i class="bi bi-inbox me-2"></i>Filtreye uyan sipariş yok.</td></tr>';
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><i class="bi bi-inbox me-2"></i>Eşleşen sipariş bulunamadı.</td></tr>';
         return;
     }
     body.innerHTML = liste.map(s => {
@@ -14619,7 +14628,7 @@ function renderProjeDetay(proje, teslimatlar) {
     icerikler.innerHTML = "";
 
     if (teslimatlar.length === 0) {
-        icerikler.innerHTML = '<div class="text-muted text-center py-4">Bu projeye bağlı teslimat yok.</div>';
+        icerikler.innerHTML = '<div class="text-muted text-center py-4">Henüz teslimat eklenmedi.</div>';
         return;
     }
 
