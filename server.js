@@ -56,6 +56,16 @@ if (!supabaseStorage) console.warn('⚠️ SUPABASE_URL / SUPABASE_SERVICE_KEY e
 
 // Multer (dosya 25MB sınırı, bellekte tut → Supabase'e at)
 const dosyaUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+// multipart dosya adı latin1 çözülür → Türkçe karakterler bozulur ("KAHRAMANMARAÅ").
+// UTF-8'e geri çevirir; ad zaten düzgünse dokunmaz.
+function dosyaAdiUTF8(ad) {
+    const s = String(ad || '');
+    if (!/[ÃÅÄÂ]/.test(s)) return s;
+    try {
+        const d = Buffer.from(s, 'latin1').toString('utf8');
+        return d.includes('�') ? s : d;
+    } catch (_) { return s; }
+}
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -3223,13 +3233,15 @@ app.delete('/api/teklif-sil/:id', yetkiKontrol, async (req, res, next) => {
 // TEKLİF İSTE — kalem listesini TEKLİF İSTENDİ durumuna geçir
 // Body: { kalem_idler: [int], tedarikci_idler: [int], aciklama }
 // Teklif Talebi e-posta gövdesi (siparis.html görsel diline uygun, inline CSS)
-function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, projeAdi, teslimYeri, istenenTarih, not }) {
+function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, projeAdi, teslimYeri, istenenTarih, not, ekAdlari }) {
+    // Ürün açıklaması varsa ürün adının altında ikinci satır olarak gösterilir
     const satirlar = kalemler.map((k, i) => `
         <tr style="${i % 2 ? 'background:#fafbfc;' : ''}">
-          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;">${i + 1}</td>
-          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;color:#0d6efd;font-weight:600;">${esc2(k.kod)}</td>
-          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;">${esc2(k.ad)}</td>
-          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;text-align:center;font-weight:600;">${k.miktar} ${esc2(k.birim)}</td>
+          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;vertical-align:top;">${i + 1}</td>
+          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;color:#0d6efd;font-weight:600;vertical-align:top;">${esc2(k.kod)}</td>
+          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;">${esc2(k.ad)}${(k.aciklama || '').trim()
+            ? `<div style="margin-top:3px;font-size:12px;color:#6c757d;font-style:italic;">${esc2(k.aciklama).replace(/\n/g, '<br>')}</div>` : ''}</td>
+          <td style="padding:7px 6px;border-bottom:1px solid #e9ecef;text-align:center;font-weight:600;vertical-align:top;white-space:nowrap;">${k.miktar} ${esc2(k.birim)}</td>
         </tr>`).join('');
     return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:20px;background:#f4f6f9;font-family:Arial,Helvetica,sans-serif;color:#212529;">
@@ -3260,6 +3272,7 @@ function teklifTalebiMailHTML({ tedarikciAdi, kalemler, isteyenAd, talepEtiket, 
         <tbody>${satirlar}</tbody>
       </table>
       ${not ? `<div style="margin-top:16px;padding:11px 13px;background:#fff8e1;border-left:3px solid #ffc107;font-size:13px;"><strong style="color:#856404;">NOT:</strong> ${esc2(not).replace(/\n/g, '<br>')}</div>` : ''}
+      ${(ekAdlari && ekAdlari.length) ? `<div style="margin-top:16px;padding:11px 13px;background:#e7f1ff;border-left:3px solid #0d6efd;font-size:13px;"><strong style="color:#0a58ca;">EKLER:</strong><br>${ekAdlari.map(a => `<span style="display:inline-block;margin-top:4px;">📎 ${esc2(a)}</span>`).join('<br>')}</div>` : ''}
       <p style="margin:20px 0 0;color:#495057;">Teklifinizi en kısa sürede tarafımıza iletmenizi rica ederiz. İyi çalışmalar dileriz.</p>
       <div style="margin-top:26px;font-size:14px;"><strong>${esc2(isteyenAd)}</strong><br><span style="color:#6c757d;">Aterko Satınalma</span></div>
     </div>
@@ -3409,7 +3422,7 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
 
         // Kalem detayları (ürün, miktar, birim, kategori, talep, proje)
         const kalemlerR = await pool.query(`
-            SELECT tu.id, tu.miktar, tu.durum,
+            SELECT tu.id, tu.miktar, tu.durum, tu.aciklama, tu.talep_id,
                    COALESCE(sk.stok_adi, tu.ozel_urun_adi, '-') as ad,
                    COALESCE(sk.stok_kodu, 'ÖZEL') as kod,
                    COALESCE(sk.birim, tu.ozel_urun_birim, 'ADET') as birim,
@@ -3465,6 +3478,33 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
         const epostali = tedR.rows.filter(t => t.email);
         const epostasiz = tedR.rows.filter(t => !t.email).map(t => t.firma_adi);
 
+        // İlgili taleplere yüklenmiş dosyaları mail EKİ olarak hazırla
+        // (toplam 15 MB sınırı; indirilemeyen/aşan dosyalar atlanır, mail yine gider)
+        const ekler = [];
+        const atlananEkler = [];
+        try {
+            const talepIdListe = [...new Set(kalemler.map(k => k.talep_id).filter(Boolean))];
+            if (talepIdListe.length) {
+                const dosyaR = await pool.query(
+                    'SELECT dosya_adi, public_url, boyut FROM talep_dosyalari WHERE talep_id = ANY($1::integer[]) ORDER BY kayit_tarihi',
+                    [talepIdListe]);
+                let toplam = 0;
+                const SINIR = 15 * 1024 * 1024;
+                for (const d of dosyaR.rows) {
+                    if (!d.public_url) continue;
+                    if (toplam + (parseInt(d.boyut) || 0) > SINIR) { atlananEkler.push(d.dosya_adi); continue; }
+                    try {
+                        const y = await fetch(d.public_url, { signal: AbortSignal.timeout(15000) });
+                        if (!y.ok) { atlananEkler.push(d.dosya_adi); continue; }
+                        const buf = Buffer.from(await y.arrayBuffer());
+                        if (toplam + buf.length > SINIR) { atlananEkler.push(d.dosya_adi); continue; }
+                        toplam += buf.length;
+                        ekler.push({ filename: dosyaAdiUTF8(d.dosya_adi), content: buf });
+                    } catch (_) { atlananEkler.push(d.dosya_adi); }
+                }
+            }
+        } catch (e) { console.error('⚠️ Teklif maili ek hazırlama:', e.message); }
+
         // E-postaları YANIT ÖNCESİ paralel gönder. (Render gibi PaaS'larda res.json
         // sonrası fire-and-forget kod kesilebildiği için arka plana atmıyoruz; paralel
         // gönderim + timeout sayesinde garanti gider ama kullanıcıyı uzun bekletmez.)
@@ -3475,7 +3515,8 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
             const konu = `Aterko - ${kategoriEtiket} Teklif Talebi (${talepEtiket})`;
             const html = teklifTalebiMailHTML({
                 tedarikciAdi: 'İlgili', kalemler, isteyenAd, talepEtiket,
-                projeAdi: ilkProje, teslimYeri: ilkTeslimYeri, istenenTarih: ilkIstenenTarih, not: aciklama || ''
+                projeAdi: ilkProje, teslimYeri: ilkTeslimYeri, istenenTarih: ilkIstenenTarih, not: aciklama || '',
+                ekAdlari: ekler.map(e => e.filename)
             });
             const sonuclar = await Promise.allSettled(epostali.map(ted =>
                 mailTransporter.sendMail({
@@ -3484,7 +3525,8 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
                     cc: ccList,
                     subject: konu,
                     // Her tedarikçinin hitabı kendine: gövdedeki "İlgili"yi firma adıyla değiştir
-                    html: html.replace('Sayın <strong>İlgili</strong> Yetkilisi', `Sayın <strong>${esc2(ted.firma_adi || 'İlgili')}</strong> Yetkilisi`)
+                    html: html.replace('Sayın <strong>İlgili</strong> Yetkilisi', `Sayın <strong>${esc2(ted.firma_adi || 'İlgili')}</strong> Yetkilisi`),
+                    ...(ekler.length ? { attachments: ekler } : {})
                 })
             ));
             sonuclar.forEach((r, i) => {
@@ -3496,6 +3538,8 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
         res.json({
             ok: true,
             mesaj: `${kalem_idler.length} kalem için ${tedR.rows.length} tedarikçiden teklif istendi. ${mailGitti} e-posta gönderildi.` +
+                   (ekler.length ? ` ${ekler.length} talep dosyası eklendi.` : '') +
+                   (atlananEkler.length ? ` Eklenemeyen dosya: ${atlananEkler.join(', ')}.` : '') +
                    (mailHata.length ? ` Gönderilemedi: ${mailHata.join(', ')}.` : '') +
                    (epostasiz.length ? ` E-postası olmayan: ${epostasiz.join(', ')}.` : '')
         });
@@ -4338,7 +4382,8 @@ app.post('/api/siparis-dosya-yukle/:siparisId', yetkiKontrol, dosyaUpload.single
         const siparisNo = sR.rows[0].siparis_no;
 
         // Storage path: SAT-S-1001/2026-05-25-Faturaxxx.pdf
-        const safeName = req.file.originalname.replace(/[^A-Za-z0-9._\-]/g, '_');
+        const orijinalAd = dosyaAdiUTF8(req.file.originalname);
+        const safeName = orijinalAd.replace(/[^A-Za-z0-9._\-]/g, '_');
         const ts = Date.now();
         const storagePath = `${siparisNo}/${ts}-${safeName}`;
 
@@ -4359,7 +4404,7 @@ app.post('/api/siparis-dosya-yukle/:siparisId', yetkiKontrol, dosyaUpload.single
             INSERT INTO siparis_dosyalari
             (siparis_id, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
-        `, [siparisId, req.file.originalname, storagePath, urlData.publicUrl,
+        `, [siparisId, orijinalAd, storagePath, urlData.publicUrl,
             req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email]);
 
         res.json({ ok: true, mesaj: 'Dosya yüklendi.', data: r.rows[0] });
@@ -4414,7 +4459,8 @@ app.post('/api/proje-dosya-yukle', yetkiKontrol, dosyaUpload.single('dosya'), as
             return res.json({ ok: false, hata: 'İzinli dosya biçimleri: PDF, DWG, JPG, PNG, ZIP.' });
         const pR = await pool.query('SELECT proje_kodu FROM projeler WHERE id=$1', [proje_id]);
         if (!pR.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
-        const safeName = req.file.originalname.replace(/[^A-Za-z0-9._\-]/g, '_');
+        const orijinalAd = dosyaAdiUTF8(req.file.originalname);
+        const safeName = orijinalAd.replace(/[^A-Za-z0-9._\-]/g, '_');
         const storagePath = `proje/${pR.rows[0].proje_kodu}/${tur.toLowerCase()}/${Date.now()}-${safeName}`;
         const { error: upErr } = await supabaseStorage.storage
             .from(SIPARIS_BUCKET).upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
@@ -4424,9 +4470,9 @@ app.post('/api/proje-dosya-yukle', yetkiKontrol, dosyaUpload.single('dosya'), as
             INSERT INTO proje_dosyalari
             (proje_id, teslimat_id, tur, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
-        `, [proje_id, teslimat_id || null, tur, req.file.originalname, storagePath, urlData.publicUrl,
+        `, [proje_id, teslimat_id || null, tur, orijinalAd, storagePath, urlData.publicUrl,
             req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email]);
-        await auditLogla(req, { eylem: 'CREATE', tablo: 'proje_dosyalari', kayit_id: r.rows[0].id, ozet: `${tur === 'SOZLESME' ? 'Sözleşme' : 'Mimari proje'} yüklendi: ${req.file.originalname}` });
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'proje_dosyalari', kayit_id: r.rows[0].id, ozet: `${tur === 'SOZLESME' ? 'Sözleşme' : 'Mimari proje'} yüklendi: ${orijinalAd}` });
         res.json({ ok: true, mesaj: 'Dosya yüklendi.', data: r.rows[0] });
     } catch (e) { console.error('Proje dosya yükleme:', e); next(e); }
 });
@@ -4451,7 +4497,8 @@ app.post('/api/talep-dosya-yukle/:talepId', yetkiKontrol, dosyaUpload.single('do
         const tR = await pool.query('SELECT talep_no FROM satinalma_talepleri WHERE id=$1', [talepId]);
         if (tR.rowCount === 0) return res.json({ ok: false, hata: 'Talep bulunamadı.' });
         const talepNo = tR.rows[0].talep_no;
-        const safeName = req.file.originalname.replace(/[^A-Za-z0-9._\-]/g, '_');
+        const orijinalAd = dosyaAdiUTF8(req.file.originalname);
+        const safeName = orijinalAd.replace(/[^A-Za-z0-9._\-]/g, '_');
         const storagePath = `talep/${talepNo}/${Date.now()}-${safeName}`;
         const { error: upErr } = await supabaseStorage.storage
             .from(SIPARIS_BUCKET).upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
@@ -4461,7 +4508,7 @@ app.post('/api/talep-dosya-yukle/:talepId', yetkiKontrol, dosyaUpload.single('do
             INSERT INTO talep_dosyalari
             (talep_id, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
-        `, [talepId, req.file.originalname, storagePath, urlData.publicUrl, req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email]);
+        `, [talepId, orijinalAd, storagePath, urlData.publicUrl, req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email]);
         res.json({ ok: true, mesaj: 'Dosya yüklendi.', data: r.rows[0] });
     } catch (e) { console.error('Talep dosya yükleme:', e); next(e); }
 });
