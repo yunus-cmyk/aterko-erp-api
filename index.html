@@ -3067,6 +3067,26 @@ STK-002		50	adet
                             </div>
                     </div>
 
+                    <!-- Canlı sipariş özeti: fiyat girildikçe güncellenir -->
+                    <div class="d-flex justify-content-end mt-3">
+                      <div class="card border-0 shadow-sm rounded-3" style="min-width:320px;">
+                        <div class="card-body py-2 px-3">
+                          <div class="d-flex justify-content-between align-items-center py-1">
+                            <span class="text-muted small">Ara Toplam (KDV Hariç)</span>
+                            <span class="fw-semibold" id="soAraToplam">0,00 TL</span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center py-1 border-top">
+                            <span class="text-muted small">KDV <span id="soKdvOranEtiket">(%20)</span></span>
+                            <span class="fw-semibold text-secondary" id="soKdvTutar">0,00 TL</span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center pt-2 mt-1 border-top">
+                            <span class="fw-bold">Genel Toplam</span>
+                            <span class="fw-bold fs-6 text-primary" id="soGenelToplam">0,00 TL</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <!-- Cross-Talep Picker Modal (inline alt-modal) -->
                     <div class="modal fade" id="modalCrossTalep" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
                       <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -10676,8 +10696,12 @@ function renderSiparisFormLines(kalemler) {
         const pBirimi = this.value;
         document.querySelectorAll(".currency-lbl").forEach(el => el.innerText = pBirimi);
         document.querySelectorAll(".so-line").forEach(tr => calculateSiparisRowTotal(tr.querySelector(".so-f")));
+        siparisOzetGuncelle();
     };
+    // KDV oranı değiştikçe özet güncellenir
+    document.getElementById("soKdv").onchange = siparisOzetGuncelle;
 
+    siparisOzetGuncelle();     // açılışta mevcut değerlerle ilk hesap
     sonAlisBilgileriYukle();   // her ürünün son alım fiyatı/tedarikçi/tarihi (referans bilgi)
 }
 
@@ -10707,6 +10731,27 @@ function calculateSiparisRowTotal(inputEl) {
     
     const toplam = miktar * fiyat;
     tr.querySelector(".line-total").innerText = `${formatTR(toplam)} ${pBirimi}`;
+    siparisOzetGuncelle();
+}
+
+// Canlı sipariş özeti: ara toplam + KDV + genel toplam (fiyat/miktar/para/KDV değiştikçe)
+function siparisOzetGuncelle() {
+    const pBirimi = document.getElementById("soPara")?.value || 'TL';
+    const kdvOran = parseFloat(document.getElementById("soKdv")?.value || 0);
+    let araToplam = 0;
+    document.querySelectorAll(".so-line").forEach(tr => {
+        const m = parseFloat(tr.querySelector(".so-m")?.value || 0);
+        const f = parseFloat(tr.querySelector(".so-f")?.value || 0);
+        araToplam += m * f;
+    });
+    const kdvTutar = araToplam * kdvOran / 100;
+    const genel = araToplam + kdvTutar;
+    const aEl = document.getElementById("soAraToplam");
+    if (!aEl) return;
+    aEl.innerText = `${formatTR(araToplam)} ${pBirimi}`;
+    document.getElementById("soKdvOranEtiket").innerText = `(%${kdvOran})`;
+    document.getElementById("soKdvTutar").innerText = `${formatTR(kdvTutar)} ${pBirimi}`;
+    document.getElementById("soGenelToplam").innerText = `${formatTR(genel)} ${pBirimi}`;
 }
 
 // 4. Formdaki Tüm Ticari Verileri ve Kalemleri Paketleyip Bölünme Motoruna Fırlatır
