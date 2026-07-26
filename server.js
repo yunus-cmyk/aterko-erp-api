@@ -488,6 +488,7 @@ app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
                 JOIN projeler p2 ON pt.proje_id = p2.id
                 GROUP BY pt.proje_id
             ) t ON p.id = t.proje_id
+            ${req.query.faz === 'hepsi' ? '' : "WHERE COALESCE(p.faz,'TESLIMAT') = 'TESLIMAT'"}
             ORDER BY
                 CASE COALESCE(t.hesaplanmis_durum, p.durum, 'BEKLEMEDE')
                     WHEN 'BEKLEMEDE'      THEN 1
@@ -5057,7 +5058,7 @@ app.get('/api/sevkiyat-plani', yetkiKontrol, async (req, res, next) => {
 app.get('/api/ozet', yetkiKontrol, async (req, res, next) => {
     try {
         const [projeSayisi, teslimatDurum, toplamTutar, yaklasanSevkiyat] = await Promise.all([
-            pool.query('SELECT COUNT(*) as toplam FROM projeler'),
+            pool.query("SELECT COUNT(*) as toplam FROM projeler WHERE COALESCE(faz,'TESLIMAT')='TESLIMAT'"),
             pool.query(`
                 SELECT COALESCE(durum, 'BEKLEMEDE') as durum, COUNT(*) as sayi
                 FROM proje_teslimatlari
@@ -5094,7 +5095,7 @@ app.get('/api/ozet', yetkiKontrol, async (req, res, next) => {
 app.get('/api/get-lists', yetkiKontrol, async (req, res, next) => {
     try {
         const [projelerRes, teslimatlarRes] = await Promise.all([
-            pool.query('SELECT * FROM projeler ORDER BY id DESC'),
+            pool.query("SELECT * FROM projeler WHERE COALESCE(faz,'TESLIMAT')='TESLIMAT' ORDER BY id DESC"),
             pool.query('SELECT * FROM proje_teslimatlari ORDER BY id ASC')
         ]);
         const birlesikProjeler = [];
@@ -5672,7 +5673,7 @@ app.get('/api/proje-karlilik', yetkiKontrol, async (req, res, next) => {
             FROM projeler p
             LEFT JOIN gelir g ON g.proje_id = p.id
             LEFT JOIN maliyet_grup mg ON mg.proje_id = p.id
-            WHERE COALESCE(p.durum,'') NOT IN ('İPTAL')
+            WHERE COALESCE(p.durum,'') NOT IN ('İPTAL') AND COALESCE(p.faz,'TESLIMAT') = 'TESLIMAT'
             ORDER BY g.toplam_gelir DESC NULLS LAST
         `;
         const r = await pool.query(q);
@@ -6139,6 +6140,123 @@ function satisTeklifHTML(t, kalemler) {
     </body></html>`;
 }
 
+// ==================== SATIŞ MODÜLÜ — PROJELER / FIRSATLAR (Faz C2b) ====================
+// faz='SATIS' projeler: sözleşme öncesi yaşam. Sözleşmeye dönüşüm = faz='TESLIMAT'
+// (taşıma yok, aynı kayıt Projeler sekmesinde görünür olur).
+const SATIS_DURUMLARI = ['TASLAK', 'ANALIZ_SURECINDE', 'ANALIZI_TAMAMLANAN', 'TEKLIF_SURECINDE',
+    'BEKLEMEDE', 'SOZLESMESI_TASLAK', 'SATISI_TAMAMLANAN', 'DEVAM_EDEN_INCELENECEK',
+    'TAMAMLANAN', 'REDDEDILEN', 'IPTAL'];
+
+app.get('/api/satis-projeler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { q, durum } = req.query;
+        const kosullar = ["COALESCE(p.faz,'TESLIMAT') = 'SATIS'"]; const deger = [];
+        if (durum && SATIS_DURUMLARI.includes(durum)) { deger.push(durum); kosullar.push(`p.satis_durumu=$${deger.length}`); }
+        if (q && q.trim()) {
+            deger.push('%' + q.trim() + '%');
+            kosullar.push(`(p.proje_kodu ILIKE $${deger.length} OR p.proje_adi ILIKE $${deger.length} OR p.musteri_adi ILIKE $${deger.length} OR p.sehir ILIKE $${deger.length})`);
+        }
+        const r = await pool.query(`
+            SELECT p.id, p.proje_kodu, p.proje_adi, p.musteri_adi, p.sat_musteri_id,
+                   p.satis_durumu, p.satis_temsilcisi, p.sehir, p.ulke, p.proje_turu,
+                   p.olusturma_tarihi,
+                   COALESCE(t.c, 0) AS teklif_sayisi
+            FROM projeler p
+            LEFT JOIN (SELECT proje_id, COUNT(*)::int c FROM sat_teklifler WHERE proje_id IS NOT NULL GROUP BY 1) t ON t.proje_id = p.id
+            WHERE ${kosullar.join(' AND ')}
+            ORDER BY p.proje_kodu DESC
+            LIMIT 500
+        `, deger);
+        const sayilar = await pool.query(`
+            SELECT satis_durumu AS durum, COUNT(*)::int adet FROM projeler
+            WHERE COALESCE(faz,'TESLIMAT')='SATIS' GROUP BY satis_durumu`);
+        res.json({ ok: true, projeler: r.rows, durum_sayilari: sayilar.rows });
+    } catch (e) { next(e); }
+});
+
+app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const p = await pool.query(`SELECT * FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
+        if (p.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı.' });
+        const teklifler = await pool.query(`
+            SELECT t.id, t.teklif_no, t.teklif_tarihi, t.durum, t.para_birimi, t.genel_toplam,
+                   m.ad AS musteri_adi
+            FROM sat_teklifler t LEFT JOIN sat_musteriler m ON m.id=t.musteri_id
+            WHERE t.proje_id=$1 ORDER BY t.teklif_tarihi DESC NULLS LAST`, [id]);
+        res.json({ ok: true, proje: p.rows[0], teklifler: teklifler.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/satis-proje-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, proje_adi, sat_musteri_id, satis_durumu, proje_turu, sehir, ulke, adres,
+                irtibat_adi, irtibat_email, irtibat_telefon, aciklama, satis_temsilcisi } = req.body;
+        const adNorm = (proje_adi || '').trim();
+        if (!adNorm) return res.json({ ok: false, hata: 'Proje adı zorunludur.' });
+        if (!sat_musteri_id) return res.json({ ok: false, hata: 'Müşteri seçilmelidir.' });
+        const mR = await pool.query('SELECT ad FROM sat_musteriler WHERE id=$1', [sat_musteri_id]);
+        if (mR.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
+        const durumNorm = SATIS_DURUMLARI.includes(satis_durumu) ? satis_durumu : 'TASLAK';
+        const alanlar = [adNorm, sat_musteri_id, mR.rows[0].ad, durumNorm,
+            (proje_turu || '').trim() || null, (sehir || '').trim() || null, (ulke || '').trim() || null,
+            (adres || '').trim() || null, (irtibat_adi || '').trim() || null,
+            (irtibat_email || '').trim() || null, (irtibat_telefon || '').trim() || null,
+            (aciklama || '').trim() || null, (satis_temsilcisi || '').trim() || null];
+        if (id) {
+            const eskiR = await pool.query(`SELECT * FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
+            if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı (teslimat fazındaki projeler buradan düzenlenemez).' });
+            await pool.query(`
+                UPDATE projeler SET proje_adi=$1, sat_musteri_id=$2, musteri_adi=$3, satis_durumu=$4,
+                    proje_turu=$5, sehir=$6, ulke=$7, adres=$8, irtibat_adi=$9, irtibat_email=$10,
+                    irtibat_telefon=$11, aciklama=$12, satis_temsilcisi=$13
+                WHERE id=$14`, [...alanlar, id]);
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'projeler', kayit_id: id,
+                ozet: `Satış projesi güncellendi: ${adNorm}`, eski_veri: eskiR.rows[0], yeni_veri: req.body });
+            return res.json({ ok: true, id });
+        }
+        // Yeni fırsat: 5 haneli kod serisinin devamı (eski sistemle ortak numara evreni)
+        const kodR = await pool.query(`SELECT COALESCE(MAX(proje_kodu::int), 72000) + 1 AS yeni FROM projeler WHERE proje_kodu ~ '^[0-9]{5}$'`);
+        const yeniKod = String(kodR.rows[0].yeni);
+        const ins = await pool.query(`
+            INSERT INTO projeler (proje_kodu, proje_adi, sat_musteri_id, musteri_adi, satis_durumu,
+                proje_turu, sehir, ulke, adres, irtibat_adi, irtibat_email, irtibat_telefon,
+                aciklama, satis_temsilcisi, faz, durum)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'SATIS','TASLAK') RETURNING id`,
+            [yeniKod, ...alanlar]);
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'projeler', kayit_id: ins.rows[0].id,
+            ozet: `Yeni satış projesi (fırsat): ${yeniKod} — ${adNorm}`, yeni_veri: req.body });
+        res.json({ ok: true, id: ins.rows[0].id, proje_kodu: yeniKod });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/satis-proje-durum', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, durum } = req.body;
+        if (!SATIS_DURUMLARI.includes(durum)) return res.json({ ok: false, hata: 'Geçersiz satış durumu.' });
+        const eskiR = await pool.query(`SELECT satis_durumu, proje_kodu FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
+        if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı.' });
+        await pool.query('UPDATE projeler SET satis_durumu=$1 WHERE id=$2', [durum, id]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'projeler', kayit_id: id,
+            ozet: `Satış durumu: ${eskiR.rows[0].satis_durumu || '-'} → ${durum} (${eskiR.rows[0].proje_kodu})` });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// Sözleşmeye dönüşüm: faz SATIS → TESLIMAT. Proje TASLAK durumuyla Projeler
+// sekmesine düşer; teslimatlar girilir, mevcut onay akışı SÖZLEŞME'ye çevirir.
+app.post('/api/satis-proje-donustur', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id } = req.body;
+        const eskiR = await pool.query(`SELECT proje_kodu, proje_adi, satis_durumu FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
+        if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı.' });
+        await pool.query(`UPDATE projeler SET faz='TESLIMAT', durum='TASLAK' WHERE id=$1`, [id]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'projeler', kayit_id: id,
+            ozet: `Sözleşmeye dönüşüm: ${eskiR.rows[0].proje_kodu} ${eskiR.rows[0].proje_adi} — satış fazından Projeler'e (TASLAK) alındı` });
+        res.json({ ok: true, mesaj: `${eskiR.rows[0].proje_kodu} artık Projeler sekmesinde (TASLAK). Teslimatlar girilip onaylanınca SÖZLEŞME olur.` });
+    } catch (e) { next(e); }
+});
+
 const MODUL_KATALOG = [
     { kod: 'anasayfa',            ad: 'Ana Sayfa',           grup: 'Genel' },
     { kod: 'projeler',            ad: 'Projeler',            grup: 'İş Akışı' },
@@ -6152,6 +6270,7 @@ const MODUL_KATALOG = [
     { kod: 'satinalma.rapor',     ad: 'Satınalma — Rapor (Genel Bakış)', grup: 'Satınalma' },
     { kod: 'satis.musteri',       ad: 'Satış — Müşteriler',  grup: 'Satış' },
     { kod: 'satis.teklif',        ad: 'Satış — Teklifler',   grup: 'Satış' },
+    { kod: 'satis.proje',         ad: 'Satış — Projeler (Fırsatlar)', grup: 'Satış' },
     { kod: 'mali.tedarikci',      ad: 'Mali İşler — Tedarikçi Cari', grup: 'Mali İşler' },
     { kod: 'mali.musteri',        ad: 'Mali İşler — Müşteri Cari',   grup: 'Mali İşler' },
     { kod: 'stok',                ad: 'Stok',                grup: 'Operasyon' },
@@ -6403,6 +6522,10 @@ const ENDPOINT_IZIN_KURALLARI = [
     // Satış — Teklifler + hazır metin havuzu
     { pattern: /^\/api\/satis-(teklif|metin)/, method: 'GET', modul: 'satis.teklif', seviye: 'OKUMA' },
     { pattern: /^\/api\/satis-(teklif|metin)/, modul: 'satis.teklif', seviye: 'YAZMA' },
+    // Satış — Projeler (fırsatlar)
+    { pattern: /^\/api\/satis-proje/, method: 'GET', modul: 'satis.proje', seviye: 'OKUMA' },
+    { pattern: /^\/api\/satis-proje-donustur/, modul: 'satis.proje', seviye: 'TAM' },
+    { pattern: /^\/api\/satis-proje/, modul: 'satis.proje', seviye: 'YAZMA' },
 
     // Projeler
     { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat|proje-dosyalari)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
@@ -9071,6 +9194,19 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS aciklama TEXT,
             ADD COLUMN IF NOT EXISTS proje_turu TEXT`)
             .catch(e => console.error('⚠️ projeler yeni alanlar:', e.message));
+
+        // FAZ MİMARİSİ (C2b, Yunus onayı): tek tablo iki faz — SATIS (yalnız Satış
+        // ekranında) / TESLIMAT (Projeler sekmesi + üretim akışı). Sözleşmeye dönüşüm
+        // = faz değişimi; taşıma yok. Mevcut tüm projeler TESLIMAT sayılır.
+        await pool.query(`ALTER TABLE projeler
+            ADD COLUMN IF NOT EXISTS faz TEXT DEFAULT 'TESLIMAT',
+            ADD COLUMN IF NOT EXISTS satis_durumu TEXT`)
+            .catch(e => console.error('⚠️ projeler faz kolonları:', e.message));
+        await pool.query(`
+            INSERT INTO rol_izinleri (rol_id, modul_kod, seviye)
+            SELECT id, 'satis.proje', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
+            ON CONFLICT (rol_id, modul_kod) DO NOTHING
+        `).catch(e => console.error('⚠️ satis.proje izin:', e.message));
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için

@@ -282,6 +282,7 @@
           <ul class="nav nav-pills nav-sm" style="--bs-nav-pills-link-active-bg: var(--mod-satis);">
             <li class="nav-item"><a class="nav-link py-1 px-3 active" id="satisSekmeMusteriler" onclick="switchSatisSekme('musteriler')">Müşteriler</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeTeklifler" onclick="switchSatisSekme('teklifler')">Teklifler</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeProjeler" onclick="switchSatisSekme('projeler')">Projeler</a></li>
           </ul>
         </div>
         <div>
@@ -290,6 +291,9 @@
           </button>
           <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniSatisTeklif" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisTeklifFormAc()">
             <i class="bi bi-plus-lg me-1"></i>Yeni Teklif
+          </button>
+          <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniSatisProje" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc()">
+            <i class="bi bi-plus-lg me-1"></i>Yeni Fırsat
           </button>
         </div>
       </div>
@@ -352,6 +356,115 @@
               </thead>
               <tbody id="satisTeklifTbody"></tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Projeler (Fırsatlar) alt sekmesi (Faz C2b): sözleşme öncesi projeler -->
+      <div id="satisProjelerBolum" class="d-none">
+        <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+          <div class="input-group input-group-sm" style="max-width:340px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="satisProjeAra" class="form-control" placeholder="Kod, proje adı, müşteri, şehir ara..." oninput="satisProjeAraGecikmeli()">
+          </div>
+          <select id="satisProjeDurumSec" class="form-select form-select-sm" style="width:auto;" onchange="satisProjeleriYukle()">
+            <option value="">Tüm durumlar</option>
+          </select>
+          <span class="text-muted small ms-auto" id="satisProjeSayac"></span>
+        </div>
+        <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+          <div class="table-responsive" style="max-height:70vh;">
+            <table class="table table-hover mb-0 align-middle" style="font-size:0.85rem;">
+              <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                <tr>
+                  <th>Kod</th>
+                  <th>Proje</th>
+                  <th>Müşteri</th>
+                  <th>Şehir</th>
+                  <th>Temsilci</th>
+                  <th class="text-center">Teklif</th>
+                  <th class="text-center">Satış Durumu</th>
+                </tr>
+              </thead>
+              <tbody id="satisProjeTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — proje (fırsat) detay: salt izleme; durum/dönüşüm footer'da -->
+    <div class="modal fade" id="modalSatisProjeDetay" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-compass me-2"></i><span id="spdBaslik">Satış Projesi</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3" id="spdGovde"></div>
+          <div class="modal-footer py-2 flex-wrap">
+            <div class="me-auto d-flex gap-2 align-items-center" data-izin-modul="satis.proje" data-izin-seviye="YAZMA">
+              <label class="form-label mb-0 small">Durum:</label>
+              <select id="spdDurumSec" class="form-select form-select-sm" style="width:auto;"></select>
+              <button class="btn btn-outline-primary btn-sm" onclick="satisProjeDurumKaydet()">Uygula</button>
+            </div>
+            <button class="btn btn-success btn-sm px-3 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="TAM" onclick="satisProjeDonustur()">
+              <i class="bi bi-arrow-right-circle me-1"></i>Sözleşmeye Dönüştür
+            </button>
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc(window.spdAktifId)">
+              <i class="bi bi-pencil-square me-1"></i>Düzenle
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — proje (fırsat) yeni/düzenle -->
+    <div class="modal fade" id="modalSatisProjeForm" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-compass me-2"></i><span id="spfBaslik">Yeni Fırsat</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3">
+            <div class="row g-2">
+              <div class="col-md-7"><label class="form-label">Proje Adı <span class="text-danger">*</span></label>
+                <input type="text" id="spfAd" class="form-control form-control-sm"></div>
+              <div class="col-md-5 position-relative"><label class="form-label">Müşteri <span class="text-danger">*</span></label>
+                <input type="text" id="spfMusteriAra" class="form-control form-control-sm" placeholder="Müşteri adı yazın..." autocomplete="off"
+                       oninput="spfMusteriOner()" onfocus="spfMusteriOner()">
+                <input type="hidden" id="spfMusteriId">
+                <div id="spfMusteriOneriler" class="list-group position-absolute w-100 shadow-sm d-none" style="z-index:1060; max-height:220px; overflow-y:auto;"></div>
+              </div>
+              <div class="col-md-4"><label class="form-label">Satış Durumu</label>
+                <select id="spfDurum" class="form-select form-select-sm"></select></div>
+              <div class="col-md-4"><label class="form-label">Proje Türü</label>
+                <input type="text" id="spfTur" class="form-control form-control-sm" placeholder="örn. Prefabrik Yapı"></div>
+              <div class="col-md-4"><label class="form-label">Satış Temsilcisi</label>
+                <input type="text" id="spfTemsilci" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Şehir</label>
+                <input type="text" id="spfSehir" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Ülke</label>
+                <input type="text" id="spfUlke" class="form-control form-control-sm" placeholder="Türkiye"></div>
+              <div class="col-md-4"><label class="form-label">İrtibat Adı Soyadı</label>
+                <input type="text" id="spfIrtibatAdi" class="form-control form-control-sm"></div>
+              <div class="col-md-6"><label class="form-label">İrtibat E-Posta</label>
+                <input type="email" id="spfIrtibatEmail" class="form-control form-control-sm"></div>
+              <div class="col-md-6"><label class="form-label">İrtibat Telefon</label>
+                <input type="text" id="spfIrtibatTelefon" class="form-control form-control-sm"></div>
+              <div class="col-12"><label class="form-label">Adres</label>
+                <input type="text" id="spfAdres" class="form-control form-control-sm"></div>
+              <div class="col-12"><label class="form-label">Açıklama</label>
+                <textarea id="spfAciklama" class="form-control form-control-sm" rows="2"></textarea></div>
+            </div>
+          </div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" id="spfKaydetBtn" onclick="satisProjeKaydet()">
+              <i class="bi bi-check-lg me-1"></i>Kaydet
+            </button>
           </div>
         </div>
       </div>
@@ -4713,12 +4826,220 @@ let stfAramaZamanlayici = null;
 function switchSatisSekme(sekme) {
     document.getElementById('satisSekmeMusteriler').classList.toggle('active', sekme === 'musteriler');
     document.getElementById('satisSekmeTeklifler').classList.toggle('active', sekme === 'teklifler');
+    document.getElementById('satisSekmeProjeler').classList.toggle('active', sekme === 'projeler');
     document.getElementById('satisMusterilerBolum').classList.toggle('d-none', sekme !== 'musteriler');
     document.getElementById('satisTekliflerBolum').classList.toggle('d-none', sekme !== 'teklifler');
+    document.getElementById('satisProjelerBolum').classList.toggle('d-none', sekme !== 'projeler');
     document.getElementById('btnYeniSatisMusteri').classList.toggle('d-none', sekme !== 'musteriler');
     document.getElementById('btnYeniSatisTeklif').classList.toggle('d-none', sekme !== 'teklifler');
+    document.getElementById('btnYeniSatisProje').classList.toggle('d-none', sekme !== 'projeler');
     if (sekme === 'teklifler') satisTeklifleriYukle();
+    if (sekme === 'projeler') satisProjeleriYukle();
     izinleriUygula && izinleriUygula();
+}
+
+// ==================== SATIŞ — PROJELER / FIRSATLAR (Faz C2b) ====================
+const SATIS_DURUM_ETIKET = {
+    'TASLAK':                 ['Taslak', 'bg-secondary'],
+    'ANALIZ_SURECINDE':       ['Analiz Sürecinde', 'bg-info text-dark'],
+    'ANALIZI_TAMAMLANAN':     ['Analizi Tamamlanan', 'bg-primary'],
+    'TEKLIF_SURECINDE':       ['Teklif Sürecinde', 'bg-warning text-dark'],
+    'BEKLEMEDE':              ['Beklemede', 'bg-light text-dark border'],
+    'SOZLESMESI_TASLAK':      ['Sözleşmesi Taslak', 'bg-primary'],
+    'SATISI_TAMAMLANAN':      ['Satışı Tamamlanan', 'bg-success'],
+    'DEVAM_EDEN_INCELENECEK': ['Devam Eden (İncelenecek)', 'bg-danger'],
+    'TAMAMLANAN':             ['Tamamlanan', 'bg-success'],
+    'REDDEDILEN':             ['Reddedilen', 'bg-dark'],
+    'IPTAL':                  ['İptal', 'bg-dark']
+};
+function satisProjeDurumBadge(durum) {
+    const m = SATIS_DURUM_ETIKET[durum] || [durum || '-', 'bg-light text-dark border'];
+    return `<span class="badge ${m[1]}">${m[0]}</span>`;
+}
+let spAramaZamanlayici = null;
+function satisProjeAraGecikmeli() {
+    clearTimeout(spAramaZamanlayici);
+    spAramaZamanlayici = setTimeout(satisProjeleriYukle, 350);
+}
+
+async function satisProjeleriYukle() {
+    const q = document.getElementById('satisProjeAra').value.trim();
+    const durum = document.getElementById('satisProjeDurumSec').value;
+    const r = await secureFetch('/satis-projeler?q=' + encodeURIComponent(q) + (durum ? '&durum=' + durum : '')).catch(() => null);
+    if (!r || !r.ok) { showToast('Satış projeleri yüklenemedi.', 'error'); return; }
+    // Durum süzgeci: sayılarla doldur (seçim korunur)
+    const sec = document.getElementById('satisProjeDurumSec');
+    const sayilar = {}; let toplam = 0;
+    (r.durum_sayilari || []).forEach(x => { sayilar[x.durum] = x.adet; toplam += x.adet; });
+    const onceki = sec.value;
+    sec.innerHTML = `<option value="">Tüm durumlar (${toplam})</option>` +
+        Object.keys(SATIS_DURUM_ETIKET).filter(d => sayilar[d]).map(d =>
+            `<option value="${d}">${SATIS_DURUM_ETIKET[d][0]} (${sayilar[d]})</option>`).join('');
+    sec.value = onceki;
+    const tbody = document.getElementById('satisProjeTbody');
+    const liste = r.projeler || [];
+    if (!liste.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">${q || durum ? 'Eşleşen satış projesi bulunamadı.' : 'Henüz satış projesi eklenmedi.'}</td></tr>`;
+        document.getElementById('satisProjeSayac').innerText = '';
+        return;
+    }
+    tbody.innerHTML = liste.map(p => `
+        <tr style="cursor:pointer;" onclick="satisProjeDetayAc(${p.id})">
+            <td class="fw-bold">${esc(p.proje_kodu)}</td>
+            <td>${esc((p.proje_adi || '-').slice(0, 45))}</td>
+            <td class="small">${esc((p.musteri_adi || '-').slice(0, 30))}</td>
+            <td class="small">${esc(p.sehir || '-')}</td>
+            <td class="small">${esc((p.satis_temsilcisi || '-').split('@')[0])}</td>
+            <td class="text-center">${p.teklif_sayisi > 0 ? `<span class="badge bg-mod-satis">${p.teklif_sayisi}</span>` : '<span class="text-muted">-</span>'}</td>
+            <td class="text-center">${satisProjeDurumBadge(p.satis_durumu)}</td>
+        </tr>`).join('');
+    document.getElementById('satisProjeSayac').innerText =
+        liste.length >= 500 ? 'İlk 500 gösteriliyor — daraltmak için arama yapın' : `${liste.length} satış projesi`;
+}
+
+async function satisProjeDetayAc(id) {
+    const r = await secureFetch('/satis-proje-detay/' + id).catch(() => null);
+    if (!r || !r.ok) { showToast(r?.hata || 'Satış projesi yüklenemedi.', 'error'); return; }
+    const p = r.proje;
+    window.spdAktifId = p.id;
+    window.spdAktifDetay = r;
+    document.getElementById('spdBaslik').innerText = `[${p.proje_kodu}] ${p.proje_adi || ''}`;
+    // Durum seçici
+    const sec = document.getElementById('spdDurumSec');
+    sec.innerHTML = Object.keys(SATIS_DURUM_ETIKET).map(d =>
+        `<option value="${d}" ${d === p.satis_durumu ? 'selected' : ''}>${SATIS_DURUM_ETIKET[d][0]}</option>`).join('');
+    const bilgi = (etiket, deger) => deger ? `<div class="col-md-6 mb-1"><span class="text-muted small">${etiket}:</span> <span class="small fw-semibold">${esc(deger)}</span></div>` : '';
+    document.getElementById('spdGovde').innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold">${esc(p.musteri_adi || '-')}</span>
+            ${satisProjeDurumBadge(p.satis_durumu)}
+        </div>
+        <div class="row">
+            ${bilgi('Proje Türü', p.proje_turu)}${bilgi('Satış Türü', p.satis_turu)}
+            ${bilgi('Şehir', p.sehir)}${bilgi('Ülke', p.ulke)}
+            ${bilgi('Adres', p.adres)}${bilgi('Temsilci', p.satis_temsilcisi)}
+            ${bilgi('İrtibat', [p.irtibat_adi, p.irtibat_email, p.irtibat_telefon].filter(Boolean).join(' · '))}
+            ${bilgi('Oluşturma', p.olusturma_tarihi ? formatTarihTR(p.olusturma_tarihi) : '')}
+            ${bilgi('Açıklama', p.aciklama)}
+        </div>
+        ${r.teklifler.length ? `
+        <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-file-earmark-text me-1"></i>Teklifler (${r.teklifler.length})</div>
+        <div class="table-responsive"><table class="table table-sm mb-0" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>No</th><th>Tarih</th><th class="text-end">Tutar</th><th class="text-center">Durum</th></tr></thead>
+            <tbody>${r.teklifler.map(t => `
+                <tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeDetay'))?.hide(); satisTeklifDetayAc(${t.id});">
+                    <td class="fw-semibold">${esc(t.teklif_no || '-')}</td>
+                    <td>${t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'}</td>
+                    <td class="text-end">${formatTR(parseFloat(t.genel_toplam) || 0)} ${esc(t.para_birimi || 'TL')}</td>
+                    <td class="text-center">${satisTeklifDurumBadge(t.durum)}</td>
+                </tr>`).join('')}</tbody>
+        </table></div>` : '<hr class="my-2"><div class="text-muted small">Bu projeye bağlı teklif yok.</div>'}`;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisProjeDetay')).show();
+    izinleriUygula && izinleriUygula();
+}
+
+async function satisProjeDurumKaydet() {
+    const durum = document.getElementById('spdDurumSec').value;
+    showLoading();
+    const r = await secureFetch('/satis-proje-durum', { method: 'POST',
+        body: JSON.stringify({ id: window.spdAktifId, durum }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Durum güncellenemedi.', 'error'); return; }
+    showToast('Satış durumu güncellendi.', 'success');
+    satisProjeDetayAc(window.spdAktifId);
+    satisProjeleriYukle();
+}
+
+async function satisProjeDonustur() {
+    const p = window.spdAktifDetay?.proje;
+    if (!p) return;
+    if (!confirm(`${p.proje_kodu} — ${p.proje_adi}\n\nBu proje Projeler sekmesine TASLAK olarak alınacak; teslimatları girilip onaylanınca SÖZLEŞME olur. Devam edilsin mi?`)) return;
+    showLoading();
+    const r = await secureFetch('/satis-proje-donustur', { method: 'POST',
+        body: JSON.stringify({ id: window.spdAktifId }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Dönüşüm yapılamadı.', 'error'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeDetay'))?.hide();
+    showToast(r.mesaj || 'Proje sözleşme sürecine alındı.', 'success');
+    satisProjeleriYukle();
+}
+
+function spfMusteriOner() {
+    const q = trAra(document.getElementById('spfMusteriAra').value || '');
+    const kutu = document.getElementById('spfMusteriOneriler');
+    if (!q || q.length < 2) { kutu.classList.add('d-none'); return; }
+    const bulunan = satisMusteriListe.filter(m => trAra(m.ad).includes(q)).slice(0, 12);
+    if (!bulunan.length) { kutu.classList.add('d-none'); return; }
+    kutu.innerHTML = bulunan.map(m =>
+        `<button type="button" class="list-group-item list-group-item-action py-1 small" onclick="spfMusteriSec(${m.id}, '${escJsAttr(m.ad)}')">${esc(m.ad)}${m.sehir ? ' <span class="text-muted">— ' + esc(m.sehir) + '</span>' : ''}</button>`).join('');
+    kutu.classList.remove('d-none');
+}
+function spfMusteriSec(id, ad) {
+    document.getElementById('spfMusteriId').value = id;
+    document.getElementById('spfMusteriAra').value = ad;
+    document.getElementById('spfMusteriOneriler').classList.add('d-none');
+}
+
+async function satisProjeFormAc(id) {
+    const detayModal = bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeDetay'));
+    if (detayModal) detayModal.hide();
+    if (!satisMusteriListe.length) await satisSekmeInit();
+    modalFormSifirla('modalSatisProjeForm');
+    document.getElementById('spfMusteriOneriler').classList.add('d-none');
+    window.spfAktifId = id || null;
+    document.getElementById('spfBaslik').innerText = id ? 'Fırsat Düzenle' : 'Yeni Fırsat';
+    const durumSec = document.getElementById('spfDurum');
+    durumSec.innerHTML = Object.keys(SATIS_DURUM_ETIKET).map(d =>
+        `<option value="${d}">${SATIS_DURUM_ETIKET[d][0]}</option>`).join('');
+    if (id && window.spdAktifDetay && window.spdAktifDetay.proje.id === id) {
+        const p = window.spdAktifDetay.proje;
+        document.getElementById('spfAd').value = p.proje_adi || '';
+        spfMusteriSec(p.sat_musteri_id || '', p.musteri_adi || '');
+        durumSec.value = p.satis_durumu || 'TASLAK';
+        document.getElementById('spfTur').value = p.proje_turu || '';
+        document.getElementById('spfTemsilci').value = p.satis_temsilcisi || '';
+        document.getElementById('spfSehir').value = p.sehir || '';
+        document.getElementById('spfUlke').value = p.ulke || '';
+        document.getElementById('spfIrtibatAdi').value = p.irtibat_adi || '';
+        document.getElementById('spfIrtibatEmail').value = p.irtibat_email || '';
+        document.getElementById('spfIrtibatTelefon').value = p.irtibat_telefon || '';
+        document.getElementById('spfAdres').value = p.adres || '';
+        document.getElementById('spfAciklama').value = p.aciklama || '';
+    } else {
+        durumSec.value = 'TASLAK';
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisProjeForm')).show();
+}
+
+async function satisProjeKaydet() {
+    const ad = document.getElementById('spfAd').value.trim();
+    if (!ad) { alanHatasi('spfAd'); showToast('Proje adı zorunludur.', 'error'); return; }
+    const musteriId = document.getElementById('spfMusteriId').value;
+    if (!musteriId) { alanHatasi('spfMusteriAra'); showToast('Müşteri seçilmelidir.', 'error'); return; }
+    const btn = document.getElementById('spfKaydetBtn');
+    btn.disabled = true;
+    showLoading();
+    try {
+        const r = await secureFetch('/satis-proje-kaydet', { method: 'POST', body: JSON.stringify({
+            id: window.spfAktifId || undefined,
+            proje_adi: ad,
+            sat_musteri_id: parseInt(musteriId),
+            satis_durumu: document.getElementById('spfDurum').value,
+            proje_turu: document.getElementById('spfTur').value.trim(),
+            satis_temsilcisi: document.getElementById('spfTemsilci').value.trim(),
+            sehir: document.getElementById('spfSehir').value.trim(),
+            ulke: document.getElementById('spfUlke').value.trim(),
+            irtibat_adi: document.getElementById('spfIrtibatAdi').value.trim(),
+            irtibat_email: document.getElementById('spfIrtibatEmail').value.trim(),
+            irtibat_telefon: document.getElementById('spfIrtibatTelefon').value.trim(),
+            adres: document.getElementById('spfAdres').value.trim(),
+            aciklama: document.getElementById('spfAciklama').value.trim()
+        }) });
+        if (!r || !r.ok) { showToast(r?.hata || 'Fırsat kaydedilemedi.', 'error'); return; }
+        bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeForm'))?.hide();
+        showToast(r.proje_kodu ? `Fırsat kaydedildi — proje kodu ${r.proje_kodu}.` : 'Fırsat kaydedildi.', 'success');
+        satisProjeleriYukle();
+    } finally { btn.disabled = false; hideLoading(); }
 }
 
 function satisTeklifDurumBadge(durum) {
@@ -4932,7 +5253,7 @@ function stfMetinEkleSecim(sel, hedefId) {
 async function stfProjeSecenekleriDoldur(seciliId) {
     const sel = document.getElementById('stfProje');
     try {
-        const r = await secureFetch('/projeler');
+        const r = await secureFetch('/projeler?faz=hepsi');   // teklif her iki fazdaki projeye bağlanabilir
         const liste = (r && r.ok) ? (r.projeler || r.data || []) : [];
         sel.innerHTML = '<option value="">Proje yok</option>' +
             liste.map(p => `<option value="${p.id}" ${String(p.id) === String(seciliId) ? 'selected' : ''}>${esc(p.proje_kodu)} — ${esc((p.proje_adi || '').slice(0, 40))}</option>`).join('');
