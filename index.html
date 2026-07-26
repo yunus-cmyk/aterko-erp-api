@@ -283,6 +283,7 @@
             <li class="nav-item"><a class="nav-link py-1 px-3 active" id="satisSekmeMusteriler" onclick="switchSatisSekme('musteriler')">Müşteriler</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeTeklifler" onclick="switchSatisSekme('teklifler')">Teklifler</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeProjeler" onclick="switchSatisSekme('projeler')">Projeler</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeUrunler" onclick="switchSatisSekme('urunler')">Ürünler</a></li>
           </ul>
         </div>
         <div>
@@ -388,6 +389,54 @@
               </thead>
               <tbody id="satisProjeTbody"></tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ürün Kütüphanesi alt sekmesi (Faz C3a): fiyat analizi motorunun temeli -->
+      <div id="satisUrunlerBolum" class="d-none">
+        <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+          <div class="input-group input-group-sm" style="max-width:340px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="satisUrunAra" class="form-control" placeholder="Ürün adı veya kodu ara..." oninput="satisUrunAraGecikmeli()">
+          </div>
+          <select id="satisUrunKategoriSec" class="form-select form-select-sm" style="max-width:320px;" onchange="satisUrunleriYukle()">
+            <option value="">Tüm kategoriler</option>
+          </select>
+          <span class="text-muted small ms-auto" id="satisUrunSayac"></span>
+        </div>
+        <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+          <div class="table-responsive" style="max-height:70vh;">
+            <table class="table table-hover mb-0 align-middle" style="font-size:0.85rem;">
+              <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                <tr>
+                  <th>Ürün</th>
+                  <th>Kategori</th>
+                  <th>Birim</th>
+                  <th class="text-end">Alış Fiyatı</th>
+                  <th class="text-end">Satış Fiyatı</th>
+                  <th class="text-center">Kâr %</th>
+                  <th class="text-center" title="Parametrik formülü olan ürünler ölçü girilince miktarını kendisi hesaplar">Formül</th>
+                </tr>
+              </thead>
+              <tbody id="satisUrunTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — ürün detay: fiyat geçmişi, formül, ürün ağacı; yeni fiyat girişi -->
+    <div class="modal fade" id="modalSatisUrunDetay" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-box-seam me-2"></i><span id="sudBaslik">Ürün</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3" id="sudGovde"></div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
           </div>
         </div>
       </div>
@@ -4827,15 +4876,143 @@ function switchSatisSekme(sekme) {
     document.getElementById('satisSekmeMusteriler').classList.toggle('active', sekme === 'musteriler');
     document.getElementById('satisSekmeTeklifler').classList.toggle('active', sekme === 'teklifler');
     document.getElementById('satisSekmeProjeler').classList.toggle('active', sekme === 'projeler');
+    document.getElementById('satisSekmeUrunler').classList.toggle('active', sekme === 'urunler');
     document.getElementById('satisMusterilerBolum').classList.toggle('d-none', sekme !== 'musteriler');
     document.getElementById('satisTekliflerBolum').classList.toggle('d-none', sekme !== 'teklifler');
     document.getElementById('satisProjelerBolum').classList.toggle('d-none', sekme !== 'projeler');
+    document.getElementById('satisUrunlerBolum').classList.toggle('d-none', sekme !== 'urunler');
     document.getElementById('btnYeniSatisMusteri').classList.toggle('d-none', sekme !== 'musteriler');
     document.getElementById('btnYeniSatisTeklif').classList.toggle('d-none', sekme !== 'teklifler');
     document.getElementById('btnYeniSatisProje').classList.toggle('d-none', sekme !== 'projeler');
     if (sekme === 'teklifler') satisTeklifleriYukle();
     if (sekme === 'projeler') satisProjeleriYukle();
+    if (sekme === 'urunler') satisUrunSekmeInit();
     izinleriUygula && izinleriUygula();
+}
+
+// ==================== SATIŞ — ÜRÜN KÜTÜPHANESİ (Faz C3a) ====================
+let satisUrunKategorileri = null;
+let suAramaZamanlayici = null;
+
+function satisUrunAraGecikmeli() {
+    clearTimeout(suAramaZamanlayici);
+    suAramaZamanlayici = setTimeout(satisUrunleriYukle, 350);
+}
+
+async function satisUrunSekmeInit() {
+    if (!satisUrunKategorileri) {
+        const r = await secureFetch('/satis-urun-kategoriler').catch(() => null);
+        satisUrunKategorileri = (r && r.ok) ? (r.kategoriler || []) : [];
+        // Kategori süzgeci: hiyerarşik ad (Üst > Alt), yalnız ürünü olanlar
+        const adMap = {};
+        satisUrunKategorileri.forEach(k => adMap[k.eski_id] = k.ad);
+        const sec = document.getElementById('satisUrunKategoriSec');
+        sec.innerHTML = '<option value="">Tüm kategoriler</option>' +
+            satisUrunKategorileri.filter(k => k.urun_sayisi > 0)
+                .map(k => {
+                    const ad = k.ust_id && adMap[k.ust_id] ? `${adMap[k.ust_id]} › ${k.ad}` : k.ad;
+                    return { id: k.eski_id, ad, sayi: k.urun_sayisi };
+                })
+                .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'))
+                .map(k => `<option value="${k.id}">${esc(k.ad)} (${k.sayi})</option>`).join('');
+    }
+    satisUrunleriYukle();
+}
+
+async function satisUrunleriYukle() {
+    const q = document.getElementById('satisUrunAra').value.trim();
+    const kategori = document.getElementById('satisUrunKategoriSec').value;
+    const r = await secureFetch('/satis-urunler?q=' + encodeURIComponent(q) + (kategori ? '&kategori=' + kategori : '')).catch(() => null);
+    if (!r || !r.ok) { showToast('Ürün listesi yüklenemedi.', 'error'); return; }
+    const tbody = document.getElementById('satisUrunTbody');
+    const liste = r.urunler || [];
+    if (!liste.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">${q || kategori ? 'Eşleşen ürün bulunamadı.' : 'Henüz ürün eklenmedi.'}</td></tr>`;
+        document.getElementById('satisUrunSayac').innerText = '';
+        return;
+    }
+    tbody.innerHTML = liste.map(u => `
+        <tr style="cursor:pointer;" onclick="satisUrunDetayAc(${u.id})">
+            <td><span class="fw-bold text-dark">${esc(u.ad)}</span>${u.uzun_kod ? `<span class="text-muted small d-block">${esc(u.uzun_kod)}</span>` : ''}</td>
+            <td class="small">${esc(u.kategori_adi || '-')}</td>
+            <td class="small">${esc(u.birim || '-')}</td>
+            <td class="text-end">${u.alis_fiyat != null ? formatTR(parseFloat(u.alis_fiyat)) + ' ' + esc(u.alis_pb || 'TL') : '<span class="text-muted">-</span>'}</td>
+            <td class="text-end">${u.satis_fiyat != null ? formatTR(parseFloat(u.satis_fiyat)) + ' ' + esc(u.satis_pb || 'TL') : '<span class="text-muted">-</span>'}</td>
+            <td class="text-center">${u.kar_orani != null ? '%' + formatTR(parseFloat(u.kar_orani)) : '<span class="text-muted">-</span>'}</td>
+            <td class="text-center">${u.formullu ? '<i class="bi bi-calculator text-mod-satis" title="Parametrik formüllü"></i>' : ''}</td>
+        </tr>`).join('');
+    document.getElementById('satisUrunSayac').innerText =
+        liste.length >= 500 ? 'İlk 500 gösteriliyor — daraltmak için arama veya kategori seçin' : `${liste.length} ürün`;
+}
+
+async function satisUrunDetayAc(id) {
+    const r = await secureFetch('/satis-urun-detay/' + id).catch(() => null);
+    if (!r || !r.ok) { showToast(r?.hata || 'Ürün detayı yüklenemedi.', 'error'); return; }
+    const u = r.urun;
+    window.sudAktifId = u.id;
+    document.getElementById('sudBaslik').innerText = u.ad;
+    const yazabilir = izinVarMi('satis.urun', 'YAZMA');
+    document.getElementById('sudGovde').innerHTML = `
+        <div class="row small mb-2">
+            <div class="col-md-4"><span class="text-muted">Kategori:</span> <b>${esc(u.kategori_adi || '-')}</b></div>
+            <div class="col-md-2"><span class="text-muted">Birim:</span> <b>${esc(u.birim || '-')}</b></div>
+            <div class="col-md-2"><span class="text-muted">Sınıf:</span> <b>${esc(u.sinif || '-')}</b></div>
+            <div class="col-md-2"><span class="text-muted">Kâr Oranı:</span> <b>${u.kar_orani != null ? '%' + formatTR(parseFloat(u.kar_orani)) : '-'}</b></div>
+            <div class="col-md-2"><span class="text-muted">Otomatik:</span> <b>${u.otomatik_eklenir ? 'Evet' : 'Hayır'}</b></div>
+        </div>
+        ${u.formul ? `
+        <div class="p-2 bg-light border rounded mb-2">
+            <span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-calculator me-1"></i>Miktar Formülü <span class="fw-normal">(ölçüler girildiğinde miktarı bu hesaplar)</span></span>
+            <code class="small">${esc(u.formul)}</code>
+        </div>` : ''}
+        <div class="fw-bold small mb-1"><i class="bi bi-cash-coin me-1"></i>Fiyat Geçmişi</div>
+        ${yazabilir ? `
+        <div class="row g-1 mb-2 align-items-end">
+            <div class="col-auto"><label class="form-label mb-0">Tip</label>
+                <select id="sufTip" class="form-select form-select-sm"><option value="ALIS">Alış</option><option value="SATIS">Satış</option></select></div>
+            <div class="col-auto"><label class="form-label mb-0">Yeni Fiyat</label>
+                <input type="number" id="sufFiyat" class="form-control form-control-sm" style="width:120px;" step="0.01"></div>
+            <div class="col-auto"><label class="form-label mb-0">Para</label>
+                <select id="sufPara" class="form-select form-select-sm"><option>TL</option><option>USD</option><option>EUR</option><option>GBP</option></select></div>
+            <div class="col-auto"><button class="btn btn-primary btn-sm" onclick="satisUrunFiyatKaydet()"><i class="bi bi-plus-lg me-1"></i>Fiyat Ekle</button></div>
+        </div>` : ''}
+        ${r.fiyatlar.length ? `
+        <div class="table-responsive mb-2"><table class="table table-sm mb-0" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>Tip</th><th class="text-end">Fiyat</th><th>Geçerlilik</th><th>Girilme</th></tr></thead>
+            <tbody>${r.fiyatlar.map(f => `
+                <tr class="${(f.bitis && new Date(f.bitis) < new Date()) ? 'text-muted' : ''}">
+                    <td>${f.tip === 'SATIS' ? 'Satış' : 'Alış'}</td>
+                    <td class="text-end fw-semibold">${formatTR(parseFloat(f.fiyat))} ${esc(f.para_birimi || 'TL')}</td>
+                    <td>${f.baslangic ? formatTarihTR(f.baslangic) : '-'} → ${f.bitis ? formatTarihTR(f.bitis) : 'devam'}</td>
+                    <td class="small text-muted">${esc((f.olusturan || '-').split('@')[0])}</td>
+                </tr>`).join('')}</tbody>
+        </table></div>` : '<div class="text-muted small mb-2">Henüz fiyat girilmedi.</div>'}
+        ${r.bom.length ? `
+        <div class="fw-bold small mb-1"><i class="bi bi-diagram-3 me-1"></i>Ürün Ağacı (bu ürünün bileşenleri)</div>
+        <div class="table-responsive"><table class="table table-sm mb-0" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>Bileşen</th><th class="text-end">Miktar</th></tr></thead>
+            <tbody>${r.bom.map(b => `
+                <tr><td>${esc(b.bilesen_adi || '-')}</td>
+                <td class="text-end">${formatTR(parseFloat(b.miktar) || 0)} ${esc(b.bilesen_birim || b.birim || '')}</td></tr>`).join('')}</tbody>
+        </table></div>` : ''}`;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisUrunDetay')).show();
+}
+
+async function satisUrunFiyatKaydet() {
+    const fiyat = document.getElementById('sufFiyat').value;
+    if (!fiyat || parseFloat(fiyat) < 0) { alanHatasi('sufFiyat'); showToast('Geçerli bir fiyat girilmelidir.', 'error'); return; }
+    showLoading();
+    const r = await secureFetch('/satis-urun-fiyat-kaydet', { method: 'POST', body: JSON.stringify({
+        urun_id: window.sudAktifId,
+        tip: document.getElementById('sufTip').value,
+        fiyat: parseFloat(fiyat),
+        para_birimi: document.getElementById('sufPara').value
+    }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Fiyat kaydedilemedi.', 'error'); return; }
+    showToast('Yeni fiyat kaydedildi.', 'success');
+    satisUrunDetayAc(window.sudAktifId);
+    satisUrunleriYukle();
 }
 
 // ==================== SATIŞ — PROJELER / FIRSATLAR (Faz C2b) ====================

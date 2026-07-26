@@ -6257,6 +6257,147 @@ app.post('/api/satis-proje-donustur', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// ==================== SATIŞ MODÜLÜ — ÜRÜN KÜTÜPHANESİ + ANALİZ MOTORU (Faz C3a) ====================
+
+app.get('/api/satis-urun-kategoriler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT k.*, (SELECT COUNT(*)::int FROM sat_urunler u WHERE u.kategori_id=k.eski_id AND u.aktif) AS urun_sayisi
+            FROM sat_urun_kategoriler k ORDER BY k.sira, k.ad`);
+        res.json({ ok: true, kategoriler: r.rows });
+    } catch (e) { next(e); }
+});
+
+app.get('/api/satis-urunler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { q, kategori } = req.query;
+        const kosullar = ['u.aktif = true']; const deger = [];
+        if (kategori) { deger.push(parseInt(kategori)); kosullar.push(`u.kategori_id=$${deger.length}`); }
+        if (q && q.trim()) {
+            deger.push('%' + q.trim() + '%');
+            kosullar.push(`(u.ad ILIKE $${deger.length} OR u.uzun_kod ILIKE $${deger.length} OR u.kisa_kod ILIKE $${deger.length})`);
+        }
+        const r = await pool.query(`
+            SELECT u.id, u.ad, u.uzun_kod, u.kisa_kod, u.birim, u.sinif, u.kar_orani,
+                   u.otomatik_eklenir, (u.formul IS NOT NULL AND u.formul <> '') AS formullu,
+                   k.ad AS kategori_adi,
+                   fa.fiyat AS alis_fiyat, fa.para_birimi AS alis_pb,
+                   fs.fiyat AS satis_fiyat, fs.para_birimi AS satis_pb
+            FROM sat_urunler u
+            LEFT JOIN sat_urun_kategoriler k ON k.eski_id = u.kategori_id
+            LEFT JOIN LATERAL (SELECT fiyat, para_birimi FROM sat_urun_fiyatlar f
+                WHERE f.urun_id=u.id AND f.tip='ALIS' AND (f.bitis IS NULL OR f.bitis >= CURRENT_DATE)
+                ORDER BY f.baslangic DESC NULLS LAST LIMIT 1) fa ON true
+            LEFT JOIN LATERAL (SELECT fiyat, para_birimi FROM sat_urun_fiyatlar f
+                WHERE f.urun_id=u.id AND f.tip='SATIS' AND (f.bitis IS NULL OR f.bitis >= CURRENT_DATE)
+                ORDER BY f.baslangic DESC NULLS LAST LIMIT 1) fs ON true
+            WHERE ${kosullar.join(' AND ')}
+            ORDER BY u.sira, u.ad
+            LIMIT 500
+        `, deger);
+        res.json({ ok: true, urunler: r.rows });
+    } catch (e) { next(e); }
+});
+
+app.get('/api/satis-urun-detay/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const u = await pool.query(`
+            SELECT u.*, k.ad AS kategori_adi FROM sat_urunler u
+            LEFT JOIN sat_urun_kategoriler k ON k.eski_id = u.kategori_id WHERE u.id=$1`, [id]);
+        if (u.rowCount === 0) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
+        const fiyatlar = await pool.query(`
+            SELECT * FROM sat_urun_fiyatlar WHERE urun_id=$1
+            ORDER BY tip, baslangic DESC NULLS LAST`, [id]);
+        const bom = await pool.query(`
+            SELECT b.*, bu.ad AS bilesen_adi, bu.birim AS bilesen_birim
+            FROM sat_urun_bom b LEFT JOIN sat_urunler bu ON bu.id=b.bilesen_urun_id
+            WHERE b.urun_id=$1 ORDER BY b.sira, b.id`, [id]);
+        res.json({ ok: true, urun: u.rows[0], fiyatlar: fiyatlar.rows, bom: bom.rows });
+    } catch (e) { next(e); }
+});
+
+// Yeni fiyat girişi (fiyat geçmişi korunur: eski satır kapatılır, yeni satır açılır)
+app.post('/api/satis-urun-fiyat-kaydet', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        const { urun_id, tip, fiyat, para_birimi, baslangic } = req.body;
+        const tipNorm = tip === 'SATIS' ? 'SATIS' : 'ALIS';
+        const f = parseFloat(fiyat);
+        if (!urun_id || isNaN(f) || f < 0) { return res.json({ ok: false, hata: 'Geçerli bir fiyat girilmelidir.' }); }
+        const uR = await client.query('SELECT ad, birim FROM sat_urunler WHERE id=$1', [urun_id]);
+        if (uR.rowCount === 0) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
+        const bas = baslangic || new Date().toISOString().slice(0, 10);
+        await client.query('BEGIN');
+        // Açık eski fiyat kapatılır (geçmiş korunur)
+        await client.query(`UPDATE sat_urun_fiyatlar SET bitis = ($3::date - 1)
+            WHERE urun_id=$1 AND tip=$2 AND (bitis IS NULL OR bitis >= $3::date)`, [urun_id, tipNorm, bas]);
+        const ins = await client.query(`
+            INSERT INTO sat_urun_fiyatlar (urun_id, tip, fiyat, para_birimi, birim, baslangic, olusturan)
+            VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+            [urun_id, tipNorm, f, para_birimi || 'TL', uR.rows[0].birim, bas, req.user.email]);
+        await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_urun_fiyatlar', kayit_id: ins.rows[0].id,
+            ozet: `Ürün fiyatı: ${uR.rows[0].ad} — ${tipNorm} ${f} ${para_birimi || 'TL'} (${bas} itibarıyla)` });
+        res.json({ ok: true, id: ins.rows[0].id });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// ANALİZ MOTORU: parametre değerleriyle bir kategorinin ürün formüllerini değerlendirir.
+// Formül dili eski sistemle birebir: parametre kodları (GE_EN_M gibi) + aritmetik.
+function formulDegerlendir(formul, degerler) {
+    if (!formul || !formul.trim()) return null;
+    let ifade = formul;
+    // Uzun kodlar önce (kısa kod, uzunun parçası olabilir)
+    const kodlar = Object.keys(degerler).sort((a, b) => b.length - a.length);
+    for (const kod of kodlar) {
+        ifade = ifade.split(kod).join(`(${parseFloat(degerler[kod]) || 0})`);
+    }
+    // Güvenlik: yalnız sayı ve aritmetik kalmalı (harf kaldıysa bilinmeyen parametre → hesaplanamaz)
+    if (!/^[0-9+\-*/().,\s]+$/.test(ifade)) return null;
+    try {
+        const sonuc = Function('"use strict"; return (' + ifade.replace(/,/g, '.') + ')')();
+        return (typeof sonuc === 'number' && isFinite(sonuc)) ? Math.max(0, sonuc) : null;
+    } catch (e) { return null; }
+}
+
+app.post('/api/satis-analiz-hesapla', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { kategori_id, parametreler } = req.body;
+        if (!kategori_id) return res.json({ ok: false, hata: 'Kategori seçilmelidir.' });
+        const degerler = parametreler || {};
+        const urunler = await pool.query(`
+            SELECT u.id, u.ad, u.birim, u.formul, u.kar_orani, u.otomatik_eklenir,
+                   fa.fiyat AS alis_fiyat, fa.para_birimi AS alis_pb
+            FROM sat_urunler u
+            LEFT JOIN LATERAL (SELECT fiyat, para_birimi FROM sat_urun_fiyatlar f
+                WHERE f.urun_id=u.id AND f.tip='ALIS' AND (f.bitis IS NULL OR f.bitis >= CURRENT_DATE)
+                ORDER BY f.baslangic DESC NULLS LAST LIMIT 1) fa ON true
+            WHERE u.aktif AND u.kategori_id=$1
+            ORDER BY u.sira, u.ad`, [parseInt(kategori_id)]);
+        const sonuc = urunler.rows.map(u => {
+            const miktar = formulDegerlendir(u.formul, degerler);
+            return {
+                urun_id: u.id, ad: u.ad, birim: u.birim, formul: u.formul,
+                otomatik: u.otomatik_eklenir, kar_orani: u.kar_orani,
+                miktar, alis_fiyat: u.alis_fiyat, para_birimi: u.alis_pb,
+                tutar: (miktar != null && u.alis_fiyat != null) ? miktar * parseFloat(u.alis_fiyat) : null
+            };
+        });
+        res.json({ ok: true, kalemler: sonuc });
+    } catch (e) { next(e); }
+});
+
+app.get('/api/satis-analiz-parametreler/:kategoriEskiId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT * FROM sat_parametreler
+            WHERE kategori_id=$1 AND formda_goster=true ORDER BY sira, ad`, [parseInt(req.params.kategoriEskiId)]);
+        res.json({ ok: true, parametreler: r.rows });
+    } catch (e) { next(e); }
+});
+
 const MODUL_KATALOG = [
     { kod: 'anasayfa',            ad: 'Ana Sayfa',           grup: 'Genel' },
     { kod: 'projeler',            ad: 'Projeler',            grup: 'İş Akışı' },
@@ -6271,6 +6412,7 @@ const MODUL_KATALOG = [
     { kod: 'satis.musteri',       ad: 'Satış — Müşteriler',  grup: 'Satış' },
     { kod: 'satis.teklif',        ad: 'Satış — Teklifler',   grup: 'Satış' },
     { kod: 'satis.proje',         ad: 'Satış — Projeler (Fırsatlar)', grup: 'Satış' },
+    { kod: 'satis.urun',          ad: 'Satış — Ürün Kütüphanesi', grup: 'Satış' },
     { kod: 'mali.tedarikci',      ad: 'Mali İşler — Tedarikçi Cari', grup: 'Mali İşler' },
     { kod: 'mali.musteri',        ad: 'Mali İşler — Müşteri Cari',   grup: 'Mali İşler' },
     { kod: 'stok',                ad: 'Stok',                grup: 'Operasyon' },
@@ -6526,6 +6668,10 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/satis-proje/, method: 'GET', modul: 'satis.proje', seviye: 'OKUMA' },
     { pattern: /^\/api\/satis-proje-donustur/, modul: 'satis.proje', seviye: 'TAM' },
     { pattern: /^\/api\/satis-proje/, modul: 'satis.proje', seviye: 'YAZMA' },
+    // Satış — Ürün kütüphanesi + analiz motoru
+    { pattern: /^\/api\/satis-(urun|analiz)/, method: 'GET', modul: 'satis.urun', seviye: 'OKUMA' },
+    { pattern: /^\/api\/satis-analiz-hesapla/, modul: 'satis.urun', seviye: 'OKUMA' },
+    { pattern: /^\/api\/satis-(urun|analiz)/, modul: 'satis.urun', seviye: 'YAZMA' },
 
     // Projeler
     { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat|proje-dosyalari)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
@@ -9207,6 +9353,75 @@ async function semaGuvence() {
             SELECT id, 'satis.proje', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
             ON CONFLICT (rol_id, modul_kod) DO NOTHING
         `).catch(e => console.error('⚠️ satis.proje izin:', e.message));
+
+        // FİYAT ANALİZİ (C3a): ürün kütüphanesi — kategori ağacı, ürünler (parametrik
+        // formüllerle), fiyatlar, parametre tanımları, ürün ağacı (BOM). Eski aset
+        // motoru birebir taşınıyor (Yunus kararı).
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_urun_kategoriler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            ad TEXT NOT NULL,
+            sira INTEGER DEFAULT 0,
+            ust_id INTEGER,
+            parametreler_ortak BOOLEAN DEFAULT false,
+            kendi_basina BOOLEAN DEFAULT true,
+            min_adet INTEGER, max_adet INTEGER
+        )`).catch(e => console.error('⚠️ sat_urun_kategoriler:', e.message));
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_urunler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            ad TEXT NOT NULL,
+            uzun_kod TEXT, kisa_kod TEXT,
+            sira INTEGER DEFAULT 0,
+            otomatik_eklenir BOOLEAN DEFAULT false,
+            formul TEXT,
+            kar_orani NUMERIC,
+            kategori_id INTEGER,
+            birim TEXT, sinif TEXT,
+            aktif BOOLEAN DEFAULT true
+        )`).catch(e => console.error('⚠️ sat_urunler:', e.message));
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_urun_fiyatlar (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            urun_id INTEGER NOT NULL REFERENCES sat_urunler(id) ON DELETE CASCADE,
+            tip TEXT NOT NULL DEFAULT 'ALIS',
+            fiyat NUMERIC NOT NULL,
+            miktar NUMERIC DEFAULT 1,
+            para_birimi TEXT DEFAULT 'TL',
+            birim TEXT,
+            baslangic DATE, bitis DATE,
+            kayit_tarihi TIMESTAMPTZ DEFAULT now(),
+            olusturan TEXT
+        )`).catch(e => console.error('⚠️ sat_urun_fiyatlar:', e.message));
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_parametreler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            ad TEXT NOT NULL,
+            kod TEXT,
+            kategori_id INTEGER,
+            sira INTEGER DEFAULT 0,
+            zorunlu BOOLEAN DEFAULT false,
+            formda_goster BOOLEAN DEFAULT true,
+            duzenlenebilir BOOLEAN DEFAULT true,
+            veri_tipi TEXT,
+            ipucu TEXT
+        )`).catch(e => console.error('⚠️ sat_parametreler:', e.message));
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_urun_bom (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            urun_id INTEGER NOT NULL REFERENCES sat_urunler(id) ON DELETE CASCADE,
+            bilesen_urun_id INTEGER REFERENCES sat_urunler(id),
+            miktar NUMERIC DEFAULT 1,
+            sira INTEGER DEFAULT 0,
+            birim TEXT, notu TEXT
+        )`).catch(e => console.error('⚠️ sat_urun_bom:', e.message));
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_sat_urun_kategori ON sat_urunler(kategori_id)`).catch(() => {});
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_sat_fiyat_urun ON sat_urun_fiyatlar(urun_id)`).catch(() => {});
+        await pool.query(`
+            INSERT INTO rol_izinleri (rol_id, modul_kod, seviye)
+            SELECT id, 'satis.urun', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
+            ON CONFLICT (rol_id, modul_kod) DO NOTHING
+        `).catch(e => console.error('⚠️ satis.urun izin:', e.message));
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için
