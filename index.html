@@ -274,14 +274,26 @@
     <div id="mainContent" class="d-none"></div>
 
     <!-- ============ MALİ İŞLER (cari takip — Faz 1) ============ -->
-    <!-- SATIŞ MODÜLÜ (Faz C1): Müşteri ana kartları -->
+    <!-- SATIŞ MODÜLÜ (Faz C1+C2): Müşteriler + Teklifler -->
     <div id="satisArea" class="d-none p-3">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0 fw-bold text-mod-satis"><i class="bi bi-briefcase me-2"></i>Satış — Müşteriler</h5>
-        <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" data-izin-modul="satis.musteri" data-izin-seviye="YAZMA" onclick="satisMusteriFormAc()">
-          <i class="bi bi-plus-lg me-1"></i>Yeni Müşteri
-        </button>
+        <div class="d-flex align-items-center gap-3">
+          <h5 class="mb-0 fw-bold text-mod-satis"><i class="bi bi-briefcase me-2"></i>Satış</h5>
+          <ul class="nav nav-pills nav-sm" style="--bs-nav-pills-link-active-bg: var(--mod-satis);">
+            <li class="nav-item"><a class="nav-link py-1 px-3 active" id="satisSekmeMusteriler" onclick="switchSatisSekme('musteriler')">Müşteriler</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeTeklifler" onclick="switchSatisSekme('teklifler')">Teklifler</a></li>
+          </ul>
+        </div>
+        <div>
+          <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" id="btnYeniSatisMusteri" data-izin-modul="satis.musteri" data-izin-seviye="YAZMA" onclick="satisMusteriFormAc()">
+            <i class="bi bi-plus-lg me-1"></i>Yeni Müşteri
+          </button>
+          <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniSatisTeklif" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisTeklifFormAc()">
+            <i class="bi bi-plus-lg me-1"></i>Yeni Teklif
+          </button>
+        </div>
       </div>
+      <div id="satisMusterilerBolum">
       <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
         <div class="input-group input-group-sm" style="max-width:340px;">
           <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -310,6 +322,37 @@
             </thead>
             <tbody id="satisMusteriTbody"></tbody>
           </table>
+        </div>
+      </div>
+      </div><!-- /satisMusterilerBolum -->
+
+      <!-- Teklifler alt sekmesi (Faz C2) -->
+      <div id="satisTekliflerBolum" class="d-none">
+        <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+          <div class="input-group input-group-sm" style="max-width:340px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="satisTeklifAra" class="form-control" placeholder="Teklif no, müşteri, proje ara..." oninput="satisTeklifAraGecikmeli()">
+          </div>
+          <div class="btn-group btn-group-sm" id="satisTeklifDurumFiltre"></div>
+          <span class="text-muted small ms-auto" id="satisTeklifSayac"></span>
+        </div>
+        <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+          <div class="table-responsive" style="max-height:70vh;">
+            <table class="table table-hover mb-0 align-middle" style="font-size:0.85rem;">
+              <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                <tr>
+                  <th>Teklif No</th>
+                  <th>Tarih</th>
+                  <th>Müşteri</th>
+                  <th>Proje</th>
+                  <th class="text-center">Kalem</th>
+                  <th class="text-end">Genel Toplam</th>
+                  <th class="text-center">Durum</th>
+                </tr>
+              </thead>
+              <tbody id="satisTeklifTbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -394,6 +437,144 @@
           <div class="modal-footer py-2">
             <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
             <button class="btn btn-primary btn-sm px-4 fw-bold" id="smfKaydetBtn" onclick="satisMusteriKaydet()">
+              <i class="bi bi-check-lg me-1"></i>Kaydet
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — teklif detay (salt izleme; işlemler footer'da) -->
+    <div class="modal fade" id="modalSatisTeklifDetay" tabindex="-1">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-file-earmark-text me-2"></i><span id="stdBaslik">Teklif</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3" id="stdGovde"></div>
+          <div class="modal-footer py-2 flex-wrap">
+            <div class="me-auto d-flex gap-2 align-items-center" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA">
+              <label class="form-label mb-0 small">Durum:</label>
+              <select id="stdDurumSec" class="form-select form-select-sm" style="width:auto;">
+                <option value="TASLAK">Taslak</option>
+                <option value="CEVAP_BEKLENEN">Cevap Beklenen</option>
+                <option value="REVIZE">Revize</option>
+                <option value="ONAYLANAN">Onaylanan</option>
+                <option value="REDDEDILEN">Reddedilen</option>
+              </select>
+              <button class="btn btn-outline-primary btn-sm" onclick="satisTeklifDurumKaydet()">Uygula</button>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm px-3" onclick="satisTeklifPdfIndir()"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisTeklifFormAc(window.stdAktifId)">
+              <i class="bi bi-pencil-square me-1"></i>Düzenle
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — teklif yeni/düzenle -->
+    <div class="modal fade" id="modalSatisTeklifForm" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-file-earmark-plus me-2"></i><span id="stfBaslik">Yeni Teklif</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3">
+            <div class="row g-2 mb-2">
+              <div class="col-md-5 position-relative">
+                <label class="form-label">Müşteri <span class="text-danger">*</span></label>
+                <input type="text" id="stfMusteriAra" class="form-control form-control-sm" placeholder="Müşteri adı yazın..." autocomplete="off"
+                       oninput="stfMusteriOner()" onfocus="stfMusteriOner()">
+                <input type="hidden" id="stfMusteriId">
+                <div id="stfMusteriOneriler" class="list-group position-absolute w-100 shadow-sm d-none" style="z-index:1060; max-height:220px; overflow-y:auto;"></div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Proje (opsiyonel)</label>
+                <select id="stfProje" class="form-select form-select-sm"><option value="">Proje yok</option></select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Teklif Tarihi</label>
+                <input type="date" id="stfTarih" class="form-control form-control-sm">
+              </div>
+              <div class="col-md-1">
+                <label class="form-label">Para</label>
+                <select id="stfPara" class="form-select form-select-sm">
+                  <option value="TL">TL</option><option value="USD">USD</option>
+                  <option value="EUR">EUR</option><option value="GBP">GBP</option>
+                </select>
+              </div>
+              <div class="col-md-1">
+                <label class="form-label">KDV %</label>
+                <select id="stfKdv" class="form-select form-select-sm">
+                  <option value="20">20</option><option value="10">10</option>
+                  <option value="1">1</option><option value="0">0</option>
+                </select>
+              </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="fw-bold small"><i class="bi bi-list-ul me-1"></i>Teklif Kalemleri</span>
+              <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="stfKalemEkle()"><i class="bi bi-plus"></i> Kalem Ekle</button>
+            </div>
+            <div class="card border-0 shadow-sm rounded-3 overflow-hidden mb-2">
+              <table class="table mb-0 align-middle" style="font-size:0.82rem;">
+                <thead class="table-light">
+                  <tr>
+                    <th>Kalem / Açıklama</th>
+                    <th width="90">Miktar</th>
+                    <th width="90">Birim</th>
+                    <th width="130">Birim Fiyat</th>
+                    <th width="120" class="text-end">Tutar</th>
+                    <th width="60" class="text-center" title="Opsiyonel kalemler toplama dahil edilmez">Ops.</th>
+                    <th width="40"></th>
+                  </tr>
+                </thead>
+                <tbody id="stfKalemler"></tbody>
+              </table>
+            </div>
+            <div class="d-flex justify-content-end mb-3">
+              <div class="card border-0 shadow-sm rounded-3" style="min-width:300px;">
+                <div class="card-body py-2 px-3">
+                  <div class="d-flex justify-content-between py-1"><span class="text-muted small">Ara Toplam (KDV Hariç)</span><span class="fw-semibold" id="stfAraToplam">0,00 TL</span></div>
+                  <div class="d-flex justify-content-between py-1 border-top"><span class="text-muted small">KDV <span id="stfKdvEtiket">(%20)</span></span><span class="fw-semibold text-secondary" id="stfKdvTutar">0,00 TL</span></div>
+                  <div class="d-flex justify-content-between pt-2 mt-1 border-top"><span class="fw-bold">Genel Toplam</span><span class="fw-bold fs-6 text-primary" id="stfGenelToplam">0,00 TL</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="row g-2">
+              <div class="col-md-6">
+                <div class="d-flex justify-content-between align-items-center"><label class="form-label mb-0">Dahil İşler</label>
+                  <select class="form-select form-select-sm w-auto py-0 small" onchange="stfMetinEkleSecim(this,'stfDahil')" data-kategori="Dahil ve Hariç İşler"></select></div>
+                <textarea id="stfDahil" class="form-control form-control-sm" rows="3"></textarea>
+              </div>
+              <div class="col-md-6">
+                <div class="d-flex justify-content-between align-items-center"><label class="form-label mb-0">Hariç İşler</label>
+                  <select class="form-select form-select-sm w-auto py-0 small" onchange="stfMetinEkleSecim(this,'stfHaric')" data-kategori="Dahil ve Hariç İşler"></select></div>
+                <textarea id="stfHaric" class="form-control form-control-sm" rows="3"></textarea>
+              </div>
+              <div class="col-md-6">
+                <div class="d-flex justify-content-between align-items-center"><label class="form-label mb-0">Ödeme Koşulları</label>
+                  <select class="form-select form-select-sm w-auto py-0 small" onchange="stfMetinEkleSecim(this,'stfOdeme')" data-kategori="Ödeme Koşulları"></select></div>
+                <textarea id="stfOdeme" class="form-control form-control-sm" rows="3"></textarea>
+              </div>
+              <div class="col-md-6">
+                <div class="d-flex justify-content-between align-items-center"><label class="form-label mb-0">Teslimat Koşulları</label>
+                  <select class="form-select form-select-sm w-auto py-0 small" onchange="stfMetinEkleSecim(this,'stfTeslimat')" data-kategori="Teslimat Koşulları"></select></div>
+                <textarea id="stfTeslimat" class="form-control form-control-sm" rows="3"></textarea>
+              </div>
+              <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center"><label class="form-label mb-0">Teklif Notları</label>
+                  <select class="form-select form-select-sm w-auto py-0 small" onchange="stfMetinEkleSecim(this,'stfNotlar')" data-kategori="Teklif Koşulları"></select></div>
+                <textarea id="stfNotlar" class="form-control form-control-sm" rows="2"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" id="stfKaydetBtn" onclick="satisTeklifKaydet()">
               <i class="bi bi-check-lg me-1"></i>Kaydet
             </button>
           </div>
@@ -4489,6 +4670,311 @@ async function satisMusteriKaydet() {
         bootstrap.Modal.getInstance(document.getElementById('modalSatisMusteriForm'))?.hide();
         showToast('Müşteri kaydedildi.', 'success');
         satisSekmeInit();
+    } finally { btn.disabled = false; hideLoading(); }
+}
+
+// ==================== SATIŞ — TEKLİFLER (Faz C2) ====================
+let satisTeklifDurumFiltresi = '';   // '' = tümü
+let satisMetinHavuzu = null;         // hazır metinler (bir kez yüklenir)
+let stfAramaZamanlayici = null;
+
+function switchSatisSekme(sekme) {
+    document.getElementById('satisSekmeMusteriler').classList.toggle('active', sekme === 'musteriler');
+    document.getElementById('satisSekmeTeklifler').classList.toggle('active', sekme === 'teklifler');
+    document.getElementById('satisMusterilerBolum').classList.toggle('d-none', sekme !== 'musteriler');
+    document.getElementById('satisTekliflerBolum').classList.toggle('d-none', sekme !== 'teklifler');
+    document.getElementById('btnYeniSatisMusteri').classList.toggle('d-none', sekme !== 'musteriler');
+    document.getElementById('btnYeniSatisTeklif').classList.toggle('d-none', sekme !== 'teklifler');
+    if (sekme === 'teklifler') satisTeklifleriYukle();
+    izinleriUygula && izinleriUygula();
+}
+
+function satisTeklifDurumBadge(durum) {
+    const m = {
+        'TASLAK':         ['Taslak', 'bg-secondary'],
+        'CEVAP_BEKLENEN': ['Cevap Beklenen', 'bg-warning text-dark'],
+        'REVIZE':         ['Revize', 'bg-info text-dark'],
+        'ONAYLANAN':      ['Onaylanan', 'bg-success'],
+        'REDDEDILEN':     ['Reddedilen', 'bg-danger']
+    }[durum] || [durum, 'bg-light text-dark border'];
+    return `<span class="badge ${m[1]}">${m[0]}</span>`;
+}
+
+function satisTeklifAraGecikmeli() {
+    clearTimeout(stfAramaZamanlayici);
+    stfAramaZamanlayici = setTimeout(satisTeklifleriYukle, 350);
+}
+
+async function satisTeklifleriYukle() {
+    const q = document.getElementById('satisTeklifAra').value.trim();
+    const url = '/satis-teklifler?q=' + encodeURIComponent(q) +
+                (satisTeklifDurumFiltresi ? '&durum=' + satisTeklifDurumFiltresi : '');
+    const r = await secureFetch(url).catch(() => null);
+    if (!r || !r.ok) { showToast('Teklif listesi yüklenemedi.', 'error'); return; }
+    // Durum filtre butonları (sayılarıyla)
+    const sayilar = {}; let toplamTeklif = 0;
+    (r.durum_sayilari || []).forEach(x => { sayilar[x.durum] = x.adet; toplamTeklif += x.adet; });
+    const filtreEl = document.getElementById('satisTeklifDurumFiltre');
+    const buton = (deger, ad) => {
+        const aktif = satisTeklifDurumFiltresi === deger;
+        const adet = deger === '' ? toplamTeklif : (sayilar[deger] || 0);
+        return `<button class="btn ${aktif ? 'btn-dark' : 'btn-outline-secondary'}" onclick="satisTeklifDurumFiltresi='${deger}';satisTeklifleriYukle()">${ad} <span class="badge ${aktif ? 'bg-light text-dark' : 'bg-secondary'}">${adet}</span></button>`;
+    };
+    filtreEl.innerHTML = buton('', 'Tümü') + buton('TASLAK', 'Taslak') + buton('CEVAP_BEKLENEN', 'Cevap Bekl.') +
+        buton('REVIZE', 'Revize') + buton('ONAYLANAN', 'Onaylanan') + buton('REDDEDILEN', 'Reddedilen');
+    // Tablo
+    const tbody = document.getElementById('satisTeklifTbody');
+    const liste = r.teklifler || [];
+    if (!liste.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">${q || satisTeklifDurumFiltresi ? 'Eşleşen teklif bulunamadı.' : 'Henüz teklif eklenmedi.'}</td></tr>`;
+        document.getElementById('satisTeklifSayac').innerText = '';
+        return;
+    }
+    tbody.innerHTML = liste.map(t => `
+        <tr style="cursor:pointer;" onclick="satisTeklifDetayAc(${t.id})">
+            <td class="fw-bold">${esc(t.teklif_no || '-')}</td>
+            <td>${t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'}</td>
+            <td>${esc(t.musteri_adi || '-')}</td>
+            <td class="small">${t.proje_kodu ? esc(t.proje_kodu) + (t.proje_adi ? ' — ' + esc(t.proje_adi) : '') : '<span class="text-muted">-</span>'}</td>
+            <td class="text-center">${t.kalem_sayisi || 0}</td>
+            <td class="text-end fw-semibold">${formatTR(parseFloat(t.genel_toplam) || 0)} ${esc(t.para_birimi || 'TL')}</td>
+            <td class="text-center">${satisTeklifDurumBadge(t.durum)}</td>
+        </tr>`).join('');
+    document.getElementById('satisTeklifSayac').innerText =
+        liste.length >= 500 ? `İlk 500 gösteriliyor — daraltmak için arama yapın` : `${liste.length} teklif`;
+}
+
+async function satisTeklifDetayAc(id) {
+    const r = await secureFetch('/satis-teklif-detay/' + id).catch(() => null);
+    if (!r || !r.ok) { showToast(r?.hata || 'Teklif detayı yüklenemedi.', 'error'); return; }
+    const t = r.teklif;
+    window.stdAktifId = t.id;
+    window.stdAktifDetay = r;
+    const pb = t.para_birimi || 'TL';
+    document.getElementById('stdBaslik').innerText = `Teklif ${t.teklif_no || ''} — ${t.musteri_adi || ''}`;
+    document.getElementById('stdDurumSec').value = t.durum;
+    const kosul = (baslik, icerik) => icerik ? `
+        <div class="col-md-6"><div class="fw-bold small border-bottom pb-1 mb-1">${baslik}</div>
+        <div class="small text-muted" style="white-space:pre-wrap;">${esc(icerik)}</div></div>` : '';
+    document.getElementById('stdGovde').innerHTML = `
+        <div class="row mb-2 small">
+            <div class="col-md-3"><span class="text-muted">Tarih:</span> <b>${t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'}</b></div>
+            <div class="col-md-4"><span class="text-muted">Müşteri:</span> <b>${esc(t.musteri_adi || '-')}</b></div>
+            <div class="col-md-3"><span class="text-muted">Proje:</span> <b>${t.proje_kodu ? esc(t.proje_kodu) + ' — ' + esc(t.proje_adi_goster || '') : '-'}</b></div>
+            <div class="col-md-2 text-end">${satisTeklifDurumBadge(t.durum)}</div>
+        </div>
+        <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:0.82rem;">
+            <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th></tr></thead>
+            <tbody>${r.kalemler.map((k, i) => `
+                <tr class="${k.opsiyonel ? 'text-muted fst-italic' : ''}">
+                    <td>${i + 1}</td>
+                    <td><b>${esc(k.ad)}</b>${k.opsiyonel ? ' <small>(Opsiyonel)</small>' : ''}${k.aciklama ? `<br><small class="text-muted">${esc(k.aciklama)}</small>` : ''}</td>
+                    <td class="text-end">${formatTR(parseFloat(k.miktar) || 0)} ${esc(k.birim || '')}</td>
+                    <td class="text-end">${formatTR(parseFloat(k.birim_fiyat) || 0)} ${pb}</td>
+                    <td class="text-end fw-semibold">${formatTR(parseFloat(k.toplam) || 0)} ${pb}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table></div>
+        <div class="d-flex justify-content-end mb-2">
+            <table style="min-width:260px;font-size:0.85rem;"><tbody>
+                <tr><td class="text-muted">Ara Toplam (KDV Hariç)</td><td class="text-end fw-semibold">${formatTR(parseFloat(t.ara_toplam) || 0)} ${pb}</td></tr>
+                <tr><td class="text-muted">KDV (%${parseFloat(t.kdv_orani) || 0})</td><td class="text-end">${formatTR(parseFloat(t.kdv_tutar) || 0)} ${pb}</td></tr>
+                <tr class="border-top"><td class="fw-bold">Genel Toplam</td><td class="text-end fw-bold text-primary">${formatTR(parseFloat(t.genel_toplam) || 0)} ${pb}</td></tr>
+                ${t.iskontolu_toplam ? `<tr><td class="text-muted">İskontolu Toplam</td><td class="text-end">${formatTR(parseFloat(t.iskontolu_toplam))} ${pb}</td></tr>` : ''}
+            </tbody></table>
+        </div>
+        <div class="row g-3">
+            ${kosul('Teklif Notları', t.notlar)}
+            ${kosul('Dahil İşler', t.dahil_isler)}
+            ${kosul('Hariç İşler', t.haric_isler)}
+            ${kosul('Ödeme Koşulları', t.odeme_kosullari)}
+            ${kosul('Teslimat Koşulları', t.teslimat_kosullari)}
+        </div>`;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisTeklifDetay')).show();
+    izinleriUygula && izinleriUygula();
+}
+
+async function satisTeklifDurumKaydet() {
+    const durum = document.getElementById('stdDurumSec').value;
+    showLoading();
+    const r = await secureFetch('/satis-teklif-durum', { method: 'POST',
+        body: JSON.stringify({ id: window.stdAktifId, durum }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Durum güncellenemedi.', 'error'); return; }
+    showToast('Teklif durumu güncellendi.', 'success');
+    satisTeklifDetayAc(window.stdAktifId);
+    satisTeklifleriYukle();
+}
+
+function satisTeklifPdfIndir() {
+    const token = localStorage.getItem('aterko_token');
+    fetch('/api/satis-teklif-pdf/' + window.stdAktifId, { headers: { 'Authorization': 'Bearer ' + token } })
+        .then(async resp => {
+            if (!resp.ok) throw new Error('PDF üretilemedi');
+            const blob = await resp.blob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            const cd = resp.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^\";]+)/);
+            a.download = m ? decodeURIComponent(m[1]) : 'teklif.pdf';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        })
+        .catch(() => showToast('PDF indirilemedi.', 'error'));
+}
+
+// --- Teklif formu ---
+function stfMusteriOner() {
+    const q = trAra(document.getElementById('stfMusteriAra').value || '');
+    const kutu = document.getElementById('stfMusteriOneriler');
+    if (!q || q.length < 2) { kutu.classList.add('d-none'); return; }
+    const bulunan = satisMusteriListe.filter(m => trAra(m.ad).includes(q)).slice(0, 12);
+    if (!bulunan.length) { kutu.classList.add('d-none'); return; }
+    kutu.innerHTML = bulunan.map(m =>
+        `<button type="button" class="list-group-item list-group-item-action py-1 small" onclick="stfMusteriSec(${m.id}, '${escJsAttr(m.ad)}')">${esc(m.ad)}${m.sehir ? ' <span class="text-muted">— ' + esc(m.sehir) + '</span>' : ''}</button>`).join('');
+    kutu.classList.remove('d-none');
+}
+function escJsAttr(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+function stfMusteriSec(id, ad) {
+    document.getElementById('stfMusteriId').value = id;
+    document.getElementById('stfMusteriAra').value = ad;
+    document.getElementById('stfMusteriOneriler').classList.add('d-none');
+}
+
+function stfKalemEkle(k) {
+    k = k || {};
+    const tr = document.createElement('tr');
+    tr.className = 'stf-kalem';
+    tr.innerHTML = `
+        <td><input type="text" class="form-control form-control-sm stf-k-ad" placeholder="Kalem adı" value="${esc(k.ad || '')}">
+            <input type="text" class="form-control form-control-sm mt-1 stf-k-aciklama" placeholder="Açıklama (opsiyonel)" value="${esc(k.aciklama || '')}"></td>
+        <td><input type="number" class="form-control form-control-sm text-end stf-k-miktar" value="${k.miktar != null ? k.miktar : 1}" step="0.01" oninput="stfToplamGuncelle()"></td>
+        <td><input type="text" class="form-control form-control-sm stf-k-birim" placeholder="Adet" value="${esc(k.birim || '')}"></td>
+        <td><input type="number" class="form-control form-control-sm text-end stf-k-fiyat" value="${k.birim_fiyat != null ? k.birim_fiyat : ''}" step="0.01" oninput="stfToplamGuncelle()"></td>
+        <td class="text-end fw-semibold stf-k-toplam">0,00</td>
+        <td class="text-center"><input type="checkbox" class="form-check-input stf-k-ops" ${k.opsiyonel ? 'checked' : ''} onchange="stfToplamGuncelle()"></td>
+        <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0" title="Kaldır" onclick="this.closest('tr').remove(); stfToplamGuncelle();"><i class="bi bi-x"></i></button></td>`;
+    document.getElementById('stfKalemler').appendChild(tr);
+    stfToplamGuncelle();
+}
+
+function stfToplamGuncelle() {
+    const pb = document.getElementById('stfPara').value;
+    const kdvOran = parseFloat(document.getElementById('stfKdv').value || 0);
+    let ara = 0;
+    document.querySelectorAll('.stf-kalem').forEach(tr => {
+        const m = parseFloat(tr.querySelector('.stf-k-miktar').value || 0);
+        const f = parseFloat(tr.querySelector('.stf-k-fiyat').value || 0);
+        const tutar = m * f;
+        tr.querySelector('.stf-k-toplam').innerText = formatTR(tutar);
+        if (!tr.querySelector('.stf-k-ops').checked) ara += tutar;   // opsiyonel toplama girmez
+    });
+    const kdv = ara * kdvOran / 100;
+    document.getElementById('stfAraToplam').innerText = `${formatTR(ara)} ${pb}`;
+    document.getElementById('stfKdvEtiket').innerText = `(%${kdvOran})`;
+    document.getElementById('stfKdvTutar').innerText = `${formatTR(kdv)} ${pb}`;
+    document.getElementById('stfGenelToplam').innerText = `${formatTR(ara + kdv)} ${pb}`;
+}
+
+async function stfMetinHavuzuDoldur() {
+    if (!satisMetinHavuzu) {
+        const r = await secureFetch('/satis-metinler').catch(() => null);
+        satisMetinHavuzu = (r && r.ok) ? (r.metinler || []) : [];
+    }
+    document.querySelectorAll('#modalSatisTeklifForm select[data-kategori]').forEach(sel => {
+        const kat = sel.getAttribute('data-kategori');
+        const secenekler = satisMetinHavuzu.filter(m => m.kategori === kat);
+        sel.innerHTML = '<option value="">+ Hazır metin ekle...</option>' +
+            secenekler.map(m => `<option value="${m.id}">${esc((m.baslik || m.metin).slice(0, 60))}</option>`).join('');
+    });
+}
+
+function stfMetinEkleSecim(sel, hedefId) {
+    const metin = satisMetinHavuzu.find(m => String(m.id) === sel.value);
+    sel.value = '';
+    if (!metin) return;
+    const ta = document.getElementById(hedefId);
+    ta.value = (ta.value ? ta.value.trimEnd() + '\n' : '') + '• ' + metin.metin;
+}
+
+async function stfProjeSecenekleriDoldur(seciliId) {
+    const sel = document.getElementById('stfProje');
+    try {
+        const r = await secureFetch('/projeler');
+        const liste = (r && r.ok) ? (r.projeler || r.data || []) : [];
+        sel.innerHTML = '<option value="">Proje yok</option>' +
+            liste.map(p => `<option value="${p.id}" ${String(p.id) === String(seciliId) ? 'selected' : ''}>${esc(p.proje_kodu)} — ${esc((p.proje_adi || '').slice(0, 40))}</option>`).join('');
+    } catch (e) { sel.innerHTML = '<option value="">Proje yok</option>'; }
+}
+
+async function satisTeklifFormAc(id) {
+    const detayModal = bootstrap.Modal.getInstance(document.getElementById('modalSatisTeklifDetay'));
+    if (detayModal) detayModal.hide();
+    if (!satisMusteriListe.length) await satisSekmeInit();
+    modalFormSifirla('modalSatisTeklifForm');
+    document.getElementById('stfKalemler').innerHTML = '';
+    document.getElementById('stfMusteriOneriler').classList.add('d-none');
+    window.stfAktifId = id || null;
+    document.getElementById('stfBaslik').innerText = id ? 'Teklif Düzenle' : 'Yeni Teklif';
+    await stfMetinHavuzuDoldur();
+    if (id && window.stdAktifDetay && window.stdAktifDetay.teklif.id === id) {
+        const t = window.stdAktifDetay.teklif;
+        stfMusteriSec(t.musteri_id || '', t.musteri_adi || '');
+        document.getElementById('stfTarih').value = t.teklif_tarihi ? t.teklif_tarihi.slice(0, 10) : '';
+        document.getElementById('stfPara').value = t.para_birimi || 'TL';
+        document.getElementById('stfKdv').value = String(parseFloat(t.kdv_orani) || 20);
+        document.getElementById('stfDahil').value = t.dahil_isler || '';
+        document.getElementById('stfHaric').value = t.haric_isler || '';
+        document.getElementById('stfOdeme').value = t.odeme_kosullari || '';
+        document.getElementById('stfTeslimat').value = t.teslimat_kosullari || '';
+        document.getElementById('stfNotlar').value = t.notlar || '';
+        await stfProjeSecenekleriDoldur(t.proje_id);
+        (window.stdAktifDetay.kalemler || []).forEach(k => stfKalemEkle(k));
+    } else {
+        document.getElementById('stfTarih').value = new Date().toISOString().slice(0, 10);
+        await stfProjeSecenekleriDoldur(null);
+        stfKalemEkle();
+    }
+    stfToplamGuncelle();
+    document.getElementById('stfPara').onchange = stfToplamGuncelle;
+    document.getElementById('stfKdv').onchange = stfToplamGuncelle;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisTeklifForm')).show();
+}
+
+async function satisTeklifKaydet() {
+    const musteriId = document.getElementById('stfMusteriId').value;
+    if (!musteriId) { alanHatasi('stfMusteriAra'); showToast('Müşteri seçilmelidir.', 'error'); return; }
+    const kalemler = [...document.querySelectorAll('.stf-kalem')].map(tr => ({
+        ad: tr.querySelector('.stf-k-ad').value,
+        aciklama: tr.querySelector('.stf-k-aciklama').value,
+        miktar: tr.querySelector('.stf-k-miktar').value,
+        birim: tr.querySelector('.stf-k-birim').value,
+        birim_fiyat: tr.querySelector('.stf-k-fiyat').value,
+        opsiyonel: tr.querySelector('.stf-k-ops').checked
+    })).filter(k => k.ad.trim());
+    if (!kalemler.length) { showToast('En az bir teklif kalemi girilmelidir.', 'error'); return; }
+    const btn = document.getElementById('stfKaydetBtn');
+    btn.disabled = true;
+    showLoading();
+    try {
+        const r = await secureFetch('/satis-teklif-kaydet', { method: 'POST', body: JSON.stringify({
+            id: window.stfAktifId || undefined,
+            musteri_id: parseInt(musteriId),
+            proje_id: document.getElementById('stfProje').value ? parseInt(document.getElementById('stfProje').value) : null,
+            teklif_tarihi: document.getElementById('stfTarih').value,
+            para_birimi: document.getElementById('stfPara').value,
+            kdv_orani: document.getElementById('stfKdv').value,
+            dahil_isler: document.getElementById('stfDahil').value.trim(),
+            haric_isler: document.getElementById('stfHaric').value.trim(),
+            odeme_kosullari: document.getElementById('stfOdeme').value.trim(),
+            teslimat_kosullari: document.getElementById('stfTeslimat').value.trim(),
+            notlar: document.getElementById('stfNotlar').value.trim(),
+            kalemler
+        }) });
+        if (!r || !r.ok) { showToast(r?.hata || 'Teklif kaydedilemedi.', 'error'); return; }
+        bootstrap.Modal.getInstance(document.getElementById('modalSatisTeklifForm'))?.hide();
+        showToast('Teklif kaydedildi.', 'success');
+        satisTeklifleriYukle();
     } finally { btn.disabled = false; hideLoading(); }
 }
 

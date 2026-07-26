@@ -5855,6 +5855,274 @@ app.delete('/api/satis-musteri-kisi-sil/:id', yetkiKontrol, izinGerekli('satis.m
     } catch (e) { next(e); }
 });
 
+// ==================== SATIŞ MODÜLÜ — TEKLİFLER (Faz C2) ====================
+const TEKLIF_DURUMLARI = ['TASLAK', 'CEVAP_BEKLENEN', 'REVIZE', 'ONAYLANAN', 'REDDEDILEN'];
+
+app.get('/api/satis-teklifler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { q, durum } = req.query;
+        const kosullar = []; const deger = [];
+        if (durum && TEKLIF_DURUMLARI.includes(durum)) { deger.push(durum); kosullar.push(`t.durum=$${deger.length}`); }
+        if (q && q.trim()) {
+            deger.push('%' + q.trim() + '%');
+            kosullar.push(`(t.teklif_no ILIKE $${deger.length} OR m.ad ILIKE $${deger.length} OR t.eski_proje_adi ILIKE $${deger.length} OR p.proje_adi ILIKE $${deger.length})`);
+        }
+        const r = await pool.query(`
+            SELECT t.id, t.teklif_no, t.teklif_tarihi, t.durum, t.para_birimi, t.genel_toplam,
+                   t.iskontolu_toplam, m.ad AS musteri_adi, t.musteri_id,
+                   COALESCE(p.proje_kodu::text, t.eski_proje_id::text) AS proje_kodu,
+                   COALESCE(p.proje_adi, t.eski_proje_adi) AS proje_adi,
+                   (SELECT COUNT(*)::int FROM sat_teklif_kalemleri k WHERE k.teklif_id=t.id) AS kalem_sayisi
+            FROM sat_teklifler t
+            LEFT JOIN sat_musteriler m ON m.id=t.musteri_id
+            LEFT JOIN projeler p ON p.id=t.proje_id
+            ${kosullar.length ? 'WHERE ' + kosullar.join(' AND ') : ''}
+            ORDER BY t.teklif_tarihi DESC NULLS LAST, t.id DESC
+            LIMIT 500
+        `, deger);
+        const sayilar = await pool.query(`SELECT durum, COUNT(*)::int adet FROM sat_teklifler GROUP BY durum`);
+        res.json({ ok: true, teklifler: r.rows, durum_sayilari: sayilar.rows });
+    } catch (e) { next(e); }
+});
+
+app.get('/api/satis-teklif-detay/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const t = await pool.query(`
+            SELECT t.*, m.ad AS musteri_adi, m.email AS musteri_email, m.telefon AS musteri_telefon,
+                   COALESCE(p.proje_kodu::text, t.eski_proje_id::text) AS proje_kodu,
+                   COALESCE(p.proje_adi, t.eski_proje_adi) AS proje_adi_goster
+            FROM sat_teklifler t
+            LEFT JOIN sat_musteriler m ON m.id=t.musteri_id
+            LEFT JOIN projeler p ON p.id=t.proje_id
+            WHERE t.id=$1`, [id]);
+        if (t.rowCount === 0) return res.json({ ok: false, hata: 'Teklif bulunamadı.' });
+        const kalemler = await pool.query(
+            'SELECT * FROM sat_teklif_kalemleri WHERE teklif_id=$1 ORDER BY sira, id', [id]);
+        res.json({ ok: true, teklif: t.rows[0], kalemler: kalemler.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        const { id, musteri_id, proje_id, teklif_tarihi, para_birimi, kdv_orani, notlar,
+                odeme_kosullari, teslimat_kosullari, dahil_isler, haric_isler,
+                iskontolu_toplam, kalemler } = req.body;
+        if (!musteri_id) { return res.json({ ok: false, hata: 'Müşteri seçilmelidir.' }); }
+        if (!Array.isArray(kalemler) || !kalemler.filter(k => (k.ad || '').trim()).length) {
+            return res.json({ ok: false, hata: 'En az bir teklif kalemi girilmelidir.' });
+        }
+        const kdv = isNaN(parseFloat(kdv_orani)) ? 20 : parseFloat(kdv_orani);
+        const temiz = kalemler.filter(k => (k.ad || '').trim()).map((k, i) => ({
+            ad: k.ad.trim(), aciklama: (k.aciklama || '').trim() || null,
+            miktar: parseFloat(k.miktar) || 1, birim: (k.birim || '').trim() || null,
+            ikincil_miktar: k.ikincil_miktar ? parseFloat(k.ikincil_miktar) : null,
+            ikincil_birim: (k.ikincil_birim || '').trim() || null,
+            opsiyonel: !!k.opsiyonel, sira: i,
+            birim_fiyat: parseFloat(k.birim_fiyat) || 0
+        }));
+        // Opsiyonel kalemler toplama dahil edilmez (eski sistemle aynı mantık)
+        const araToplam = temiz.filter(k => !k.opsiyonel).reduce((s, k) => s + k.miktar * k.birim_fiyat, 0);
+        const kdvTutar = araToplam * kdv / 100;
+        const genel = araToplam + kdvTutar;
+        await client.query('BEGIN');
+        let teklifId = id;
+        const alanlar = [musteri_id, proje_id || null, teklif_tarihi || new Date(),
+            para_birimi || 'TL', kdv, araToplam, kdvTutar, genel,
+            iskontolu_toplam ? parseFloat(iskontolu_toplam) : null,
+            notlar || null, odeme_kosullari || null, teslimat_kosullari || null,
+            dahil_isler || null, haric_isler || null];
+        if (id) {
+            const eskiR = await client.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
+            if (eskiR.rowCount === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Teklif bulunamadı.' }); }
+            await client.query(`
+                UPDATE sat_teklifler SET musteri_id=$1, proje_id=$2, teklif_tarihi=$3, para_birimi=$4,
+                    kdv_orani=$5, ara_toplam=$6, kdv_tutar=$7, genel_toplam=$8, iskontolu_toplam=$9,
+                    notlar=$10, odeme_kosullari=$11, teslimat_kosullari=$12, dahil_isler=$13,
+                    haric_isler=$14, guncelleme=now()
+                WHERE id=$15`, [...alanlar, id]);
+            await client.query('DELETE FROM sat_teklif_kalemleri WHERE teklif_id=$1', [id]);
+        } else {
+            const ins = await client.query(`
+                INSERT INTO sat_teklifler (musteri_id, proje_id, teklif_tarihi, para_birimi, kdv_orani,
+                    ara_toplam, kdv_tutar, genel_toplam, iskontolu_toplam, notlar, odeme_kosullari,
+                    teslimat_kosullari, dahil_isler, haric_isler, durum, olusturan)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'TASLAK',$15) RETURNING id`,
+                [...alanlar, req.user.email]);
+            teklifId = ins.rows[0].id;
+            await client.query(`UPDATE sat_teklifler SET teklif_no='W-'||id WHERE id=$1`, [teklifId]);
+        }
+        for (const k of temiz) {
+            await client.query(`
+                INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim,
+                    ikincil_miktar, ikincil_birim, opsiyonel, sira, birim_fiyat, toplam)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                [teklifId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar,
+                 k.ikincil_birim, k.opsiyonel, k.sira, k.birim_fiyat, k.miktar * k.birim_fiyat]);
+        }
+        await client.query('COMMIT');
+        await auditLogla(req, { eylem: id ? 'UPDATE' : 'CREATE', tablo: 'sat_teklifler', kayit_id: teklifId,
+            ozet: `Teklif ${id ? 'güncellendi' : 'oluşturuldu'} (${temiz.length} kalem, ${formatParaLog(genel)} ${para_birimi || 'TL'})`, yeni_veri: req.body });
+        res.json({ ok: true, id: teklifId });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+function formatParaLog(n) { return (parseFloat(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 }); }
+
+app.post('/api/satis-teklif-durum', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, durum } = req.body;
+        if (!TEKLIF_DURUMLARI.includes(durum)) return res.json({ ok: false, hata: 'Geçersiz durum.' });
+        const eskiR = await pool.query('SELECT durum, teklif_no FROM sat_teklifler WHERE id=$1', [id]);
+        if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Teklif bulunamadı.' });
+        await pool.query('UPDATE sat_teklifler SET durum=$1, guncelleme=now() WHERE id=$2', [durum, id]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_teklifler', kayit_id: id,
+            ozet: `Teklif durumu: ${eskiR.rows[0].durum} → ${durum} (${eskiR.rows[0].teklif_no})` });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+app.delete('/api/satis-teklif-sil/:id', yetkiKontrol, izinGerekli('satis.teklif', 'TAM'), async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const eskiR = await pool.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
+        if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Teklif bulunamadı.' });
+        if (eskiR.rows[0].durum !== 'TASLAK') return res.json({ ok: false, hata: 'Sadece TASLAK durumdaki teklifler silinebilir. Diğerleri arşiv kaydıdır.' });
+        await pool.query('DELETE FROM sat_teklifler WHERE id=$1', [id]);
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_teklifler', kayit_id: id,
+            ozet: `Taslak teklif silindi: ${eskiR.rows[0].teklif_no}`, eski_veri: eskiR.rows[0] });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// Hazır metin havuzu (dahil/hariç işler, ödeme/teslimat koşulları)
+app.get('/api/satis-metinler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query('SELECT * FROM sat_metinler WHERE aktif=true ORDER BY kategori, sira, id');
+        res.json({ ok: true, metinler: r.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/satis-metin-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, kategori, baslik, metin } = req.body;
+        if (!(kategori || '').trim() || !(metin || '').trim()) return res.json({ ok: false, hata: 'Kategori ve metin zorunludur.' });
+        if (id) {
+            await pool.query('UPDATE sat_metinler SET kategori=$1, baslik=$2, metin=$3 WHERE id=$4',
+                [kategori.trim(), (baslik || '').trim() || null, metin.trim(), id]);
+            return res.json({ ok: true, id });
+        }
+        const ins = await pool.query('INSERT INTO sat_metinler (kategori, baslik, metin) VALUES ($1,$2,$3) RETURNING id',
+            [kategori.trim(), (baslik || '').trim() || null, metin.trim()]);
+        res.json({ ok: true, id: ins.rows[0].id });
+    } catch (e) { next(e); }
+});
+
+app.delete('/api/satis-metin-sil/:id', yetkiKontrol, izinGerekli('satis.teklif', 'TAM'), async (req, res, next) => {
+    try {
+        await pool.query('UPDATE sat_metinler SET aktif=false WHERE id=$1', [parseInt(req.params.id)]);
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// Teklif PDF çıktısı (puppeteer — teknik şartname ile aynı altyapı)
+app.get('/api/satis-teklif-pdf/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const t = await pool.query(`
+            SELECT t.*, m.ad AS musteri_adi, m.uzun_ad AS musteri_uzun_ad, m.adres AS musteri_adres,
+                   COALESCE(p.proje_kodu::text, t.eski_proje_id::text) AS proje_kodu,
+                   COALESCE(p.proje_adi, t.eski_proje_adi) AS proje_adi_goster
+            FROM sat_teklifler t
+            LEFT JOIN sat_musteriler m ON m.id=t.musteri_id
+            LEFT JOIN projeler p ON p.id=t.proje_id
+            WHERE t.id=$1`, [id]);
+        if (t.rowCount === 0) return res.status(404).json({ ok: false, hata: 'Teklif bulunamadı.' });
+        const kalemler = (await pool.query('SELECT * FROM sat_teklif_kalemleri WHERE teklif_id=$1 ORDER BY sira, id', [id])).rows;
+        const { htmlToPDF } = require('./lib/pdf-generator');
+        const pdfBuffer = await htmlToPDF(satisTeklifHTML(t.rows[0], kalemler),
+            { margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' } });
+        const dosyaAdi = dosyaAdiTemizle(`Teklif ${t.rows[0].teklif_no} - ${t.rows[0].musteri_adi || ''}`) + '.pdf';
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', cdHeader(dosyaAdi));
+        res.send(pdfBuffer);
+    } catch (e) { next(e); }
+});
+
+function satisTeklifHTML(t, kalemler) {
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const fmt = n => (parseFloat(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const trh = d => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
+    const pb = t.para_birimi || 'TL';
+    let logoData = '';
+    try {
+        logoData = 'data:image/png;base64,' + require('fs').readFileSync(__dirname + '/assets/aterko-logo-dark.png').toString('base64');
+    } catch (e) { /* logo yoksa başlık metinle kalır */ }
+    const kosulBolum = (baslik, icerik) => icerik ? `
+        <div class="kosul"><div class="kosul-baslik">${esc(baslik)}</div>
+        <div class="kosul-metin">${esc(icerik).replace(/\n/g, '<br>')}</div></div>` : '';
+    return `<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"><style>
+        * { box-sizing: border-box; font-family: 'DejaVu Sans', Arial, sans-serif; }
+        body { font-size: 9.5pt; color: #212529; margin: 0; }
+        .ust { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #e34400; padding-bottom: 8px; margin-bottom: 14px; }
+        .ust img { height: 34px; }
+        .ust .no { text-align: right; font-size: 8.5pt; color: #495057; }
+        .ust .no b { font-size: 12pt; color: #212529; }
+        h1 { font-size: 13pt; margin: 0 0 10px; }
+        .bilgi { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 9pt; }
+        .bilgi td { padding: 3px 8px; border: 1px solid #dee2e6; }
+        .bilgi td.e { background: #f8f9fa; font-weight: bold; width: 110px; }
+        table.kalem { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+        table.kalem th { background: #212529; color: #fff; padding: 5px 7px; font-size: 8.5pt; text-align: left; }
+        table.kalem td { padding: 5px 7px; border-bottom: 1px solid #dee2e6; font-size: 9pt; vertical-align: top; }
+        table.kalem .s { text-align: right; white-space: nowrap; }
+        .ops { color: #6c757d; font-style: italic; }
+        .toplamlar { width: 260px; margin-left: auto; margin-top: 8px; border-collapse: collapse; }
+        .toplamlar td { padding: 3px 8px; font-size: 9.5pt; }
+        .toplamlar td:last-child { text-align: right; white-space: nowrap; }
+        .toplamlar tr.g td { border-top: 2px solid #212529; font-weight: bold; font-size: 11pt; }
+        .kosul { margin-top: 12px; page-break-inside: avoid; }
+        .kosul-baslik { font-weight: bold; font-size: 10pt; border-bottom: 1px solid #adb5bd; margin-bottom: 4px; padding-bottom: 2px; }
+        .kosul-metin { font-size: 8.5pt; color: #343a40; line-height: 1.45; }
+    </style></head><body>
+        <div class="ust">
+            ${logoData ? `<img src="${logoData}" alt="Aterko">` : '<b style="font-size:16pt;">ATERKO</b>'}
+            <div class="no"><b>TEKLİF</b><br>No: ${esc(t.teklif_no || '-')}<br>Tarih: ${trh(t.teklif_tarihi)}</div>
+        </div>
+        <table class="bilgi">
+            <tr><td class="e">Müşteri</td><td>${esc(t.musteri_uzun_ad || t.musteri_adi || '-')}</td></tr>
+            ${t.proje_adi_goster ? `<tr><td class="e">Proje</td><td>${esc((t.proje_kodu ? t.proje_kodu + ' — ' : '') + t.proje_adi_goster)}</td></tr>` : ''}
+            ${t.musteri_adres ? `<tr><td class="e">Adres</td><td>${esc(t.musteri_adres)}</td></tr>` : ''}
+        </table>
+        <table class="kalem">
+            <thead><tr><th style="width:26px;">#</th><th>Açıklama</th><th class="s">Miktar</th><th class="s">Birim Fiyat</th><th class="s">Tutar</th></tr></thead>
+            <tbody>
+            ${kalemler.map((k, i) => `
+                <tr class="${k.opsiyonel ? 'ops' : ''}">
+                    <td>${i + 1}</td>
+                    <td><b>${esc(k.ad)}</b>${k.opsiyonel ? ' <small>(Opsiyonel — toplama dahil değildir)</small>' : ''}${k.aciklama ? `<br><small>${esc(k.aciklama)}</small>` : ''}</td>
+                    <td class="s">${fmt(k.miktar)} ${esc(k.birim || '')}</td>
+                    <td class="s">${fmt(k.birim_fiyat)} ${pb}</td>
+                    <td class="s">${fmt(k.toplam)} ${pb}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table>
+        <table class="toplamlar">
+            <tr><td>Ara Toplam (KDV Hariç)</td><td>${fmt(t.ara_toplam)} ${pb}</td></tr>
+            <tr><td>KDV (%${parseFloat(t.kdv_orani) || 0})</td><td>${fmt(t.kdv_tutar)} ${pb}</td></tr>
+            <tr class="g"><td>Genel Toplam</td><td>${fmt(t.genel_toplam)} ${pb}</td></tr>
+            ${t.iskontolu_toplam ? `<tr><td>İskontolu Toplam</td><td>${fmt(t.iskontolu_toplam)} ${pb}</td></tr>` : ''}
+        </table>
+        ${kosulBolum('Teklif Notları', t.notlar)}
+        ${kosulBolum('Dahil İşler', t.dahil_isler)}
+        ${kosulBolum('Hariç İşler', t.haric_isler)}
+        ${kosulBolum('Ödeme Koşulları', t.odeme_kosullari)}
+        ${kosulBolum('Teslimat Koşulları', t.teslimat_kosullari)}
+    </body></html>`;
+}
+
 const MODUL_KATALOG = [
     { kod: 'anasayfa',            ad: 'Ana Sayfa',           grup: 'Genel' },
     { kod: 'projeler',            ad: 'Projeler',            grup: 'İş Akışı' },
@@ -5867,6 +6135,7 @@ const MODUL_KATALOG = [
     { kod: 'satinalma.arsiv',     ad: 'Satınalma — Arşiv', grup: 'Satınalma' },
     { kod: 'satinalma.rapor',     ad: 'Satınalma — Rapor (Genel Bakış)', grup: 'Satınalma' },
     { kod: 'satis.musteri',       ad: 'Satış — Müşteriler',  grup: 'Satış' },
+    { kod: 'satis.teklif',        ad: 'Satış — Teklifler',   grup: 'Satış' },
     { kod: 'mali.tedarikci',      ad: 'Mali İşler — Tedarikçi Cari', grup: 'Mali İşler' },
     { kod: 'mali.musteri',        ad: 'Mali İşler — Müşteri Cari',   grup: 'Mali İşler' },
     { kod: 'stok',                ad: 'Stok',                grup: 'Operasyon' },
@@ -6115,6 +6384,9 @@ const ENDPOINT_IZIN_KURALLARI = [
     // Satış — Müşteriler
     { pattern: /^\/api\/satis-musteri/, method: 'GET', modul: 'satis.musteri', seviye: 'OKUMA' },
     { pattern: /^\/api\/satis-musteri/, modul: 'satis.musteri', seviye: 'YAZMA' },
+    // Satış — Teklifler + hazır metin havuzu
+    { pattern: /^\/api\/satis-(teklif|metin)/, method: 'GET', modul: 'satis.teklif', seviye: 'OKUMA' },
+    { pattern: /^\/api\/satis-(teklif|metin)/, modul: 'satis.teklif', seviye: 'YAZMA' },
 
     // Projeler
     { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat|proje-dosyalari)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
@@ -8718,6 +8990,57 @@ async function semaGuvence() {
             SELECT id, 'satis.musteri', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
             ON CONFLICT (rol_id, modul_kod) DO NOTHING
         `).catch(e => console.error('⚠️ satis.musteri izin:', e.message));
+
+        // SATIŞ MODÜLÜ (Faz C2): teklifler + kalemler + hazır metin havuzu
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_teklifler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            teklif_no TEXT,
+            musteri_id INTEGER REFERENCES sat_musteriler(id),
+            proje_id INTEGER REFERENCES projeler(id),
+            eski_proje_id INTEGER, eski_proje_adi TEXT,
+            teklif_tarihi DATE DEFAULT CURRENT_DATE,
+            durum TEXT DEFAULT 'TASLAK',
+            para_birimi TEXT DEFAULT 'TL',
+            kdv_orani NUMERIC DEFAULT 20,
+            ara_toplam NUMERIC DEFAULT 0,
+            kdv_tutar NUMERIC DEFAULT 0,
+            genel_toplam NUMERIC DEFAULT 0,
+            iskontolu_toplam NUMERIC,
+            notlar TEXT,
+            odeme_kosullari TEXT, teslimat_kosullari TEXT,
+            dahil_isler TEXT, haric_isler TEXT,
+            olusturan TEXT, olusturma_tarihi TIMESTAMPTZ DEFAULT now(),
+            guncelleme TIMESTAMPTZ DEFAULT now()
+        )`).catch(e => console.error('⚠️ sat_teklifler:', e.message));
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_teklif_kalemleri (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            teklif_id INTEGER NOT NULL REFERENCES sat_teklifler(id) ON DELETE CASCADE,
+            ad TEXT NOT NULL, aciklama TEXT,
+            miktar NUMERIC DEFAULT 1, birim TEXT,
+            ikincil_miktar NUMERIC, ikincil_birim TEXT,
+            opsiyonel BOOLEAN DEFAULT false,
+            sira INTEGER DEFAULT 0,
+            birim_fiyat NUMERIC DEFAULT 0,
+            toplam NUMERIC DEFAULT 0
+        )`).catch(e => console.error('⚠️ sat_teklif_kalemleri:', e.message));
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_metinler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            kategori TEXT NOT NULL,
+            baslik TEXT,
+            metin TEXT NOT NULL,
+            sira INTEGER DEFAULT 0,
+            aktif BOOLEAN DEFAULT true
+        )`).catch(e => console.error('⚠️ sat_metinler:', e.message));
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_sat_teklif_musteri ON sat_teklifler(musteri_id)`).catch(() => {});
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_sat_teklif_kalem ON sat_teklif_kalemleri(teklif_id)`).catch(() => {});
+        await pool.query(`
+            INSERT INTO rol_izinleri (rol_id, modul_kod, seviye)
+            SELECT id, 'satis.teklif', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
+            ON CONFLICT (rol_id, modul_kod) DO NOTHING
+        `).catch(e => console.error('⚠️ satis.teklif izin:', e.message));
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için
