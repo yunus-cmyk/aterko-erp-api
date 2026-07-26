@@ -6389,11 +6389,37 @@ app.post('/api/satis-analiz-hesapla', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// Arşivden: bir teklif kaleminin kayıtlı analizi (parametre değerleri + malzeme dökümü)
+app.get('/api/satis-analiz-kalem/:kalemId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const kalemId = parseInt(req.params.kalemId);
+        const degerler = await pool.query(`
+            SELECT d.deger, pr.ad AS parametre_adi, pr.kod
+            FROM sat_analiz_degerler d
+            LEFT JOIN sat_parametreler pr ON pr.id = d.parametre_id
+            WHERE d.kalem_id = $1
+            ORDER BY pr.sira, pr.ad`, [kalemId]);
+        const urunler = await pool.query(`
+            SELECT a.miktar, a.notu, u.ad AS urun_adi, u.birim, u.kar_orani,
+                   f.fiyat AS guncel_alis, f.para_birimi
+            FROM sat_analiz_urunler a
+            LEFT JOIN sat_urunler u ON u.id = a.urun_id
+            LEFT JOIN LATERAL (SELECT fiyat, para_birimi FROM sat_urun_fiyatlar ff
+                WHERE ff.urun_id = u.id AND ff.tip='ALIS' AND (ff.bitis IS NULL OR ff.bitis >= CURRENT_DATE)
+                ORDER BY ff.baslangic DESC NULLS LAST LIMIT 1) f ON true
+            WHERE a.kalem_id = $1
+            ORDER BY a.sira, a.id`, [kalemId]);
+        res.json({ ok: true, degerler: degerler.rows, urunler: urunler.rows });
+    } catch (e) { next(e); }
+});
+
 app.get('/api/satis-analiz-parametreler/:kategoriEskiId', yetkiKontrol, async (req, res, next) => {
     try {
-        const r = await pool.query(`
-            SELECT * FROM sat_parametreler
-            WHERE kategori_id=$1 AND formda_goster=true ORDER BY sira, ad`, [parseInt(req.params.kategoriEskiId)]);
+        const kid = parseInt(req.params.kategoriEskiId);
+        // 0 = formüllerde kullanılabilen TÜM kodlu parametreler (genel ölçüler dahil)
+        const r = kid === 0
+            ? await pool.query(`SELECT * FROM sat_parametreler WHERE kod IS NOT NULL AND kod <> '' ORDER BY sira, ad`)
+            : await pool.query(`SELECT * FROM sat_parametreler WHERE kategori_id=$1 AND formda_goster=true ORDER BY sira, ad`, [kid]);
         res.json({ ok: true, parametreler: r.rows });
     } catch (e) { next(e); }
 });
@@ -9422,6 +9448,31 @@ async function semaGuvence() {
             SELECT id, 'satis.urun', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
             ON CONFLICT (rol_id, modul_kod) DO NOTHING
         `).catch(e => console.error('⚠️ satis.urun izin:', e.message));
+
+        // FİYAT ANALİZİ ARŞİVİ (C3b): eski sistemdeki hazır analizler — her teklif
+        // kaleminin parametre değerleri ve malzeme dökümü (Yunus onayı: taşınacak).
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_analiz_degerler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            kaynak TEXT NOT NULL DEFAULT 'TEKLIF_KALEMI',
+            kalem_id INTEGER,
+            eski_entity_id INTEGER,
+            parametre_id INTEGER,
+            deger TEXT
+        )`).catch(e => console.error('⚠️ sat_analiz_degerler:', e.message));
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_analiz_urunler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            kaynak TEXT NOT NULL DEFAULT 'TEKLIF_KALEMI',
+            kalem_id INTEGER,
+            eski_entity_id INTEGER,
+            urun_id INTEGER,
+            miktar NUMERIC,
+            sira INTEGER DEFAULT 0,
+            notu TEXT
+        )`).catch(e => console.error('⚠️ sat_analiz_urunler:', e.message));
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_analiz_deger_kalem ON sat_analiz_degerler(kalem_id)`).catch(() => {});
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_analiz_urun_kalem ON sat_analiz_urunler(kalem_id)`).catch(() => {});
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için

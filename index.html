@@ -519,6 +519,22 @@
       </div>
     </div>
 
+    <!-- Satış — fiyat analizi: arşiv görüntüleme + yeni hesaplama aracı -->
+    <div class="modal fade" id="modalSatisAnaliz" tabindex="-1">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-calculator me-2"></i><span id="sanBaslik">Fiyat Analizi</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3" id="sanGovde"></div>
+          <div class="modal-footer py-2" id="sanAltButonlar">
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Satış — müşteri detay (salt izleme; işlemler Düzenle'de) -->
     <div class="modal fade" id="modalSatisMusteriDetay" tabindex="-1">
       <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
@@ -691,7 +707,7 @@
                     <th width="130">Birim Fiyat</th>
                     <th width="120" class="text-end">Tutar</th>
                     <th width="60" class="text-center" title="Opsiyonel kalemler toplama dahil edilmez">Ops.</th>
-                    <th width="40"></th>
+                    <th width="70"></th>
                   </tr>
                 </thead>
                 <tbody id="stfKalemler"></tbody>
@@ -4998,6 +5014,168 @@ async function satisUrunDetayAc(id) {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisUrunDetay')).show();
 }
 
+// ==================== SATIŞ — FİYAT ANALİZİ (Faz C3b) ====================
+// 1) Arşiv görüntüleme: eski sistemden taşınan analizler (teklif detayındaki kalemden)
+async function satisAnalizArsivAc(kalemId, kalemAd) {
+    const r = await secureFetch('/satis-analiz-kalem/' + kalemId).catch(() => null);
+    if (!r || !r.ok) { showToast(r?.hata || 'Analiz yüklenemedi.', 'error'); return; }
+    document.getElementById('sanBaslik').innerText = 'Fiyat Analizi — ' + kalemAd;
+    document.getElementById('sanAltButonlar').innerHTML =
+        '<button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>';
+    if (!r.degerler.length && !r.urunler.length) {
+        document.getElementById('sanGovde').innerHTML =
+            '<div class="text-center text-muted py-4">Bu kalem için kayıtlı analiz bulunmuyor.</div>';
+    } else {
+        let maliyet = 0; let pb = 'TL';
+        const urunSatirlari = r.urunler.map(u => {
+            const tutar = (u.miktar != null && u.guncel_alis != null) ? parseFloat(u.miktar) * parseFloat(u.guncel_alis) : null;
+            if (tutar != null) { maliyet += tutar; pb = u.para_birimi || pb; }
+            return `<tr>
+                <td>${esc(u.urun_adi || '-')}${u.notu ? `<br><small class="text-muted">${esc(u.notu)}</small>` : ''}</td>
+                <td class="text-end">${u.miktar != null ? formatTR(parseFloat(u.miktar)) : '-'} ${esc(u.birim || '')}</td>
+                <td class="text-end">${u.guncel_alis != null ? formatTR(parseFloat(u.guncel_alis)) + ' ' + esc(u.para_birimi || 'TL') : '<span class="text-muted">fiyat yok</span>'}</td>
+                <td class="text-end fw-semibold">${tutar != null ? formatTR(tutar) + ' ' + esc(u.para_birimi || 'TL') : '-'}</td>
+            </tr>`;
+        }).join('');
+        document.getElementById('sanGovde').innerHTML = `
+            ${r.degerler.length ? `
+            <div class="fw-bold small mb-1"><i class="bi bi-sliders me-1"></i>Girilen Ölçü ve Seçimler</div>
+            <div class="row small mb-3">${r.degerler.filter(d => d.deger != null && d.deger !== '').map(d =>
+                `<div class="col-md-4 mb-1"><span class="text-muted">${esc(d.parametre_adi || d.kod || '?')}:</span> <b>${esc(d.deger)}</b></div>`).join('')}
+            </div>` : ''}
+            ${r.urunler.length ? `
+            <div class="fw-bold small mb-1"><i class="bi bi-list-check me-1"></i>Malzeme Dökümü (${r.urunler.length} kalem — güncel alış fiyatlarıyla)</div>
+            <div class="table-responsive"><table class="table table-sm table-hover mb-2" style="font-size:0.8rem;">
+                <thead class="table-light"><tr><th>Malzeme</th><th class="text-end">Miktar</th><th class="text-end">Güncel Alış</th><th class="text-end">Tutar</th></tr></thead>
+                <tbody>${urunSatirlari}</tbody>
+            </table></div>
+            <div class="text-end fw-bold">Güncel fiyatlarla toplam maliyet: <span class="text-primary">${formatTR(maliyet)} ${pb}</span></div>
+            <div class="text-end text-muted small">Not: tutarlar bugünkü alış fiyatlarıyla hesaplanır; teklifin tarihi eskiyse o günkü maliyetten farklı olabilir.</div>` : ''}`;
+    }
+    maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
+}
+
+// 2) Hesaplama aracı: teklif formundaki kalem için parametrelerle yeni analiz
+let sanAracKalemTr = null;
+let sanAracSonuc = null;
+
+async function satisAnalizAraciAc(btn) {
+    sanAracKalemTr = btn.closest('tr');
+    sanAracSonuc = null;
+    if (!satisUrunKategorileri) {
+        const r = await secureFetch('/satis-urun-kategoriler').catch(() => null);
+        satisUrunKategorileri = (r && r.ok) ? (r.kategoriler || []) : [];
+    }
+    const adMap = {};
+    satisUrunKategorileri.forEach(k => adMap[k.eski_id] = k.ad);
+    const secenekler = satisUrunKategorileri.filter(k => k.urun_sayisi > 0)
+        .map(k => ({ id: k.eski_id, ad: k.ust_id && adMap[k.ust_id] ? `${adMap[k.ust_id]} › ${k.ad}` : k.ad }))
+        .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'));
+    document.getElementById('sanBaslik').innerText = 'Fiyat Analizi Hesapla — ' +
+        (sanAracKalemTr.querySelector('.stf-k-ad').value || 'Yeni Kalem');
+    document.getElementById('sanGovde').innerHTML = `
+        <div class="row g-2 align-items-end mb-2">
+            <div class="col-md-6">
+                <label class="form-label">Ürün Kategorisi</label>
+                <select id="sanKategori" class="form-select form-select-sm" onchange="sanParametreleriYukle()">
+                    <option value="">Seçiniz...</option>
+                    ${secenekler.map(k => `<option value="${k.id}">${esc(k.ad)}</option>`).join('')}
+                </select>
+            </div>
+            <div class="col-md-6 text-end">
+                <button class="btn btn-primary btn-sm fw-bold" onclick="satisAnalizHesapla()"><i class="bi bi-calculator me-1"></i>Hesapla</button>
+            </div>
+        </div>
+        <div id="sanParametreAlani" class="row g-2 mb-2"></div>
+        <div id="sanSonucAlani"></div>`;
+    document.getElementById('sanAltButonlar').innerHTML =
+        '<button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>';
+    maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
+}
+
+async function sanParametreleriYukle() {
+    const kategori = document.getElementById('sanKategori').value;
+    if (!kategori) return;
+    const [kat, genel] = await Promise.all([
+        secureFetch('/satis-analiz-parametreler/' + kategori).catch(() => null),
+        secureFetch('/satis-analiz-parametreler/0').catch(() => null)
+    ]);
+    const gorulen = new Set();
+    const liste = [];
+    // Önce genel ölçüler (GE_ kodlular), sonra kategoriye özel kodlular
+    ((genel && genel.parametreler) || []).filter(p => (p.kod || '').startsWith('GE_')).forEach(p => {
+        if (!gorulen.has(p.kod)) { gorulen.add(p.kod); liste.push(p); }
+    });
+    ((kat && kat.parametreler) || []).filter(p => p.kod).forEach(p => {
+        if (!gorulen.has(p.kod)) { gorulen.add(p.kod); liste.push(p); }
+    });
+    document.getElementById('sanParametreAlani').innerHTML = liste.length
+        ? liste.map(p => `
+            <div class="col-md-3">
+                <label class="form-label" title="${esc(p.kod)}">${esc(p.ad)}</label>
+                <input type="number" step="0.01" class="form-control form-control-sm san-parametre" data-kod="${esc(p.kod)}" placeholder="0">
+            </div>`).join('')
+        : '<div class="col-12 text-muted small">Bu kategorinin sayısal parametresi yok — doğrudan Hesapla\'ya basabilirsiniz.</div>';
+}
+
+async function satisAnalizHesapla() {
+    const kategori = document.getElementById('sanKategori').value;
+    if (!kategori) { showToast('Önce kategori seçilmelidir.', 'error'); return; }
+    const parametreler = {};
+    document.querySelectorAll('.san-parametre').forEach(i => {
+        if (i.value !== '') parametreler[i.dataset.kod] = parseFloat(i.value);
+    });
+    showLoading();
+    const r = await secureFetch('/satis-analiz-hesapla', { method: 'POST',
+        body: JSON.stringify({ kategori_id: parseInt(kategori), parametreler }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Hesaplama yapılamadı.', 'error'); return; }
+    const hesaplanan = r.kalemler.filter(k => k.miktar != null && k.miktar > 0);
+    let maliyet = 0, satisOneri = 0, pb = 'TL', fiyatsiz = 0;
+    hesaplanan.forEach(k => {
+        if (k.tutar != null) {
+            maliyet += k.tutar;
+            satisOneri += k.tutar * (1 + (parseFloat(k.kar_orani) || 0) / 100);
+            pb = k.para_birimi || pb;
+        } else fiyatsiz++;
+    });
+    sanAracSonuc = { maliyet, satisOneri, pb };
+    document.getElementById('sanSonucAlani').innerHTML = hesaplanan.length ? `
+        <div class="table-responsive"><table class="table table-sm table-hover mb-2" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>Malzeme</th><th class="text-end">Miktar</th><th class="text-end">Alış Fiyatı</th><th class="text-end">Tutar</th><th class="text-center">Kâr %</th></tr></thead>
+            <tbody>${hesaplanan.map(k => `
+                <tr>
+                    <td>${esc(k.ad)}</td>
+                    <td class="text-end">${formatTR(k.miktar)} ${esc(k.birim || '')}</td>
+                    <td class="text-end">${k.alis_fiyat != null ? formatTR(parseFloat(k.alis_fiyat)) + ' ' + esc(k.para_birimi || 'TL') : '<span class="text-muted">fiyat yok</span>'}</td>
+                    <td class="text-end fw-semibold">${k.tutar != null ? formatTR(k.tutar) : '-'}</td>
+                    <td class="text-center">${k.kar_orani != null ? '%' + formatTR(parseFloat(k.kar_orani)) : '-'}</td>
+                </tr>`).join('')}</tbody>
+        </table></div>
+        <div class="d-flex justify-content-end">
+            <table style="min-width:280px;font-size:0.9rem;"><tbody>
+                <tr><td class="text-muted">Toplam Maliyet</td><td class="text-end fw-semibold">${formatTR(maliyet)} ${pb}</td></tr>
+                <tr class="border-top"><td class="fw-bold">Kârlı Satış Önerisi</td><td class="text-end fw-bold text-primary">${formatTR(satisOneri)} ${pb}</td></tr>
+            </tbody></table>
+        </div>
+        ${fiyatsiz > 0 ? `<div class="text-end small text-danger mt-1"><i class="bi bi-exclamation-triangle me-1"></i>${fiyatsiz} malzemenin fiyat kaydı yok — toplam maliyet EKSİK. Fiyatları Ürünler sekmesinden girebilirsiniz.</div>` : ''}` :
+        '<div class="text-center text-muted py-3">Girilen ölçülerle hesaplanabilen malzeme çıkmadı — parametre değerlerini kontrol edin.</div>';
+    // Öneri 0 ya da fiyatlar eksikse birim fiyata yazma kapalı (yanlış fiyat teklife girmesin)
+    const uygulanabilir = hesaplanan.length && satisOneri > 0 && fiyatsiz === 0;
+    document.getElementById('sanAltButonlar').innerHTML = `
+        <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
+        ${uygulanabilir ? `<button class="btn btn-primary btn-sm px-3 fw-bold" onclick="satisAnalizFiyataUygula()">
+            <i class="bi bi-check-lg me-1"></i>Satış Önerisini Birim Fiyata Yaz</button>` : ''}`;
+}
+
+function satisAnalizFiyataUygula() {
+    if (!sanAracKalemTr || !sanAracSonuc) return;
+    sanAracKalemTr.querySelector('.stf-k-fiyat').value = sanAracSonuc.satisOneri.toFixed(2);
+    stfToplamGuncelle();
+    bootstrap.Modal.getInstance(document.getElementById('modalSatisAnaliz'))?.hide();
+    showToast('Analiz sonucu kalemin birim fiyatına yazıldı.', 'success');
+}
+
 async function satisUrunFiyatKaydet() {
     const fiyat = document.getElementById('sufFiyat').value;
     if (!fiyat || parseFloat(fiyat) < 0) { alanHatasi('sufFiyat'); showToast('Geçerli bir fiyat girilmelidir.', 'error'); return; }
@@ -5296,7 +5474,7 @@ async function satisTeklifDetayAc(id) {
         <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:0.82rem;">
             <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th></tr></thead>
             <tbody>${r.kalemler.map((k, i) => `
-                <tr class="${k.opsiyonel ? 'text-muted fst-italic' : ''}">
+                <tr class="${k.opsiyonel ? 'text-muted fst-italic' : ''}" style="cursor:pointer;" title="Kayıtlı fiyat analizini görüntüle" onclick="satisAnalizArsivAc(${k.id}, '${escJsAttr(k.ad)}')">
                     <td>${i + 1}</td>
                     <td><b>${esc(k.ad)}</b>${k.opsiyonel ? ' <small>(Opsiyonel)</small>' : ''}${k.aciklama ? `<br><small class="text-muted">${esc(k.aciklama)}</small>` : ''}</td>
                     <td class="text-end">${formatTR(parseFloat(k.miktar) || 0)} ${esc(k.birim || '')}</td>
@@ -5383,7 +5561,10 @@ function stfKalemEkle(k) {
         <td><input type="number" class="form-control form-control-sm text-end stf-k-fiyat" value="${k.birim_fiyat != null ? k.birim_fiyat : ''}" step="0.01" oninput="stfToplamGuncelle()"></td>
         <td class="text-end fw-semibold stf-k-toplam">0,00</td>
         <td class="text-center"><input type="checkbox" class="form-check-input stf-k-ops" ${k.opsiyonel ? 'checked' : ''} onchange="stfToplamGuncelle()"></td>
-        <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0" title="Kaldır" onclick="this.closest('tr').remove(); stfToplamGuncelle();"><i class="bi bi-x"></i></button></td>`;
+        <td class="text-center text-nowrap">
+            <button type="button" class="btn btn-outline-secondary btn-sm py-0" title="Fiyat analizi hesapla" onclick="satisAnalizAraciAc(this)"><i class="bi bi-calculator"></i></button>
+            <button type="button" class="btn btn-outline-danger btn-sm py-0" title="Kaldır" onclick="this.closest('tr').remove(); stfToplamGuncelle();"><i class="bi bi-x"></i></button>
+        </td>`;
     document.getElementById('stfKalemler').appendChild(tr);
     stfToplamGuncelle();
 }
