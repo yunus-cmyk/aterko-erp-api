@@ -5770,7 +5770,8 @@ app.get('/api/proje-karlilik/:projeId', yetkiKontrol, async (req, res, next) => 
 app.get('/api/satis-musteriler', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query(`
-            SELECT m.id, m.ad, m.tip, m.durum, m.sehir, m.ulke, m.temsilci_email, m.kayit_tarihi,
+            SELECT m.id, m.ad, m.tip, m.durum, m.satis_durumu, m.satis_noktasi,
+                   m.sehir, m.ulke, m.temsilci_email, m.kayit_tarihi,
                    COALESCE(p.c, 0) AS proje_sayisi,
                    COALESCE(k.c, 0) AS kisi_sayisi,
                    (mc.id IS NOT NULL) AS mali_bagli
@@ -5987,6 +5988,8 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                 [teklifId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar,
                  k.ikincil_birim, k.opsiyonel, k.sira, k.birim_fiyat, k.miktar * k.birim_fiyat]);
         }
+        // Müşteri satış durumu otomatiği (eski ProposalExtServiceImpl.save birebir)
+        await musteriDurumGuncelle(client, musteri_id);
         await client.query('COMMIT');
         await auditLogla(req, { eylem: id ? 'UPDATE' : 'CREATE', tablo: 'sat_teklifler', kayit_id: teklifId,
             ozet: `Teklif ${id ? 'güncellendi' : 'oluşturuldu'} (${temiz.length} kalem, ${formatParaLog(genel)} ${para_birimi || 'TL'})`, yeni_veri: req.body });
@@ -6640,7 +6643,10 @@ app.get('/api/satis-analiz-form/:kalemId', yetkiKontrol, async (req, res, next) 
             SELECT d.id, d.bolum_eski_id, d.deger, p.eski_id AS parametre_eski_id
             FROM sat_analiz_degerler d LEFT JOIN sat_parametreler p ON p.id=d.parametre_id
             WHERE d.kalem_id=$1`, [kalemId])).rows;
-        res.json({ ok: true, kalem, bolumler, parametreler, secenekler, degerler });
+        // Gizleme kuralları (eski MANAGE_ATTRIBUTE_RULES)
+        const kurallar = (await pool.query(
+            'SELECT * FROM sat_form_kurallari WHERE aktif ORDER BY sira, id')).rows;
+        res.json({ ok: true, kalem, bolumler, parametreler, secenekler, degerler, kurallar });
     } catch (e) { next(e); }
 });
 
@@ -6914,6 +6920,29 @@ const PRJ = {
     REDDEDILEN: 'REDDEDILEN'
 };
 
+// AutoUpdateCustomerStatusService birebir: müşterinin satış durumu, ilişkili
+// sözleşme/teklif/proje varlığına göre otomatik belirlenir.
+//   sözleşme varsa → Satış Gerçekleşmiş | teklif varsa → Teklif Sürecinde
+//   proje varsa    → Görüşme Yapılmış   | hiçbiri yoksa → Potansiyel
+async function musteriDurumGuncelle(client, musteriId) {
+    if (!musteriId) return;
+    const say = async (sql) => (await client.query(sql, [musteriId])).rows[0].c;
+    const sozlesme = await say(`SELECT COUNT(*)::int c FROM sat_sozlesmeler s
+        JOIN projeler p ON p.id = s.proje_id WHERE p.sat_musteri_id = $1`);
+    let yeni;
+    if (sozlesme > 0) yeni = 'Satış Gerçekleşmiş';
+    else {
+        const teklif = await say('SELECT COUNT(*)::int c FROM sat_teklifler WHERE musteri_id = $1');
+        if (teklif > 0) yeni = 'Teklif Sürecinde';
+        else {
+            const proje = await say('SELECT COUNT(*)::int c FROM projeler WHERE sat_musteri_id = $1');
+            yeni = proje > 0 ? 'Görüşme Yapılmış' : 'Potansiyel';
+        }
+    }
+    await client.query(`UPDATE sat_musteriler SET satis_durumu=$1, durum_tarihi=CURRENT_DATE
+        WHERE id=$2 AND COALESCE(satis_durumu,'') <> $1`, [yeni, musteriId]);
+}
+
 // ProjectStateServiceImpl.updateProjectStatus birebir (yalnız SATIS fazındaki projeler)
 async function projeDurumGuncelle(client, projeId, yeniDurum, req, aciklama) {
     const r = await client.query(
@@ -7158,6 +7187,9 @@ app.post('/api/satis-sozlesme-olustur', yetkiKontrol, izinGerekli('satis.teklif'
              tutarTL, kdvTL, tutarTL + kdvTL, teklif.odeme_kosullari, teklif.teslimat_kosullari,
              teklif.dahil_isler, teklif.haric_isler, teklif.notlar, req.user.email]);
         await projeDurumGuncelle(client, projeId, PRJ.SOZLESME_TASLAK, req, 'Sözleşme oluşturuldu');
+        // Müşteri satış durumu otomatiği (eski ContractServiceImpl.save birebir)
+        const mR = await client.query('SELECT sat_musteri_id FROM projeler WHERE id=$1', [projeId]);
+        await musteriDurumGuncelle(client, mR.rows[0]?.sat_musteri_id);
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_sozlesmeler', kayit_id: ins.rows[0].id,
             ozet: `Tekliften sözleşme oluşturuldu: ${kod} (teklif ${teklif.teklif_no}, ${formatParaLog(tutar)} ${teklif.para_birimi || 'TL'})` });
@@ -10336,6 +10368,28 @@ async function semaGuvence() {
         await pool.query(`CREATE TABLE IF NOT EXISTS sat_kod_sirasi (
             proje_id INTEGER NOT NULL, varlik TEXT NOT NULL, deger INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (proje_id, varlik))`).catch(() => {});
+
+        // Müşteri satış durumu (customer_status) — AKTIF/PASIF'ten AYRI bir alan:
+        // Potansiyel / Görüşme Yapılmış / Teklif Sürecinde / Satış Gerçekleşmiş
+        await pool.query(`ALTER TABLE sat_musteriler
+            ADD COLUMN IF NOT EXISTS satis_durumu TEXT,
+            ADD COLUMN IF NOT EXISTS durum_tarihi DATE,
+            ADD COLUMN IF NOT EXISTS satis_noktasi TEXT`).catch(() => {});
+
+        // FORM KURALLARI (configg / MANAGE_ATTRIBUTE_RULES birebir): öznitelik
+        // ekranında seçime göre bölüm / alan / seçenek gizleme kuralları.
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_form_kurallari (
+            id SERIAL PRIMARY KEY,
+            sira INTEGER DEFAULT 0,
+            kaynak_ad TEXT NOT NULL,
+            kaynak_deger TEXT NOT NULL,
+            kapsam TEXT,
+            hedef_tip TEXT NOT NULL,
+            hedef_adlar JSONB,
+            hedefler JSONB,
+            eylem TEXT NOT NULL DEFAULT 'if-matches-hide',
+            aktif BOOLEAN DEFAULT true
+        )`).catch(e => console.error('⚠️ sat_form_kurallari:', e.message));
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için

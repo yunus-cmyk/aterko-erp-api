@@ -4704,7 +4704,7 @@ function satisMusteriListeSuz() {
     tbody.innerHTML = liste.map(m => `
         <tr style="cursor:pointer;" onclick="satisMusteriDetayAc(${m.id})">
             <td><span class="fw-bold text-dark">${esc(m.ad)}</span></td>
-            <td class="text-muted">${esc(m.tip || '-')}</td>
+            <td class="text-muted">${esc(m.tip || '-')}${m.satis_durumu ? `<span class="badge bg-light text-dark border ms-1">${esc(m.satis_durumu)}</span>` : ''}</td>
             <td>${esc(m.sehir || '-')}</td>
             <td class="small">${esc((m.temsilci_email || '-').split('@')[0])}</td>
             <td class="text-center">${m.proje_sayisi > 0 ? `<span class="badge bg-mod-satis">${m.proje_sayisi}</span>` : '<span class="text-muted">-</span>'}</td>
@@ -4728,6 +4728,7 @@ async function satisMusteriDetayAc(id) {
         <div class="row">
             ${bilgi('Resmi Ünvan', m.uzun_ad && m.uzun_ad !== m.ad ? m.uzun_ad : '')}
             ${bilgi('Tip', m.tip)}${bilgi('Durum', m.durum === 'PASIF' ? 'Pasif' : 'Aktif')}
+            ${bilgi('Satış Durumu', m.satis_durumu)}${bilgi('Satış Noktası', m.satis_noktasi)}
             ${bilgi('E-posta', m.email)}${bilgi('Telefon', m.telefon)}
             ${bilgi('Ülke', m.ulke)}${bilgi('Şehir', m.sehir)}
             ${bilgi('Sektör', m.sektor)}${bilgi('Bizi Nereden Duydu', m.nasil_duydu)}
@@ -5644,21 +5645,25 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
     r.secenekler.forEach(s => (secMap[s.parametre_eski_id] = secMap[s.parametre_eski_id] || []).push(s));
     const paramMap = {};
     r.parametreler.forEach(p => (paramMap[p.kategori_id] = paramMap[p.kategori_id] || []).push(p));
+    // Kural motoru için aramalar (seçenek metni, parametre adı)
+    window.sanKurallar = r.kurallar || [];
+    window.sanSecenekMetin = {};
+    r.secenekler.forEach(s => window.sanSecenekMetin[String(s.eski_id)] = s.deger);
     const alan = (b, p) => {
         const anahtar = `${b.eski_id}_${p.eski_id}`;
         const deger = dMap[anahtar] || '';
-        const ortak = `class="form-control form-control-sm san-alan" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}"`;
+        const ortak = `class="form-control form-control-sm san-alan" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}" onchange="satisFormKurallariUygula()"`;
         if (p.alan_tipi === 2) return `<input type="number" step="0.01" ${ortak} value="${esc(deger)}">`;
         const secenekler = secMap[p.eski_id] || [];
         if (p.alan_tipi === 3) {
             const secili = String(deger).split(',').filter(Boolean);
-            return `<div class="border rounded p-1 san-cokseçim" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" style="max-height:110px;overflow-y:auto;">
-                ${secenekler.map(s => `<div class="form-check form-check-sm"><input class="form-check-input san-cok" type="checkbox" value="${s.eski_id}" ${secili.includes(String(s.eski_id)) ? 'checked' : ''}>
+            return `<div class="border rounded p-1 san-cokseçim" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}" style="max-height:110px;overflow-y:auto;">
+                ${secenekler.map(s => `<div class="form-check form-check-sm san-secenek-kutu" data-secenek-deger="${esc(s.deger)}"><input class="form-check-input san-cok" type="checkbox" value="${s.eski_id}" ${secili.includes(String(s.eski_id)) ? 'checked' : ''} onchange="satisFormKurallariUygula()">
                 <label class="form-check-label small">${esc(s.deger)}</label></div>`).join('') || '<span class="text-muted small">seçenek yok</span>'}</div>`;
         }
         return `<select ${ortak.replace('form-control', 'form-select')}>
             <option value="">Seçiniz...</option>
-            ${secenekler.map(s => `<option value="${s.eski_id}" ${String(deger) === String(s.eski_id) ? 'selected' : ''}>${esc(s.deger)}</option>`).join('')}
+            ${secenekler.map(s => `<option value="${s.eski_id}" data-secenek-deger="${esc(s.deger)}" ${String(deger) === String(s.eski_id) ? 'selected' : ''}>${esc(s.deger)}</option>`).join('')}
         </select>`;
     };
     // Bölümler HİYERARŞİK: kök bölümler ve altlarında alt bölümler (eski sistemdeki
@@ -5669,14 +5674,16 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
         !r.bolumler.some(x => x.eski_id === b.ust_bolum_eski_id));
     const alanlariCiz = (b, params) => params.length
         ? `<div class="row g-2">${params.map(p => `
-            <div class="col-md-4"><label class="form-label" title="${esc(p.kod || '')}">${esc(p.ad)}</label>${alan(b, p)}</div>`).join('')}</div>`
+            <div class="col-md-4 san-alan-kutu" data-bolum="${b.eski_id}" data-parametre-ad="${esc(p.ad)}">
+                <label class="form-label" title="${esc(p.kod || '')}">${esc(p.ad)}</label>${alan(b, p)}</div>`).join('')}</div>`
         : '';
     // Alt bölüm gövdesi (iç içe kutu)
     const altBolumCiz = (b) => {
         const params = (paramMap[b.urun_kategori_eski_id] || []);
         const tekrarli = (b.max_adet || 0) > 1;
         return `
-        <div class="border-start ps-2 ms-1 mt-2" style="border-left-width:3px !important; border-color:var(--mod-satis) !important;">
+        <div class="border-start ps-2 ms-1 mt-2 san-alt-bolum" data-bolum="${b.eski_id}" data-kategori-ad="${esc(b.kategori_adi || b.ad)}"
+             style="border-left-width:3px !important; border-color:var(--mod-satis) !important;">
           <div class="d-flex align-items-center mb-1">
             <div class="form-check mb-0 me-2">
               <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} id="sanK${b.id}">
@@ -5710,7 +5717,8 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
             const tekrarli = (b.max_adet || 0) > 1;
             const toplamAlan = params.length + cocuklar.reduce((s, c) => s + (paramMap[c.urun_kategori_eski_id] || []).length, 0);
             return `
-            <div class="accordion-item san-bolum-kutu" data-ara="${esc((b.ad + ' ' + cocuklar.map(c => c.ad).join(' ') + ' ' + params.map(p => p.ad).join(' ')).toLocaleLowerCase('tr'))}" data-kapsam="${b.kapsamda || cocuklar.some(c => c.kapsamda) ? '1' : '0'}">
+            <div class="accordion-item san-bolum-kutu" data-bolum="${b.eski_id}" data-kategori-ad="${esc(b.kategori_adi || b.ad)}"
+                 data-ara="${esc((b.ad + ' ' + cocuklar.map(c => c.ad).join(' ') + ' ' + params.map(p => p.ad).join(' ')).toLocaleLowerCase('tr'))}" data-kapsam="${b.kapsamda || cocuklar.some(c => c.kapsamda) ? '1' : '0'}">
               <h2 class="accordion-header d-flex align-items-center">
                 <div class="form-check ms-2 me-1 mb-0">
                   <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} title="Kapsama dahil">
@@ -5736,7 +5744,97 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
     document.getElementById('sanAltButonlar').innerHTML = `
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
         <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisAnalizFormKaydet()"><i class="bi bi-check-lg me-1"></i>Kaydet</button>`;
+    satisFormKurallariUygula();   // seçimlere göre ilgisiz bölüm/alan/seçenekleri gizle
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
+}
+
+// ---- FORM KURAL MOTORU (eski configg / MANAGE_ATTRIBUTE_RULES birebir) ----
+// Kural: kaynak alanın seçili DEĞERİ kaynak_deger ile eşleşiyorsa hedefleri GİZLE.
+//   hedef_tip=productCategory → o kategorinin form bölümlerini gizler
+//   hedef_tip=attributeType   → o adı taşıyan alanları gizler
+//   hedef_tip=attributeChoice → belirtilen alanın belirtilen seçeneklerini gizler
+// kapsam=attributeCategory ise kural YALNIZ kaynağın bulunduğu bölüm içinde işler.
+function satisAlanDegerMetni(el) {
+    if (!el) return null;
+    if (el.classList.contains('san-cokseçim')) {
+        return [...el.querySelectorAll('.san-cok:checked')]
+            .map(c => window.sanSecenekMetin[String(c.value)]).filter(Boolean);
+    }
+    const v = el.value;
+    if (v === '' || v == null) return null;
+    const metin = window.sanSecenekMetin[String(v)];
+    return metin != null ? [metin] : [String(v)];
+}
+
+function satisFormKurallariUygula() {
+    const kurallar = window.sanKurallar || [];
+    // 1) Önceki gizlemeleri temizle
+    document.querySelectorAll('.san-alan-kutu.kural-gizli, .san-bolum-kutu.kural-gizli, .san-alt-bolum.kural-gizli')
+        .forEach(e => e.classList.remove('kural-gizli', 'd-none'));
+    document.querySelectorAll('#sanBolumler option[data-secenek-deger]').forEach(o => { o.hidden = false; o.disabled = false; });
+    document.querySelectorAll('#sanBolumler .san-secenek-kutu').forEach(k => k.classList.remove('d-none'));
+    if (!kurallar.length) return;
+
+    // 2) Mevcut değerler: bölüm bazlı ve genel (parametre adı → seçili metinler)
+    const bolumDeger = {}, genelDeger = {};
+    document.querySelectorAll('#sanBolumler .san-alan, #sanBolumler .san-cokseçim').forEach(el => {
+        const ad = el.dataset.parametreAd, bolum = el.dataset.bolum;
+        const metinler = satisAlanDegerMetni(el);
+        if (!ad || !metinler || !metinler.length) return;
+        (bolumDeger[bolum] = bolumDeger[bolum] || {});
+        bolumDeger[bolum][ad] = (bolumDeger[bolum][ad] || []).concat(metinler);
+        genelDeger[ad] = (genelDeger[ad] || []).concat(metinler);
+    });
+
+    const gizle = (el) => { if (el) { el.classList.add('kural-gizli', 'd-none'); } };
+    const hedefleriGizle = (kural, kapsamBolumu) => {
+        const adlar = kural.hedef_adlar || [];
+        if (kural.hedef_tip === 'productCategory') {
+            // Bölümleri gizle (kapsam kuralı burada uygulanmaz — kategori geneli)
+            document.querySelectorAll('#sanBolumler .san-bolum-kutu, #sanBolumler .san-alt-bolum').forEach(b => {
+                if (adlar.includes(b.dataset.kategoriAd)) gizle(b);
+            });
+        } else if (kural.hedef_tip === 'attributeType') {
+            document.querySelectorAll('#sanBolumler .san-alan-kutu').forEach(k => {
+                if (!adlar.includes(k.dataset.parametreAd)) return;
+                if (kapsamBolumu && k.dataset.bolum !== kapsamBolumu) return;
+                gizle(k);
+            });
+        } else if (kural.hedef_tip === 'attributeChoice') {
+            (kural.hedefler || []).forEach(h => {
+                const alanAdi = h.attributeTypeName;
+                const gizlenecek = h.attributeChoiceValues || [];
+                document.querySelectorAll('#sanBolumler .san-alan-kutu').forEach(k => {
+                    if (k.dataset.parametreAd !== alanAdi) return;
+                    if (kapsamBolumu && k.dataset.bolum !== kapsamBolumu) return;
+                    k.querySelectorAll('option[data-secenek-deger]').forEach(o => {
+                        if (gizlenecek.includes(o.dataset.secenekDeger)) { o.hidden = true; o.disabled = true; }
+                    });
+                    k.querySelectorAll('.san-secenek-kutu').forEach(sk => {
+                        if (gizlenecek.includes(sk.dataset.secenekDeger)) sk.classList.add('d-none');
+                    });
+                });
+            });
+        }
+    };
+
+    // 3) Kuralları uygula
+    for (const kural of kurallar) {
+        if (kural.eylem !== 'if-matches-hide') continue;
+        if (kural.kapsam === 'attributeCategory') {
+            // Yalnız kaynağın bulunduğu bölümde
+            Object.keys(bolumDeger).forEach(bolum => {
+                const metinler = bolumDeger[bolum][kural.kaynak_ad];
+                if (metinler && metinler.includes(kural.kaynak_deger)) hedefleriGizle(kural, bolum);
+            });
+        } else {
+            const metinler = genelDeger[kural.kaynak_ad];
+            if (metinler && metinler.includes(kural.kaynak_deger)) hedefleriGizle(kural, null);
+        }
+    }
+    // Gizlenen bölümlerin kapsam kutusu da devre dışı kalsın (dökme girmesin)
+    document.querySelectorAll('#sanBolumler .kural-gizli .san-kapsam').forEach(c => { c.checked = false; });
+    satisAnalizFormSuz();
 }
 
 // Form süzgeci: bölüm/alan adına göre ara + sadece kapsamdakileri göster
@@ -5744,6 +5842,7 @@ function satisAnalizFormSuz() {
     const q = trAra(document.getElementById('sanBolumAra')?.value || '');
     const sadeceKapsam = document.getElementById('sanSadeceKapsam')?.checked;
     document.querySelectorAll('.san-bolum-kutu').forEach(k => {
+        if (k.classList.contains('kural-gizli')) return;   // kural gereği gizli — süzgeç açamaz
         // Kapsam durumu anlık okunur (kutucuklar değişmiş olabilir)
         const kapsamda = [...k.querySelectorAll('.san-kapsam')].some(c => c.checked);
         const uygun = (!q || trAra(k.dataset.ara || '').includes(q)) && (!sadeceKapsam || kapsamda);
