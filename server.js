@@ -5770,7 +5770,8 @@ app.get('/api/proje-karlilik/:projeId', yetkiKontrol, async (req, res, next) => 
 app.get('/api/satis-musteriler', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query(`
-            SELECT m.id, m.ad, m.tip, m.durum, m.satis_durumu, m.satis_noktasi,
+            SELECT m.id, m.ad, m.tip, m.alt_tur, m.durum, m.satis_durumu, m.satis_noktasi,
+                   m.durum_tarihi, (CURRENT_DATE - m.durum_tarihi) AS durum_gun,
                    m.sehir, m.ulke, m.temsilci_email, m.kayit_tarihi,
                    COALESCE(p.c, 0) AS proje_sayisi,
                    COALESCE(k.c, 0) AS kisi_sayisi,
@@ -5788,7 +5789,7 @@ app.get('/api/satis-musteriler', yetkiKontrol, async (req, res, next) => {
 app.get('/api/satis-musteri-detay/:id', yetkiKontrol, async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
-        const m = await pool.query('SELECT * FROM sat_musteriler WHERE id=$1', [id]);
+        const m = await pool.query(`SELECT *, (CURRENT_DATE - durum_tarihi) AS durum_gun FROM sat_musteriler WHERE id=$1`, [id]);
         if (m.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
         const kisiler = await pool.query('SELECT * FROM sat_musteri_kisiler WHERE musteri_id=$1 ORDER BY ad', [id]);
         const projeler = await pool.query(`
@@ -5802,7 +5803,7 @@ app.get('/api/satis-musteri-detay/:id', yetkiKontrol, async (req, res, next) => 
 app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
     try {
         const { id, ad, uzun_ad, email, telefon, adres, fatura_adresi, vergi_dairesi,
-                vergi_no, iban, mali_not, tip, durum, sektor, ulke, sehir, temsilci_email } = req.body;
+                vergi_no, iban, mali_not, tip, alt_tur, durum, sektor, ulke, sehir, temsilci_email } = req.body;
         const adNorm = (ad || '').trim();
         if (!adNorm) return res.json({ ok: false, hata: 'Müşteri adı zorunludur.' });
         const durumNorm = (durum === 'PASIF') ? 'PASIF' : 'AKTIF';
@@ -5821,12 +5822,12 @@ app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
                 UPDATE sat_musteriler SET ad=$1, uzun_ad=$2, email=$3, telefon=$4, adres=$5,
                     fatura_adresi=$6, vergi_dairesi=$7, vergi_no=$8, iban=$9, mali_not=$10,
                     tip=$11, durum=$12, sektor=$13, ulke=$14, sehir=$15, temsilci_email=$16,
-                    guncelleme=now()
+                    alt_tur=$18, guncelleme=now()
                 WHERE id=$17
             `, [adNorm, uzun_ad || null, email || null, telefon || null, adres || null,
                 fatura_adresi || null, vergi_dairesi || null, vergi_no || null, iban || null,
                 mali_not || null, tip || null, durumNorm, sektor || null, ulke || null,
-                sehir || null, temsilci_email || null, id]);
+                sehir || null, temsilci_email || null, id, (alt_tur || '').trim() || null]);
             await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_musteriler', kayit_id: id,
                 ozet: `Müşteri güncellendi: ${adNorm}`, eski_veri: eskiR.rows[0], yeni_veri: req.body });
             return res.json({ ok: true, id });
@@ -5834,13 +5835,13 @@ app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
         const ins = await pool.query(`
             INSERT INTO sat_musteriler (ad, uzun_ad, email, telefon, adres, fatura_adresi,
                 vergi_dairesi, vergi_no, iban, mali_not, tip, durum, sektor, ulke, sehir,
-                temsilci_email, kaynak, olusturan)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'manuel',$17)
+                temsilci_email, alt_tur, kaynak, olusturan)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$18,'manuel',$17)
             RETURNING id
         `, [adNorm, uzun_ad || null, email || null, telefon || null, adres || null,
             fatura_adresi || null, vergi_dairesi || null, vergi_no || null, iban || null,
             mali_not || null, tip || null, durumNorm, sektor || null, ulke || null,
-            sehir || null, temsilci_email || null, req.user.email]);
+            sehir || null, temsilci_email || null, req.user.email, (alt_tur || '').trim() || null]);
         await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_musteriler', kayit_id: ins.rows[0].id,
             ozet: `Yeni müşteri: ${adNorm}`, yeni_veri: req.body });
         res.json({ ok: true, id: ins.rows[0].id });
@@ -7482,6 +7483,138 @@ app.post('/api/satis-sozlesme-aksiyon', yetkiKontrol, izinGerekli('satis.proje',
         await projeDurumGuncelle(client, parseInt(proje_id), a.durum, req, a.ad);
         await client.query('COMMIT');
         res.json({ ok: true, mesaj: a.ad + '.', durum: a.durum });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// ==================== DENETİM 6: kalan eski sistem işlevleri ====================
+
+// (3) YORUM YÖNETİMİ — eski CommentResource/CommentService birebir (ekle/sil)
+const YORUM_TIPLERI = ['Bilgi', 'Güzel haber', 'Uyarı', 'Görüşme Notu'];
+app.get('/api/satis-yorumlar', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { kaynak, id } = req.query;
+        const alan = { TEKLIF_KALEMI: 'kalem_id', PROJE: 'proje_id', MUSTERI: 'musteri_id', TEKLIF: 'teklif_id' }[kaynak];
+        if (!alan) return res.json({ ok: false, hata: 'Geçersiz kaynak.' });
+        const r = await pool.query(
+            `SELECT * FROM sat_yorumlar WHERE ${alan}=$1 ORDER BY sabit DESC, tarih DESC NULLS LAST, id DESC`, [parseInt(id)]);
+        res.json({ ok: true, yorumlar: r.rows, tipler: YORUM_TIPLERI });
+    } catch (e) { next(e); }
+});
+app.post('/api/satis-yorum-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, kaynak, hedef_id, yorum, tip, sabit } = req.body;
+        const metin = (yorum || '').trim();
+        if (!metin) return res.json({ ok: false, hata: 'Yorum boş olamaz.' });
+        const tipNorm = YORUM_TIPLERI.includes(tip) ? tip : 'Bilgi';
+        if (id) {
+            await pool.query('UPDATE sat_yorumlar SET yorum=$1, tip=$2, sabit=$3 WHERE id=$4',
+                [metin, tipNorm, !!sabit, parseInt(id)]);
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_yorumlar', kayit_id: parseInt(id), ozet: 'Yorum güncellendi' });
+            return res.json({ ok: true, id: parseInt(id) });
+        }
+        const alan = { TEKLIF_KALEMI: 'kalem_id', PROJE: 'proje_id', MUSTERI: 'musteri_id', TEKLIF: 'teklif_id' }[kaynak];
+        if (!alan || !hedef_id) return res.json({ ok: false, hata: 'Yorumun bağlanacağı kayıt belirtilmedi.' });
+        const ins = await pool.query(
+            `INSERT INTO sat_yorumlar (kaynak, ${alan}, yorum, tip, sabit, yazan) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+            [kaynak, parseInt(hedef_id), metin, tipNorm, !!sabit, req.user.email]);
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_yorumlar', kayit_id: ins.rows[0].id,
+            ozet: `Yorum eklendi (${kaynak}): ${metin.slice(0, 60)}` });
+        res.json({ ok: true, id: ins.rows[0].id });
+    } catch (e) { next(e); }
+});
+app.delete('/api/satis-yorum-sil/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const eski = await pool.query('SELECT * FROM sat_yorumlar WHERE id=$1', [parseInt(req.params.id)]);
+        if (!eski.rowCount) return res.json({ ok: false, hata: 'Yorum bulunamadı.' });
+        await pool.query('DELETE FROM sat_yorumlar WHERE id=$1', [parseInt(req.params.id)]);
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_yorumlar', kayit_id: parseInt(req.params.id),
+            ozet: 'Yorum silindi', eski_veri: eski.rows[0] });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// (2) SÖZLEŞME DÜZENLE / SİL — eski ContractServiceImpl.save + delete birebir
+// (save her kayıtta TL karşılıklarını yeniden hesaplar; delete müşteri durumunu tazeler)
+app.post('/api/satis-sozlesme-guncelle', yetkiKontrol, izinGerekli('satis.teklif', 'TAM'), async (req, res, next) => {
+    try {
+        const { id, tarih, tutar, kdv_orani, para_birimi, kur, odeme_kosullari,
+                teslimat_kosullari, dahil_isler, haric_isler, notlar } = req.body;
+        const eski = await pool.query('SELECT * FROM sat_sozlesmeler WHERE id=$1', [parseInt(id)]);
+        if (!eski.rowCount) return res.json({ ok: false, hata: 'Sözleşme bulunamadı.' });
+        const t = parseFloat(tutar);
+        if (isNaN(t) || t < 0) return res.json({ ok: false, hata: 'Geçerli bir tutar girilmelidir.' });
+        const k = parseFloat(kdv_orani);
+        if (isNaN(k) || k < 0) return res.json({ ok: false, hata: 'KDV oranı boş olamaz.' });
+        const kurD = parseFloat(kur) || 1;
+        const tutarTL = t * kurD, kdvTL = tutarTL * k / 100;
+        await pool.query(`UPDATE sat_sozlesmeler SET tarih=$1, tutar=$2, kdv_orani=$3, para_birimi=$4,
+            kur=$5, tutar_tl=$6, kdv_tl=$7, toplam_tl=$8, odeme_kosullari=$9, teslimat_kosullari=$10,
+            dahil_isler=$11, haric_isler=$12, notlar=$13 WHERE id=$14`,
+            [tarih || eski.rows[0].tarih, t, k, para_birimi || 'TL', kurD, tutarTL, kdvTL, tutarTL + kdvTL,
+             odeme_kosullari || null, teslimat_kosullari || null, dahil_isler || null,
+             haric_isler || null, notlar || null, parseInt(id)]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_sozlesmeler', kayit_id: parseInt(id),
+            ozet: `Sözleşme güncellendi: ${eski.rows[0].kod}`, eski_veri: eski.rows[0], yeni_veri: req.body });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+app.delete('/api/satis-sozlesme-sil/:id', yetkiKontrol, izinGerekli('satis.teklif', 'TAM'), async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        const eski = await client.query('SELECT * FROM sat_sozlesmeler WHERE id=$1', [parseInt(req.params.id)]);
+        if (!eski.rowCount) return res.json({ ok: false, hata: 'Sözleşme bulunamadı.' });
+        const proje = await client.query('SELECT sat_musteri_id FROM projeler WHERE id=$1', [eski.rows[0].proje_id]);
+        await client.query('BEGIN');
+        await client.query('DELETE FROM sat_sozlesmeler WHERE id=$1', [parseInt(req.params.id)]);
+        // Proje sözleşme öncesine döner, müşteri durumu yeniden hesaplanır
+        await projeDurumGuncelle(client, eski.rows[0].proje_id, PRJ.SATIS_TAMAMLANDI, req, 'Sözleşme silindi');
+        await musteriDurumGuncelle(client, proje.rows[0]?.sat_musteri_id);
+        await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_sozlesmeler', kayit_id: parseInt(req.params.id),
+            ozet: `Sözleşme silindi: ${eski.rows[0].kod}`, eski_veri: eski.rows[0] });
+        res.json({ ok: true });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// (5) MÜŞTERİ DURUMUNU ELLE GÜNCELLE — eski customers/update_status
+const MUSTERI_DURUMLARI = ['Potansiyel', 'Görüşme Yapılmış', 'Teklif Sürecinde', 'Satış Gerçekleşmiş'];
+app.post('/api/satis-musteri-durum', yetkiKontrol, izinGerekli('satis.musteri', 'YAZMA'), async (req, res, next) => {
+    try {
+        const { id, satis_durumu } = req.body;
+        if (!MUSTERI_DURUMLARI.includes(satis_durumu)) return res.json({ ok: false, hata: 'Geçersiz müşteri durumu.' });
+        const eski = await pool.query('SELECT ad, satis_durumu FROM sat_musteriler WHERE id=$1', [parseInt(id)]);
+        if (!eski.rowCount) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
+        await pool.query('UPDATE sat_musteriler SET satis_durumu=$1, durum_tarihi=CURRENT_DATE WHERE id=$2',
+            [satis_durumu, parseInt(id)]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_musteriler', kayit_id: parseInt(id),
+            ozet: `Müşteri durumu elle değiştirildi: ${eski.rows[0].satis_durumu || '-'} → ${satis_durumu} (${eski.rows[0].ad})` });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
+// (4) PROJEDEN DOĞRUDAN TEKLİF OLUŞTUR — eski proposals/ext/create-by-projectId
+app.post('/api/satis-proje-teklif-olustur', yetkiKontrol, izinGerekli('satis.teklif', 'YAZMA'), async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        const projeId = parseInt(req.body.proje_id);
+        const p = (await client.query('SELECT proje_kodu, proje_adi, sat_musteri_id FROM projeler WHERE id=$1', [projeId])).rows[0];
+        if (!p) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
+        if (!p.sat_musteri_id) return res.json({ ok: false, hata: 'Projenin müşterisi tanımlı değil; önce müşteriyi bağlayın.' });
+        await client.query('BEGIN');
+        const sira = await satisKodSirasiAl(client, projeId, 'teklif');
+        const kod = `${p.proje_kodu}-TEK-${String(sira).padStart(2, '0')}`;
+        const ins = await client.query(`
+            INSERT INTO sat_teklifler (teklif_no, musteri_id, proje_id, teklif_tarihi, durum,
+                para_birimi, kdv_orani, ara_toplam, kdv_tutar, genel_toplam, olusturan)
+            VALUES ($1,$2,$3,CURRENT_DATE,'TASLAK','TL',20,0,0,0,$4) RETURNING id`,
+            [kod, p.sat_musteri_id, projeId, req.user.email]);
+        await musteriDurumGuncelle(client, p.sat_musteri_id);
+        await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_teklifler', kayit_id: ins.rows[0].id,
+            ozet: `Projeden teklif oluşturuldu: ${kod} (${p.proje_adi || ''})` });
+        res.json({ ok: true, id: ins.rows[0].id, teklif_no: kod });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
 });
@@ -10628,7 +10761,8 @@ async function semaGuvence() {
         await pool.query(`ALTER TABLE sat_musteriler
             ADD COLUMN IF NOT EXISTS satis_durumu TEXT,
             ADD COLUMN IF NOT EXISTS durum_tarihi DATE,
-            ADD COLUMN IF NOT EXISTS satis_noktasi TEXT`).catch(() => {});
+            ADD COLUMN IF NOT EXISTS satis_noktasi TEXT,
+            ADD COLUMN IF NOT EXISTS alt_tur TEXT`).catch(() => {});
 
         // FORM KURALLARI (configg / MANAGE_ATTRIBUTE_RULES birebir): öznitelik
         // ekranında seçime göre bölüm / alan / seçenek gizleme kuralları.

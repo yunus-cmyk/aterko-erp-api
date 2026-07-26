@@ -460,6 +460,8 @@
             <button class="btn btn-success btn-sm px-3 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="TAM" onclick="satisProjeDonustur()">
               <i class="bi bi-arrow-right-circle me-1"></i>Sözleşmeye Dönüştür
             </button>
+            <button class="btn btn-outline-primary btn-sm px-3" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisProjedenTeklifAc(window.spdAktifId)"><i class="bi bi-file-earmark-plus me-1"></i>Teklif Oluştur</button>
+            <button class="btn btn-outline-secondary btn-sm px-3" onclick="satisYorumlarAc('PROJE', window.spdAktifId, document.getElementById('spdBaslik').innerText)"><i class="bi bi-chat-left-text me-1"></i>Yorumlar</button>
             <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
             <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc(window.spdAktifId)">
               <i class="bi bi-pencil-square me-1"></i>Düzenle
@@ -545,6 +547,15 @@
           </div>
           <div class="modal-body p-3" id="smdGovde"></div>
           <div class="modal-footer py-2">
+            <div class="me-auto d-flex gap-2 align-items-center" data-izin-modul="satis.musteri" data-izin-seviye="YAZMA">
+              <label class="form-label mb-0 small">Satış Durumu:</label>
+              <select id="smdDurumSec" class="form-select form-select-sm" style="width:auto;">
+                <option>Potansiyel</option><option>Görüşme Yapılmış</option>
+                <option>Teklif Sürecinde</option><option>Satış Gerçekleşmiş</option>
+              </select>
+              <button class="btn btn-outline-primary btn-sm" onclick="satisMusteriDurumKaydet()">Uygula</button>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm px-3" onclick="satisYorumlarAc('MUSTERI', window.smdAktifId, document.getElementById('smdBaslik').innerText)"><i class="bi bi-chat-left-text me-1"></i>Yorumlar</button>
             <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
             <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.musteri" data-izin-seviye="YAZMA" onclick="satisMusteriFormAc(window.smdAktifId)">
               <i class="bi bi-pencil-square me-1"></i>Düzenle
@@ -579,6 +590,8 @@
                   <option>Bireysel</option>
                   <option>Kamu</option>
                 </select></div>
+              <div class="col-md-4"><label class="form-label">Alt Tür</label>
+                <input type="text" id="smfAltTur" class="form-control form-control-sm" placeholder="örn. Müteahhit, Yatırımcı"></div>
               <div class="col-md-4"><label class="form-label">Ülke</label>
                 <input type="text" id="smfUlke" class="form-control form-control-sm"></div>
               <div class="col-md-4"><label class="form-label">Şehir</label>
@@ -4704,7 +4717,7 @@ function satisMusteriListeSuz() {
     tbody.innerHTML = liste.map(m => `
         <tr style="cursor:pointer;" onclick="satisMusteriDetayAc(${m.id})">
             <td><span class="fw-bold text-dark">${esc(m.ad)}</span></td>
-            <td class="text-muted">${esc(m.tip || '-')}${m.satis_durumu ? `<span class="badge bg-light text-dark border ms-1">${esc(m.satis_durumu)}</span>` : ''}</td>
+            <td class="text-muted">${esc(m.tip || '-')}${m.alt_tur ? ' / ' + esc(m.alt_tur) : ''}${m.satis_durumu ? `<span class="badge bg-light text-dark border ms-1">${esc(m.satis_durumu)}</span>` : ''}</td>
             <td>${esc(m.sehir || '-')}</td>
             <td class="small">${esc((m.temsilci_email || '-').split('@')[0])}</td>
             <td class="text-center">${m.proje_sayisi > 0 ? `<span class="badge bg-mod-satis">${m.proje_sayisi}</span>` : '<span class="text-muted">-</span>'}</td>
@@ -4728,7 +4741,9 @@ async function satisMusteriDetayAc(id) {
         <div class="row">
             ${bilgi('Resmi Ünvan', m.uzun_ad && m.uzun_ad !== m.ad ? m.uzun_ad : '')}
             ${bilgi('Tip', m.tip)}${bilgi('Durum', m.durum === 'PASIF' ? 'Pasif' : 'Aktif')}
-            ${bilgi('Satış Durumu', m.satis_durumu)}${bilgi('Satış Noktası', m.satis_noktasi)}
+            ${bilgi('Alt Tür', m.alt_tur)}
+            ${bilgi('Satış Durumu', (m.satis_durumu || '') + (m.durum_gun != null ? ` (${m.durum_gun} gündür)` : ''))}
+            ${bilgi('Satış Noktası', m.satis_noktasi)}
             ${bilgi('E-posta', m.email)}${bilgi('Telefon', m.telefon)}
             ${bilgi('Ülke', m.ulke)}${bilgi('Şehir', m.sehir)}
             ${bilgi('Sektör', m.sektor)}${bilgi('Bizi Nereden Duydu', m.nasil_duydu)}
@@ -4754,7 +4769,90 @@ async function satisMusteriDetayAc(id) {
         <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-cash-stack me-1 text-mod-mali"></i>Mali İşler Bağlantısı</div>
         <div class="small text-muted">${r.mali_cariler.map(c => `${esc(c.firma_adi)} — cari kart bağlı`).join('<br>')}</div>` : ''}
     `;
+    const dsec = document.getElementById('smdDurumSec');
+    if (dsec) dsec.value = m.satis_durumu || 'Potansiyel';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisMusteriDetay')).show();
+}
+
+// Müşteri satış durumunu elle değiştir (eski customers/update_status)
+async function satisMusteriDurumKaydet() {
+    const durum = document.getElementById('smdDurumSec').value;
+    showLoading();
+    const r = await secureFetch('/satis-musteri-durum', { method: 'POST',
+        body: JSON.stringify({ id: window.smdAktifId, satis_durumu: durum }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Durum güncellenemedi.', 'error'); return; }
+    showToast('Müşteri durumu güncellendi.', 'success');
+    satisMusteriDetayAc(window.smdAktifId);
+    satisSekmeInit();
+}
+
+// --- YORUMLAR (eski Yorumlar sekmesi): listele, ekle, sil ---
+async function satisYorumlarAc(kaynak, hedefId, baslik) {
+    window.syKaynak = kaynak; window.syHedef = hedefId; window.syBaslik = baslik;
+    const r = await secureFetch(`/satis-yorumlar?kaynak=${kaynak}&id=${hedefId}`).catch(() => null);
+    if (!r || !r.ok) { showToast('Yorumlar yüklenemedi.', 'error'); return; }
+    document.getElementById('sanBaslik').innerText = 'Yorumlar — ' + baslik;
+    const yazabilir = izinVarMi('satis.musteri', 'YAZMA') || izinVarMi('satis.teklif', 'YAZMA');
+    const tipRengi = { 'Uyarı': 'border-danger', 'Güzel haber': 'border-success', 'Görüşme Notu': 'border-primary' };
+    document.getElementById('sanGovde').innerHTML = `
+        ${yazabilir ? `
+        <div class="row g-2 mb-3 align-items-end">
+            <div class="col-md-3"><label class="form-label">Tür</label>
+                <select id="syTip" class="form-select form-select-sm">
+                    ${(r.tipler || []).map(t => `<option>${esc(t)}</option>`).join('')}
+                </select></div>
+            <div class="col-md-7"><label class="form-label">Yorum</label>
+                <textarea id="syMetin" class="form-control form-control-sm" rows="2"></textarea></div>
+            <div class="col-md-2 d-grid"><button class="btn btn-primary btn-sm" onclick="satisYorumEkle()">
+                <i class="bi bi-plus-lg me-1"></i>Ekle</button></div>
+        </div>` : ''}
+        ${r.yorumlar.length ? r.yorumlar.map(y => `
+            <div class="border-start border-3 ${tipRengi[y.tip] || 'border-secondary'} ps-2 mb-2 d-flex justify-content-between align-items-start">
+                <div>
+                    <span class="badge bg-light text-dark border">${esc(y.tip || 'Bilgi')}</span>
+                    ${y.sabit ? '<span class="badge bg-warning text-dark">sabit</span>' : ''}
+                    <div style="white-space:pre-wrap;">${esc(y.yorum)}</div>
+                    <small class="text-muted">${esc((y.yazan || '-').split('@')[0])}${y.tarih ? ' · ' + formatTarihTR(y.tarih) : ''}</small>
+                </div>
+                ${yazabilir ? `<button class="btn btn-outline-danger btn-sm py-0" title="Sil" onclick="satisYorumSil(${y.id})"><i class="bi bi-x"></i></button>` : ''}
+            </div>`).join('') : '<div class="text-center text-muted py-4">Henüz yorum eklenmedi.</div>'}`;
+    document.getElementById('sanAltButonlar').innerHTML =
+        '<button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>';
+    maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
+}
+async function satisYorumEkle() {
+    const metin = document.getElementById('syMetin').value.trim();
+    if (!metin) { alanHatasi('syMetin'); return; }
+    showLoading();
+    const r = await secureFetch('/satis-yorum-kaydet', { method: 'POST', body: JSON.stringify({
+        kaynak: window.syKaynak, hedef_id: window.syHedef, yorum: metin,
+        tip: document.getElementById('syTip').value }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Yorum eklenemedi.', 'error'); return; }
+    satisYorumlarAc(window.syKaynak, window.syHedef, window.syBaslik);
+}
+async function satisYorumSil(id) {
+    if (!confirm('Bu yorum kalıcı olarak silinecek. Emin misiniz?')) return;
+    showLoading();
+    const r = await secureFetch('/satis-yorum-sil/' + id, { method: 'DELETE' }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Yorum silinemedi.', 'error'); return; }
+    satisYorumlarAc(window.syKaynak, window.syHedef, window.syBaslik);
+}
+
+// Projeden doğrudan teklif oluştur (eski proposals/ext/create-by-projectId)
+async function satisProjedenTeklifAc(projeId) {
+    if (!confirm('Bu proje için yeni bir TASLAK teklif oluşturulacak. Devam edilsin mi?')) return;
+    showLoading();
+    const r = await secureFetch('/satis-proje-teklif-olustur', { method: 'POST',
+        body: JSON.stringify({ proje_id: projeId }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Teklif oluşturulamadı.', 'error'); return; }
+    showToast(`Teklif oluşturuldu: ${r.teklif_no}`, 'success');
+    bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeDetay'))?.hide();
+    switchSatisSekme('teklifler');
+    setTimeout(() => satisTeklifDetayAc(r.id), 400);
 }
 
 function satisTemsilciSecenekleriDoldur(secili) {
@@ -4807,6 +4905,7 @@ function satisMusteriFormAc(id) {
         document.getElementById('smfEmail').value = m.email || '';
         document.getElementById('smfTelefon').value = m.telefon || '';
         document.getElementById('smfTip').value = m.tip || '';
+        document.getElementById('smfAltTur').value = m.alt_tur || '';
         document.getElementById('smfUlke').value = m.ulke || '';
         document.getElementById('smfSehir').value = m.sehir || '';
         document.getElementById('smfSektor').value = m.sektor || '';
@@ -4836,6 +4935,7 @@ async function satisMusteriKaydet() {
         email: document.getElementById('smfEmail').value.trim(),
         telefon: document.getElementById('smfTelefon').value.trim(),
         tip: document.getElementById('smfTip').value,
+        alt_tur: document.getElementById('smfAltTur').value.trim(),
         ulke: document.getElementById('smfUlke').value.trim(),
         sehir: document.getElementById('smfSehir').value.trim(),
         sektor: document.getElementById('smfSektor').value.trim(),
@@ -5330,7 +5430,41 @@ async function satisSozlesmePaneliCiz(proje) {
             ${proje.satis_durumu === 'SOZLESMESI_ONAYDA' ? `<button class="btn btn-outline-danger btn-sm"
                 onclick="satisSozlesmeAksiyon(${proje.id}, 'revize-talep', 'Sözleşme revize talebi')">
                 <i class="bi bi-arrow-counterclockwise me-1"></i>Revize Talep Et</button>` : ''}
+            ${izinVarMi('satis.teklif', 'TAM') ? `
+            <button class="btn btn-outline-secondary btn-sm" onclick='satisSozlesmeDuzenle(${JSON.stringify(s)})'><i class="bi bi-pencil me-1"></i>Düzenle</button>
+            <button class="btn btn-outline-danger btn-sm" onclick="satisSozlesmeSil(${s.id}, ${proje.id})"><i class="bi bi-trash me-1"></i>Sil</button>` : ''}
         </div>` : ''}`;
+}
+
+// Sözleşme düzenle / sil (eski ContractServiceImpl.save + delete)
+function satisSozlesmeDuzenle(s) {
+    const tutar = prompt('Sözleşme tutarı (' + (s.para_birimi || 'TL') + '):', s.tutar);
+    if (tutar === null) return;
+    const kdv = prompt('KDV oranı (%):', s.kdv_orani);
+    if (kdv === null) return;
+    const notlar = prompt('Sözleşme notu:', s.notlar || '');
+    if (notlar === null) return;
+    showLoading();
+    secureFetch('/satis-sozlesme-guncelle', { method: 'POST', body: JSON.stringify({
+        id: s.id, tarih: s.tarih, tutar, kdv_orani: kdv, para_birimi: s.para_birimi, kur: s.kur,
+        odeme_kosullari: s.odeme_kosullari, teslimat_kosullari: s.teslimat_kosullari,
+        dahil_isler: s.dahil_isler, haric_isler: s.haric_isler, notlar
+    }) }).then(r => {
+        hideLoading();
+        if (!r || !r.ok) { showToast(r?.hata || 'Sözleşme güncellenemedi.', 'error'); return; }
+        showToast('Sözleşme güncellendi.', 'success');
+        satisProjeDetayAc(window.spdAktifId);
+    }).catch(() => { hideLoading(); showToast('Sözleşme güncellenemedi.', 'error'); });
+}
+async function satisSozlesmeSil(id, projeId) {
+    if (!confirm('Sözleşme kalıcı olarak silinecek; proje "Satışı Tamamlanan" durumuna döner. Emin misiniz?')) return;
+    showLoading();
+    const r = await secureFetch('/satis-sozlesme-sil/' + id, { method: 'DELETE' }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Sözleşme silinemedi.', 'error'); return; }
+    showToast('Sözleşme silindi.', 'success');
+    satisProjeDetayAc(projeId);
+    satisProjeleriYukle();
 }
 
 async function satisSozlesmeAksiyon(projeId, aksiyon, ad) {
