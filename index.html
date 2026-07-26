@@ -413,8 +413,8 @@
                   <th>Ürün</th>
                   <th>Kategori</th>
                   <th>Birim</th>
-                  <th class="text-end">Alış Fiyatı</th>
-                  <th class="text-end">Satış Fiyatı</th>
+                  <th class="text-end" title="Ürün ağacındaki bileşenlerin alış fiyatlarından hesaplanır">Maliyet</th>
+                  <th class="text-end" title="Maliyet × (kâr oranı + 100) / 100">Satış Fiyatı</th>
                   <th class="text-center">Kâr %</th>
                   <th class="text-center" title="Parametrik formülü olan ürünler ölçü girilince miktarını kendisi hesaplar">Formül</th>
                 </tr>
@@ -4942,8 +4942,9 @@ async function satisUrunleriYukle() {
             <td><span class="fw-bold text-dark">${esc(u.ad)}</span>${u.uzun_kod ? `<span class="text-muted small d-block">${esc(u.uzun_kod)}</span>` : ''}</td>
             <td class="small">${esc(u.kategori_adi || '-')}</td>
             <td class="small">${esc(u.birim || '-')}</td>
-            <td class="text-end">${u.alis_fiyat != null ? formatTR(parseFloat(u.alis_fiyat)) + ' ' + esc(u.alis_pb || 'TL') : '<span class="text-muted">-</span>'}</td>
-            <td class="text-end">${u.satis_fiyat != null ? formatTR(parseFloat(u.satis_fiyat)) + ' ' + esc(u.satis_pb || 'TL') : '<span class="text-muted">-</span>'}</td>
+            <td class="text-end">${u.maliyet != null ? formatTR(parseFloat(u.maliyet)) + ' TL' :
+                (u.kendi_alis_fiyat != null ? `<span title="Hammadde alış fiyatı">${formatTR(parseFloat(u.kendi_alis_fiyat))} ${esc(u.kendi_alis_pb || 'TL')}</span>` : '<span class="text-muted">-</span>')}</td>
+            <td class="text-end">${u.satis_fiyat != null ? formatTR(parseFloat(u.satis_fiyat)) + ' TL' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${u.kar_orani != null ? '%' + formatTR(parseFloat(u.kar_orani)) : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${u.formullu ? '<i class="bi bi-calculator text-mod-satis" title="Parametrik formüllü"></i>' : ''}</td>
         </tr>`).join('');
@@ -5520,14 +5521,17 @@ async function satisTeklifDetayAc(id) {
             <div class="col-md-4"><span class="text-muted">Müşteri:</span> <b>${esc(t.musteri_adi || '-')}</b></div>
             <div class="col-md-3"><span class="text-muted">Proje:</span> <b>${t.proje_kodu ? esc(t.proje_kodu) + ' — ' + esc(t.proje_adi_goster || '') : '-'}</b></div>
             <div class="col-md-2 text-end">${satisTeklifDurumBadge(t.durum)}</div>
+            ${t.sartname_turu ? `<div class="col-md-3 mt-1"><span class="text-muted">Şartname Türü:</span> <b>${esc(t.sartname_turu)}</b></div>` : ''}
         </div>
         <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:0.82rem;">
             <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th><th class="text-center">Analiz</th><th style="width:120px;"></th></tr></thead>
             <tbody>${r.kalemler.map((k, i) => `
                 <tr class="${k.opsiyonel ? 'text-muted fst-italic' : ''}">
                     <td>${i + 1}</td>
-                    <td><b>${esc(k.ad)}</b>${k.opsiyonel ? ' <small>(Opsiyonel)</small>' : ''}${k.aciklama ? `<br><small class="text-muted">${esc(k.aciklama)}</small>` : ''}
-                        ${k.onerilen_fiyat != null ? `<br><small class="text-success"><i class="bi bi-calculator me-1"></i>Analizden önerilen: <b>${formatTR(parseFloat(k.onerilen_fiyat))} ${pb}</b></small>` : ''}</td>
+                    <td><b>${esc(k.ad)}</b>${k.opsiyonel ? ' <small>(Opsiyonel)</small>' : ''}
+                        ${k.bilesen_turu ? `<span class="badge bg-light text-dark border ms-1">${esc(k.bilesen_turu)}</span>` : ''}
+                        ${k.aciklama ? `<br><small class="text-muted">${esc(k.aciklama)}</small>` : ''}
+                        ${k.onerilen_fiyat != null ? `<br><small class="text-success"><i class="bi bi-calculator me-1"></i>Analizden önerilen: <b>${formatTR(parseFloat(k.onerilen_fiyat))} ${pb}</b>${k.analiz_tarihi ? ' (' + formatTarihTR(k.analiz_tarihi) + ')' : ''}</small>` : ''}</td>
                     <td class="text-end">${formatTR(parseFloat(k.miktar) || 0)} ${esc(k.birim || '')}</td>
                     <td class="text-end">${formatTR(parseFloat(k.birim_fiyat) || 0)} ${pb}</td>
                     <td class="text-end fw-semibold">${formatTR(parseFloat(k.toplam) || 0)} ${pb}</td>
@@ -5795,48 +5799,74 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
     if (!kayitli || !kayitli.ok) { showToast('Analiz yüklenemedi.', 'error'); return; }
     window.sanOnizleme = onizleme && onizleme.ok ? onizleme : null;
     const satirlar = kayitli.urunler || [];
-    let maliyet = 0, satis = 0, pb = 'TL';
+    const kalem = kayitli.kalem || {};
+    // Kilitli fiyat yoksa bugünkü hesaplanan fiyat kullanılır (ürün ağacından)
+    let maliyet = 0, satis = 0, gMaliyet = 0, gSatis = 0, pb = 'TL';
     satirlar.forEach(u => {
         const m = parseFloat(u.miktar) || 0;
-        if (u.kilit_maliyet != null) maliyet += m * parseFloat(u.kilit_maliyet);
-        if (u.kilit_satis != null) satis += m * parseFloat(u.kilit_satis);
-        pb = u.kilit_para_birimi || u.para_birimi || pb;
+        const km = u.kilit_maliyet != null ? parseFloat(u.kilit_maliyet) : null;
+        const ks = u.kilit_satis != null ? parseFloat(u.kilit_satis) : null;
+        if (km != null) maliyet += m * km;
+        if (ks != null) satis += m * ks;
+        if (u.guncel_maliyet != null) gMaliyet += m * parseFloat(u.guncel_maliyet);
+        if (u.guncel_satis != null) gSatis += m * parseFloat(u.guncel_satis);
+        pb = u.para_birimi || pb;
     });
     const yazabilir = izinVarMi('satis.urun', 'YAZMA');
     document.getElementById('sanBaslik').innerText = 'Fiyat Analizi — ' + kalemAd;
     document.getElementById('sanGovde').innerHTML = `
         ${!satirlar.length ? `<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i>
             Bu kalem için henüz malzeme dökümü üretilmemiş. Önce <b>Öznitelikler</b>'i doldurup aşağıdan <b>Dökümü Üret</b> deyin.</div>` : ''}
+        ${(kayitli.yorumlar || []).length ? `
+        <div class="border rounded p-2 mb-2 bg-light">
+            <div class="fw-bold small mb-1"><i class="bi bi-chat-left-text me-1"></i>Analiz Notları (${kayitli.yorumlar.length})</div>
+            ${kayitli.yorumlar.slice(0, 5).map(y => `<div class="small border-start border-3 ps-2 mb-1">
+                ${esc(y.yorum)}<span class="text-muted"> — ${esc((y.yazan || '').split('@')[0] || '-')}${y.tarih ? ', ' + formatTarihTR(y.tarih) : ''}</span></div>`).join('')}
+        </div>` : ''}
         ${window.sanOnizleme ? `<div class="small text-muted mb-2">Mevcut özniteliklerle motorun bulduğu malzeme sayısı:
             <b>${window.sanOnizleme.kalemler.filter(k => k.miktar != null).length}</b>
             (kayıtlı döküm: <b>${satirlar.length}</b>)</div>` : ''}
         ${satirlar.length ? `
         <div class="table-responsive"><table class="table table-sm table-hover align-middle" style="font-size:0.8rem;">
             <thead class="table-light"><tr>
-                <th>Malzeme</th><th class="text-end" style="width:110px;">Miktar</th>
-                <th class="text-end" style="width:110px;">Maliyet</th><th class="text-end" style="width:110px;">Satış</th>
-                <th class="text-end" style="width:110px;">Tutar</th><th style="width:70px;"></th></tr></thead>
-            <tbody>${satirlar.map(u => `
+                <th>Malzeme</th><th class="text-end" style="width:105px;">Miktar</th>
+                <th class="text-end" style="width:105px;" title="Analiz üretildiği gün sabitlenen maliyet">Maliyet <i class="bi bi-lock"></i></th>
+                <th class="text-end" style="width:105px;">Satış <i class="bi bi-lock"></i></th>
+                <th class="text-end" style="width:105px;" title="Ürün ağacındaki güncel alış fiyatlarından bugün hesaplanan">Bugünkü Satış</th>
+                <th class="text-end" style="width:105px;">Tutar</th><th style="width:70px;"></th></tr></thead>
+            <tbody>${satirlar.map(u => {
+                const m = parseFloat(u.miktar) || 0;
+                const ks = u.kilit_satis != null ? parseFloat(u.kilit_satis) : null;
+                const gs = u.guncel_satis != null ? parseFloat(u.guncel_satis) : null;
+                const kullanilan = ks != null ? ks : gs;
+                const fark = (ks != null && gs != null && Math.abs(gs - ks) > 0.01);
+                return `
                 <tr data-satir="${u.id}">
                     <td>${esc(u.urun_adi || '-')}${u.elle_duzenlendi ? ' <span class="badge bg-info text-dark">elle</span>' : ''}
                         ${u.notu ? `<br><small class="text-muted">${esc(u.notu)}</small>` : ''}</td>
-                    <td class="text-end">${yazabilir ? `<input type="number" step="0.01" class="form-control form-control-sm text-end san-d-miktar" value="${u.miktar != null ? u.miktar : ''}">` : formatTR(parseFloat(u.miktar) || 0)} <small>${esc(u.birim || '')}</small></td>
+                    <td class="text-end">${yazabilir ? `<input type="number" step="0.01" class="form-control form-control-sm text-end san-d-miktar" value="${u.miktar != null ? u.miktar : ''}">` : formatTR(m)} <small>${esc(u.birim || '')}</small></td>
                     <td class="text-end">${u.kilit_maliyet != null ? formatTR(parseFloat(u.kilit_maliyet)) : '<span class="text-muted">-</span>'}</td>
-                    <td class="text-end">${u.kilit_satis != null ? formatTR(parseFloat(u.kilit_satis)) : '<span class="text-muted">-</span>'}</td>
-                    <td class="text-end fw-semibold">${u.kilit_satis != null ? formatTR((parseFloat(u.miktar) || 0) * parseFloat(u.kilit_satis)) : '-'}</td>
+                    <td class="text-end">${ks != null ? formatTR(ks) : '<span class="text-muted">-</span>'}</td>
+                    <td class="text-end ${fark ? 'text-danger fw-semibold' : 'text-muted'}" ${fark ? 'title="Analiz gününe göre fiyat değişmiş"' : ''}>${gs != null ? formatTR(gs) : '-'}</td>
+                    <td class="text-end fw-semibold">${kullanilan != null ? formatTR(m * kullanilan) : '-'}</td>
                     <td class="text-center text-nowrap">${yazabilir ? `
                         <button class="btn btn-outline-primary btn-sm py-0" title="Miktarı kaydet" onclick="satisAnalizSatirKaydet(${u.id}, this)"><i class="bi bi-check"></i></button>
                         <button class="btn btn-outline-danger btn-sm py-0" title="Satırı sil" onclick="satisAnalizSatirSil(${u.id})"><i class="bi bi-x"></i></button>` : ''}</td>
-                </tr>`).join('')}</tbody>
-            <tfoot class="table-light"><tr class="fw-bold">
-                <td colspan="4" class="text-end">Toplam</td>
-                <td class="text-end">${formatTR(satis)} ${pb}</td><td></td></tr>
-                <tr><td colspan="4" class="text-end text-muted small">Toplam maliyet</td>
-                <td class="text-end small">${formatTR(maliyet)} ${pb}</td><td></td></tr>
+                </tr>`; }).join('')}</tbody>
+            <tfoot class="table-light">
+                <tr class="fw-bold"><td colspan="3" class="text-end">Toplam satış (analiz günü)</td>
+                    <td class="text-end">${formatTR(satis)}</td>
+                    <td class="text-end ${Math.abs(gSatis - satis) > 1 ? 'text-danger' : ''}">${formatTR(gSatis)}</td>
+                    <td class="text-end">${formatTR(satis || gSatis)} ${pb}</td><td></td></tr>
+                <tr><td colspan="3" class="text-end text-muted small">Toplam maliyet</td>
+                    <td class="text-end small">${formatTR(maliyet)}</td>
+                    <td class="text-end small ${Math.abs(gMaliyet - maliyet) > 1 ? 'text-danger' : ''}">${formatTR(gMaliyet)}</td>
+                    <td class="text-end small">${formatTR(maliyet || gMaliyet)} ${pb}</td><td></td></tr>
             </tfoot>
         </table></div>
-        <div class="small text-muted"><i class="bi bi-lock me-1"></i>Maliyet ve satış fiyatları analiz üretildiği gün sabitlenir; sonradan fiyat değişse de analiz bozulmaz.</div>` : ''}`;
-    const kalem = kayitli.kalem || {};
+        <div class="small text-muted"><i class="bi bi-info-circle me-1"></i>Maliyet, ürün ağacındaki bileşenlerin alış fiyatlarından hesaplanır; satış = maliyet × (kâr oranı + 100) / 100.
+        Analiz üretildiği gün fiyatlar <b>kilitlenir</b>; "Bugünkü Satış" sütunu güncel fiyatlarla farkı gösterir.
+        ${kalem.analiz_tarihi ? `<br><i class="bi bi-clock-history me-1"></i>Analiz: ${formatTarihTR(kalem.analiz_tarihi)}${kalem.analiz_eden ? ' — ' + esc(kalem.analiz_eden.split('@')[0]) : ''}` : ''}</div>` : ''}`;
     document.getElementById('sanAltButonlar').innerHTML = `
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
         ${izinVarMi('satis.teklif', 'YAZMA') ? `<button class="btn btn-outline-warning btn-sm px-3" onclick="satisAnalizTalep()"><i class="bi bi-send me-1"></i>Analiz Talep Et</button>` : ''}

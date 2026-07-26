@@ -6269,6 +6269,54 @@ app.post('/api/satis-proje-donustur', yetkiKontrol, async (req, res, next) => {
 
 // ==================== SATIŞ MODÜLÜ — ÜRÜN KÜTÜPHANESİ + ANALİZ MOTORU (Faz C3a) ====================
 
+// FİYAT MEKANİZMASI — ProductCostServiceImpl + ProductSalesPriceServiceImpl birebir
+// (jar decompile, 2026-07-27). Bir ürünün MALİYETİ kendi fiyat kaydından DEĞİL,
+// ÜRÜN AĞACINDAN (BOM) gelir: Σ (bileşen miktarı × bileşenin o tarihteki ALIŞ fiyatı).
+// Ağacı olmayan ürünün maliyeti 0'dır (eski sistemde de öyle).
+// SATIŞ fiyatı = maliyet × (kâr oranı + 100) / 100  (kâr oranı boşsa 0 sayılır).
+// Fiyat seçimi eski sorguyla aynı: baslangic <= tarih < bitis (bitis boşsa süresiz),
+// sıralama bitis DESC NULLS FIRST.
+async function satisUrunMaliyetleri(sorgulayici, urunIdler, tarih) {
+    if (!urunIdler || !urunIdler.length) return {};
+    const t = tarih || new Date().toISOString().slice(0, 10);
+    const r = await sorgulayici.query(`
+        SELECT u.id AS urun_id, u.kar_orani,
+               COALESCE(b.maliyet, 0) AS maliyet,
+               COALESCE(b.bilesen_sayisi, 0) AS bilesen_sayisi,
+               COALESCE(b.fiyatli_bilesen, 0) AS fiyatli_bilesen
+        FROM sat_urunler u
+        LEFT JOIN (
+            SELECT bom.urun_id,
+                   SUM(COALESCE(bom.miktar,0) * COALESCE(f.fiyat,0)) AS maliyet,
+                   COUNT(*)::int AS bilesen_sayisi,
+                   COUNT(f.fiyat)::int AS fiyatli_bilesen
+            FROM sat_urun_bom bom
+            LEFT JOIN LATERAL (
+                SELECT ff.fiyat FROM sat_urun_fiyatlar ff
+                WHERE ff.urun_id = bom.bilesen_urun_id AND ff.tip = 'ALIS'
+                  AND ff.baslangic <= $2::date AND (ff.bitis IS NULL OR ff.bitis > $2::date)
+                ORDER BY ff.bitis DESC NULLS FIRST, ff.baslangic DESC LIMIT 1
+            ) f ON true
+            WHERE bom.urun_id = ANY($1::int[])
+            GROUP BY bom.urun_id
+        ) b ON b.urun_id = u.id
+        WHERE u.id = ANY($1::int[])`, [urunIdler, t]);
+    const harita = {};
+    r.rows.forEach(x => {
+        const maliyet = parseFloat(x.maliyet) || 0;
+        const kar = parseFloat(x.kar_orani) || 0;
+        harita[x.urun_id] = {
+            maliyet,
+            satis: maliyet * (kar + 100) / 100,
+            kar_orani: x.kar_orani,
+            bilesen_sayisi: x.bilesen_sayisi,
+            fiyatli_bilesen: x.fiyatli_bilesen,
+            hesaplanabilir: x.bilesen_sayisi > 0
+        };
+    });
+    return harita;
+}
+
 app.get('/api/satis-urun-kategoriler', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query(`
@@ -6291,21 +6339,27 @@ app.get('/api/satis-urunler', yetkiKontrol, async (req, res, next) => {
             SELECT u.id, u.ad, u.uzun_kod, u.kisa_kod, u.birim, u.sinif, u.kar_orani,
                    u.otomatik_eklenir, (u.formul IS NOT NULL AND u.formul <> '') AS formullu,
                    k.ad AS kategori_adi,
-                   fa.fiyat AS alis_fiyat, fa.para_birimi AS alis_pb,
-                   fs.fiyat AS satis_fiyat, fs.para_birimi AS satis_pb
+                   fk.fiyat AS kendi_alis_fiyat, fk.para_birimi AS kendi_alis_pb
             FROM sat_urunler u
             LEFT JOIN sat_urun_kategoriler k ON k.eski_id = u.kategori_id
             LEFT JOIN LATERAL (SELECT fiyat, para_birimi FROM sat_urun_fiyatlar f
-                WHERE f.urun_id=u.id AND f.tip='ALIS' AND (f.bitis IS NULL OR f.bitis >= CURRENT_DATE)
-                ORDER BY f.baslangic DESC NULLS LAST LIMIT 1) fa ON true
-            LEFT JOIN LATERAL (SELECT fiyat, para_birimi FROM sat_urun_fiyatlar f
-                WHERE f.urun_id=u.id AND f.tip='SATIS' AND (f.bitis IS NULL OR f.bitis >= CURRENT_DATE)
-                ORDER BY f.baslangic DESC NULLS LAST LIMIT 1) fs ON true
+                WHERE f.urun_id=u.id AND f.tip='ALIS'
+                  AND f.baslangic <= CURRENT_DATE AND (f.bitis IS NULL OR f.bitis > CURRENT_DATE)
+                ORDER BY f.bitis DESC NULLS FIRST, f.baslangic DESC LIMIT 1) fk ON true
             WHERE ${kosullar.join(' AND ')}
             ORDER BY u.sira, u.ad
             LIMIT 500
         `, deger);
-        res.json({ ok: true, urunler: r.rows });
+        // Maliyet/satış ürün ağacından hesaplanır (eski motorla birebir)
+        const fiyatlar = await satisUrunMaliyetleri(pool, r.rows.map(x => x.id));
+        const urunler = r.rows.map(u => {
+            const f = fiyatlar[u.id] || {};
+            return { ...u,
+                maliyet: f.hesaplanabilir ? f.maliyet : null,
+                satis_fiyat: f.hesaplanabilir ? f.satis : null,
+                agac_bilesen: f.bilesen_sayisi || 0 };
+        });
+        res.json({ ok: true, urunler });
     } catch (e) { next(e); }
 });
 
@@ -6319,11 +6373,22 @@ app.get('/api/satis-urun-detay/:id', yetkiKontrol, async (req, res, next) => {
         const fiyatlar = await pool.query(`
             SELECT * FROM sat_urun_fiyatlar WHERE urun_id=$1
             ORDER BY tip, baslangic DESC NULLS LAST`, [id]);
+        // Ürün ağacı + her bileşenin güncel alış fiyatı ve satır maliyeti
         const bom = await pool.query(`
-            SELECT b.*, bu.ad AS bilesen_adi, bu.birim AS bilesen_birim
-            FROM sat_urun_bom b LEFT JOIN sat_urunler bu ON bu.id=b.bilesen_urun_id
+            SELECT b.*, bu.ad AS bilesen_adi, bu.birim AS bilesen_birim,
+                   f.fiyat AS bilesen_alis, f.para_birimi AS bilesen_pb,
+                   (COALESCE(b.miktar,0) * COALESCE(f.fiyat,0)) AS satir_maliyet
+            FROM sat_urun_bom b
+            LEFT JOIN sat_urunler bu ON bu.id=b.bilesen_urun_id
+            LEFT JOIN LATERAL (SELECT ff.fiyat, ff.para_birimi FROM sat_urun_fiyatlar ff
+                WHERE ff.urun_id = b.bilesen_urun_id AND ff.tip='ALIS'
+                  AND ff.baslangic <= CURRENT_DATE AND (ff.bitis IS NULL OR ff.bitis > CURRENT_DATE)
+                ORDER BY ff.bitis DESC NULLS FIRST, ff.baslangic DESC LIMIT 1) f ON true
             WHERE b.urun_id=$1 ORDER BY b.sira, b.id`, [id]);
-        res.json({ ok: true, urun: u.rows[0], fiyatlar: fiyatlar.rows, bom: bom.rows });
+        const hesap = (await satisUrunMaliyetleri(pool, [id]))[id] || {};
+        res.json({ ok: true, urun: u.rows[0], fiyatlar: fiyatlar.rows, bom: bom.rows,
+            maliyet: hesap.hesaplanabilir ? hesap.maliyet : null,
+            satis_fiyat: hesap.hesaplanabilir ? hesap.satis : null });
     } catch (e) { next(e); }
 });
 
@@ -6532,18 +6597,18 @@ async function satisKalemAnaliziHesapla(kalemId) {
     });
     if (!adayKategoriler.size) return { kalem, bolumler: bolumHepsi, kalemler: [] };
     const urunler = (await pool.query(`
-        SELECT u.id, u.ad, u.uzun_kod, u.birim, u.formul, u.kar_orani, u.sira, u.kategori_id,
-               fa.fiyat AS alis_fiyat, fa.para_birimi AS alis_pb,
-               fs.fiyat AS satis_fiyat
+        SELECT u.id, u.ad, u.uzun_kod, u.birim, u.formul, u.kar_orani, u.sira, u.kategori_id
         FROM sat_urunler u
-        LEFT JOIN LATERAL (SELECT fiyat, para_birimi FROM sat_urun_fiyatlar f
-            WHERE f.urun_id=u.id AND f.tip='ALIS' AND (f.bitis IS NULL OR f.bitis >= CURRENT_DATE)
-            ORDER BY f.baslangic DESC NULLS LAST LIMIT 1) fa ON true
-        LEFT JOIN LATERAL (SELECT fiyat FROM sat_urun_fiyatlar f
-            WHERE f.urun_id=u.id AND f.tip='SATIS' AND (f.bitis IS NULL OR f.bitis >= CURRENT_DATE)
-            ORDER BY f.baslangic DESC NULLS LAST LIMIT 1) fs ON true
         WHERE u.aktif AND u.kategori_id = ANY($1::int[])
         ORDER BY u.sira, u.id`, [[...adayKategoriler]])).rows;
+    // Maliyet/satış fiyatı ürün ağacından (eski ProductCostService/ProductSalesPriceService)
+    const fiyatHarita = await satisUrunMaliyetleri(pool, urunler.map(u => u.id));
+    urunler.forEach(u => {
+        const f = fiyatHarita[u.id] || {};
+        u.alis_fiyat = f.hesaplanabilir ? f.maliyet : null;   // ürünün maliyeti
+        u.satis_fiyat = f.hesaplanabilir ? f.satis : null;
+        u.alis_pb = 'TL';
+    });
 
     const eslesen = satisUrunEslestir(urunler, kapsamdaki, degerler, bolumMap, ortakKategoriler, secenekMap);
     const hesaplanan = satisMiktarHesapla(eslesen, kapsamdaki, degerler, bolumMap, ortakKategoriler,
@@ -6787,16 +6852,30 @@ app.get('/api/satis-analiz-kalem/:kalemId', yetkiKontrol, async (req, res, next)
             WHERE d.kalem_id = $1
             ORDER BY pr.sira, pr.ad`, [kalemId]);
         const urunler = await pool.query(`
-            SELECT a.miktar, a.notu, u.ad AS urun_adi, u.birim, u.kar_orani,
-                   f.fiyat AS guncel_alis, f.para_birimi
+            SELECT a.id, a.urun_id, a.miktar, a.notu, a.elle_duzenlendi,
+                   a.kilit_maliyet, a.kilit_satis, a.kilit_para_birimi, a.kilit_tarihi,
+                   u.ad AS urun_adi, u.birim, u.kar_orani
             FROM sat_analiz_urunler a
             LEFT JOIN sat_urunler u ON u.id = a.urun_id
-            LEFT JOIN LATERAL (SELECT fiyat, para_birimi FROM sat_urun_fiyatlar ff
-                WHERE ff.urun_id = u.id AND ff.tip='ALIS' AND (ff.bitis IS NULL OR ff.bitis >= CURRENT_DATE)
-                ORDER BY ff.baslangic DESC NULLS LAST LIMIT 1) f ON true
             WHERE a.kalem_id = $1
             ORDER BY a.sira, a.id`, [kalemId]);
-        res.json({ ok: true, degerler: degerler.rows, urunler: urunler.rows });
+        // Kilitli fiyatın yanında BUGÜNKÜ maliyet/satış (ürün ağacından) da gösterilir
+        const guncel = await satisUrunMaliyetleri(pool, urunler.rows.map(x => x.urun_id).filter(Boolean));
+        const satirlar = urunler.rows.map(x => {
+            const g = guncel[x.urun_id] || {};
+            return { ...x,
+                guncel_maliyet: g.hesaplanabilir ? g.maliyet : null,
+                guncel_satis: g.hesaplanabilir ? g.satis : null,
+                para_birimi: x.kilit_para_birimi || 'TL' };
+        });
+        const kalem = (await pool.query(`
+            SELECT k.*, t.teklif_no FROM sat_teklif_kalemleri k
+            LEFT JOIN sat_teklifler t ON t.id=k.teklif_id WHERE k.id=$1`, [kalemId])).rows[0];
+        // Analiz yorumları (eski comment tablosu — talep/tamamla notları)
+        const yorumlar = (await pool.query(
+            `SELECT yorum, tip, yazan, tarih FROM sat_yorumlar WHERE kalem_id=$1 ORDER BY tarih DESC NULLS LAST, id DESC`,
+            [kalemId])).rows;
+        res.json({ ok: true, kalem, degerler: degerler.rows, urunler: satirlar, yorumlar });
     } catch (e) { next(e); }
 });
 
@@ -6871,6 +6950,11 @@ app.post('/api/satis-analiz-talep', yetkiKontrol, izinGerekli('satis.teklif', 'Y
         if (!k.rowCount) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
         await client.query('BEGIN');
         await client.query(`UPDATE sat_teklif_kalemleri SET analiz_durumu='ANALIZ_SURECINDE' WHERE id=$1`, [k.rows[0].id]);
+        // Yorum varsa kaydedilir (eski saveCommentIfNotBlank birebir)
+        if ((yorum || '').trim()) {
+            await client.query(`INSERT INTO sat_yorumlar (kaynak, kalem_id, yorum, tip, yazan)
+                VALUES ('TEKLIF_KALEMI',$1,$2,'Bilgi',$3)`, [k.rows[0].id, yorum.trim(), req.user.email]);
+        }
         if (k.rows[0].proje_id) await projeDurumGuncelle(client, k.rows[0].proje_id, PRJ.ANALIZ_SURECINDE, req, 'Analiz talebi');
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_teklif_kalemleri', kayit_id: k.rows[0].id,
@@ -6898,8 +6982,13 @@ app.post('/api/satis-analiz-tamamla', yetkiKontrol, izinGerekli('satis.urun', 'Y
         const onerilenFiyat = parseFloat(oneri.rows[0].satis) || null;
         await client.query('BEGIN');
         await client.query(`UPDATE sat_teklif_kalemleri
-            SET analiz_durumu='ANALIZ_TAMAMLANDI', onerilen_fiyat=$1, fiyat_hesap_tarihi=now() WHERE id=$2`,
-            [onerilenFiyat, kalem.id]);
+            SET analiz_durumu='ANALIZ_TAMAMLANDI', onerilen_fiyat=$1, fiyat_hesap_tarihi=now(),
+                analiz_tarihi=now(), analiz_eden=$3 WHERE id=$2`,
+            [onerilenFiyat, kalem.id, req.user.email]);
+        if ((yorum || '').trim()) {
+            await client.query(`INSERT INTO sat_yorumlar (kaynak, kalem_id, yorum, tip, yazan)
+                VALUES ('TEKLIF_KALEMI',$1,$2,'Bilgi',$3)`, [kalem.id, yorum.trim(), req.user.email]);
+        }
         // completeAnalysisIfThereIsNoPendingAnalysis birebir: projede analizi süren
         // başka bileşen kalmadıysa proje durumu "Analizi Tamamlanan" olur
         if (kalem.proje_id) {
@@ -10222,6 +10311,31 @@ async function semaGuvence() {
             dahil_isler TEXT, haric_isler TEXT, notlar TEXT,
             olusturan TEXT, olusturma_tarihi TIMESTAMPTZ DEFAULT now()
         )`).catch(e => console.error('⚠️ sat_sozlesmeler:', e.message));
+
+        // DENETİM DÜZELTMELERİ (2026-07-27): eski sistemden atlanan alanlar/tablolar
+        await pool.query(`ALTER TABLE sat_teklif_kalemleri
+            ADD COLUMN IF NOT EXISTS bilesen_turu TEXT,
+            ADD COLUMN IF NOT EXISTS analiz_tarihi TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS analiz_eden TEXT`).catch(() => {});
+        await pool.query(`ALTER TABLE sat_teklifler
+            ADD COLUMN IF NOT EXISTS sartname_turu TEXT`).catch(() => {});
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_yorumlar (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            kaynak TEXT NOT NULL,
+            kalem_id INTEGER, teklif_id INTEGER, proje_id INTEGER, musteri_id INTEGER,
+            eski_entity_id INTEGER,
+            yorum TEXT NOT NULL,
+            tip TEXT DEFAULT 'Bilgi',
+            sabit BOOLEAN DEFAULT false,
+            yazan TEXT,
+            tarih TIMESTAMPTZ DEFAULT now()
+        )`).catch(e => console.error('⚠️ sat_yorumlar:', e.message));
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_sat_yorum_kalem ON sat_yorumlar(kalem_id)`).catch(() => {});
+        // Kod sırası tablosu (teklif/sözleşme numaraları) — eski project_code_sequence
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_kod_sirasi (
+            proje_id INTEGER NOT NULL, varlik TEXT NOT NULL, deger INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (proje_id, varlik))`).catch(() => {});
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için
