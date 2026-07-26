@@ -6758,15 +6758,22 @@ app.get('/api/satis-analiz-form/:kalemId', yetkiKontrol, async (req, res, next) 
             SELECT k.*, t.teklif_no, t.proje_id FROM sat_teklif_kalemleri k
             JOIN sat_teklifler t ON t.id=k.teklif_id WHERE k.id=$1`, [kalemId])).rows[0];
         if (!kalem) return res.json({ ok: false, hata: 'Teklif kalemi bulunamadı.' });
+        // SIRALAMA: bölümün sırası ÜRÜN KATEGORİSİNDEN gelir (product_category.order_no:
+        // 100, 200, 300...). sat_analiz_bolumler.sira ise TEKRAR NUMARASIDIR (Duvar 1,
+        // Duvar 2) — eski attribute_category.order_no. Önce kategori sırası, sonra tekrar no.
         const bolumler = (await pool.query(`
-            SELECT b.*, k.ad AS kategori_adi, k.max_adet, k.parametreler_ortak
+            SELECT b.*, k.ad AS kategori_adi, k.max_adet, k.parametreler_ortak,
+                   k.sira AS kategori_sira, k.ust_id AS kategori_ust_id
             FROM sat_analiz_bolumler b
             LEFT JOIN sat_urun_kategoriler k ON k.eski_id = b.urun_kategori_eski_id
-            WHERE b.kalem_id=$1 ORDER BY b.sira, b.eski_id`, [kalemId])).rows;
+            WHERE b.kalem_id=$1
+            ORDER BY COALESCE(k.sira, 999999), COALESCE(b.sira, 1), b.eski_id`, [kalemId])).rows;
+        // Alanlar attribute_type.order_no'ya göre (950, 1000, 1050... global dizi),
+        // seçenekler attribute_choice.order_no'ya göre sıralanır.
         const parametreler = (await pool.query(
-            'SELECT * FROM sat_parametreler WHERE formda_goster=true ORDER BY sira, ad')).rows;
+            'SELECT * FROM sat_parametreler WHERE formda_goster=true ORDER BY COALESCE(sira, 999999), ad')).rows;
         const secenekler = (await pool.query(
-            'SELECT * FROM sat_parametre_secenekler ORDER BY sira, id')).rows;
+            'SELECT * FROM sat_parametre_secenekler ORDER BY COALESCE(sira, 999999), id')).rows;
         const degerler = (await pool.query(`
             SELECT d.id, d.bolum_eski_id, d.deger, p.eski_id AS parametre_eski_id
             FROM sat_analiz_degerler d LEFT JOIN sat_parametreler p ON p.id=d.parametre_id
@@ -6791,10 +6798,11 @@ app.post('/api/satis-analiz-form-olustur', yetkiKontrol, izinGerekli('satis.tekl
         let n = 0;
         for (const k of kategoriler) {
             const tekrarli = (k.max_adet || 0) > 1;
+            // sira = TEKRAR NUMARASI (ilk örnek = 1). Görüntüleme sırası kategoriden gelir.
             const ins = await client.query(`
                 INSERT INTO sat_analiz_bolumler (kaynak, kalem_id, ad, sira, kapsamda, urun_kategori_eski_id)
-                VALUES ('TEKLIF_KALEMI',$1,$2,$3,false,$4) RETURNING id`,
-                [kalemId, tekrarli ? `${k.ad} 1` : k.ad, k.sira || 0, k.eski_id]);
+                VALUES ('TEKLIF_KALEMI',$1,$2,1,false,$3) RETURNING id`,
+                [kalemId, tekrarli ? `${k.ad} 1` : k.ad, k.eski_id]);
             await client.query('UPDATE sat_analiz_bolumler SET eski_id = 100000000 + id WHERE id=$1', [ins.rows[0].id]);
             n++;
         }
@@ -6819,10 +6827,11 @@ app.post('/api/satis-analiz-bolum-ekle', yetkiKontrol, izinGerekli('satis.teklif
         const enFazla = k.max_adet || 1;
         if (mevcut.rows[0].c >= enFazla) return res.json({ ok: false, hata: `"${k.ad}" için en fazla ${enFazla} bölüm eklenebilir.` });
         await client.query('BEGIN');
+        const yeniSira = mevcut.rows[0].c + 1;   // tekrar numarası (Duvar 2, Duvar 3...)
         const ins = await client.query(`
             INSERT INTO sat_analiz_bolumler (kaynak, kalem_id, ad, sira, kapsamda, urun_kategori_eski_id)
             VALUES ('TEKLIF_KALEMI',$1,$2,$3,true,$4) RETURNING id`,
-            [parseInt(kalem_id), `${k.ad} ${mevcut.rows[0].c + 1}`, k.sira || 0, k.eski_id]);
+            [parseInt(kalem_id), `${k.ad} ${yeniSira}`, yeniSira, k.eski_id]);
         await client.query('UPDATE sat_analiz_bolumler SET eski_id = 100000000 + id WHERE id=$1', [ins.rows[0].id]);
         await client.query('COMMIT');
         res.json({ ok: true, id: ins.rows[0].id });
@@ -6846,6 +6855,69 @@ app.delete('/api/satis-analiz-bolum-sil/:id', yetkiKontrol, izinGerekli('satis.t
             ozet: `Analiz bölümü silindi: ${b.ad}`, eski_veri: b });
         res.json({ ok: true });
     } catch (e) { next(e); }
+});
+
+// "Öznitelikleri kopyala" — eski AttributeCopyServiceImpl
+// .deleteTargetAndCopyAttributesAndTheirCategories birebir: hedefin mevcut bölüm ve
+// değerleri SİLİNİR, kaynaktakiler (üst bölüm bağı yeniden eşlenerek) kopyalanır.
+app.get('/api/satis-analiz-kopya-kaynaklari/:kalemId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const kalemId = parseInt(req.params.kalemId);
+        const k = (await pool.query('SELECT bilesen_turu FROM sat_teklif_kalemleri WHERE id=$1', [kalemId])).rows[0];
+        // Aynı bileşen türündeki, analiz formu dolu diğer kalemler önce gelir
+        const r = await pool.query(`
+            SELECT k.id, k.ad, k.bilesen_turu, t.teklif_no, t.teklif_tarihi, m.ad AS musteri_adi,
+                   (SELECT COUNT(*)::int FROM sat_analiz_degerler d WHERE d.kalem_id=k.id) AS deger_sayisi
+            FROM sat_teklif_kalemleri k
+            JOIN sat_teklifler t ON t.id = k.teklif_id
+            LEFT JOIN sat_musteriler m ON m.id = t.musteri_id
+            WHERE k.id <> $1
+              AND EXISTS (SELECT 1 FROM sat_analiz_degerler d WHERE d.kalem_id = k.id)
+            ORDER BY (k.bilesen_turu IS NOT DISTINCT FROM $2) DESC, t.teklif_tarihi DESC NULLS LAST, k.id DESC
+            LIMIT 60`, [kalemId, k?.bilesen_turu || null]);
+        res.json({ ok: true, kaynaklar: r.rows, bilesen_turu: k?.bilesen_turu || null });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/satis-analiz-kopyala', yetkiKontrol, izinGerekli('satis.teklif', 'YAZMA'), async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        const hedefId = parseInt(req.body.hedef_kalem_id);
+        const kaynakId = parseInt(req.body.kaynak_kalem_id);
+        if (!hedefId || !kaynakId || hedefId === kaynakId) return res.json({ ok: false, hata: 'Geçerli bir kaynak kalem seçilmelidir.' });
+        const kaynakBolumler = (await client.query('SELECT * FROM sat_analiz_bolumler WHERE kalem_id=$1 ORDER BY sira, eski_id', [kaynakId])).rows;
+        if (!kaynakBolumler.length) return res.json({ ok: false, hata: 'Kaynak kalemin analiz formu yok.' });
+        await client.query('BEGIN');
+        // Hedefin mevcut form verisi silinir (döküm satırlarına dokunulmaz)
+        await client.query('DELETE FROM sat_analiz_degerler WHERE kalem_id=$1', [hedefId]);
+        await client.query('DELETE FROM sat_analiz_bolumler WHERE kalem_id=$1', [hedefId]);
+        const esleme = {};
+        for (const b of kaynakBolumler) {
+            const yb = await client.query(`
+                INSERT INTO sat_analiz_bolumler (kaynak, kalem_id, ad, sira, kapsamda, urun_kategori_eski_id)
+                VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4,$5) RETURNING id`,
+                [hedefId, b.ad, b.sira, b.kapsamda, b.urun_kategori_eski_id]);
+            await client.query('UPDATE sat_analiz_bolumler SET eski_id = 100000000 + id WHERE id=$1', [yb.rows[0].id]);
+            const yeniEski = (await client.query('SELECT eski_id FROM sat_analiz_bolumler WHERE id=$1', [yb.rows[0].id])).rows[0].eski_id;
+            esleme[b.eski_id] = { id: yb.rows[0].id, eski_id: yeniEski, ust: b.ust_bolum_eski_id };
+        }
+        for (const y of Object.values(esleme)) {
+            if (y.ust && esleme[y.ust]) {
+                await client.query('UPDATE sat_analiz_bolumler SET ust_bolum_eski_id=$1 WHERE id=$2', [esleme[y.ust].eski_id, y.id]);
+            }
+        }
+        const degerler = (await client.query('SELECT * FROM sat_analiz_degerler WHERE kalem_id=$1', [kaynakId])).rows;
+        for (const d of degerler) {
+            await client.query(`INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
+                VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4)`,
+                [hedefId, esleme[d.bolum_eski_id]?.eski_id || null, d.parametre_id, d.deger]);
+        }
+        await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_analiz_degerler', kayit_id: hedefId,
+            ozet: `Öznitelikler kopyalandı: kalem #${kaynakId} → #${hedefId} (${kaynakBolumler.length} bölüm, ${degerler.length} değer)` });
+        res.json({ ok: true, bolum: kaynakBolumler.length, deger: degerler.length });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
 });
 
 // Form kaydet: bölüm kapsam işaretleri + parametre değerleri

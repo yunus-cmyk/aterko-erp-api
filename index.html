@@ -5744,6 +5744,7 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
         </div>`;
     document.getElementById('sanAltButonlar').innerHTML = `
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
+        <button class="btn btn-outline-secondary btn-sm px-3" onclick="satisAnalizKopyalaAc()"><i class="bi bi-files me-1"></i>Öznitelikleri Kopyala</button>
         <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisAnalizFormKaydet()"><i class="bi bi-check-lg me-1"></i>Kaydet</button>`;
     satisFormKurallariUygula();   // seçimlere göre ilgisiz bölüm/alan/seçenekleri gizle
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
@@ -5849,6 +5850,28 @@ function satisAnalizFormSuz() {
         const uygun = (!q || trAra(k.dataset.ara || '').includes(q)) && (!sadeceKapsam || kapsamda);
         k.classList.toggle('d-none', !uygun);
     });
+}
+
+// Başka bir kalemin özniteliklerini kopyala (eski "Öznitelikleri kopyala" birebir)
+async function satisAnalizKopyalaAc() {
+    const r = await secureFetch('/satis-analiz-kopya-kaynaklari/' + window.sanKalemId).catch(() => null);
+    if (!r || !r.ok) { showToast('Kaynak listesi alınamadı.', 'error'); return; }
+    if (!r.kaynaklar.length) { showToast('Kopyalanabilecek dolu bir analiz formu bulunamadı.', 'error'); return; }
+    const secenekler = r.kaynaklar.map(k =>
+        `${k.teklif_no || '-'} · ${(k.ad || '').slice(0, 32)}${k.bilesen_turu ? ' [' + k.bilesen_turu + ']' : ''} — ${(k.musteri_adi || '').slice(0, 22)} (${k.deger_sayisi} değer)`);
+    const secim = prompt(
+        'Özniteliklerin kopyalanacağı kaynağı seçiniz (numara girin).\n' +
+        'DİKKAT: bu kalemin mevcut form değerleri silinip kaynağınkiyle değiştirilecek.\n\n' +
+        secenekler.slice(0, 25).map((s, i) => `${i + 1}. ${s}`).join('\n'));
+    const n = parseInt(secim);
+    if (!n || n < 1 || n > Math.min(25, r.kaynaklar.length)) return;
+    showLoading();
+    const s = await secureFetch('/satis-analiz-kopyala', { method: 'POST', body: JSON.stringify({
+        hedef_kalem_id: window.sanKalemId, kaynak_kalem_id: r.kaynaklar[n - 1].id }) }).catch(() => null);
+    hideLoading();
+    if (!s || !s.ok) { showToast(s?.hata || 'Kopyalanamadı.', 'error'); return; }
+    showToast(`Öznitelikler kopyalandı: ${s.bolum} bölüm, ${s.deger} değer.`, 'success');
+    satisAnalizFormAc(window.sanKalemId, document.getElementById('sanBaslik').innerText.replace('Öznitelikler — ', ''));
 }
 
 async function satisAnalizBolumEkle(kategoriEskiId) {
