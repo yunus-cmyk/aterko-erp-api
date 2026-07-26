@@ -5806,9 +5806,17 @@ app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
         const adNorm = (ad || '').trim();
         if (!adNorm) return res.json({ ok: false, hata: 'Müşteri adı zorunludur.' });
         const durumNorm = (durum === 'PASIF') ? 'PASIF' : 'AKTIF';
+        // Mali not yalnız ADMIN veya mali yetkisi olanlarca değiştirilebilir
+        // (eski CustomerServiceImpl.checkFinancialAuthorityForFinancialNote birebir)
+        const maliYetki = req.user.rol === 'ADMIN' || req.user.rol === 'Admin' ||
+            ['TAM', 'YAZMA'].includes((await getKullaniciIzinleri(req.user.rol))['mali.musteri'] || 'YOK');
         if (id) {
             const eskiR = await pool.query('SELECT * FROM sat_musteriler WHERE id=$1', [id]);
             if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
+            const maliNotDegisti = (mali_not || '').trim() !== (eskiR.rows[0].mali_not || '').trim();
+            if (maliNotDegisti && !maliYetki) {
+                return res.json({ ok: false, hata: 'Mali notu değiştirmek için mali işler yetkisi gerekir.' });
+            }
             await pool.query(`
                 UPDATE sat_musteriler SET ad=$1, uzun_ad=$2, email=$3, telefon=$4, adres=$5,
                     fatura_adresi=$6, vergi_dairesi=$7, vergi_no=$8, iban=$9, mali_not=$10,
@@ -5933,6 +5941,7 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
         }
         const kdv = isNaN(parseFloat(kdv_orani)) ? 20 : parseFloat(kdv_orani);
         const temiz = kalemler.filter(k => (k.ad || '').trim()).map((k, i) => ({
+            id: k.id ? parseInt(k.id) : null,        // mevcut kalem — KİMLİĞİ KORUNUR (analiz verisi kopmasın)
             ad: k.ad.trim(), aciklama: (k.aciklama || '').trim() || null,
             miktar: parseFloat(k.miktar) || 1, birim: (k.birim || '').trim() || null,
             ikincil_miktar: k.ikincil_miktar ? parseFloat(k.ikincil_miktar) : null,
@@ -5960,7 +5969,22 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                     notlar=$10, odeme_kosullari=$11, teslimat_kosullari=$12, dahil_isler=$13,
                     haric_isler=$14, guncelleme=now()
                 WHERE id=$15`, [...alanlar, id]);
-            await client.query('DELETE FROM sat_teklif_kalemleri WHERE teklif_id=$1', [id]);
+            // Kalemler kimlikleriyle güncellenir; YALNIZ formdan çıkarılanlar silinir.
+            // (Eskiden hepsi silinip yeniden eklenirdi → analiz formu, öznitelik değerleri,
+            //  malzeme dökümü ve kilitli fiyatlar sahipsiz kalıyordu.)
+            const kalanIdler = temiz.map(k => k.id).filter(Boolean);
+            const silinecek = (await client.query(
+                `SELECT id FROM sat_teklif_kalemleri WHERE teklif_id=$1 ${kalanIdler.length ? 'AND NOT (id = ANY($2::int[]))' : ''}`,
+                kalanIdler.length ? [id, kalanIdler] : [id])).rows.map(r => r.id);
+            if (silinecek.length) {
+                // Silinen kalemin analiz verisi de silinir (eski ProposalComponentDeleter +
+                // AnalysisDataDeleter birebir): önce döküm ve değerler, sonra bölümler.
+                await client.query('DELETE FROM sat_analiz_urunler WHERE kalem_id = ANY($1::int[])', [silinecek]);
+                await client.query(`DELETE FROM sat_analiz_degerler WHERE kalem_id = ANY($1::int[])`, [silinecek]);
+                await client.query('DELETE FROM sat_analiz_bolumler WHERE kalem_id = ANY($1::int[])', [silinecek]);
+                await client.query('DELETE FROM sat_yorumlar WHERE kalem_id = ANY($1::int[])', [silinecek]);
+                await client.query('DELETE FROM sat_teklif_kalemleri WHERE id = ANY($1::int[])', [silinecek]);
+            }
         } else {
             const ins = await client.query(`
                 INSERT INTO sat_teklifler (musteri_id, proje_id, teklif_tarihi, para_birimi, kdv_orani,
@@ -5981,13 +6005,28 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             await client.query(`UPDATE sat_teklifler SET teklif_no=COALESCE($2,'W-'||id) WHERE id=$1`, [teklifId, teklifNo]);
         }
         for (const k of temiz) {
+            // Tutar kuruşa yuvarlanır (eski calculateAndSetTotalPrice birebir)
+            const tutar = Math.round(k.miktar * k.birim_fiyat * 100) / 100;
+            const sembol = BIRIM_SEMBOL[k.ikincil_birim] || k.ikincil_birim || null;
+            if (k.id) {
+                const g = await client.query(`
+                    UPDATE sat_teklif_kalemleri SET ad=$1, aciklama=$2, miktar=$3, birim=$4,
+                        ikincil_miktar=$5, ikincil_birim=$6, ikincil_birim_sembol=$7,
+                        opsiyonel=$8, sira=$9, birim_fiyat=$10, toplam=$11
+                    WHERE id=$12 AND teklif_id=$13`,
+                    [k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar, k.ikincil_birim, sembol,
+                     k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.id, teklifId]);
+                if (g.rowCount) continue;   // güncellendi; değilse (başka teklife ait id) yeni ekle
+            }
             await client.query(`
                 INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim,
-                    ikincil_miktar, ikincil_birim, opsiyonel, sira, birim_fiyat, toplam)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                    ikincil_miktar, ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
                 [teklifId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar,
-                 k.ikincil_birim, k.opsiyonel, k.sira, k.birim_fiyat, k.miktar * k.birim_fiyat]);
+                 k.ikincil_birim, sembol, k.opsiyonel, k.sira, k.birim_fiyat, tutar]);
         }
+        // Toplamlar kalemlerden yeniden hesaplanır (eski calculateAndSaveProposalTotals birebir)
+        await satisTeklifToplamlariHesapla(client, teklifId);
         // Müşteri satış durumu otomatiği (eski ProposalExtServiceImpl.save birebir)
         await musteriDurumGuncelle(client, musteri_id);
         await client.query('COMMIT');
@@ -5999,6 +6038,49 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
 });
 
 function formatParaLog(n) { return (parseFloat(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 }); }
+
+// Birim adı → sembol (eski unit_type.symbol birebir)
+const BIRIM_SEMBOL = {
+    'Adet': 'adet', 'Metrekare': 'm²', 'Metreküp': 'm³', 'Kilogram': 'kg', 'Ton': 'ton',
+    'Metre': 'm', 'Metrekare Başına Düşen Kilogram': 'kg/m2', 'Öğün': 'öğün', 'Kilometre': 'km',
+    'Metretül': 'mtül', 'Dakika': 'dk', 'Litre': 'litre', 'Gün': 'Gün', 'Paket': 'paket',
+    'Yevmiye': 'yev.', 'Yol-Ulaşım': 'km'
+};
+
+// Teklif toplamlarını kalemlerden hesaplar — eski calculateAndSaveProposalTotals birebir:
+//   ara toplam = Σ ZORUNLU kalemlerin (miktar × birim fiyat)
+//   kdv = ara toplam × kdv oranı / 100      genel = ara toplam + kdv
+//   toplam büyüklük = ikincil birime göre gruplanmış Σ(miktar × ikincil miktar)  → "462,00 m²"
+// NOT: eski sistemde saklı tutarlar bayat kalabiliyor (KDV oranı sonradan değişmiş);
+// eski arayüz ekranda yeniden hesaplıyor — biz de kayıtta hesaplayıp saklıyoruz.
+async function satisTeklifToplamlariHesapla(sorgulayici, teklifId) {
+    const t = (await sorgulayici.query('SELECT kdv_orani FROM sat_teklifler WHERE id=$1', [teklifId])).rows[0];
+    if (!t) return null;
+    const kalemler = (await sorgulayici.query(
+        'SELECT miktar, birim_fiyat, ikincil_miktar, ikincil_birim, ikincil_birim_sembol, opsiyonel FROM sat_teklif_kalemleri WHERE teklif_id=$1',
+        [teklifId])).rows;
+    const kdvOrani = parseFloat(t.kdv_orani) || 0;
+    let ara = 0, opsiyonlu = 0;
+    const birimToplam = {};
+    for (const k of kalemler) {
+        const m = parseFloat(k.miktar) || 0;
+        const tutar = Math.round(m * (parseFloat(k.birim_fiyat) || 0) * 100) / 100;
+        opsiyonlu += tutar;
+        if (k.opsiyonel) continue;                       // yalnız zorunlu kalemler ara toplama girer
+        ara += tutar;
+        const sembol = k.ikincil_birim_sembol || BIRIM_SEMBOL[k.ikincil_birim] || k.ikincil_birim;
+        const ikincil = parseFloat(k.ikincil_miktar);
+        if (sembol && !isNaN(ikincil)) birimToplam[sembol] = (birimToplam[sembol] || 0) + m * ikincil;
+    }
+    const kdv = ara * kdvOrani / 100;
+    const buyukluk = Object.entries(birimToplam)
+        .map(([s, v]) => v.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + s)
+        .join(', ') || null;
+    await sorgulayici.query(`UPDATE sat_teklifler SET ara_toplam=$1, kdv_tutar=$2, genel_toplam=$3,
+        opsiyonlu_toplam=$4, toplam_buyukluk=$5 WHERE id=$6`,
+        [ara, kdv, ara + kdv, opsiyonlu, buyukluk, teklifId]);
+    return { ara_toplam: ara, kdv_tutar: kdv, genel_toplam: ara + kdv, opsiyonlu_toplam: opsiyonlu, toplam_buyukluk: buyukluk };
+}
 
 app.post('/api/satis-teklif-durum', yetkiKontrol, async (req, res, next) => {
     try {
@@ -6013,17 +6095,33 @@ app.post('/api/satis-teklif-durum', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// Teklif silme — eski ProposalDeleterImpl → ProposalComponentDeleterImpl →
+// AnalysisDataDeleterImpl zinciri birebir: kalemler, analiz dökümü/değerleri/bölümleri
+// ve yorumlar da silinir; sonunda müşteri satış durumu yeniden hesaplanır.
 app.delete('/api/satis-teklif-sil/:id', yetkiKontrol, izinGerekli('satis.teklif', 'TAM'), async (req, res, next) => {
+    const client = await pool.connect();
     try {
         const id = parseInt(req.params.id);
-        const eskiR = await pool.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
+        const eskiR = await client.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
         if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Teklif bulunamadı.' });
         if (eskiR.rows[0].durum !== 'TASLAK') return res.json({ ok: false, hata: 'Sadece TASLAK durumdaki teklifler silinebilir. Diğerleri arşiv kaydıdır.' });
-        await pool.query('DELETE FROM sat_teklifler WHERE id=$1', [id]);
+        const kalemler = (await client.query('SELECT id FROM sat_teklif_kalemleri WHERE teklif_id=$1', [id])).rows.map(r => r.id);
+        await client.query('BEGIN');
+        if (kalemler.length) {
+            await client.query('DELETE FROM sat_analiz_urunler WHERE kalem_id = ANY($1::int[])', [kalemler]);
+            await client.query('DELETE FROM sat_analiz_degerler WHERE kalem_id = ANY($1::int[])', [kalemler]);
+            await client.query('DELETE FROM sat_analiz_bolumler WHERE kalem_id = ANY($1::int[])', [kalemler]);
+            await client.query('DELETE FROM sat_yorumlar WHERE kalem_id = ANY($1::int[])', [kalemler]);
+        }
+        await client.query('DELETE FROM sat_teklifler WHERE id=$1', [id]);
+        await musteriDurumGuncelle(client, eskiR.rows[0].musteri_id);
+        await client.query('COMMIT');
         await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_teklifler', kayit_id: id,
-            ozet: `Taslak teklif silindi: ${eskiR.rows[0].teklif_no}`, eski_veri: eskiR.rows[0] });
+            ozet: `Taslak teklif silindi: ${eskiR.rows[0].teklif_no} (${kalemler.length} kalem ve analiz verisiyle)`,
+            eski_veri: eskiR.rows[0] });
         res.json({ ok: true });
-    } catch (e) { next(e); }
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
 });
 
 // Hazır metin havuzu (dahil/hariç işler, ödeme/teslimat koşulları)
@@ -6202,13 +6300,14 @@ app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
 });
 
 app.post('/api/satis-proje-kaydet', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
     try {
         const { id, proje_adi, sat_musteri_id, satis_durumu, proje_turu, sehir, ulke, adres,
                 irtibat_adi, irtibat_email, irtibat_telefon, aciklama, satis_temsilcisi } = req.body;
         const adNorm = (proje_adi || '').trim();
         if (!adNorm) return res.json({ ok: false, hata: 'Proje adı zorunludur.' });
         if (!sat_musteri_id) return res.json({ ok: false, hata: 'Müşteri seçilmelidir.' });
-        const mR = await pool.query('SELECT ad FROM sat_musteriler WHERE id=$1', [sat_musteri_id]);
+        const mR = await client.query('SELECT ad FROM sat_musteriler WHERE id=$1', [sat_musteri_id]);
         if (mR.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
         const durumNorm = SATIS_DURUMLARI.includes(satis_durumu) ? satis_durumu : 'TASLAK';
         const alanlar = [adNorm, sat_musteri_id, mR.rows[0].ad, durumNorm,
@@ -6217,30 +6316,41 @@ app.post('/api/satis-proje-kaydet', yetkiKontrol, async (req, res, next) => {
             (irtibat_email || '').trim() || null, (irtibat_telefon || '').trim() || null,
             (aciklama || '').trim() || null, (satis_temsilcisi || '').trim() || null];
         if (id) {
-            const eskiR = await pool.query(`SELECT * FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
+            const eskiR = await client.query(`SELECT * FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
             if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı (teslimat fazındaki projeler buradan düzenlenemez).' });
-            await pool.query(`
+            await client.query('BEGIN');
+            await client.query(`
                 UPDATE projeler SET proje_adi=$1, sat_musteri_id=$2, musteri_adi=$3, satis_durumu=$4,
                     proje_turu=$5, sehir=$6, ulke=$7, adres=$8, irtibat_adi=$9, irtibat_email=$10,
                     irtibat_telefon=$11, aciklama=$12, satis_temsilcisi=$13
                 WHERE id=$14`, [...alanlar, id]);
+            // Müşteri değişmiş olabilir: her iki müşterinin de durumu tazelenir
+            await musteriDurumGuncelle(client, sat_musteri_id);
+            if (eskiR.rows[0].sat_musteri_id && eskiR.rows[0].sat_musteri_id !== sat_musteri_id)
+                await musteriDurumGuncelle(client, eskiR.rows[0].sat_musteri_id);
+            await client.query('COMMIT');
             await auditLogla(req, { eylem: 'UPDATE', tablo: 'projeler', kayit_id: id,
                 ozet: `Satış projesi güncellendi: ${adNorm}`, eski_veri: eskiR.rows[0], yeni_veri: req.body });
             return res.json({ ok: true, id });
         }
         // Yeni fırsat: 5 haneli kod serisinin devamı (eski sistemle ortak numara evreni)
-        const kodR = await pool.query(`SELECT COALESCE(MAX(proje_kodu::int), 72000) + 1 AS yeni FROM projeler WHERE proje_kodu ~ '^[0-9]{5}$'`);
+        await client.query('BEGIN');
+        const kodR = await client.query(`SELECT COALESCE(MAX(proje_kodu::int), 72000) + 1 AS yeni FROM projeler WHERE proje_kodu ~ '^[0-9]{5}$'`);
         const yeniKod = String(kodR.rows[0].yeni);
-        const ins = await pool.query(`
+        const ins = await client.query(`
             INSERT INTO projeler (proje_kodu, proje_adi, sat_musteri_id, musteri_adi, satis_durumu,
                 proje_turu, sehir, ulke, adres, irtibat_adi, irtibat_email, irtibat_telefon,
                 aciklama, satis_temsilcisi, faz, durum)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'SATIS','TASLAK') RETURNING id`,
             [yeniKod, ...alanlar]);
+        // Proje kaydında müşteri durumu otomatiği (eski ProjectServiceImpl.save birebir)
+        await musteriDurumGuncelle(client, sat_musteri_id);
+        await client.query('COMMIT');
         await auditLogla(req, { eylem: 'CREATE', tablo: 'projeler', kayit_id: ins.rows[0].id,
             ozet: `Yeni satış projesi (fırsat): ${yeniKod} — ${adNorm}`, yeni_veri: req.body });
         res.json({ ok: true, id: ins.rows[0].id, proje_kodu: yeniKod });
-    } catch (e) { next(e); }
+    } catch (e) { try { await client.query('ROLLBACK'); } catch (_) {} next(e); }
+    finally { client.release(); }
 });
 
 app.post('/api/satis-proje-durum', yetkiKontrol, async (req, res, next) => {
@@ -6407,9 +6517,17 @@ app.post('/api/satis-urun-fiyat-kaydet', yetkiKontrol, async (req, res, next) =>
         if (uR.rowCount === 0) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
         const bas = baslangic || new Date().toISOString().slice(0, 10);
         await client.query('BEGIN');
-        // Açık eski fiyat kapatılır (geçmiş korunur)
-        await client.query(`UPDATE sat_urun_fiyatlar SET bitis = ($3::date - 1)
-            WHERE urun_id=$1 AND tip=$2 AND (bitis IS NULL OR bitis >= $3::date)`, [urun_id, tipNorm, bas]);
+        // Aynı tarihte zaten fiyat varsa engelle (eski validateProductPriceDates birebir)
+        const cakisma = await client.query(`SELECT id FROM sat_urun_fiyatlar
+            WHERE urun_id=$1 AND tip=$2 AND baslangic = $3::date`, [urun_id, tipNorm, bas]);
+        if (cakisma.rowCount) {
+            await client.query('ROLLBACK');
+            return res.json({ ok: false, hata: 'Bu tarihte zaten bir fiyat kaydı var. Bir zaman aralığında tek bir fiyat olabilir.' });
+        }
+        // Açık (süresiz) fiyat kapatılır: bitis = yeni baslangic — arada BOŞLUK KALMAZ
+        // (eski sorgu: baslangic <= tarih < bitis). Kapanmış geçmiş satırlara dokunulmaz.
+        await client.query(`UPDATE sat_urun_fiyatlar SET bitis = $3::date
+            WHERE urun_id=$1 AND tip=$2 AND bitis IS NULL AND baslangic <= $3::date`, [urun_id, tipNorm, bas]);
         const ins = await client.query(`
             INSERT INTO sat_urun_fiyatlar (urun_id, tip, fiyat, para_birimi, birim, baslangic, olusturan)
             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
@@ -6522,30 +6640,40 @@ function satisMiktarHesapla(eslesenUrunler, bolumler, degerler, bolumMap, ortakK
     Object.values(parametreMap).forEach(p => {
         if (p.kod && String(p.kod).trim() && p.alan_tipi === 2) sumAdlari.add('SUM_' + p.kod);
     });
+    // Java NumberUtils.isCreatable birebir: "45,67" (çoklu seçim id listesi) SAYI DEĞİLDİR.
+    // Virgülü noktaya çevirmek çoklu seçimi yanlışlıkla sayıya dönüştürürdü.
+    const sayiMi = (v) => /^[+-]?(\d+\.?\d*|\.\d+)$/.test(String(v).trim());
     const toplamlar = {};
     for (const d of degerler) {
         if (d.deger == null || String(d.deger).trim() === '') continue;
         const p = parametreMap[d.parametre_eski_id];
         if (!p || !p.kod || !String(p.kod).trim()) continue;
-        const sayi = parseFloat(String(d.deger).replace(',', '.'));
-        if (isNaN(sayi)) continue;
+        if (!sayiMi(d.deger)) continue;
         if (p.alan_tipi !== 2) continue;
         const ad = 'SUM_' + p.kod;
-        toplamlar[ad] = (toplamlar[ad] || 0) + sayi;
+        toplamlar[ad] = (toplamlar[ad] || 0) + parseFloat(d.deger);
     }
     Object.keys(toplamlar).forEach(k => ortak[k] = toplamlar[k]);
     sumAdlari.forEach(ad => { if (!(ad in toplamlar)) ortak[ad] = null; });
 
+    // Eski motor, DEĞERİ OLAN tüm bölümleri gezer (kapsam dışı olanlar dahil) — çünkü
+    // Binding bölümler arası korunur ve kapsam dışı bir değer sonraki formülleri etkileyebilir.
+    // Ürün hesabı yine yalnız o bölüme EŞLEŞEN ürünler için yapılır.
+    const degerliBolumIdler = new Set(degerler.map(d => d.bolum_eski_id).filter(x => x != null));
+    const gezilecek = [...bolumler];
+    degerliBolumIdler.forEach(id => {
+        if (!gezilecek.some(b => b.eski_id === id) && bolumMap[id]) gezilecek.push(bolumMap[id]);
+    });
     const sonuc = eslesenUrunler.map(u => ({ ...u, miktar: null, hesap_detay: [] }));
-    for (const bolum of bolumler) {
+    for (const bolum of gezilecek) {
         // Bölümün değişkenleri (prepareSharedDataByAttributes birebir)
         const erisilen = satisBolumDegerleri(degerler, bolum, bolumMap, ortakKategoriler);
         for (const d of erisilen) {
             if (d.deger == null || String(d.deger).trim() === '') continue;
             const p = parametreMap[d.parametre_eski_id];
             if (!p) continue;
-            const sayi = parseFloat(String(d.deger).replace(',', '.'));
-            if (p.kod && String(p.kod).trim() && !isNaN(sayi)) { ortak[p.kod] = sayi; continue; }
+            // Sayısal değer → kod değişkenine yazılır; değilse (çoklu seçim "45,67" gibi) seçim dalına gider
+            if (p.kod && String(p.kod).trim() && sayiMi(d.deger)) { ortak[p.kod] = parseFloat(d.deger); continue; }
             if (p.alan_tipi !== 1 && p.alan_tipi !== 3) continue;
             for (const secimId of String(d.deger).split(',')) {
                 const secenek = secenekMap[secimId.trim()];
@@ -6706,8 +6834,14 @@ app.delete('/api/satis-analiz-bolum-sil/:id', yetkiKontrol, izinGerekli('satis.t
     try {
         const b = (await pool.query('SELECT * FROM sat_analiz_bolumler WHERE id=$1', [parseInt(req.params.id)])).rows[0];
         if (!b) return res.json({ ok: false, hata: 'Bölüm bulunamadı.' });
-        await pool.query('DELETE FROM sat_analiz_degerler WHERE bolum_eski_id=$1', [b.eski_id]);
-        await pool.query('DELETE FROM sat_analiz_bolumler WHERE id=$1', [b.id]);
+        // Alt bölümleri de birlikte silinir; değerler ve bu bölümden üretilmiş
+        // (elle düzenlenmemiş) döküm satırları da temizlenir.
+        const silinecekBolumler = [b.eski_id];
+        (await pool.query('SELECT eski_id FROM sat_analiz_bolumler WHERE kalem_id=$1 AND ust_bolum_eski_id=$2',
+            [b.kalem_id, b.eski_id])).rows.forEach(x => silinecekBolumler.push(x.eski_id));
+        await pool.query('DELETE FROM sat_analiz_degerler WHERE bolum_eski_id = ANY($1::int[])', [silinecekBolumler]);
+        await pool.query('DELETE FROM sat_analiz_bolumler WHERE eski_id = ANY($1::int[]) AND kalem_id=$2',
+            [silinecekBolumler, b.kalem_id]);
         await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_analiz_bolumler', kayit_id: b.id,
             ozet: `Analiz bölümü silindi: ${b.ad}`, eski_veri: b });
         res.json({ ok: true });
@@ -6782,12 +6916,14 @@ app.post('/api/satis-analiz-uret', yetkiKontrol, izinGerekli('satis.urun', 'YAZM
             'SELECT urun_id FROM sat_analiz_urunler WHERE kalem_id=$1', [kalemId])).rows.map(x => x.urun_id));
         let n = 0;
         for (const u of r.kalemler) {
-            if (u.miktar == null || korunan.has(u.id)) continue;
+            // Eski sistemde formülü olmayan / hesaplanamayan ürün de 0 miktarla KAYDEDİLİR
+            // (kullanıcı ızgarada miktarı elle girsin diye) — atlanmaz.
+            if (korunan.has(u.id)) continue;
             await client.query(`
                 INSERT INTO sat_analiz_urunler (kaynak, kalem_id, urun_id, miktar, sira, notu,
                     kilit_maliyet, kilit_satis, kilit_para_birimi, kilit_tarihi, elle_duzenlendi)
                 VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4,$5,$6,$7,$8,$9,false)`,
-                [kalemId, u.id, u.miktar, u.sira || 0, u.eslesme_notu || null,
+                [kalemId, u.id, u.miktar == null ? 0 : u.miktar, u.sira || 0, u.eslesme_notu || null,
                  u.alis_fiyat, u.satis_fiyat, u.alis_pb || 'TL', bugun]);
             n++;
         }
@@ -7129,16 +7265,53 @@ app.post('/api/satis-teklif-revize', yetkiKontrol, izinGerekli('satis.teklif', '
              e.dahil_isler, e.haric_isler, req.user.email]);
         const yeniId = y.rows[0].id;
         if (!yeniNo) await client.query(`UPDATE sat_teklifler SET teklif_no='W-'||id WHERE id=$1`, [yeniId]);
-        // Kalemler ve analizleri kopyalanır (miktar/fiyat/opsiyonel + analiz durumu sıfır)
+        // Kalemler VE ANALİZLERİ kopyalanır — eski ProposalReviseServiceImpl birebir:
+        // copyAttributeCategories (üst bölüm eşlemesiyle) + copyAttributes + copyComponentProducts
         const kalemler = (await client.query('SELECT * FROM sat_teklif_kalemleri WHERE teklif_id=$1 ORDER BY sira, id', [id])).rows;
         for (const k of kalemler) {
-            await client.query(`
+            const yk = await client.query(`
                 INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim, ikincil_miktar,
-                    ikincil_birim, opsiyonel, sira, birim_fiyat, toplam, analiz_durumu)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'BELIRTILMEMIS')`,
+                    ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam,
+                    bilesen_turu, analiz_durumu)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS') RETURNING id`,
                 [yeniId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar, k.ikincil_birim,
-                 k.opsiyonel, k.sira, k.birim_fiyat, k.toplam]);
+                 k.ikincil_birim_sembol, k.opsiyonel, k.sira, k.birim_fiyat, k.toplam, k.bilesen_turu]);
+            const yeniKalemId = yk.rows[0].id;
+            // 1) Bölümler kopyalanır, eski→yeni bölüm eşlemesi tutulur (üst bölüm bağı için)
+            const bolumler = (await client.query('SELECT * FROM sat_analiz_bolumler WHERE kalem_id=$1 ORDER BY sira, eski_id', [k.id])).rows;
+            const bolumEsleme = {};
+            for (const b of bolumler) {
+                const yb = await client.query(`
+                    INSERT INTO sat_analiz_bolumler (kaynak, kalem_id, ad, sira, kapsamda, urun_kategori_eski_id)
+                    VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4,$5) RETURNING id`,
+                    [yeniKalemId, b.ad, b.sira, b.kapsamda, b.urun_kategori_eski_id]);
+                await client.query('UPDATE sat_analiz_bolumler SET eski_id = 100000000 + id WHERE id=$1', [yb.rows[0].id]);
+                const yeniEski = (await client.query('SELECT eski_id FROM sat_analiz_bolumler WHERE id=$1', [yb.rows[0].id])).rows[0].eski_id;
+                bolumEsleme[b.eski_id] = { id: yb.rows[0].id, eski_id: yeniEski, ust: b.ust_bolum_eski_id };
+            }
+            // Üst bölüm bağlarını yeni kimliklere çevir
+            for (const [eskiBolumId, y] of Object.entries(bolumEsleme)) {
+                if (y.ust && bolumEsleme[y.ust]) {
+                    await client.query('UPDATE sat_analiz_bolumler SET ust_bolum_eski_id=$1 WHERE id=$2',
+                        [bolumEsleme[y.ust].eski_id, y.id]);
+                }
+            }
+            // 2) Öznitelik değerleri kopyalanır (bölüm bağı yeni kimliklerle)
+            const degerler = (await client.query('SELECT * FROM sat_analiz_degerler WHERE kalem_id=$1', [k.id])).rows;
+            for (const d of degerler) {
+                const yeniBolum = bolumEsleme[d.bolum_eski_id]?.eski_id || null;
+                await client.query(`INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
+                    VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4)`, [yeniKalemId, yeniBolum, d.parametre_id, d.deger]);
+            }
+            // 3) Malzeme dökümü kopyalanır (kilitli fiyatlarıyla)
+            await client.query(`
+                INSERT INTO sat_analiz_urunler (kaynak, kalem_id, urun_id, miktar, sira, notu,
+                    kilit_maliyet, kilit_satis, kilit_para_birimi, kilit_tarihi, elle_duzenlendi)
+                SELECT 'TEKLIF_KALEMI', $1, urun_id, miktar, sira, notu,
+                       kilit_maliyet, kilit_satis, kilit_para_birimi, kilit_tarihi, elle_duzenlendi
+                FROM sat_analiz_urunler WHERE kalem_id=$2`, [yeniKalemId, k.id]);
         }
+        await satisTeklifToplamlariHesapla(client, yeniId);
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_teklifler', kayit_id: yeniId,
             ozet: `Teklif revize edildi: ${e.teklif_no} → ${yeniNo || 'W-' + yeniId} (${kalemler.length} kalem kopyalandı)` });
@@ -7156,9 +7329,13 @@ app.post('/api/satis-sozlesme-olustur', yetkiKontrol, izinGerekli('satis.teklif'
         const projeId = parseInt(req.body.proje_id);
         const t = await client.query(`
             SELECT * FROM sat_teklifler WHERE proje_id=$1 AND durum='ONAYLANAN'
-            ORDER BY guncelleme DESC LIMIT 1`, [projeId]);
+            ORDER BY guncelleme DESC`, [projeId]);
         if (!t.rowCount) {
             return res.json({ ok: false, hata: 'Bu projede onaylanmış bir teklif bulunmuyor. Önce bir teklifi onaylamalısınız.' });
+        }
+        // Eski findApprovedProposalByProjectId: birden fazla onaylı teklif varsa HATA verir
+        if (t.rowCount > 1) {
+            return res.json({ ok: false, hata: `Bu projede ${t.rowCount} adet onaylanmış teklif var. Sözleşme oluşturmak için yalnız biri onaylı kalmalıdır.` });
         }
         const teklif = t.rows[0];
         const pk = (await client.query('SELECT proje_kodu FROM projeler WHERE id=$1', [projeId])).rows[0];
@@ -10350,7 +10527,12 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS analiz_tarihi TIMESTAMPTZ,
             ADD COLUMN IF NOT EXISTS analiz_eden TEXT`).catch(() => {});
         await pool.query(`ALTER TABLE sat_teklifler
-            ADD COLUMN IF NOT EXISTS sartname_turu TEXT`).catch(() => {});
+            ADD COLUMN IF NOT EXISTS sartname_turu TEXT,
+            ADD COLUMN IF NOT EXISTS toplam_buyukluk TEXT,
+            ADD COLUMN IF NOT EXISTS opsiyonlu_toplam NUMERIC`).catch(() => {});
+        // Birim sembolleri (eski unit_type.symbol) — "Teklif Edilen Proje Büyüklüğü" bunu kullanır
+        await pool.query(`ALTER TABLE sat_teklif_kalemleri
+            ADD COLUMN IF NOT EXISTS ikincil_birim_sembol TEXT`).catch(() => {});
         await pool.query(`CREATE TABLE IF NOT EXISTS sat_yorumlar (
             id SERIAL PRIMARY KEY,
             eski_id INTEGER UNIQUE,

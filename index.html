@@ -5523,6 +5523,7 @@ async function satisTeklifDetayAc(id) {
             <div class="col-md-3"><span class="text-muted">Proje:</span> <b>${t.proje_kodu ? esc(t.proje_kodu) + ' — ' + esc(t.proje_adi_goster || '') : '-'}</b></div>
             <div class="col-md-2 text-end">${satisTeklifDurumBadge(t.durum)}</div>
             ${t.sartname_turu ? `<div class="col-md-3 mt-1"><span class="text-muted">Şartname Türü:</span> <b>${esc(t.sartname_turu)}</b></div>` : ''}
+            ${t.toplam_buyukluk ? `<div class="col-md-4 mt-1"><span class="text-muted">Teklif Edilen Proje Büyüklüğü:</span> <b>${esc(t.toplam_buyukluk)}</b></div>` : ''}
         </div>
         <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:0.82rem;">
             <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th><th class="text-center">Analiz</th><th style="width:120px;"></th></tr></thead>
@@ -6067,6 +6068,7 @@ function stfKalemEkle(k) {
     k = k || {};
     const tr = document.createElement('tr');
     tr.className = 'stf-kalem';
+    tr.dataset.kalemId = k.id || '';      // mevcut kalem kimliği — analiz verisi kopmasın
     tr.innerHTML = `
         <td><input type="text" class="form-control form-control-sm stf-k-ad" placeholder="Kalem adı" value="${esc(k.ad || '')}">
             <input type="text" class="form-control form-control-sm mt-1 stf-k-aciklama" placeholder="Açıklama (opsiyonel)" value="${esc(k.aciklama || '')}"></td>
@@ -6170,6 +6172,7 @@ async function satisTeklifKaydet() {
     const musteriId = document.getElementById('stfMusteriId').value;
     if (!musteriId) { alanHatasi('stfMusteriAra'); showToast('Müşteri seçilmelidir.', 'error'); return; }
     const kalemler = [...document.querySelectorAll('.stf-kalem')].map(tr => ({
+        id: tr.dataset.kalemId || undefined,
         ad: tr.querySelector('.stf-k-ad').value,
         aciklama: tr.querySelector('.stf-k-aciklama').value,
         miktar: tr.querySelector('.stf-k-miktar').value,
