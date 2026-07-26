@@ -5746,6 +5746,115 @@ app.get('/api/proje-karlilik/:projeId', yetkiKontrol, async (req, res, next) => 
 // ============================================================================
 // Modül kataloğu — UI ile sıkı bağlı, kod tarafında tanımlanır
 // İleride permission middleware bu listeyi referans alır
+// ==================== SATIŞ MODÜLÜ — MÜŞTERİLER (Faz C1) ====================
+// Müşteri ana kartı: eski aset sisteminden aktarılan 2.290 müşteri + ilgili kişiler.
+// Mali İşler carisi (musteriler) ve projeler sat_musteri_id ile buraya bağlanır.
+
+app.get('/api/satis-musteriler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const r = await pool.query(`
+            SELECT m.id, m.ad, m.tip, m.durum, m.sehir, m.ulke, m.temsilci_email, m.kayit_tarihi,
+                   COALESCE(p.c, 0) AS proje_sayisi,
+                   COALESCE(k.c, 0) AS kisi_sayisi,
+                   (mc.id IS NOT NULL) AS mali_bagli
+            FROM sat_musteriler m
+            LEFT JOIN (SELECT sat_musteri_id, COUNT(*)::int c FROM projeler WHERE sat_musteri_id IS NOT NULL GROUP BY 1) p ON p.sat_musteri_id = m.id
+            LEFT JOIN (SELECT musteri_id, COUNT(*)::int c FROM sat_musteri_kisiler GROUP BY 1) k ON k.musteri_id = m.id
+            LEFT JOIN LATERAL (SELECT id FROM musteriler mm WHERE mm.sat_musteri_id = m.id LIMIT 1) mc ON true
+            ORDER BY m.ad
+        `);
+        res.json({ ok: true, musteriler: r.rows });
+    } catch (e) { next(e); }
+});
+
+app.get('/api/satis-musteri-detay/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const m = await pool.query('SELECT * FROM sat_musteriler WHERE id=$1', [id]);
+        if (m.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
+        const kisiler = await pool.query('SELECT * FROM sat_musteri_kisiler WHERE musteri_id=$1 ORDER BY ad', [id]);
+        const projeler = await pool.query(`
+            SELECT id, proje_kodu, proje_adi, durum, musteri_adi
+            FROM projeler WHERE sat_musteri_id=$1 ORDER BY proje_kodu DESC`, [id]);
+        const mali = await pool.query('SELECT id, firma_adi, devir_alacak, durum FROM musteriler WHERE sat_musteri_id=$1', [id]);
+        res.json({ ok: true, musteri: m.rows[0], kisiler: kisiler.rows, projeler: projeler.rows, mali_cariler: mali.rows });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, ad, uzun_ad, email, telefon, adres, fatura_adresi, vergi_dairesi,
+                vergi_no, iban, mali_not, tip, durum, sektor, ulke, sehir, temsilci_email } = req.body;
+        const adNorm = (ad || '').trim();
+        if (!adNorm) return res.json({ ok: false, hata: 'Müşteri adı zorunludur.' });
+        const durumNorm = (durum === 'PASIF') ? 'PASIF' : 'AKTIF';
+        if (id) {
+            const eskiR = await pool.query('SELECT * FROM sat_musteriler WHERE id=$1', [id]);
+            if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
+            await pool.query(`
+                UPDATE sat_musteriler SET ad=$1, uzun_ad=$2, email=$3, telefon=$4, adres=$5,
+                    fatura_adresi=$6, vergi_dairesi=$7, vergi_no=$8, iban=$9, mali_not=$10,
+                    tip=$11, durum=$12, sektor=$13, ulke=$14, sehir=$15, temsilci_email=$16,
+                    guncelleme=now()
+                WHERE id=$17
+            `, [adNorm, uzun_ad || null, email || null, telefon || null, adres || null,
+                fatura_adresi || null, vergi_dairesi || null, vergi_no || null, iban || null,
+                mali_not || null, tip || null, durumNorm, sektor || null, ulke || null,
+                sehir || null, temsilci_email || null, id]);
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_musteriler', kayit_id: id,
+                ozet: `Müşteri güncellendi: ${adNorm}`, eski_veri: eskiR.rows[0], yeni_veri: req.body });
+            return res.json({ ok: true, id });
+        }
+        const ins = await pool.query(`
+            INSERT INTO sat_musteriler (ad, uzun_ad, email, telefon, adres, fatura_adresi,
+                vergi_dairesi, vergi_no, iban, mali_not, tip, durum, sektor, ulke, sehir,
+                temsilci_email, kaynak, olusturan)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'manuel',$17)
+            RETURNING id
+        `, [adNorm, uzun_ad || null, email || null, telefon || null, adres || null,
+            fatura_adresi || null, vergi_dairesi || null, vergi_no || null, iban || null,
+            mali_not || null, tip || null, durumNorm, sektor || null, ulke || null,
+            sehir || null, temsilci_email || null, req.user.email]);
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_musteriler', kayit_id: ins.rows[0].id,
+            ozet: `Yeni müşteri: ${adNorm}`, yeni_veri: req.body });
+        res.json({ ok: true, id: ins.rows[0].id });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/satis-musteri-kisi-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, musteri_id, ad, unvan, email, telefon, notu } = req.body;
+        const adNorm = (ad || '').trim();
+        if (!adNorm) return res.json({ ok: false, hata: 'Kişi adı zorunludur.' });
+        if (id) {
+            await pool.query(`UPDATE sat_musteri_kisiler SET ad=$1, unvan=$2, email=$3, telefon=$4, notu=$5 WHERE id=$6`,
+                [adNorm, unvan || null, email || null, telefon || null, notu || null, id]);
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_musteri_kisiler', kayit_id: id,
+                ozet: `Müşteri kişisi güncellendi: ${adNorm}`, yeni_veri: req.body });
+            return res.json({ ok: true, id });
+        }
+        if (!musteri_id) return res.json({ ok: false, hata: 'Müşteri belirtilmedi.' });
+        const ins = await pool.query(`INSERT INTO sat_musteri_kisiler (musteri_id, ad, unvan, email, telefon, notu)
+            VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+            [musteri_id, adNorm, unvan || null, email || null, telefon || null, notu || null]);
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_musteri_kisiler', kayit_id: ins.rows[0].id,
+            ozet: `Yeni müşteri kişisi: ${adNorm}`, yeni_veri: req.body });
+        res.json({ ok: true, id: ins.rows[0].id });
+    } catch (e) { next(e); }
+});
+
+app.delete('/api/satis-musteri-kisi-sil/:id', yetkiKontrol, izinGerekli('satis.musteri', 'TAM'), async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const eskiR = await pool.query('SELECT * FROM sat_musteri_kisiler WHERE id=$1', [id]);
+        if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Kişi bulunamadı.' });
+        await pool.query('DELETE FROM sat_musteri_kisiler WHERE id=$1', [id]);
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_musteri_kisiler', kayit_id: id,
+            ozet: `Müşteri kişisi silindi: ${eskiR.rows[0].ad}`, eski_veri: eskiR.rows[0] });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
+});
+
 const MODUL_KATALOG = [
     { kod: 'anasayfa',            ad: 'Ana Sayfa',           grup: 'Genel' },
     { kod: 'projeler',            ad: 'Projeler',            grup: 'İş Akışı' },
@@ -5757,6 +5866,7 @@ const MODUL_KATALOG = [
     { kod: 'satinalma.mal_kabul', ad: 'Satınalma — Mal Kabul', grup: 'Satınalma' },
     { kod: 'satinalma.arsiv',     ad: 'Satınalma — Arşiv', grup: 'Satınalma' },
     { kod: 'satinalma.rapor',     ad: 'Satınalma — Rapor (Genel Bakış)', grup: 'Satınalma' },
+    { kod: 'satis.musteri',       ad: 'Satış — Müşteriler',  grup: 'Satış' },
     { kod: 'mali.tedarikci',      ad: 'Mali İşler — Tedarikçi Cari', grup: 'Mali İşler' },
     { kod: 'mali.musteri',        ad: 'Mali İşler — Müşteri Cari',   grup: 'Mali İşler' },
     { kod: 'stok',                ad: 'Stok',                grup: 'Operasyon' },
@@ -6001,6 +6111,10 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/dashboard/, modul: 'anasayfa', seviye: 'OKUMA' },
     // Hızlı arama — temel okuma
     { pattern: /^\/api\/quick-search/, modul: 'anasayfa', seviye: 'OKUMA' },
+
+    // Satış — Müşteriler
+    { pattern: /^\/api\/satis-musteri/, method: 'GET', modul: 'satis.musteri', seviye: 'OKUMA' },
+    { pattern: /^\/api\/satis-musteri/, modul: 'satis.musteri', seviye: 'YAZMA' },
 
     // Projeler
     { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat|proje-dosyalari)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
@@ -8569,6 +8683,41 @@ async function semaGuvence() {
                 ADD COLUMN IF NOT EXISTS cc_roller TEXT[] DEFAULT '{}',
                 ADD COLUMN IF NOT EXISTS cc_emailler TEXT[] DEFAULT '{}'
         `);
+
+        // SATIŞ MODÜLÜ (Faz C1): müşteri ana kartı — eski aset sisteminden aktarılan
+        // 2.290 müşteri + ilgili kişiler. Mali İşler'deki musteriler (cari) tablosu
+        // AYRI kalır ve sat_musteri_id ile buraya bağlanır.
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_musteriler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            ad TEXT NOT NULL,
+            uzun_ad TEXT,
+            email TEXT, telefon TEXT,
+            adres TEXT, fatura_adresi TEXT,
+            vergi_dairesi TEXT, vergi_no TEXT, iban TEXT, mali_not TEXT,
+            tip TEXT, durum TEXT DEFAULT 'AKTIF',
+            nasil_duydu TEXT, sektor TEXT, ulke TEXT, sehir TEXT,
+            temsilci_email TEXT,
+            kaynak TEXT DEFAULT 'manuel',
+            olusturan TEXT, kayit_tarihi DATE DEFAULT CURRENT_DATE,
+            guncelleme TIMESTAMPTZ DEFAULT now()
+        )`).catch(e => console.error('⚠️ sat_musteriler:', e.message));
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_musteri_kisiler (
+            id SERIAL PRIMARY KEY,
+            eski_id INTEGER UNIQUE,
+            musteri_id INTEGER NOT NULL REFERENCES sat_musteriler(id) ON DELETE CASCADE,
+            ad TEXT NOT NULL, unvan TEXT, email TEXT, telefon TEXT, notu TEXT
+        )`).catch(e => console.error('⚠️ sat_musteri_kisiler:', e.message));
+        await pool.query(`ALTER TABLE projeler ADD COLUMN IF NOT EXISTS sat_musteri_id INTEGER REFERENCES sat_musteriler(id)`)
+            .catch(e => console.error('⚠️ projeler.sat_musteri_id:', e.message));
+        await pool.query(`ALTER TABLE musteriler ADD COLUMN IF NOT EXISTS sat_musteri_id INTEGER REFERENCES sat_musteriler(id)`)
+            .catch(e => console.error('⚠️ musteriler.sat_musteri_id:', e.message));
+        // Varsayılan izinler: SATIS ve YONETIM rollerine satis.musteri TAM (admin matristen değiştirebilir)
+        await pool.query(`
+            INSERT INTO rol_izinleri (rol_id, modul_kod, seviye)
+            SELECT id, 'satis.musteri', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
+            ON CONFLICT (rol_id, modul_kod) DO NOTHING
+        `).catch(e => console.error('⚠️ satis.musteri izin:', e.message));
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için

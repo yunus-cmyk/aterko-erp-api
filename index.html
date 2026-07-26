@@ -31,6 +31,7 @@
     :root {
       --mod-satinalma: #198754; --mod-uretim: #b45309; --mod-montaj: #6f42c1;
       --mod-mali: #1b3a6b;      --mod-sevkiyat: #0e7490; --mod-stok: #475569;
+      --mod-satis: #9d2449;
     }
     .text-mod-satinalma { color: var(--mod-satinalma) !important; }
     .text-mod-uretim    { color: var(--mod-uretim) !important; }
@@ -38,6 +39,8 @@
     .text-mod-mali      { color: var(--mod-mali) !important; }
     .text-mod-sevkiyat  { color: var(--mod-sevkiyat) !important; }
     .text-mod-stok      { color: var(--mod-stok) !important; }
+    .text-mod-satis     { color: var(--mod-satis) !important; }
+    .bg-mod-satis       { background-color: var(--mod-satis) !important; }
     .bg-mod-satinalma { background-color: var(--mod-satinalma) !important; }
     .bg-mod-uretim    { background-color: var(--mod-uretim) !important; }
     .bg-mod-montaj    { background-color: var(--mod-montaj) !important; }
@@ -256,6 +259,7 @@
       <li class="nav-item"><a class="nav-link" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-2"></i>Sevkiyat</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-montaj" onclick="setTab('montaj')" class="text-mod-montaj"><i class="bi bi-wrench-adjustable me-2"></i>Montaj</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Rapor</a></li>
+      <li class="nav-item d-none"><a class="nav-link text-mod-satis" id="nav-satis" onclick="setTab('satis')"><i class="bi bi-briefcase me-2"></i>Satış</a></li>
       <li class="nav-item d-none"><a class="nav-link" id="nav-mali" onclick="setTab('mali')" class="text-mod-mali"><i class="bi bi-cash-stack me-2"></i>Mali İşler</a></li>
       <li class="nav-item d-none" id="nav-gorevler-wrap"><a class="nav-link" id="nav-gorevler" onclick="setTab('gorevler')" style="color:#0d6efd;"><i class="bi bi-check2-square me-2"></i>Görevler</a></li>
       <!-- Tedarikçi sekmesi Satınalma alt sekmesine taşındı, doğrudan link kaldırıldı -->
@@ -270,6 +274,133 @@
     <div id="mainContent" class="d-none"></div>
 
     <!-- ============ MALİ İŞLER (cari takip — Faz 1) ============ -->
+    <!-- SATIŞ MODÜLÜ (Faz C1): Müşteri ana kartları -->
+    <div id="satisArea" class="d-none p-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0 fw-bold text-mod-satis"><i class="bi bi-briefcase me-2"></i>Satış — Müşteriler</h5>
+        <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" data-izin-modul="satis.musteri" data-izin-seviye="YAZMA" onclick="satisMusteriFormAc()">
+          <i class="bi bi-plus-lg me-1"></i>Yeni Müşteri
+        </button>
+      </div>
+      <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+        <div class="input-group input-group-sm" style="max-width:340px;">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" id="satisMusteriAra" class="form-control" placeholder="Müşteri, şehir, temsilci ara..." oninput="satisMusteriListeSuz()">
+        </div>
+        <div class="form-check form-check-sm small mb-0">
+          <input class="form-check-input" type="checkbox" id="satisSadeceProjeli" onchange="satisMusteriListeSuz()">
+          <label class="form-check-label" for="satisSadeceProjeli">Sadece projesi olanlar</label>
+        </div>
+        <span class="text-muted small ms-auto" id="satisMusteriSayac"></span>
+      </div>
+      <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+        <div class="table-responsive" style="max-height:70vh;">
+          <table class="table table-hover mb-0 align-middle" style="font-size:0.85rem;">
+            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+              <tr>
+                <th>Müşteri</th>
+                <th>Tip</th>
+                <th>Şehir</th>
+                <th>Temsilci</th>
+                <th class="text-center">Projeler</th>
+                <th class="text-center">Kişiler</th>
+                <th class="text-center">Mali Cari</th>
+                <th class="text-center">Durum</th>
+              </tr>
+            </thead>
+            <tbody id="satisMusteriTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — müşteri detay (salt izleme; işlemler Düzenle'de) -->
+    <div class="modal fade" id="modalSatisMusteriDetay" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-person-vcard me-2"></i><span id="smdBaslik">Müşteri Detayı</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3" id="smdGovde"></div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.musteri" data-izin-seviye="YAZMA" onclick="satisMusteriFormAc(window.smdAktifId)">
+              <i class="bi bi-pencil-square me-1"></i>Düzenle
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — müşteri yeni/düzenle -->
+    <div class="modal fade" id="modalSatisMusteriForm" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-person-plus me-2"></i><span id="smfBaslik">Yeni Müşteri</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3">
+            <div class="row g-2">
+              <div class="col-md-6"><label class="form-label">Müşteri Adı <span class="text-danger">*</span></label>
+                <input type="text" id="smfAd" class="form-control form-control-sm"></div>
+              <div class="col-md-6"><label class="form-label">Resmi Ünvan</label>
+                <input type="text" id="smfUzunAd" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">E-posta</label>
+                <input type="email" id="smfEmail" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Telefon</label>
+                <input type="text" id="smfTelefon" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Tip</label>
+                <select id="smfTip" class="form-select form-select-sm">
+                  <option value="">Seçiniz...</option>
+                  <option>Kurumsal</option>
+                  <option>Bireysel</option>
+                  <option>Kamu</option>
+                </select></div>
+              <div class="col-md-4"><label class="form-label">Ülke</label>
+                <input type="text" id="smfUlke" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Şehir</label>
+                <input type="text" id="smfSehir" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Sektör</label>
+                <input type="text" id="smfSektor" class="form-control form-control-sm"></div>
+              <div class="col-md-8"><label class="form-label">Adres</label>
+                <input type="text" id="smfAdres" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Müşteri Temsilcisi</label>
+                <select id="smfTemsilci" class="form-select form-select-sm"><option value="">Seçiniz...</option></select></div>
+              <div class="col-md-6"><label class="form-label">Fatura Adresi</label>
+                <input type="text" id="smfFaturaAdresi" class="form-control form-control-sm"></div>
+              <div class="col-md-3"><label class="form-label">Vergi Dairesi</label>
+                <input type="text" id="smfVergiDairesi" class="form-control form-control-sm"></div>
+              <div class="col-md-3"><label class="form-label">Vergi No</label>
+                <input type="text" id="smfVergiNo" class="form-control form-control-sm"></div>
+              <div class="col-md-6"><label class="form-label">IBAN</label>
+                <input type="text" id="smfIban" class="form-control form-control-sm"></div>
+              <div class="col-md-6"><label class="form-label">Durum</label>
+                <select id="smfDurum" class="form-select form-select-sm">
+                  <option value="AKTIF">Aktif</option>
+                  <option value="PASIF">Pasif</option>
+                </select></div>
+              <div class="col-12"><label class="form-label">Mali Not</label>
+                <textarea id="smfMaliNot" class="form-control form-control-sm" rows="2"></textarea></div>
+            </div>
+            <hr class="my-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="fw-bold small"><i class="bi bi-people me-1"></i>İlgili Kişiler</span>
+              <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="satisKisiSatirEkle()"><i class="bi bi-plus"></i> Kişi Ekle</button>
+            </div>
+            <div id="smfKisiler"></div>
+          </div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" id="smfKaydetBtn" onclick="satisMusteriKaydet()">
+              <i class="bi bi-check-lg me-1"></i>Kaydet
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="maliArea" class="d-none p-3">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h5 class="mb-0 fw-bold text-mod-mali"><i class="bi bi-cash-stack me-2"></i>Mali İşler</h5>
@@ -4062,7 +4193,8 @@ function izinleriUygula() {
         'nav-sevkiyat':     'sevkiyat',
         'nav-montaj':       'montaj',
         'nav-ozet':         'rapor.ozet',
-        'nav-mali':         'mali.tedarikci'
+        'nav-mali':         'mali.tedarikci',
+        'nav-satis':        'satis.musteri'
     };
     for (const [navId, modul] of Object.entries(sekmeModulMap)) {
         const el = document.getElementById(navId);
@@ -4158,6 +4290,206 @@ function maliOtoYenileKur() {
     if (window._maliOtoTimer) return;
     window._maliOtoTimer = setInterval(() => { if (!document.hidden) maliAkisYenile(); }, 30000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) maliAkisYenile(); });
+}
+
+// ==================== SATIŞ MODÜLÜ — MÜŞTERİLER (Faz C1) ====================
+let satisMusteriListe = [];
+
+async function satisSekmeInit() {
+    const r = await secureFetch('/satis-musteriler').catch(() => null);
+    if (!r || !r.ok) { showToast('Müşteri listesi yüklenemedi.', 'error'); return; }
+    satisMusteriListe = r.musteriler || [];
+    satisMusteriListeSuz();
+}
+
+function satisMusteriListeSuz() {
+    const q = trAra(document.getElementById('satisMusteriAra').value || '');
+    const sadeceProjeli = document.getElementById('satisSadeceProjeli').checked;
+    let liste = satisMusteriListe.filter(m => {
+        if (sadeceProjeli && !(m.proje_sayisi > 0)) return false;
+        if (!q) return true;
+        return trAra([m.ad, m.sehir, m.ulke, m.temsilci_email, m.tip].filter(Boolean).join(' ')).includes(q);
+    });
+    const toplam = liste.length;
+    const LIMIT = 500;
+    const kisildi = toplam > LIMIT;
+    if (kisildi) liste = liste.slice(0, LIMIT);
+    const tbody = document.getElementById('satisMusteriTbody');
+    if (!toplam) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">${satisMusteriListe.length ? 'Eşleşen müşteri bulunamadı.' : 'Henüz müşteri eklenmedi.'}</td></tr>`;
+        document.getElementById('satisMusteriSayac').innerText = '';
+        return;
+    }
+    tbody.innerHTML = liste.map(m => `
+        <tr style="cursor:pointer;" onclick="satisMusteriDetayAc(${m.id})">
+            <td><span class="fw-bold text-dark">${esc(m.ad)}</span></td>
+            <td class="text-muted">${esc(m.tip || '-')}</td>
+            <td>${esc(m.sehir || '-')}</td>
+            <td class="small">${esc((m.temsilci_email || '-').split('@')[0])}</td>
+            <td class="text-center">${m.proje_sayisi > 0 ? `<span class="badge bg-mod-satis">${m.proje_sayisi}</span>` : '<span class="text-muted">-</span>'}</td>
+            <td class="text-center text-muted">${m.kisi_sayisi || '-'}</td>
+            <td class="text-center">${m.mali_bagli ? '<i class="bi bi-link-45deg text-mod-mali" title="Mali cari bağlı"></i>' : ''}</td>
+            <td class="text-center">${m.durum === 'PASIF' ? '<span class="badge bg-secondary">Pasif</span>' : '<span class="badge bg-success">Aktif</span>'}</td>
+        </tr>`).join('');
+    document.getElementById('satisMusteriSayac').innerText =
+        kisildi ? `${toplam} müşteriden ilk ${LIMIT} gösteriliyor — daraltmak için arama yapın` : `${toplam} müşteri`;
+}
+
+async function satisMusteriDetayAc(id) {
+    const r = await secureFetch('/satis-musteri-detay/' + id).catch(() => null);
+    if (!r || !r.ok) { showToast(r?.hata || 'Müşteri detayı yüklenemedi.', 'error'); return; }
+    const m = r.musteri;
+    window.smdAktifId = m.id;
+    window.smdAktifDetay = r;
+    document.getElementById('smdBaslik').innerText = m.ad;
+    const bilgi = (etiket, deger) => deger ? `<div class="col-md-6 mb-1"><span class="text-muted small">${etiket}:</span> <span class="small fw-semibold">${esc(deger)}</span></div>` : '';
+    document.getElementById('smdGovde').innerHTML = `
+        <div class="row">
+            ${bilgi('Resmi Ünvan', m.uzun_ad && m.uzun_ad !== m.ad ? m.uzun_ad : '')}
+            ${bilgi('Tip', m.tip)}${bilgi('Durum', m.durum === 'PASIF' ? 'Pasif' : 'Aktif')}
+            ${bilgi('E-posta', m.email)}${bilgi('Telefon', m.telefon)}
+            ${bilgi('Ülke', m.ulke)}${bilgi('Şehir', m.sehir)}
+            ${bilgi('Sektör', m.sektor)}${bilgi('Bizi Nereden Duydu', m.nasil_duydu)}
+            ${bilgi('Adres', m.adres)}${bilgi('Fatura Adresi', m.fatura_adresi)}
+            ${bilgi('Vergi Dairesi', m.vergi_dairesi)}${bilgi('Vergi No', m.vergi_no)}
+            ${bilgi('IBAN', m.iban)}${bilgi('Temsilci', m.temsilci_email)}
+            ${bilgi('Kayıt', m.kayit_tarihi ? formatTarihTR(m.kayit_tarihi) : '')}
+            ${bilgi('Mali Not', m.mali_not)}
+        </div>
+        ${r.kisiler.length ? `
+        <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-people me-1"></i>İlgili Kişiler (${r.kisiler.length})</div>
+        <div class="table-responsive"><table class="table table-sm mb-2" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>Ad</th><th>Ünvan</th><th>E-posta</th><th>Telefon</th></tr></thead>
+            <tbody>${r.kisiler.map(k => `<tr><td class="fw-semibold">${esc(k.ad)}</td><td>${esc(k.unvan || '-')}</td><td>${esc(k.email || '-')}</td><td>${esc(k.telefon || '-')}</td></tr>`).join('')}</tbody>
+        </table></div>` : ''}
+        ${r.projeler.length ? `
+        <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-kanban me-1"></i>Projeler (${r.projeler.length})</div>
+        <div class="table-responsive"><table class="table table-sm mb-2" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>Kod</th><th>Proje</th><th>Durum</th></tr></thead>
+            <tbody>${r.projeler.map(p => `<tr><td class="fw-semibold">${esc(p.proje_kodu)}</td><td>${esc(p.proje_adi || '-')}</td><td>${typeof getDurumBadge === 'function' ? getDurumBadge(p.durum) : esc(p.durum)}</td></tr>`).join('')}</tbody>
+        </table></div>` : ''}
+        ${r.mali_cariler.length ? `
+        <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-cash-stack me-1 text-mod-mali"></i>Mali İşler Bağlantısı</div>
+        <div class="small text-muted">${r.mali_cariler.map(c => `${esc(c.firma_adi)} — cari kart bağlı`).join('<br>')}</div>` : ''}
+    `;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisMusteriDetay')).show();
+}
+
+function satisTemsilciSecenekleriDoldur(secili) {
+    const sel = document.getElementById('smfTemsilci');
+    const emailler = [...new Set(satisMusteriListe.map(m => m.temsilci_email).filter(Boolean))].sort();
+    if (secili && !emailler.includes(secili)) emailler.push(secili);
+    sel.innerHTML = '<option value="">Seçiniz...</option>' +
+        emailler.map(e => `<option value="${esc(e)}" ${e === secili ? 'selected' : ''}>${esc(e)}</option>`).join('');
+}
+
+function satisKisiSatirEkle(k) {
+    k = k || {};
+    const div = document.createElement('div');
+    div.className = 'row g-1 mb-1 smf-kisi-satir';
+    div.dataset.kisiId = k.id || '';
+    div.innerHTML = `
+        <div class="col-md-3"><input type="text" class="form-control form-control-sm smf-k-ad" placeholder="Ad Soyad" value="${esc(k.ad || '')}"></div>
+        <div class="col-md-2"><input type="text" class="form-control form-control-sm smf-k-unvan" placeholder="Ünvan" value="${esc(k.unvan || '')}"></div>
+        <div class="col-md-3"><input type="email" class="form-control form-control-sm smf-k-email" placeholder="E-posta" value="${esc(k.email || '')}"></div>
+        <div class="col-md-3"><input type="text" class="form-control form-control-sm smf-k-telefon" placeholder="Telefon" value="${esc(k.telefon || '')}"></div>
+        <div class="col-md-1 text-end"><button type="button" class="btn btn-outline-danger btn-sm py-0" title="Kaldır" onclick="satisKisiSatirSil(this)"><i class="bi bi-x"></i></button></div>`;
+    document.getElementById('smfKisiler').appendChild(div);
+}
+
+async function satisKisiSatirSil(btn) {
+    const satir = btn.closest('.smf-kisi-satir');
+    const kisiId = satir.dataset.kisiId;
+    if (!kisiId) { satir.remove(); return; }
+    if (!confirm('Bu kişi kalıcı olarak silinecek. Emin misiniz?')) return;
+    showLoading();
+    const r = await secureFetch('/satis-musteri-kisi-sil/' + kisiId, { method: 'DELETE' }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Kişi silinemedi.', 'error'); return; }
+    satir.remove();
+    showToast('Kişi silindi.', 'success');
+}
+
+function satisMusteriFormAc(id) {
+    // Detay penceresi açıksa kapat (düzenleme ayrı pencerede)
+    const detayModal = bootstrap.Modal.getInstance(document.getElementById('modalSatisMusteriDetay'));
+    if (detayModal) detayModal.hide();
+    modalFormSifirla('modalSatisMusteriForm');
+    document.getElementById('smfKisiler').innerHTML = '';
+    window.smfAktifId = id || null;
+    document.getElementById('smfBaslik').innerText = id ? 'Müşteri Düzenle' : 'Yeni Müşteri';
+    if (id && window.smdAktifDetay && window.smdAktifDetay.musteri.id === id) {
+        const m = window.smdAktifDetay.musteri;
+        document.getElementById('smfAd').value = m.ad || '';
+        document.getElementById('smfUzunAd').value = m.uzun_ad || '';
+        document.getElementById('smfEmail').value = m.email || '';
+        document.getElementById('smfTelefon').value = m.telefon || '';
+        document.getElementById('smfTip').value = m.tip || '';
+        document.getElementById('smfUlke').value = m.ulke || '';
+        document.getElementById('smfSehir').value = m.sehir || '';
+        document.getElementById('smfSektor').value = m.sektor || '';
+        document.getElementById('smfAdres').value = m.adres || '';
+        document.getElementById('smfFaturaAdresi').value = m.fatura_adresi || '';
+        document.getElementById('smfVergiDairesi').value = m.vergi_dairesi || '';
+        document.getElementById('smfVergiNo').value = m.vergi_no || '';
+        document.getElementById('smfIban').value = m.iban || '';
+        document.getElementById('smfDurum').value = m.durum === 'PASIF' ? 'PASIF' : 'AKTIF';
+        document.getElementById('smfMaliNot').value = m.mali_not || '';
+        satisTemsilciSecenekleriDoldur(m.temsilci_email);
+        (window.smdAktifDetay.kisiler || []).forEach(k => satisKisiSatirEkle(k));
+    } else {
+        satisTemsilciSecenekleriDoldur('');
+        document.getElementById('smfDurum').value = 'AKTIF';
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisMusteriForm')).show();
+}
+
+async function satisMusteriKaydet() {
+    const ad = document.getElementById('smfAd').value.trim();
+    if (!ad) { alanHatasi('smfAd'); showToast('Müşteri adı zorunludur.', 'error'); return; }
+    const govde = {
+        id: window.smfAktifId || undefined,
+        ad,
+        uzun_ad: document.getElementById('smfUzunAd').value.trim(),
+        email: document.getElementById('smfEmail').value.trim(),
+        telefon: document.getElementById('smfTelefon').value.trim(),
+        tip: document.getElementById('smfTip').value,
+        ulke: document.getElementById('smfUlke').value.trim(),
+        sehir: document.getElementById('smfSehir').value.trim(),
+        sektor: document.getElementById('smfSektor').value.trim(),
+        adres: document.getElementById('smfAdres').value.trim(),
+        fatura_adresi: document.getElementById('smfFaturaAdresi').value.trim(),
+        vergi_dairesi: document.getElementById('smfVergiDairesi').value.trim(),
+        vergi_no: document.getElementById('smfVergiNo').value.trim(),
+        iban: document.getElementById('smfIban').value.trim(),
+        durum: document.getElementById('smfDurum').value,
+        mali_not: document.getElementById('smfMaliNot').value.trim(),
+        temsilci_email: document.getElementById('smfTemsilci').value
+    };
+    const btn = document.getElementById('smfKaydetBtn');
+    btn.disabled = true;
+    showLoading();
+    try {
+        const r = await secureFetch('/satis-musteri-kaydet', { method: 'POST', body: JSON.stringify(govde) });
+        if (!r || !r.ok) { showToast(r?.hata || 'Müşteri kaydedilemedi.', 'error'); return; }
+        const musteriId = r.id;
+        // Kişiler: adı dolu satırlar kaydedilir (yeni + değişen)
+        for (const satir of document.querySelectorAll('.smf-kisi-satir')) {
+            const kAd = satir.querySelector('.smf-k-ad').value.trim();
+            if (!kAd) continue;
+            await secureFetch('/satis-musteri-kisi-kaydet', { method: 'POST', body: JSON.stringify({
+                id: satir.dataset.kisiId || undefined,
+                musteri_id: musteriId,
+                ad: kAd,
+                unvan: satir.querySelector('.smf-k-unvan').value.trim(),
+                email: satir.querySelector('.smf-k-email').value.trim(),
+                telefon: satir.querySelector('.smf-k-telefon').value.trim()
+            }) }).catch(() => null);
+        }
+        bootstrap.Modal.getInstance(document.getElementById('modalSatisMusteriForm'))?.hide();
+        showToast('Müşteri kaydedildi.', 'success');
+        satisSekmeInit();
+    } finally { btn.disabled = false; hideLoading(); }
 }
 
 async function maliSekmeInit() {
@@ -7060,7 +7392,7 @@ function renderIzinMatrisi() {
         rollerCache.map(r => `<th class="text-center" style="min-width:120px;">${esc(r.ad)}${r.sistem_rol ? '' : ' <i class=\"bi bi-pencil-square small text-warning\" title=\"Özel rol\"></i>'}</th>`).join('');
 
     // Body: Modül başına satır. Gruplara göre alt başlık satırı
-    const grupSiralama = ['Genel','İş Akışı','Satınalma','Mali İşler','Operasyon','Rapor','Yönetim'];
+    const grupSiralama = ['Genel','İş Akışı','Satış','Satınalma','Mali İşler','Operasyon','Rapor','Yönetim'];
     const gruplandirilmis = {};
     modulKatalogCache.forEach(m => {
         if (!gruplandirilmis[m.grup]) gruplandirilmis[m.grup] = [];
@@ -7548,7 +7880,7 @@ function setTab(tab) {
     }
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea','gorevlerArea','maliArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea','gorevlerArea','maliArea','satisArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -7579,6 +7911,9 @@ function setTab(tab) {
     } else if (tab === 'gorevler') {
         document.getElementById("gorevlerArea").classList.remove("d-none");
         gorevSekmeInit();
+    } else if (tab === 'satis') {
+        document.getElementById("satisArea").classList.remove("d-none");
+        satisSekmeInit();
     } else if (tab === 'mali') {
         document.getElementById("maliArea").classList.remove("d-none");
         maliSekmeInit();
