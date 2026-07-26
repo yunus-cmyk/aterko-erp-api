@@ -5657,33 +5657,73 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
             ${secenekler.map(s => `<option value="${s.eski_id}" ${String(deger) === String(s.eski_id) ? 'selected' : ''}>${esc(s.deger)}</option>`).join('')}
         </select>`;
     };
+    // Bölümler HİYERARŞİK: kök bölümler ve altlarında alt bölümler (eski sistemdeki
+    // attribute_category parent_id ağacı). Üst bölümler çoğu zaman yalnız başlıktır.
+    const cocukMap = {};
+    r.bolumler.forEach(b => { if (b.ust_bolum_eski_id) (cocukMap[b.ust_bolum_eski_id] = cocukMap[b.ust_bolum_eski_id] || []).push(b); });
+    const kokler = r.bolumler.filter(b => !b.ust_bolum_eski_id ||
+        !r.bolumler.some(x => x.eski_id === b.ust_bolum_eski_id));
+    const alanlariCiz = (b, params) => params.length
+        ? `<div class="row g-2">${params.map(p => `
+            <div class="col-md-4"><label class="form-label" title="${esc(p.kod || '')}">${esc(p.ad)}</label>${alan(b, p)}</div>`).join('')}</div>`
+        : '';
+    // Alt bölüm gövdesi (iç içe kutu)
+    const altBolumCiz = (b) => {
+        const params = (paramMap[b.urun_kategori_eski_id] || []);
+        const tekrarli = (b.max_adet || 0) > 1;
+        return `
+        <div class="border-start ps-2 ms-1 mt-2" style="border-left-width:3px !important; border-color:var(--mod-satis) !important;">
+          <div class="d-flex align-items-center mb-1">
+            <div class="form-check mb-0 me-2">
+              <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} id="sanK${b.id}">
+              <label class="form-check-label fw-semibold small" for="sanK${b.id}">${esc(b.ad)}</label>
+            </div>
+            <span class="badge bg-light text-dark border me-2">${params.length} alan</span>
+            ${tekrarli ? `<button class="btn btn-outline-primary btn-sm py-0 me-1" title="Bu bölümden bir tane daha ekle" onclick="satisAnalizBolumEkle(${b.urun_kategori_eski_id})"><i class="bi bi-plus"></i></button>` : ''}
+            ${/\s\d+$/.test(b.ad) ? `<button class="btn btn-outline-danger btn-sm py-0" title="Bu bölümü kaldır" onclick="satisAnalizBolumSil(${b.id})"><i class="bi bi-x"></i></button>` : ''}
+          </div>
+          ${alanlariCiz(b, params)}
+          ${(cocukMap[b.eski_id] || []).map(altBolumCiz).join('')}
+        </div>`;
+    };
     document.getElementById('sanGovde').innerHTML = `
         <div class="alert alert-light border py-2 small mb-2">
-            <i class="bi bi-info-circle me-1"></i>Kapsama dahil ettiğiniz bölümlerin ölçü ve seçimleri malzeme dökümünü belirler.
-            Tekrarlanabilir bölümler (Duvar, Pencere...) için <b>+</b> ile yeni bölüm ekleyebilirsiniz.
+            <i class="bi bi-info-circle me-1"></i>Yalnız <b>kapsama dahil</b> ettiğiniz bölümlerin ölçü ve seçimleri malzeme dökümüne girer.
+            Tekrarlanabilir bölümler (Duvar, Pencere...) <b>+</b> ile çoğaltılır. Alt bölümler üst başlığın altında gruplanmıştır.
+        </div>
+        <div class="d-flex gap-2 mb-2">
+            <input type="text" id="sanBolumAra" class="form-control form-control-sm" style="max-width:280px;"
+                   placeholder="Bölüm veya alan ara..." oninput="satisAnalizFormSuz()">
+            <div class="form-check form-check-sm d-flex align-items-center mb-0">
+                <input class="form-check-input me-1" type="checkbox" id="sanSadeceKapsam" onchange="satisAnalizFormSuz()">
+                <label class="form-check-label small" for="sanSadeceKapsam">Sadece kapsamdakiler</label>
+            </div>
         </div>
         <div class="accordion" id="sanBolumler">
-        ${r.bolumler.map((b, i) => {
+        ${kokler.map(b => {
             const params = paramMap[b.urun_kategori_eski_id] || [];
+            const cocuklar = cocukMap[b.eski_id] || [];
             const tekrarli = (b.max_adet || 0) > 1;
+            const toplamAlan = params.length + cocuklar.reduce((s, c) => s + (paramMap[c.urun_kategori_eski_id] || []).length, 0);
             return `
-            <div class="accordion-item">
+            <div class="accordion-item san-bolum-kutu" data-ara="${esc((b.ad + ' ' + cocuklar.map(c => c.ad).join(' ') + ' ' + params.map(p => p.ad).join(' ')).toLocaleLowerCase('tr'))}" data-kapsam="${b.kapsamda || cocuklar.some(c => c.kapsamda) ? '1' : '0'}">
               <h2 class="accordion-header d-flex align-items-center">
                 <div class="form-check ms-2 me-1 mb-0">
                   <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} title="Kapsama dahil">
                 </div>
                 <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#sanB${b.id}">
                   <span class="fw-semibold">${esc(b.ad)}</span>
-                  <span class="badge bg-light text-dark border ms-2">${params.length} alan</span>
+                  <span class="badge bg-light text-dark border ms-2">${toplamAlan} alan</span>
+                  ${cocuklar.length ? `<span class="badge bg-mod-satis ms-1">${cocuklar.length} alt bölüm</span>` : ''}
                 </button>
                 ${tekrarli ? `<button class="btn btn-outline-primary btn-sm py-0 mx-1" title="Bu bölümden bir tane daha ekle" onclick="satisAnalizBolumEkle(${b.urun_kategori_eski_id})"><i class="bi bi-plus"></i></button>` : ''}
                 ${/\s\d+$/.test(b.ad) ? `<button class="btn btn-outline-danger btn-sm py-0 me-2" title="Bu bölümü kaldır" onclick="satisAnalizBolumSil(${b.id})"><i class="bi bi-x"></i></button>` : '<span class="me-2"></span>'}
               </h2>
-              <div id="sanB${b.id}" class="accordion-collapse collapse" data-bs-parent="#sanBolumler">
+              <div id="sanB${b.id}" class="accordion-collapse collapse">
                 <div class="accordion-body py-2">
-                  ${params.length ? `<div class="row g-2">${params.map(p => `
-                    <div class="col-md-4"><label class="form-label" title="${esc(p.kod || '')}">${esc(p.ad)}</label>${alan(b, p)}</div>`).join('')}</div>`
-                    : '<span class="text-muted small">Bu bölümün girilecek alanı yok.</span>'}
+                  ${alanlariCiz(b, params)}
+                  ${cocuklar.map(altBolumCiz).join('')}
+                  ${!params.length && !cocuklar.length ? '<span class="text-muted small">Bu bölümün girilecek alanı yok.</span>' : ''}
                 </div>
               </div>
             </div>`;
@@ -5693,6 +5733,18 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
         <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisAnalizFormKaydet()"><i class="bi bi-check-lg me-1"></i>Kaydet</button>`;
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
+}
+
+// Form süzgeci: bölüm/alan adına göre ara + sadece kapsamdakileri göster
+function satisAnalizFormSuz() {
+    const q = trAra(document.getElementById('sanBolumAra')?.value || '');
+    const sadeceKapsam = document.getElementById('sanSadeceKapsam')?.checked;
+    document.querySelectorAll('.san-bolum-kutu').forEach(k => {
+        // Kapsam durumu anlık okunur (kutucuklar değişmiş olabilir)
+        const kapsamda = [...k.querySelectorAll('.san-kapsam')].some(c => c.checked);
+        const uygun = (!q || trAra(k.dataset.ara || '').includes(q)) && (!sadeceKapsam || kapsamda);
+        k.classList.toggle('d-none', !uygun);
+    });
 }
 
 async function satisAnalizBolumEkle(kategoriEskiId) {
