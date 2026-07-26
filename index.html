@@ -3784,6 +3784,38 @@ STK-002		50	adet
                             <label class="form-label"><i class="bi bi-google me-1"></i>DRIVE (link)</label>
                             <input type="url" id="pjDriveLink" class="form-control form-control-sm" placeholder="https://drive.google.com/open?id=...">
                         </div>
+                        <div class="col-md-2">
+                            <label class="form-label"><i class="bi bi-tag me-1"></i>Proje Türü</label>
+                            <input type="text" id="pjProjeTuru" class="form-control form-control-sm" placeholder="örn. Prefabrik Yapı">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label"><i class="bi bi-geo-alt me-1"></i>Şehir</label>
+                            <input type="text" id="pjSehir" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label"><i class="bi bi-globe me-1"></i>Ülke</label>
+                            <input type="text" id="pjUlke" class="form-control form-control-sm" placeholder="Türkiye">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label"><i class="bi bi-pin-map me-1"></i>Adres</label>
+                            <input type="text" id="pjAdres" class="form-control form-control-sm" placeholder="Şantiye / teslimat adresi">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label"><i class="bi bi-person-lines-fill me-1"></i>İrtibat Adı Soyadı</label>
+                            <input type="text" id="pjIrtibatAdi" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label"><i class="bi bi-envelope me-1"></i>İrtibat E-Posta</label>
+                            <input type="email" id="pjIrtibatEmail" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label"><i class="bi bi-telephone me-1"></i>İrtibat Telefon</label>
+                            <input type="text" id="pjIrtibatTelefon" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label"><i class="bi bi-chat-left-text me-1"></i>Açıklama</label>
+                            <textarea id="pjAciklama" class="form-control form-control-sm" rows="2"></textarea>
+                        </div>
                     </div>
                 </div>
 
@@ -15095,6 +15127,14 @@ function openYeniProjeModal(duzenlemeData) {
     if(document.getElementById("pjKdv")) document.getElementById("pjKdv").value = p.kdv_orani || "20";
     if(document.getElementById("pjSatisTemsilcisi")) document.getElementById("pjSatisTemsilcisi").value = p.satis_temsilcisi || "";
     if(document.getElementById("pjAsetLink")) document.getElementById("pjAsetLink").value = p.aset_link || "";
+    document.getElementById("pjProjeTuru").value = p.proje_turu || "";
+    document.getElementById("pjSehir").value = p.sehir || "";
+    document.getElementById("pjUlke").value = p.ulke || "";
+    document.getElementById("pjAdres").value = p.adres || "";
+    document.getElementById("pjIrtibatAdi").value = p.irtibat_adi || "";
+    document.getElementById("pjIrtibatEmail").value = p.irtibat_email || "";
+    document.getElementById("pjIrtibatTelefon").value = p.irtibat_telefon || "";
+    document.getElementById("pjAciklama").value = p.aciklama || "";
     if(document.getElementById("pjDriveLink")) document.getElementById("pjDriveLink").value = p.drive_link || "";
 
     // Teslimatları yükle
@@ -15498,6 +15538,12 @@ function renderProjeDetay(proje, teslimatlar) {
         <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-activity me-1"></i>Mevcut Durum</span>${getDurumBadge(proje.durum)}</div></div>
         <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-clock-history me-1"></i>Oluşturma</span><span class="fw-bold text-dark small">${formatTarihTR(proje.olusturma_tarihi) || '-'}</span></div></div>
         <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-person-badge me-1"></i>Satış Temsilcisi</span><span class="fw-bold text-dark">${esc(proje.satis_temsilcisi || '-')}</span></div></div>
+
+        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-tag me-1"></i>Proje Türü</span><span class="fw-bold text-dark">${esc(proje.proje_turu || '-')}</span></div></div>
+        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-geo-alt me-1"></i>Şehir / Ülke</span><span class="fw-bold text-dark">${esc([proje.sehir, proje.ulke].filter(Boolean).join(' / ') || '-')}</span></div></div>
+        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-pin-map me-1"></i>Adres</span><span class="fw-bold text-dark small">${esc(proje.adres || '-')}</span></div></div>
+        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-person-lines-fill me-1"></i>İrtibat Kişisi</span><span class="fw-bold text-dark small">${esc(proje.irtibat_adi || '-')}${proje.irtibat_email ? ' · ' + esc(proje.irtibat_email) : ''}${proje.irtibat_telefon ? ' · ' + esc(proje.irtibat_telefon) : ''}</span></div></div>
+        ${proje.aciklama ? `<div class="col-12"><div class="p-2 bg-white border rounded shadow-sm"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-chat-left-text me-1"></i>Açıklama</span><span class="text-dark small" style="white-space:pre-wrap;">${esc(proje.aciklama)}</span></div></div>` : ''}
         <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-link-45deg me-1"></i>ASET</span>${proje.aset_link ? `<a class="fw-bold small text-decoration-none" target="_blank" rel="noopener" href="${esc(proje.aset_link)}">${esc(proje.aset_link)}</a>` : '<span class="text-muted">-</span>'}</div></div>
         <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-google me-1"></i>DRIVE</span>${proje.drive_link ? `<a class="fw-bold small text-decoration-none" target="_blank" rel="noopener" href="${esc(proje.drive_link)}">${esc(proje.drive_link)}</a>` : '<span class="text-muted">-</span>'}</div></div>
         <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-file-earmark-pdf me-1"></i>Sözleşme</span>
@@ -15902,7 +15948,15 @@ function saveProjeGelis() {
         kdv_orani: document.getElementById("pjKdv").value,
         satis_temsilcisi: document.getElementById("pjSatisTemsilcisi")?.value.trim() || '',
         aset_link: document.getElementById("pjAsetLink")?.value.trim() || '',
-        drive_link: document.getElementById("pjDriveLink")?.value.trim() || ''
+        drive_link: document.getElementById("pjDriveLink")?.value.trim() || '',
+        proje_turu: document.getElementById("pjProjeTuru").value.trim(),
+        sehir: document.getElementById("pjSehir").value.trim(),
+        ulke: document.getElementById("pjUlke").value.trim(),
+        adres: document.getElementById("pjAdres").value.trim(),
+        irtibat_adi: document.getElementById("pjIrtibatAdi").value.trim(),
+        irtibat_email: document.getElementById("pjIrtibatEmail").value.trim(),
+        irtibat_telefon: document.getElementById("pjIrtibatTelefon").value.trim(),
+        aciklama: document.getElementById("pjAciklama").value.trim()
     };
     if (isEdit) projeObj.id = duzenlenenProjeId;
 

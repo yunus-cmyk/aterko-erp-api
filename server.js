@@ -400,12 +400,17 @@ app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
         if (check.rowCount > 0) return res.json({ ok: false, hata: "Bu Proje Kodu zaten sistemde kullanılıyor!" });
 
         const projeRes = await client.query(`
-            INSERT INTO projeler (proje_kodu, musteri_adi, proje_adi, sozlesme_tarihi, satis_turu, nakliye, para_birimi, kdv_orani, satis_temsilcisi, aset_link, drive_link, durum)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'TASLAK') RETURNING id
+            INSERT INTO projeler (proje_kodu, musteri_adi, proje_adi, sozlesme_tarihi, satis_turu, nakliye, para_birimi, kdv_orani, satis_temsilcisi, aset_link, drive_link,
+                                  proje_turu, sehir, ulke, adres, irtibat_adi, irtibat_email, irtibat_telefon, aciklama, durum)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 'TASLAK') RETURNING id
         `, [
             proje.proje_kodu, proje.musteri_adi, proje.proje_adi, proje.sozlesme_tarihi || null,
             proje.satis_turu, proje.nakliye, proje.para_birimi, parseInt(proje.kdv_orani),
-            (proje.satis_temsilcisi || '').trim() || null, (proje.aset_link || '').trim() || null, (proje.drive_link || '').trim() || null
+            (proje.satis_temsilcisi || '').trim() || null, (proje.aset_link || '').trim() || null, (proje.drive_link || '').trim() || null,
+            (proje.proje_turu || '').trim() || null, (proje.sehir || '').trim() || null, (proje.ulke || '').trim() || null,
+            (proje.adres || '').trim() || null, (proje.irtibat_adi || '').trim() || null,
+            (proje.irtibat_email || '').trim() || null, (proje.irtibat_telefon || '').trim() || null,
+            (proje.aciklama || '').trim() || null
         ]);
 
         const yeniProjeId = projeRes.rows[0].id;
@@ -581,18 +586,29 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
         // Yeni alanlar (temsilci/linkler): payload'da HİÇ yoksa (eski önbellekli sayfa) mevcut
         // değer korunur — yoksa eski form her kayıtta bu alanları null'a ezer (yaşandı: 72691).
         // Alan payload'da varsa boş gönderim bilinçli temizlik sayılır (null yazılır).
-        const eskiP = await client.query('SELECT satis_temsilcisi, aset_link, drive_link FROM projeler WHERE id=$1', [proje.id]);
+        const eskiP = await client.query('SELECT satis_temsilcisi, aset_link, drive_link, proje_turu, sehir, ulke, adres, irtibat_adi, irtibat_email, irtibat_telefon, aciklama FROM projeler WHERE id=$1', [proje.id]);
         const koru = (yeni, eski) => yeni === undefined ? eski : ((String(yeni || '').trim()) || null);
+        const eD = eskiP.rows[0] || {};
         await client.query(`
             UPDATE projeler SET musteri_adi=$1, proje_adi=$2, sozlesme_tarihi=$3,
                                 satis_turu=$4, nakliye=$5, para_birimi=$6, kdv_orani=$7,
-                                satis_temsilcisi=$8, aset_link=$9, drive_link=$10
-            WHERE id=$11
+                                satis_temsilcisi=$8, aset_link=$9, drive_link=$10,
+                                proje_turu=$11, sehir=$12, ulke=$13, adres=$14,
+                                irtibat_adi=$15, irtibat_email=$16, irtibat_telefon=$17, aciklama=$18
+            WHERE id=$19
         `, [proje.musteri_adi, proje.proje_adi, proje.sozlesme_tarihi || null,
             proje.satis_turu, proje.nakliye, proje.para_birimi, parseInt(proje.kdv_orani),
-            koru(proje.satis_temsilcisi, eskiP.rows[0]?.satis_temsilcisi),
-            koru(proje.aset_link, eskiP.rows[0]?.aset_link),
-            koru(proje.drive_link, eskiP.rows[0]?.drive_link),
+            koru(proje.satis_temsilcisi, eD.satis_temsilcisi),
+            koru(proje.aset_link, eD.aset_link),
+            koru(proje.drive_link, eD.drive_link),
+            koru(proje.proje_turu, eD.proje_turu),
+            koru(proje.sehir, eD.sehir),
+            koru(proje.ulke, eD.ulke),
+            koru(proje.adres, eD.adres),
+            koru(proje.irtibat_adi, eD.irtibat_adi),
+            koru(proje.irtibat_email, eD.irtibat_email),
+            koru(proje.irtibat_telefon, eD.irtibat_telefon),
+            koru(proje.aciklama, eD.aciklama),
             proje.id]);
 
         // 2. Mevcut teslimat ID'lerini al
@@ -9041,6 +9057,20 @@ async function semaGuvence() {
             SELECT id, 'satis.teklif', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
             ON CONFLICT (rol_id, modul_kod) DO NOTHING
         `).catch(e => console.error('⚠️ satis.teklif izin:', e.message));
+
+        // PROJE ALANLARI (Faz C2+, Yunus onayı 2026-07-26): eski sistemden gelen
+        // proje bilgileri — adres/şehir/ülke, irtibat kişisi, açıklama, proje türü.
+        // Aktarım kuralı: mevcut dolu alan ASLA ezilmez, yalnız boş alan doldurulur.
+        await pool.query(`ALTER TABLE projeler
+            ADD COLUMN IF NOT EXISTS adres TEXT,
+            ADD COLUMN IF NOT EXISTS sehir TEXT,
+            ADD COLUMN IF NOT EXISTS ulke TEXT,
+            ADD COLUMN IF NOT EXISTS irtibat_adi TEXT,
+            ADD COLUMN IF NOT EXISTS irtibat_email TEXT,
+            ADD COLUMN IF NOT EXISTS irtibat_telefon TEXT,
+            ADD COLUMN IF NOT EXISTS aciklama TEXT,
+            ADD COLUMN IF NOT EXISTS proje_turu TEXT`)
+            .catch(e => console.error('⚠️ projeler yeni alanlar:', e.message));
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için
