@@ -5393,11 +5393,14 @@ async function satisSozlesmePaneliCiz(proje) {
     if (!alan) return;
     const r = await secureFetch('/satis-sozlesme/' + proje.id).catch(() => null);
     const s = r && r.ok ? r.sozlesme : null;
+    // Sözleşme ancak ONAYLANAN bir teklif varsa oluşturulabilir (eski kural)
+    const onayliTeklifVar = (window.spdAktifDetay?.teklifler || []).some(t => t.durum === 'ONAYLANAN');
     if (!s) {
         alan.innerHTML = `<hr class="my-2"><div class="d-flex justify-content-between align-items-center">
             <span class="small text-muted"><i class="bi bi-file-earmark-x me-1"></i>Bu projede sözleşme yok.</span>
-            ${izinVarMi('satis.teklif', 'TAM') ? `<button class="btn btn-outline-success btn-sm py-0" onclick="satisSozlesmeOlustur(${proje.id})">
-                <i class="bi bi-file-earmark-check me-1"></i>Onaylanan Tekliften Sözleşme Oluştur</button>` : ''}
+            ${onayliTeklifVar && izinVarMi('satis.teklif', 'TAM') ? `<button class="btn btn-outline-success btn-sm py-0" onclick="satisSozlesmeOlustur(${proje.id})">
+                <i class="bi bi-file-earmark-check me-1"></i>Onaylanan Tekliften Sözleşme Oluştur</button>`
+              : '<span class="small text-muted">Sözleşme için önce bir teklif onaylanmalıdır.</span>'}
         </div>`;
         return;
     }
@@ -5704,13 +5707,18 @@ function satisTeklifAksiyonlariCiz(t) {
     if (!izinVarMi('satis.teklif', 'YAZMA')) { kutu.innerHTML = ''; return; }
     const btn = (renk, ikon, ad, fn) =>
         `<button class="btn btn-${renk} btn-sm" onclick="${fn}"><i class="bi bi-${ikon} me-1"></i>${ad}</button>`;
+    // Görünürlük kuralları eski sistemin arayüzünden birebir alındı:
+    //   Teklif Ver → yalnız TASLAK | Revize Et → yalnız CEVAP_BEKLENEN
+    //   Kabul Et   → CEVAP_BEKLENEN veya REDDEDILEN (reddedilen teklif geri kabul edilebilir)
+    //   Reddet     → CEVAP_BEKLENEN veya ONAYLANAN (onaylanan teklif reddedilebilir)
     const a = [];
-    if (t.durum === 'TASLAK' || t.durum === 'REVIZE') a.push(btn('primary', 'send', 'Teklif Ver', 'satisTeklifAksiyon(\'ver\')'));
-    if (t.durum === 'CEVAP_BEKLENEN') {
+    if (t.durum === 'TASLAK') a.push(btn('primary', 'send', 'Teklif Ver', 'satisTeklifAksiyon(\'ver\')'));
+    if (t.durum === 'CEVAP_BEKLENEN' || t.durum === 'REDDEDILEN')
         a.push(btn('success', 'check-lg', 'Kabul Et', 'satisTeklifAksiyon(\'kabul\')'));
+    if (t.durum === 'CEVAP_BEKLENEN' || t.durum === 'ONAYLANAN')
         a.push(btn('outline-danger', 'x-lg', 'Reddet', 'satisTeklifAksiyon(\'reddet\')'));
-    }
-    if (t.durum !== 'TASLAK') a.push(btn('outline-secondary', 'arrow-repeat', 'Revize Et', 'satisTeklifAksiyon(\'revize\')'));
+    if (t.durum === 'CEVAP_BEKLENEN')
+        a.push(btn('outline-secondary', 'arrow-repeat', 'Revize Et', 'satisTeklifAksiyon(\'revize\')'));
     if (t.durum === 'ONAYLANAN' && t.proje_id && izinVarMi('satis.teklif', 'TAM')) {
         a.push(btn('success', 'file-earmark-check', 'Sözleşme Oluştur', `satisSozlesmeOlustur(${t.proje_id})`));
     }
