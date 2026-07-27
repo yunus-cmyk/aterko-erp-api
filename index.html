@@ -316,7 +316,8 @@
             <thead class="table-light" style="position:sticky;top:0;z-index:1;">
               <tr>
                 <th>Müşteri</th>
-                <th>Tip</th>
+                <th>Tür / Alt Tür</th>
+                <th>Satış Noktası</th>
                 <th>Şehir</th>
                 <th>Temsilci</th>
                 <th class="text-center">Projeler</th>
@@ -575,32 +576,35 @@
           </div>
           <div class="modal-body p-3">
             <div class="row g-2">
-              <div class="col-md-6"><label class="form-label">Müşteri Adı <span class="text-danger">*</span></label>
+              <div class="col-md-6"><label class="form-label">Kısa Adı <span class="text-danger">*</span></label>
                 <input type="text" id="smfAd" class="form-control form-control-sm"></div>
-              <div class="col-md-6"><label class="form-label">Resmi Ünvan</label>
+              <div class="col-md-6"><label class="form-label">Firma Ünvanı <span class="text-danger">*</span></label>
                 <input type="text" id="smfUzunAd" class="form-control form-control-sm"></div>
-              <div class="col-md-4"><label class="form-label">E-posta</label>
+              <div class="col-md-4"><label class="form-label">E-posta <span class="text-danger">*</span></label>
                 <input type="email" id="smfEmail" class="form-control form-control-sm"></div>
-              <div class="col-md-4"><label class="form-label">Telefon</label>
+              <div class="col-md-4"><label class="form-label">Telefon <span class="text-danger">*</span></label>
                 <input type="text" id="smfTelefon" class="form-control form-control-sm"></div>
-              <div class="col-md-4"><label class="form-label">Tip</label>
-                <select id="smfTip" class="form-select form-select-sm">
+              <div class="col-md-4"><label class="form-label">Müşteri Türü <span class="text-danger">*</span></label>
+                <select id="smfTip" class="form-select form-select-sm" onchange="satisAltTurSecenekleriDoldur()">
                   <option value="">Seçiniz...</option>
-                  <option>Kurumsal</option>
-                  <option>Bireysel</option>
-                  <option>Kamu</option>
                 </select></div>
-              <div class="col-md-4"><label class="form-label">Alt Tür</label>
-                <input type="text" id="smfAltTur" class="form-control form-control-sm" placeholder="örn. Müteahhit, Yatırımcı"></div>
-              <div class="col-md-4"><label class="form-label">Ülke</label>
-                <input type="text" id="smfUlke" class="form-control form-control-sm"></div>
-              <div class="col-md-4"><label class="form-label">Şehir</label>
-                <input type="text" id="smfSehir" class="form-control form-control-sm"></div>
-              <div class="col-md-4"><label class="form-label">Sektör</label>
-                <input type="text" id="smfSektor" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Müşteri Alt Türü <span class="text-danger">*</span></label>
+                <select id="smfAltTur" class="form-select form-select-sm"><option value="">Önce müşteri türü seçin</option></select></div>
+              <div class="col-md-4"><label class="form-label">Satış Noktası <span class="text-danger">*</span></label>
+                <select id="smfSatisNoktasi" class="form-select form-select-sm"><option value="">Seçiniz...</option></select></div>
+              <div class="col-md-4"><label class="form-label">İşletme Türü <span class="text-danger">*</span></label>
+                <select id="smfSektor" class="form-select form-select-sm"><option value="">Seçiniz...</option></select></div>
+              <div class="col-md-4"><label class="form-label">Ülke <span class="text-danger">*</span></label>
+                <input type="text" id="smfUlke" class="form-control form-control-sm" list="smfUlkeListe" autocomplete="off">
+                <datalist id="smfUlkeListe"></datalist></div>
+              <div class="col-md-4"><label class="form-label">Şehir <span class="text-danger">*</span></label>
+                <input type="text" id="smfSehir" class="form-control form-control-sm" list="smfSehirListe" autocomplete="off">
+                <datalist id="smfSehirListe"></datalist></div>
+              <div class="col-md-4"><label class="form-label">Bizi Nereden Duydu <span class="text-danger">*</span></label>
+                <select id="smfNasilDuydu" class="form-select form-select-sm"><option value="">Seçiniz...</option></select></div>
               <div class="col-md-8"><label class="form-label">Adres</label>
                 <input type="text" id="smfAdres" class="form-control form-control-sm"></div>
-              <div class="col-md-4"><label class="form-label">Müşteri Temsilcisi</label>
+              <div class="col-md-4"><label class="form-label">Satış Temsilcisi <span class="text-danger">*</span></label>
                 <select id="smfTemsilci" class="form-select form-select-sm"><option value="">Seçiniz...</option></select></div>
               <div class="col-md-6"><label class="form-label">Fatura Adresi</label>
                 <input type="text" id="smfFaturaAdresi" class="form-control form-control-sm"></div>
@@ -694,6 +698,10 @@
                   <option value="20">20</option><option value="10">10</option>
                   <option value="1">1</option><option value="0">0</option>
                 </select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Şartname Türü <span class="text-danger">*</span></label>
+                <select id="stfSartname" class="form-select form-select-sm"><option value="">Seçiniz...</option></select>
               </div>
             </div>
             <div class="d-flex justify-content-between align-items-center mb-1">
@@ -4702,7 +4710,8 @@ function satisMusteriListeSuz() {
     let liste = satisMusteriListe.filter(m => {
         if (sadeceProjeli && !(m.proje_sayisi > 0)) return false;
         if (!q) return true;
-        return trAra([m.ad, m.sehir, m.ulke, m.temsilci_email, m.tip].filter(Boolean).join(' ')).includes(q);
+        return trAra([m.ad, m.sehir, m.ulke, m.temsilci_email, m.tip, m.alt_tur, m.satis_noktasi]
+            .filter(Boolean).join(' ')).includes(q);
     });
     const toplam = liste.length;
     const LIMIT = 500;
@@ -4710,14 +4719,15 @@ function satisMusteriListeSuz() {
     if (kisildi) liste = liste.slice(0, LIMIT);
     const tbody = document.getElementById('satisMusteriTbody');
     if (!toplam) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">${satisMusteriListe.length ? 'Eşleşen müşteri bulunamadı.' : 'Henüz müşteri eklenmedi.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">${satisMusteriListe.length ? 'Eşleşen müşteri bulunamadı.' : 'Henüz müşteri eklenmedi.'}</td></tr>`;
         document.getElementById('satisMusteriSayac').innerText = '';
         return;
     }
     tbody.innerHTML = liste.map(m => `
         <tr style="cursor:pointer;" onclick="satisMusteriDetayAc(${m.id})">
             <td><span class="fw-bold text-dark">${esc(m.ad)}</span></td>
-            <td class="text-muted">${esc(m.tip || '-')}${m.alt_tur ? ' / ' + esc(m.alt_tur) : ''}${m.satis_durumu ? `<span class="badge bg-light text-dark border ms-1">${esc(m.satis_durumu)}</span>` : ''}</td>
+            <td class="text-muted">${esc(m.tip || '-')}${m.alt_tur ? ' / ' + esc(m.alt_tur) : ''}${m.satis_durumu ? `<span class="badge bg-light text-dark border ms-1" title="${m.durum_gun != null ? m.durum_gun + ' gün önce değişti' : ''}">${esc(m.satis_durumu)}</span>` : ''}</td>
+            <td class="text-muted">${esc(m.satis_noktasi || '-')}</td>
             <td>${esc(m.sehir || '-')}</td>
             <td class="small">${esc((m.temsilci_email || '-').split('@')[0])}</td>
             <td class="text-center">${m.proje_sayisi > 0 ? `<span class="badge bg-mod-satis">${m.proje_sayisi}</span>` : '<span class="text-muted">-</span>'}</td>
@@ -4739,14 +4749,14 @@ async function satisMusteriDetayAc(id) {
     const bilgi = (etiket, deger) => deger ? `<div class="col-md-6 mb-1"><span class="text-muted small">${etiket}:</span> <span class="small fw-semibold">${esc(deger)}</span></div>` : '';
     document.getElementById('smdGovde').innerHTML = `
         <div class="row">
-            ${bilgi('Resmi Ünvan', m.uzun_ad && m.uzun_ad !== m.ad ? m.uzun_ad : '')}
-            ${bilgi('Tip', m.tip)}${bilgi('Durum', m.durum === 'PASIF' ? 'Pasif' : 'Aktif')}
-            ${bilgi('Alt Tür', m.alt_tur)}
+            ${bilgi('Firma Ünvanı', m.uzun_ad && m.uzun_ad !== m.ad ? m.uzun_ad : '')}
+            ${bilgi('Müşteri Türü', m.tip)}${bilgi('Durum', m.durum === 'PASIF' ? 'Pasif' : 'Aktif')}
+            ${bilgi('Müşteri Alt Türü', m.alt_tur)}
             ${bilgi('Satış Durumu', (m.satis_durumu || '') + (m.durum_gun != null ? ` (${m.durum_gun} gündür)` : ''))}
             ${bilgi('Satış Noktası', m.satis_noktasi)}
             ${bilgi('E-posta', m.email)}${bilgi('Telefon', m.telefon)}
             ${bilgi('Ülke', m.ulke)}${bilgi('Şehir', m.sehir)}
-            ${bilgi('Sektör', m.sektor)}${bilgi('Bizi Nereden Duydu', m.nasil_duydu)}
+            ${bilgi('İşletme Türü', m.sektor)}${bilgi('Bizi Nereden Duydu', m.nasil_duydu)}
             ${bilgi('Adres', m.adres)}${bilgi('Fatura Adresi', m.fatura_adresi)}
             ${bilgi('Vergi Dairesi', m.vergi_dairesi)}${bilgi('Vergi No', m.vergi_no)}
             ${bilgi('IBAN', m.iban)}${bilgi('Temsilci', m.temsilci_email)}
@@ -4863,6 +4873,32 @@ function satisTemsilciSecenekleriDoldur(secili) {
         emailler.map(e => `<option value="${esc(e)}" ${e === secili ? 'selected' : ''}>${esc(e)}</option>`).join('');
 }
 
+// ---- MÜŞTERİ REFERANS LİSTELERİ (eski customer_type/point_of_sales/... tabloları) ----
+// Alt tür listesi ana türe bağlıdır: eski formda alt tür kodu ana türün koduyla
+// BAŞLAYANLAR süzülüyordu (01 Kurumsal → 0101 Müteahhit, 0102 Kamu Kurumu...).
+let satisReferanslar = null;
+async function satisReferanslariYukle() {
+    if (satisReferanslar) return satisReferanslar;
+    const r = await secureFetch('/satis-referanslar').catch(() => null);
+    satisReferanslar = (r && r.ok) ? r : { musteri_turu: [], satis_noktasi: [], isletme_turu: [], nasil_duydu: [], ulkeler: [], sehirler: [] };
+    return satisReferanslar;
+}
+function satisSecenekDoldur(elemanId, adlar, secili, bosMetin) {
+    const sel = document.getElementById(elemanId);
+    if (!sel) return;
+    const liste = [...adlar];
+    if (secili && !liste.includes(secili)) liste.push(secili);   // eski veri listede yoksa kaybolmasın
+    sel.innerHTML = `<option value="">${bosMetin || 'Seçiniz...'}</option>` +
+        liste.map(a => `<option value="${esc(a)}" ${a === secili ? 'selected' : ''}>${esc(a)}</option>`).join('');
+}
+function satisAltTurSecenekleriDoldur(secili) {
+    const ref = satisReferanslar || {};
+    const turAdi = document.getElementById('smfTip').value;
+    const anaTur = (ref.musteri_turu || []).find(t => !t.ust_kod && t.ad === turAdi);
+    const altlar = anaTur ? (ref.musteri_turu || []).filter(t => t.ust_kod === anaTur.kod).map(t => t.ad) : [];
+    satisSecenekDoldur('smfAltTur', altlar, secili || '', anaTur ? 'Seçiniz...' : 'Önce müşteri türü seçin');
+}
+
 function satisKisiSatirEkle(k) {
     k = k || {};
     const div = document.createElement('div');
@@ -4890,7 +4926,7 @@ async function satisKisiSatirSil(btn) {
     showToast('Kişi silindi.', 'success');
 }
 
-function satisMusteriFormAc(id) {
+async function satisMusteriFormAc(id) {
     // Detay penceresi açıksa kapat (düzenleme ayrı pencerede)
     const detayModal = bootstrap.Modal.getInstance(document.getElementById('modalSatisMusteriDetay'));
     if (detayModal) detayModal.hide();
@@ -4898,17 +4934,23 @@ function satisMusteriFormAc(id) {
     document.getElementById('smfKisiler').innerHTML = '';
     window.smfAktifId = id || null;
     document.getElementById('smfBaslik').innerText = id ? 'Müşteri Düzenle' : 'Yeni Müşteri';
+    const ref = await satisReferanslariYukle();
+    document.getElementById('smfUlkeListe').innerHTML = (ref.ulkeler || []).map(u => `<option value="${esc(u)}">`).join('');
+    document.getElementById('smfSehirListe').innerHTML = (ref.sehirler || []).map(s => `<option value="${esc(s)}">`).join('');
+    const anaTurler = (ref.musteri_turu || []).filter(t => !t.ust_kod).map(t => t.ad);
     if (id && window.smdAktifDetay && window.smdAktifDetay.musteri.id === id) {
         const m = window.smdAktifDetay.musteri;
         document.getElementById('smfAd').value = m.ad || '';
         document.getElementById('smfUzunAd').value = m.uzun_ad || '';
         document.getElementById('smfEmail').value = m.email || '';
         document.getElementById('smfTelefon').value = m.telefon || '';
-        document.getElementById('smfTip').value = m.tip || '';
-        document.getElementById('smfAltTur').value = m.alt_tur || '';
+        satisSecenekDoldur('smfTip', anaTurler, m.tip || '');
+        satisAltTurSecenekleriDoldur(m.alt_tur || '');
+        satisSecenekDoldur('smfSatisNoktasi', (ref.satis_noktasi || []).map(x => x.ad), m.satis_noktasi || '');
+        satisSecenekDoldur('smfSektor', (ref.isletme_turu || []).map(x => x.ad), m.sektor || '');
+        satisSecenekDoldur('smfNasilDuydu', (ref.nasil_duydu || []).map(x => x.ad), m.nasil_duydu || '');
         document.getElementById('smfUlke').value = m.ulke || '';
         document.getElementById('smfSehir').value = m.sehir || '';
-        document.getElementById('smfSektor').value = m.sektor || '';
         document.getElementById('smfAdres').value = m.adres || '';
         document.getElementById('smfFaturaAdresi').value = m.fatura_adresi || '';
         document.getElementById('smfVergiDairesi').value = m.vergi_dairesi || '';
@@ -4919,6 +4961,11 @@ function satisMusteriFormAc(id) {
         satisTemsilciSecenekleriDoldur(m.temsilci_email);
         (window.smdAktifDetay.kisiler || []).forEach(k => satisKisiSatirEkle(k));
     } else {
+        satisSecenekDoldur('smfTip', anaTurler, '');
+        satisAltTurSecenekleriDoldur('');
+        satisSecenekDoldur('smfSatisNoktasi', (ref.satis_noktasi || []).map(x => x.ad), '');
+        satisSecenekDoldur('smfSektor', (ref.isletme_turu || []).map(x => x.ad), '');
+        satisSecenekDoldur('smfNasilDuydu', (ref.nasil_duydu || []).map(x => x.ad), '');
         satisTemsilciSecenekleriDoldur('');
         document.getElementById('smfDurum').value = 'AKTIF';
     }
@@ -4927,10 +4974,26 @@ function satisMusteriFormAc(id) {
 
 async function satisMusteriKaydet() {
     const ad = document.getElementById('smfAd').value.trim();
-    if (!ad) { alanHatasi('smfAd'); showToast('Müşteri adı zorunludur.', 'error'); return; }
+    // ZORUNLULUKLAR — eski müşteri formundaki doğrulamalar birebir
+    // (Kısa Ad min 3, Firma Ünvanı min 5, e-posta min 5; tür/alt tür/satış noktası/
+    //  temsilci/telefon/ülke/şehir/işletme türü/nereden duydu zorunlu; adres serbest).
+    const zorunlular = [
+        ['smfAd', 'Kısa adı', 3], ['smfUzunAd', 'Firma ünvanı', 5], ['smfEmail', 'E-posta', 5],
+        ['smfTelefon', 'Telefon', 0], ['smfTip', 'Müşteri türü', 0], ['smfAltTur', 'Müşteri alt türü', 0],
+        ['smfSatisNoktasi', 'Satış noktası', 0], ['smfTemsilci', 'Satış temsilcisi', 0],
+        ['smfUlke', 'Ülke', 0], ['smfSehir', 'Şehir', 0], ['smfSektor', 'İşletme türü', 0],
+        ['smfNasilDuydu', 'Bizi nereden duydu', 0]
+    ];
+    for (const [alanId, etiket, enAz] of zorunlular) {
+        const deger = (document.getElementById(alanId).value || '').trim();
+        if (!deger) { alanHatasi(alanId); showToast(`${etiket} zorunludur.`, 'error'); return; }
+        if (enAz && deger.length < enAz) { alanHatasi(alanId); showToast(`${etiket} en az ${enAz} karakter olmalıdır.`, 'error'); return; }
+    }
     const govde = {
         id: window.smfAktifId || undefined,
         ad,
+        satis_noktasi: document.getElementById('smfSatisNoktasi').value,
+        nasil_duydu: document.getElementById('smfNasilDuydu').value,
         uzun_ad: document.getElementById('smfUzunAd').value.trim(),
         email: document.getElementById('smfEmail').value.trim(),
         telefon: document.getElementById('smfTelefon').value.trim(),
@@ -6348,8 +6411,11 @@ async function satisTeklifFormAc(id) {
     window.stfAktifId = id || null;
     document.getElementById('stfBaslik').innerText = id ? 'Teklif Düzenle' : 'Yeni Teklif';
     await stfMetinHavuzuDoldur();
+    const stfRef = await satisReferanslariYukle();
+    const sartnameAdlari = (stfRef.sartname_turu || []).map(x => x.ad);
     if (id && window.stdAktifDetay && window.stdAktifDetay.teklif.id === id) {
         const t = window.stdAktifDetay.teklif;
+        satisSecenekDoldur('stfSartname', sartnameAdlari, t.sartname_turu || '');
         stfMusteriSec(t.musteri_id || '', t.musteri_adi || '');
         document.getElementById('stfTarih').value = t.teklif_tarihi ? t.teklif_tarihi.slice(0, 10) : '';
         document.getElementById('stfPara').value = t.para_birimi || 'TL';
@@ -6362,6 +6428,7 @@ async function satisTeklifFormAc(id) {
         await stfProjeSecenekleriDoldur(t.proje_id);
         (window.stdAktifDetay.kalemler || []).forEach(k => stfKalemEkle(k));
     } else {
+        satisSecenekDoldur('stfSartname', sartnameAdlari, '');
         document.getElementById('stfTarih').value = new Date().toISOString().slice(0, 10);
         await stfProjeSecenekleriDoldur(null);
         stfKalemEkle();
@@ -6375,6 +6442,19 @@ async function satisTeklifFormAc(id) {
 async function satisTeklifKaydet() {
     const musteriId = document.getElementById('stfMusteriId').value;
     if (!musteriId) { alanHatasi('stfMusteriAra'); showToast('Müşteri seçilmelidir.', 'error'); return; }
+    // Eski teklif formundaki zorunlu alanlar: şartname türü, para birimi ve dört koşul metni
+    // (teklif koşulları, ödeme, teslimat, kapsam dahil/hariç). Hazır metin havuzundan seçilebilir.
+    const teklifZorunlu = [
+        ['stfSartname', 'Şartname türü'], ['stfPara', 'Para birimi'],
+        ['stfNotlar', 'Teklif koşulları'], ['stfOdeme', 'Ödeme koşulları'],
+        ['stfTeslimat', 'Teslimat koşulları'], ['stfDahil', 'Teklife dahil olanlar'],
+        ['stfHaric', 'Teklife dahil olmayanlar']
+    ];
+    for (const [alanId, etiket] of teklifZorunlu) {
+        if (!(document.getElementById(alanId).value || '').trim()) {
+            alanHatasi(alanId); showToast(`${etiket} zorunludur.`, 'error'); return;
+        }
+    }
     const kalemler = [...document.querySelectorAll('.stf-kalem')].map(tr => ({
         id: tr.dataset.kalemId || undefined,
         ad: tr.querySelector('.stf-k-ad').value,
@@ -6401,6 +6481,7 @@ async function satisTeklifKaydet() {
             odeme_kosullari: document.getElementById('stfOdeme').value.trim(),
             teslimat_kosullari: document.getElementById('stfTeslimat').value.trim(),
             notlar: document.getElementById('stfNotlar').value.trim(),
+            sartname_turu: document.getElementById('stfSartname').value,
             kalemler
         }) });
         if (!r || !r.ok) { showToast(r?.hata || 'Teklif kaydedilemedi.', 'error'); return; }

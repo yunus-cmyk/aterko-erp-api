@@ -5767,6 +5767,24 @@ app.get('/api/proje-karlilik/:projeId', yetkiKontrol, async (req, res, next) => 
 // Müşteri ana kartı: eski aset sisteminden aktarılan 2.290 müşteri + ilgili kişiler.
 // Mali İşler carisi (musteriler) ve projeler sat_musteri_id ile buraya bağlanır.
 
+// Müşteri kartındaki kapalı listeler (eski customer_type / point_of_sales /
+// business_type / how_did_you_hear_us). Ülke ve şehir eski sistemde 249 + 3.853
+// satırlık tablolardı; burada mevcut kayıtlardan türetilen öneri listesi veriliyor.
+app.get('/api/satis-referanslar', yetkiKontrol, async (req, res, next) => {
+    try {
+        const ref = (await pool.query(
+            `SELECT tur, kod, ad, ust_kod FROM sat_referanslar WHERE aktif
+             ORDER BY tur, COALESCE(ust_kod, ''), sira, ad`)).rows;
+        const gruplu = {};
+        ref.forEach(r => (gruplu[r.tur] = gruplu[r.tur] || []).push(r));
+        const ulkeler = (await pool.query(
+            `SELECT DISTINCT ulke FROM sat_musteriler WHERE ulke IS NOT NULL AND ulke <> '' ORDER BY ulke`)).rows.map(r => r.ulke);
+        const sehirler = (await pool.query(
+            `SELECT DISTINCT sehir FROM sat_musteriler WHERE sehir IS NOT NULL AND sehir <> '' ORDER BY sehir`)).rows.map(r => r.sehir);
+        res.json({ ok: true, ...gruplu, ulkeler, sehirler });
+    } catch (e) { next(e); }
+});
+
 app.get('/api/satis-musteriler', yetkiKontrol, async (req, res, next) => {
     try {
         const r = await pool.query(`
@@ -5803,9 +5821,12 @@ app.get('/api/satis-musteri-detay/:id', yetkiKontrol, async (req, res, next) => 
 app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
     try {
         const { id, ad, uzun_ad, email, telefon, adres, fatura_adresi, vergi_dairesi,
-                vergi_no, iban, mali_not, tip, alt_tur, durum, sektor, ulke, sehir, temsilci_email } = req.body;
+                vergi_no, iban, mali_not, tip, alt_tur, durum, sektor, ulke, sehir,
+                temsilci_email, satis_noktasi, nasil_duydu } = req.body;
         const adNorm = (ad || '').trim();
         if (!adNorm) return res.json({ ok: false, hata: 'Müşteri adı zorunludur.' });
+        // Eski Customer.name kısıtı: @NotNull @Size(min=3)
+        if (adNorm.length < 3) return res.json({ ok: false, hata: 'Müşteri adı en az 3 karakter olmalıdır.' });
         const durumNorm = (durum === 'PASIF') ? 'PASIF' : 'AKTIF';
         // Mali not yalnız ADMIN veya mali yetkisi olanlarca değiştirilebilir
         // (eski CustomerServiceImpl.checkFinancialAuthorityForFinancialNote birebir)
@@ -5814,7 +5835,12 @@ app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
         if (id) {
             const eskiR = await pool.query('SELECT * FROM sat_musteriler WHERE id=$1', [id]);
             if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
-            const maliNotDegisti = (mali_not || '').trim() !== (eskiR.rows[0].mali_not || '').trim();
+            const eskiKayit = eskiR.rows[0];
+            // KORUMA: gövdede HİÇ gönderilmeyen alan mevcut değerini korur (proje-guncelle'deki
+            // koru() deseni). Aksi halde eksik gövdeli bir istek kartın yarısını siliyordu.
+            const koru = (yeni, alan) => (yeni === undefined ? eskiKayit[alan] : ((yeni || '').toString().trim() || null));
+            const maliNotYeni = koru(mali_not, 'mali_not');
+            const maliNotDegisti = (maliNotYeni || '') !== (eskiKayit.mali_not || '');
             if (maliNotDegisti && !maliYetki) {
                 return res.json({ ok: false, hata: 'Mali notu değiştirmek için mali işler yetkisi gerekir.' });
             }
@@ -5822,12 +5848,15 @@ app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
                 UPDATE sat_musteriler SET ad=$1, uzun_ad=$2, email=$3, telefon=$4, adres=$5,
                     fatura_adresi=$6, vergi_dairesi=$7, vergi_no=$8, iban=$9, mali_not=$10,
                     tip=$11, durum=$12, sektor=$13, ulke=$14, sehir=$15, temsilci_email=$16,
-                    alt_tur=$18, guncelleme=now()
+                    alt_tur=$18, satis_noktasi=$19, nasil_duydu=$20, guncelleme=now()
                 WHERE id=$17
-            `, [adNorm, uzun_ad || null, email || null, telefon || null, adres || null,
-                fatura_adresi || null, vergi_dairesi || null, vergi_no || null, iban || null,
-                mali_not || null, tip || null, durumNorm, sektor || null, ulke || null,
-                sehir || null, temsilci_email || null, id, (alt_tur || '').trim() || null]);
+            `, [adNorm, koru(uzun_ad, 'uzun_ad'), koru(email, 'email'), koru(telefon, 'telefon'),
+                koru(adres, 'adres'), koru(fatura_adresi, 'fatura_adresi'), koru(vergi_dairesi, 'vergi_dairesi'),
+                koru(vergi_no, 'vergi_no'), koru(iban, 'iban'), maliNotYeni,
+                koru(tip, 'tip'), durum === undefined ? eskiKayit.durum : durumNorm,
+                koru(sektor, 'sektor'), koru(ulke, 'ulke'), koru(sehir, 'sehir'),
+                koru(temsilci_email, 'temsilci_email'), id, koru(alt_tur, 'alt_tur'),
+                koru(satis_noktasi, 'satis_noktasi'), koru(nasil_duydu, 'nasil_duydu')]);
             await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_musteriler', kayit_id: id,
                 ozet: `Müşteri güncellendi: ${adNorm}`, eski_veri: eskiR.rows[0], yeni_veri: req.body });
             return res.json({ ok: true, id });
@@ -5835,13 +5864,14 @@ app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
         const ins = await pool.query(`
             INSERT INTO sat_musteriler (ad, uzun_ad, email, telefon, adres, fatura_adresi,
                 vergi_dairesi, vergi_no, iban, mali_not, tip, durum, sektor, ulke, sehir,
-                temsilci_email, alt_tur, kaynak, olusturan)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$18,'manuel',$17)
+                temsilci_email, alt_tur, satis_noktasi, nasil_duydu, kaynak, olusturan)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$18,$19,$20,'manuel',$17)
             RETURNING id
         `, [adNorm, uzun_ad || null, email || null, telefon || null, adres || null,
             fatura_adresi || null, vergi_dairesi || null, vergi_no || null, iban || null,
             mali_not || null, tip || null, durumNorm, sektor || null, ulke || null,
-            sehir || null, temsilci_email || null, req.user.email, (alt_tur || '').trim() || null]);
+            sehir || null, temsilci_email || null, req.user.email, (alt_tur || '').trim() || null,
+            (satis_noktasi || '').trim() || null, (nasil_duydu || '').trim() || null]);
         await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_musteriler', kayit_id: ins.rows[0].id,
             ozet: `Yeni müşteri: ${adNorm}`, yeni_veri: req.body });
         res.json({ ok: true, id: ins.rows[0].id });
@@ -5935,7 +5965,7 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
     try {
         const { id, musteri_id, proje_id, teklif_tarihi, para_birimi, kdv_orani, notlar,
                 odeme_kosullari, teslimat_kosullari, dahil_isler, haric_isler,
-                iskontolu_toplam, kalemler } = req.body;
+                iskontolu_toplam, sartname_turu, kalemler } = req.body;
         if (!musteri_id) { return res.json({ ok: false, hata: 'Müşteri seçilmelidir.' }); }
         if (!Array.isArray(kalemler) || !kalemler.filter(k => (k.ad || '').trim()).length) {
             return res.json({ ok: false, hata: 'En az bir teklif kalemi girilmelidir.' });
@@ -5960,7 +5990,7 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             para_birimi || 'TL', kdv, araToplam, kdvTutar, genel,
             iskontolu_toplam ? parseFloat(iskontolu_toplam) : null,
             notlar || null, odeme_kosullari || null, teslimat_kosullari || null,
-            dahil_isler || null, haric_isler || null];
+            dahil_isler || null, haric_isler || null, (sartname_turu || '').trim() || null];
         if (id) {
             const eskiR = await client.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
             if (eskiR.rowCount === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Teklif bulunamadı.' }); }
@@ -5968,8 +5998,8 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                 UPDATE sat_teklifler SET musteri_id=$1, proje_id=$2, teklif_tarihi=$3, para_birimi=$4,
                     kdv_orani=$5, ara_toplam=$6, kdv_tutar=$7, genel_toplam=$8, iskontolu_toplam=$9,
                     notlar=$10, odeme_kosullari=$11, teslimat_kosullari=$12, dahil_isler=$13,
-                    haric_isler=$14, guncelleme=now()
-                WHERE id=$15`, [...alanlar, id]);
+                    haric_isler=$14, sartname_turu=$15, guncelleme=now()
+                WHERE id=$16`, [...alanlar, id]);
             // Kalemler kimlikleriyle güncellenir; YALNIZ formdan çıkarılanlar silinir.
             // (Eskiden hepsi silinip yeniden eklenirdi → analiz formu, öznitelik değerleri,
             //  malzeme dökümü ve kilitli fiyatlar sahipsiz kalıyordu.)
@@ -5990,8 +6020,8 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             const ins = await client.query(`
                 INSERT INTO sat_teklifler (musteri_id, proje_id, teklif_tarihi, para_birimi, kdv_orani,
                     ara_toplam, kdv_tutar, genel_toplam, iskontolu_toplam, notlar, odeme_kosullari,
-                    teslimat_kosullari, dahil_isler, haric_isler, durum, olusturan)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'TASLAK',$15) RETURNING id`,
+                    teslimat_kosullari, dahil_isler, haric_isler, sartname_turu, durum, olusturan)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'TASLAK',$16) RETURNING id`,
                 [...alanlar, req.user.email]);
             teklifId = ins.rows[0].id;
             // Teklif kodu eski sistemle birebir: {projeKodu}-TEK-NN (proje yoksa W-{id})
@@ -10546,6 +10576,48 @@ async function semaGuvence() {
             SELECT id, 'satis.musteri', 'TAM' FROM roller WHERE ad IN ('SATIS','YONETIM')
             ON CONFLICT (rol_id, modul_kod) DO NOTHING
         `).catch(e => console.error('⚠️ satis.musteri izin:', e.message));
+
+        // MÜŞTERİ REFERANS LİSTELERİ — eski sistemin küçük tanım tabloları
+        // (customer_type, point_of_sales, business_type, how_did_you_hear_us).
+        // Müşteri türü iki katmanlı: alt tür kodu ana türün koduyla BAŞLAR (0101 → 01),
+        // eski formda alt tür listesi bu kurala göre süzülüyordu.
+        await pool.query(`CREATE TABLE IF NOT EXISTS sat_referanslar (
+            id SERIAL PRIMARY KEY,
+            tur TEXT NOT NULL,
+            kod TEXT NOT NULL,
+            ad TEXT NOT NULL,
+            ust_kod TEXT,
+            sira INTEGER DEFAULT 0,
+            aktif BOOLEAN DEFAULT true,
+            UNIQUE (tur, kod)
+        )`).catch(e => console.error('⚠️ sat_referanslar:', e.message));
+        const REFERANS_TOHUM = [
+            ['musteri_turu', '01', 'Kurumsal', null, 1], ['musteri_turu', '02', 'Bayi', null, 2],
+            ['musteri_turu', '03', 'Bireysel', null, 3],
+            ['musteri_turu', '0101', 'Müteahhit', '01', 1], ['musteri_turu', '0102', 'Kamu Kurumu', '01', 2],
+            ['musteri_turu', '0103', 'Yatırımcı', '01', 3], ['musteri_turu', '0104', 'STK', '01', 4],
+            ['musteri_turu', '0201', 'Proje Satıcısı', '02', 1], ['musteri_turu', '0202', 'Malzeme Alcısı', '02', 2],
+            ['musteri_turu', '0203', 'Bölgesel Satıcı', '02', 3],
+            ['musteri_turu', '0301', 'Bireysel', '03', 1],
+            ['satis_noktasi', 'MERKEZ', 'Merkez', null, 1], ['satis_noktasi', 'ANKARA', 'Ankara', null, 2],
+            ['satis_noktasi', 'KUMBURGAZ', 'Kumburgaz', null, 3],
+            ['isletme_turu', 'TUZEL', 'Tüzel Kişi', null, 1], ['isletme_turu', 'GERCEK', 'Gerçek Kişi', null, 2],
+            ['nasil_duydu', '1', 'Tanıtım', null, 1], ['nasil_duydu', '2', 'Dergi İlanı', null, 2],
+            ['nasil_duydu', '3', 'Arama Motoru', null, 3], ['nasil_duydu', '4', 'Facebook', null, 4],
+            ['nasil_duydu', '5', 'Instagram', null, 5], ['nasil_duydu', '6', 'Linkedin', null, 6],
+            ['nasil_duydu', '7', 'Twitter', null, 7], ['nasil_duydu', '8', 'Fuar', null, 8],
+            ['nasil_duydu', '9', 'Tavsiye', null, 9], ['nasil_duydu', '10', 'Müşteri Temsilcisi', null, 10],
+            ['nasil_duydu', '11', 'Müşteri Yorumları', null, 11], ['nasil_duydu', '12', 'Showroom', null, 12],
+            ['sartname_turu', '1', 'Prefabrik', null, 1], ['sartname_turu', '2', 'Konteyner', null, 2],
+            ['sartname_turu', '3', 'Birleşimli Konteyner', null, 3], ['sartname_turu', '4', 'Hafif Çelik', null, 4],
+            ['sartname_turu', '5', 'Ağır Çelik', null, 5], ['sartname_turu', '6', 'Foreva', null, 6],
+            ['sartname_turu', '7', 'Prefabrik Konut', null, 7], ['sartname_turu', '8', 'Şartnamesiz', null, 8]
+        ];
+        for (const [tur, kod, ad, ust, sira] of REFERANS_TOHUM) {
+            await pool.query(`INSERT INTO sat_referanslar (tur, kod, ad, ust_kod, sira)
+                VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tur, kod) DO NOTHING`, [tur, kod, ad, ust, sira])
+                .catch(e => console.error('⚠️ sat_referanslar tohum:', e.message));
+        }
 
         // SATIŞ MODÜLÜ (Faz C2): teklifler + kalemler + hazır metin havuzu
         await pool.query(`CREATE TABLE IF NOT EXISTS sat_teklifler (
