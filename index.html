@@ -5796,16 +5796,26 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
     window.sanKurallar = r.kurallar || [];
     window.sanSecenekMetin = {};
     r.secenekler.forEach(s => window.sanSecenekMetin[String(s.eski_id)] = s.deger);
+    // KİLİT KURALI (eski isSaveOrCopyButtonVisible birebir): satış tarafı formu yalnız
+    // analiz talep edilmeden önce (durum BELIRTILMEMIS), analiz tarafı ise analiz
+    // sürerken düzenler. Analiz TAMAMLANDIysa form kilitlidir — düzeltmek için analiz
+    // yeniden talep edilir. Ayrıca alan bazında attribute_type.editable=false olan
+    // alanlar (26 adet) her durumda salt okunurdur.
+    const sanYazabilir = izinVarMi('satis.teklif', 'YAZMA');
+    const formKilitli = !sanYazabilir || (r.kalem || {}).analiz_durumu === 'ANALIZ_TAMAMLANDI';
+    window.sanFormKilitli = formKilitli;
     const alan = (b, p) => {
         const anahtar = `${b.eski_id}_${p.eski_id}`;
         const deger = dMap[anahtar] || '';
-        const ortak = `class="form-control form-control-sm san-alan" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}" onchange="satisFormKurallariUygula()"`;
+        const kilit = formKilitli || p.duzenlenebilir === false;
+        const ek = `${kilit ? ' disabled' : ''}${p.zorunlu ? ' required' : ''}`;
+        const ortak = `class="form-control form-control-sm san-alan" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}" onchange="satisFormKurallariUygula()"${ek}`;
         if (p.alan_tipi === 2) return `<input type="number" step="0.01" ${ortak} value="${esc(deger)}">`;
         const secenekler = secMap[p.eski_id] || [];
         if (p.alan_tipi === 3) {
             const secili = String(deger).split(',').filter(Boolean);
             return `<div class="border rounded p-1 san-cokseçim" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}" style="max-height:110px;overflow-y:auto;">
-                ${secenekler.map(s => `<div class="form-check form-check-sm san-secenek-kutu" data-secenek-deger="${esc(s.deger)}"><input class="form-check-input san-cok" type="checkbox" value="${s.eski_id}" ${secili.includes(String(s.eski_id)) ? 'checked' : ''} onchange="satisFormKurallariUygula()">
+                ${secenekler.map(s => `<div class="form-check form-check-sm san-secenek-kutu" data-secenek-deger="${esc(s.deger)}"><input class="form-check-input san-cok" type="checkbox" value="${s.eski_id}" ${secili.includes(String(s.eski_id)) ? 'checked' : ''} onchange="satisFormKurallariUygula()"${kilit ? ' disabled' : ''}>
                 <label class="form-check-label small">${esc(s.deger)}</label></div>`).join('') || '<span class="text-muted small">seçenek yok</span>'}</div>`;
         }
         return `<select ${ortak.replace('form-control', 'form-select')}>
@@ -5819,10 +5829,12 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
     r.bolumler.forEach(b => { if (b.ust_bolum_eski_id) (cocukMap[b.ust_bolum_eski_id] = cocukMap[b.ust_bolum_eski_id] || []).push(b); });
     const kokler = r.bolumler.filter(b => !b.ust_bolum_eski_id ||
         !r.bolumler.some(x => x.eski_id === b.ust_bolum_eski_id));
+    const etiket = (p) => `${esc(p.ad)}${p.zorunlu ? ' <span class="text-danger">*</span>' : ''}` +
+        (p.duzenlenebilir === false ? ' <i class="bi bi-lock-fill text-muted" title="Bu alan sistem tarafından belirlenir, elle değiştirilemez."></i>' : '');
     const alanlariCiz = (b, params) => params.length
         ? `<div class="row g-2">${params.map(p => `
             <div class="col-md-4 san-alan-kutu" data-bolum="${b.eski_id}" data-parametre-ad="${esc(p.ad)}">
-                <label class="form-label" title="${esc(p.kod || '')}">${esc(p.ad)}</label>${alan(b, p)}</div>`).join('')}</div>`
+                <label class="form-label" title="${esc(p.kod || '')}">${etiket(p)}</label>${alan(b, p)}</div>`).join('')}</div>`
         : '';
     // Alt bölüm gövdesi (iç içe kutu)
     const altBolumCiz = (b) => {
@@ -5833,18 +5845,22 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
              style="border-left-width:3px !important; border-color:var(--mod-satis) !important;">
           <div class="d-flex align-items-center mb-1">
             <div class="form-check mb-0 me-2">
-              <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} id="sanK${b.id}">
+              <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} id="sanK${b.id}"${formKilitli ? ' disabled' : ''}>
               <label class="form-check-label fw-semibold small" for="sanK${b.id}">${esc(b.ad)}</label>
             </div>
             <span class="badge bg-light text-dark border me-2">${params.length} alan</span>
-            ${tekrarli ? `<button class="btn btn-outline-primary btn-sm py-0 me-1" title="Bu bölümden bir tane daha ekle" onclick="satisAnalizBolumEkle(${b.urun_kategori_eski_id})"><i class="bi bi-plus"></i></button>` : ''}
-            ${/\s\d+$/.test(b.ad) ? `<button class="btn btn-outline-danger btn-sm py-0" title="Bu bölümü kaldır" onclick="satisAnalizBolumSil(${b.id})"><i class="bi bi-x"></i></button>` : ''}
+            ${tekrarli && !formKilitli ? `<button class="btn btn-outline-primary btn-sm py-0 me-1" title="Bu bölümden bir tane daha ekle" onclick="satisAnalizBolumEkle(${b.urun_kategori_eski_id})"><i class="bi bi-plus"></i></button>` : ''}
+            ${/\s\d+$/.test(b.ad) && !formKilitli ? `<button class="btn btn-outline-danger btn-sm py-0" title="Bu bölümü kaldır" onclick="satisAnalizBolumSil(${b.id})"><i class="bi bi-x"></i></button>` : ''}
           </div>
           ${alanlariCiz(b, params)}
           ${(cocukMap[b.eski_id] || []).map(altBolumCiz).join('')}
         </div>`;
     };
     document.getElementById('sanGovde').innerHTML = `
+        ${formKilitli ? `<div class="alert alert-warning py-2 small mb-2"><i class="bi bi-lock-fill me-1"></i>
+            ${!sanYazabilir ? 'Bu formu görüntüleme yetkiniz var, düzenleme yetkiniz yok.'
+                : 'Bu bileşenin <b>analizi tamamlandı</b>; öznitelikler kilitlendi. Değişiklik için Fiyat Analizi ekranından <b>yeniden analiz talep edin</b>.'}
+        </div>` : ''}
         <div class="alert alert-light border py-2 small mb-2">
             <i class="bi bi-info-circle me-1"></i>Yalnız <b>kapsama dahil</b> ettiğiniz bölümlerin ölçü ve seçimleri malzeme dökümüne girer.
             Tekrarlanabilir bölümler (Duvar, Pencere...) <b>+</b> ile çoğaltılır. Alt bölümler üst başlığın altında gruplanmıştır.
@@ -5868,15 +5884,15 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
                  data-ara="${esc((b.ad + ' ' + cocuklar.map(c => c.ad).join(' ') + ' ' + params.map(p => p.ad).join(' ')).toLocaleLowerCase('tr'))}" data-kapsam="${b.kapsamda || cocuklar.some(c => c.kapsamda) ? '1' : '0'}">
               <h2 class="accordion-header d-flex align-items-center">
                 <div class="form-check ms-2 me-1 mb-0">
-                  <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} title="Kapsama dahil">
+                  <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} title="Kapsama dahil"${formKilitli ? ' disabled' : ''}>
                 </div>
                 <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#sanB${b.id}">
                   <span class="fw-semibold">${esc(b.ad)}</span>
                   <span class="badge bg-light text-dark border ms-2">${toplamAlan} alan</span>
                   ${cocuklar.length ? `<span class="badge bg-mod-satis ms-1">${cocuklar.length} alt bölüm</span>` : ''}
                 </button>
-                ${tekrarli ? `<button class="btn btn-outline-primary btn-sm py-0 mx-1" title="Bu bölümden bir tane daha ekle" onclick="satisAnalizBolumEkle(${b.urun_kategori_eski_id})"><i class="bi bi-plus"></i></button>` : ''}
-                ${/\s\d+$/.test(b.ad) ? `<button class="btn btn-outline-danger btn-sm py-0 me-2" title="Bu bölümü kaldır" onclick="satisAnalizBolumSil(${b.id})"><i class="bi bi-x"></i></button>` : '<span class="me-2"></span>'}
+                ${tekrarli && !formKilitli ? `<button class="btn btn-outline-primary btn-sm py-0 mx-1" title="Bu bölümden bir tane daha ekle" onclick="satisAnalizBolumEkle(${b.urun_kategori_eski_id})"><i class="bi bi-plus"></i></button>` : ''}
+                ${/\s\d+$/.test(b.ad) && !formKilitli ? `<button class="btn btn-outline-danger btn-sm py-0 me-2" title="Bu bölümü kaldır" onclick="satisAnalizBolumSil(${b.id})"><i class="bi bi-x"></i></button>` : '<span class="me-2"></span>'}
               </h2>
               <div id="sanB${b.id}" class="accordion-collapse collapse">
                 <div class="accordion-body py-2">
@@ -5888,10 +5904,13 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
             </div>`;
         }).join('')}
         </div>`;
+    // Kaydet ve "Öznitelikleri Kopyala" eski sistemde AYNI koşula bağlıdır
+    // (isSaveOrCopyButtonVisible) — form kilitliyse ikisi de görünmez.
     document.getElementById('sanAltButonlar').innerHTML = `
-        <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
+        <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">${formKilitli ? 'Kapat' : 'Vazgeç'}</button>
+        ${formKilitli ? '' : `
         <button class="btn btn-outline-secondary btn-sm px-3" onclick="satisAnalizKopyalaAc()"><i class="bi bi-files me-1"></i>Öznitelikleri Kopyala</button>
-        <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisAnalizFormKaydet()"><i class="bi bi-check-lg me-1"></i>Kaydet</button>`;
+        <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisAnalizFormKaydet()"><i class="bi bi-check-lg me-1"></i>Kaydet</button>`}`;
     satisFormKurallariUygula();   // seçimlere göre ilgisiz bölüm/alan/seçenekleri gizle
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
 }
@@ -6081,11 +6100,23 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
         if (u.guncel_satis != null) gSatis += m * parseFloat(u.guncel_satis);
         pb = u.para_birimi || pb;
     });
-    const yazabilir = izinVarMi('satis.urun', 'YAZMA');
+    // Eski sistemde döküm ızgarası (component-product manage) YALNIZ analiz sürerken
+    // düzenlenebilir (hasSaveRight: proposalComponentStatusId === ANALIZ_SURECINDE).
+    const aDurum = kalem.analiz_durumu || 'BELIRTILMEMIS';
+    const surecte = aDurum === 'ANALIZ_SURECINDE';
+    const yazabilir = izinVarMi('satis.urun', 'YAZMA') && surecte;
     document.getElementById('sanBaslik').innerText = 'Fiyat Analizi — ' + kalemAd;
     document.getElementById('sanGovde').innerHTML = `
+        <div class="d-flex align-items-center gap-2 mb-2 small">
+            <span class="text-muted">Analiz durumu:</span>${satisAnalizDurumBadge(aDurum)}
+            ${aDurum === 'ANALIZ_TAMAMLANDI' ? '<span class="text-muted"><i class="bi bi-lock-fill me-1"></i>Döküm kilitli — değişiklik için yeniden analiz talep edin.</span>' : ''}
+            ${aDurum === 'BELIRTILMEMIS' ? '<span class="text-muted">Döküm üretimi için önce analiz talep edilmeli.</span>' : ''}
+        </div>
         ${!satirlar.length ? `<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i>
-            Bu kalem için henüz malzeme dökümü üretilmemiş. Önce <b>Öznitelikler</b>'i doldurup aşağıdan <b>Dökümü Üret</b> deyin.</div>` : ''}
+            Bu kalem için henüz malzeme dökümü üretilmemiş. Önce <b>Öznitelikler</b>'i doldurun,
+            ${(kalem.analiz_durumu || 'BELIRTILMEMIS') === 'ANALIZ_SURECINDE'
+                ? 'ardından aşağıdan <b>Dökümü Üret</b> deyin.'
+                : 'ardından <b>Analiz Talep Et</b> deyin; döküm üretimi analiz süreci başladıktan sonra açılır.'}</div>` : ''}
         ${(kayitli.yorumlar || []).length ? `
         <div class="border rounded p-2 mb-2 bg-light">
             <div class="fw-bold small mb-1"><i class="bi bi-chat-left-text me-1"></i>Analiz Notları (${kayitli.yorumlar.length})</div>
@@ -6136,9 +6167,13 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
         <div class="small text-muted"><i class="bi bi-info-circle me-1"></i>Maliyet, ürün ağacındaki bileşenlerin alış fiyatlarından hesaplanır; satış = maliyet × (kâr oranı + 100) / 100.
         Analiz üretildiği gün fiyatlar <b>kilitlenir</b>; "Bugünkü Satış" sütunu güncel fiyatlarla farkı gösterir.
         ${kalem.analiz_tarihi ? `<br><i class="bi bi-clock-history me-1"></i>Analiz: ${formatTarihTR(kalem.analiz_tarihi)}${kalem.analiz_eden ? ' — ' + esc(kalem.analiz_eden.split('@')[0]) : ''}` : ''}</div>` : ''}`;
+    // BUTON GÖRÜNÜRLÜĞÜ — eski sistemin koşulları birebir (main.bundle.js):
+    //   requestAnalysisButton     : durum ≠ ANALIZ_SURECINDE  (yani beklemede veya tamamlanmış)
+    //   matchAndSaveProductsButton: durum = ANALIZ_SURECINDE   ("Ürün ve Hizmetleri Oluştur")
+    //   completeAnalysisButton    : durum = ANALIZ_SURECINDE
     document.getElementById('sanAltButonlar').innerHTML = `
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
-        ${izinVarMi('satis.teklif', 'YAZMA') ? `<button class="btn btn-outline-warning btn-sm px-3" onclick="satisAnalizTalep()"><i class="bi bi-send me-1"></i>Analiz Talep Et</button>` : ''}
+        ${izinVarMi('satis.teklif', 'YAZMA') && !surecte ? `<button class="btn btn-outline-warning btn-sm px-3" onclick="satisAnalizTalep()"><i class="bi bi-send me-1"></i>${aDurum === 'ANALIZ_TAMAMLANDI' ? 'Yeniden Analiz Talep Et' : 'Analiz Talep Et'}</button>` : ''}
         ${yazabilir ? `<button class="btn btn-outline-primary btn-sm px-3" onclick="satisAnalizUret()"><i class="bi bi-arrow-repeat me-1"></i>Dökümü Üret</button>` : ''}
         ${yazabilir && satirlar.length ? `<button class="btn btn-success btn-sm px-3 fw-bold" onclick="satisAnalizTamamla()"><i class="bi bi-check-lg me-1"></i>Analizi Tamamla</button>` : ''}`;
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();

@@ -6754,6 +6754,19 @@ async function satisKalemAnaliziHesapla(kalemId) {
     return { kalem, bolumler: bolumHepsi, kalemler: hesaplanan };
 }
 
+// ANALİZ DURUMU KAPISI (eski isSaveOrCopyButtonVisible / hasSaveRight birebir):
+// analizi TAMAMLANMIŞ bir bileşenin öznitelikleri ve dökümü değiştirilemez; düzeltme
+// için analiz yeniden talep edilir (durum ANALIZ_SURECINDE'ye döner). Döküm üretme ve
+// analizi tamamlama ise YALNIZ analiz sürerken yapılabilir. Ekranda butonlar bu kurala
+// göre gizleniyor; burası aynı kuralın arka uç karşılığıdır (deny-by-default).
+async function satisAnalizKalemiAl(sorgulayici, kalemId) {
+    const r = await sorgulayici.query(
+        'SELECT id, ad, analiz_durumu FROM sat_teklif_kalemleri WHERE id=$1', [parseInt(kalemId)]);
+    return r.rows[0] || null;
+}
+const SATIS_ANALIZ_KILIT_MESAJ = 'Bu bileşenin analizi tamamlandı; öznitelikleri kilitlidir. Değişiklik için önce yeniden analiz talep edin.';
+const SATIS_ANALIZ_SUREC_MESAJ = 'Bu işlem yalnız analiz sürerken yapılabilir. Önce "Analiz Talep Et" deyin.';
+
 // --- ANALİZ FORMU (öznitelik girişi) — eski "Öznitelikler" ekranı birebir ---
 // Form bölümleri ürün kategorisi şablonundan üretilir; tekrarlanabilir kategoriler
 // (max_adet > 1) "Duvar 1, Duvar 2..." şeklinde çoğaltılabilir.
@@ -6825,6 +6838,9 @@ app.post('/api/satis-analiz-bolum-ekle', yetkiKontrol, izinGerekli('satis.teklif
     const client = await pool.connect();
     try {
         const { kalem_id, urun_kategori_eski_id } = req.body;
+        const kalem = await satisAnalizKalemiAl(client, kalem_id);
+        if (!kalem) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        if (kalem.analiz_durumu === 'ANALIZ_TAMAMLANDI') return res.json({ ok: false, hata: SATIS_ANALIZ_KILIT_MESAJ });
         const k = (await client.query('SELECT * FROM sat_urun_kategoriler WHERE eski_id=$1', [parseInt(urun_kategori_eski_id)])).rows[0];
         if (!k) return res.json({ ok: false, hata: 'Kategori bulunamadı.' });
         const mevcut = await client.query(
@@ -6849,6 +6865,8 @@ app.delete('/api/satis-analiz-bolum-sil/:id', yetkiKontrol, izinGerekli('satis.t
     try {
         const b = (await pool.query('SELECT * FROM sat_analiz_bolumler WHERE id=$1', [parseInt(req.params.id)])).rows[0];
         if (!b) return res.json({ ok: false, hata: 'Bölüm bulunamadı.' });
+        const kalem = await satisAnalizKalemiAl(pool, b.kalem_id);
+        if (kalem && kalem.analiz_durumu === 'ANALIZ_TAMAMLANDI') return res.json({ ok: false, hata: SATIS_ANALIZ_KILIT_MESAJ });
         // Alt bölümleri de birlikte silinir; değerler ve bu bölümden üretilmiş
         // (elle düzenlenmemiş) döküm satırları da temizlenir.
         const silinecekBolumler = [b.eski_id];
@@ -6891,6 +6909,9 @@ app.post('/api/satis-analiz-kopyala', yetkiKontrol, izinGerekli('satis.teklif', 
         const hedefId = parseInt(req.body.hedef_kalem_id);
         const kaynakId = parseInt(req.body.kaynak_kalem_id);
         if (!hedefId || !kaynakId || hedefId === kaynakId) return res.json({ ok: false, hata: 'Geçerli bir kaynak kalem seçilmelidir.' });
+        const hedefKalem = await satisAnalizKalemiAl(client, hedefId);
+        if (!hedefKalem) return res.json({ ok: false, hata: 'Hedef teklif bileşeni bulunamadı.' });
+        if (hedefKalem.analiz_durumu === 'ANALIZ_TAMAMLANDI') return res.json({ ok: false, hata: SATIS_ANALIZ_KILIT_MESAJ });
         const kaynakBolumler = (await client.query('SELECT * FROM sat_analiz_bolumler WHERE kalem_id=$1 ORDER BY sira, eski_id', [kaynakId])).rows;
         if (!kaynakBolumler.length) return res.json({ ok: false, hata: 'Kaynak kalemin analiz formu yok.' });
         await client.query('BEGIN');
@@ -6932,6 +6953,9 @@ app.post('/api/satis-analiz-form-kaydet', yetkiKontrol, izinGerekli('satis.tekli
     try {
         const { kalem_id, kapsam, degerler } = req.body;
         const kalemId = parseInt(kalem_id);
+        const kalem = await satisAnalizKalemiAl(client, kalemId);
+        if (!kalem) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        if (kalem.analiz_durumu === 'ANALIZ_TAMAMLANDI') return res.json({ ok: false, hata: SATIS_ANALIZ_KILIT_MESAJ });
         await client.query('BEGIN');
         for (const [bolumEskiId, kapsamda] of Object.entries(kapsam || {})) {
             await client.query('UPDATE sat_analiz_bolumler SET kapsamda=$1 WHERE kalem_id=$2 AND eski_id=$3',
@@ -6984,6 +7008,9 @@ app.post('/api/satis-analiz-uret', yetkiKontrol, izinGerekli('satis.urun', 'YAZM
     const client = await pool.connect();
     try {
         const kalemId = parseInt(req.body.kalem_id);
+        const kilitK = await satisAnalizKalemiAl(client, kalemId);
+        if (!kilitK) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        if (kilitK.analiz_durumu !== 'ANALIZ_SURECINDE') return res.json({ ok: false, hata: SATIS_ANALIZ_SUREC_MESAJ });
         const r = await satisKalemAnaliziHesapla(kalemId);
         const bugun = new Date().toISOString().slice(0, 10);
         await client.query('BEGIN');
@@ -7023,6 +7050,8 @@ app.post('/api/satis-analiz-satir', yetkiKontrol, izinGerekli('satis.urun', 'YAZ
         if (id) {
             const eski = await pool.query('SELECT * FROM sat_analiz_urunler WHERE id=$1', [parseInt(id)]);
             if (!eski.rowCount) return res.json({ ok: false, hata: 'Analiz satırı bulunamadı.' });
+            const sk = await satisAnalizKalemiAl(pool, eski.rows[0].kalem_id);
+            if (sk && sk.analiz_durumu !== 'ANALIZ_SURECINDE') return res.json({ ok: false, hata: SATIS_ANALIZ_SUREC_MESAJ });
             await pool.query(`UPDATE sat_analiz_urunler SET miktar=$1, kilit_maliyet=$2, kilit_satis=$3,
                 notu=$4, elle_duzenlendi=true WHERE id=$5`,
                 [m, kilit_maliyet === '' || kilit_maliyet == null ? null : parseFloat(kilit_maliyet),
@@ -7033,6 +7062,9 @@ app.post('/api/satis-analiz-satir', yetkiKontrol, izinGerekli('satis.urun', 'YAZ
             return res.json({ ok: true, id: parseInt(id) });
         }
         if (!kalem_id || !urun_id) return res.json({ ok: false, hata: 'Kalem ve ürün belirtilmelidir.' });
+        const yk = await satisAnalizKalemiAl(pool, kalem_id);
+        if (!yk) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        if (yk.analiz_durumu !== 'ANALIZ_SURECINDE') return res.json({ ok: false, hata: SATIS_ANALIZ_SUREC_MESAJ });
         const u = await pool.query('SELECT ad FROM sat_urunler WHERE id=$1', [parseInt(urun_id)]);
         if (!u.rowCount) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
         const ins = await pool.query(`
@@ -7054,6 +7086,8 @@ app.delete('/api/satis-analiz-satir-sil/:id', yetkiKontrol, izinGerekli('satis.u
         const eski = await pool.query(`SELECT a.*, u.ad FROM sat_analiz_urunler a
             LEFT JOIN sat_urunler u ON u.id=a.urun_id WHERE a.id=$1`, [parseInt(req.params.id)]);
         if (!eski.rowCount) return res.json({ ok: false, hata: 'Analiz satırı bulunamadı.' });
+        const sk = await satisAnalizKalemiAl(pool, eski.rows[0].kalem_id);
+        if (sk && sk.analiz_durumu !== 'ANALIZ_SURECINDE') return res.json({ ok: false, hata: SATIS_ANALIZ_SUREC_MESAJ });
         await pool.query('DELETE FROM sat_analiz_urunler WHERE id=$1', [parseInt(req.params.id)]);
         await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_analiz_urunler', kayit_id: parseInt(req.params.id),
             ozet: `Analiz satırı silindi: ${eski.rows[0].ad || '-'}`, eski_veri: eski.rows[0] });
@@ -7188,9 +7222,14 @@ app.post('/api/satis-analiz-talep', yetkiKontrol, izinGerekli('satis.teklif', 'Y
     try {
         const { kalem_id, yorum } = req.body;
         const k = await client.query(`
-            SELECT k.id, k.ad, t.proje_id FROM sat_teklif_kalemleri k
+            SELECT k.id, k.ad, k.analiz_durumu, t.proje_id FROM sat_teklif_kalemleri k
             JOIN sat_teklifler t ON t.id = k.teklif_id WHERE k.id=$1`, [parseInt(kalem_id)]);
         if (!k.rowCount) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        // Eski requestAnalysisButton koşulu: durum ANALIZ_SURECINDE ise talep edilemez
+        // (tamamlanmış analiz için yeniden talep serbesttir).
+        if (k.rows[0].analiz_durumu === 'ANALIZ_SURECINDE') {
+            return res.json({ ok: false, hata: 'Bu bileşenin analiz süreci zaten devam ediyor.' });
+        }
         await client.query('BEGIN');
         await client.query(`UPDATE sat_teklif_kalemleri SET analiz_durumu='ANALIZ_SURECINDE' WHERE id=$1`, [k.rows[0].id]);
         // Yorum varsa kaydedilir (eski saveCommentIfNotBlank birebir)
@@ -7212,10 +7251,12 @@ app.post('/api/satis-analiz-tamamla', yetkiKontrol, izinGerekli('satis.urun', 'Y
     try {
         const { kalem_id, yorum } = req.body;
         const k = await client.query(`
-            SELECT k.id, k.ad, k.teklif_id, t.proje_id FROM sat_teklif_kalemleri k
+            SELECT k.id, k.ad, k.teklif_id, k.analiz_durumu, t.proje_id FROM sat_teklif_kalemleri k
             JOIN sat_teklifler t ON t.id = k.teklif_id WHERE k.id=$1`, [parseInt(kalem_id)]);
         if (!k.rowCount) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
         const kalem = k.rows[0];
+        // Eski completeAnalysisButton koşulu: yalnız analiz sürerken tamamlanabilir
+        if (kalem.analiz_durumu !== 'ANALIZ_SURECINDE') return res.json({ ok: false, hata: SATIS_ANALIZ_SUREC_MESAJ });
         // Analiz sonucundan önerilen satış fiyatı (kilitli satış fiyatları toplamı)
         const oneri = await client.query(`
             SELECT SUM(COALESCE(a.miktar,0) * COALESCE(a.kilit_satis, 0))::numeric AS satis,
