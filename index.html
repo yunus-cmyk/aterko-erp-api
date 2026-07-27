@@ -404,6 +404,11 @@
           <select id="satisUrunKategoriSec" class="form-select form-select-sm" style="max-width:320px;" onchange="satisUrunleriYukle()">
             <option value="">Tüm kategoriler</option>
           </select>
+          <div class="form-check form-check-sm d-flex align-items-center mb-0">
+            <input class="form-check-input me-1" type="checkbox" id="satisUrunPasifler" onchange="satisUrunleriYukle()">
+            <label class="form-check-label small" for="satisUrunPasifler">Pasifleri de göster</label>
+          </div>
+          <button class="btn btn-primary btn-sm" id="satisUrunYeniBtn" onclick="satisUrunFormAc(null)"><i class="bi bi-plus-lg me-1"></i>Yeni Ürün</button>
           <span class="text-muted small ms-auto" id="satisUrunSayac"></span>
         </div>
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
@@ -418,6 +423,7 @@
                   <th class="text-end" title="Maliyet × (kâr oranı + 100) / 100">Satış Fiyatı</th>
                   <th class="text-center">Kâr %</th>
                   <th class="text-center" title="Parametrik formülü olan ürünler ölçü girilince miktarını kendisi hesaplar">Formül</th>
+                  <th class="text-center">Durum</th>
                 </tr>
               </thead>
               <tbody id="satisUrunTbody"></tbody>
@@ -436,8 +442,88 @@
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
           </div>
           <div class="modal-body p-3" id="sudGovde"></div>
-          <div class="modal-footer py-2">
+          <div class="modal-footer py-2" id="sudAltButonlar">
             <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — ürün/hizmet tanımı formu (eski "Ürün/Hizmet Tanımları" ekranı) -->
+    <div class="modal fade" id="modalSatisUrunForm" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-box-seam me-2"></i><span id="sufBaslik">Yeni Ürün/Hizmet</span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3">
+            <div class="row g-2">
+              <div class="col-md-8"><label class="form-label">Adı <span class="text-danger">*</span></label>
+                <input type="text" id="sufAd" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label">Ürün Kodu <span class="text-danger">*</span></label>
+                <input type="text" id="sufKisaKod" class="form-control form-control-sm"></div>
+              <div class="col-12"><label class="form-label">Eşleştirme Kodu <span class="text-danger">*</span></label>
+                <input type="text" id="sufUzunKod" class="form-control form-control-sm" placeholder="örn. DU_KA_100.DU_TI_SAC">
+                <div class="form-text small">Nokta ile ayrılmış parçaların tamamı bir bölümde seçiliyse ürün o bölüme eşleşir. Analiz motorunun temeli budur.</div></div>
+              <div class="col-md-4"><label class="form-label">Kategori</label>
+                <select id="sufKategori" class="form-select form-select-sm"><option value="">Seçiniz...</option></select></div>
+              <div class="col-md-2"><label class="form-label">Birim</label>
+                <input type="text" id="sufBirim" class="form-control form-control-sm" list="sufBirimListe" autocomplete="off">
+                <datalist id="sufBirimListe"></datalist></div>
+              <div class="col-md-2"><label class="form-label">Sınıf</label>
+                <input type="text" id="sufSinif" class="form-control form-control-sm" list="sufSinifListe" autocomplete="off">
+                <datalist id="sufSinifListe"></datalist></div>
+              <div class="col-md-2"><label class="form-label">Brüt Kâr %</label>
+                <input type="number" step="0.01" id="sufKar" class="form-control form-control-sm"></div>
+              <div class="col-md-2"><label class="form-label">Sıra No</label>
+                <input type="number" id="sufSira" class="form-control form-control-sm"></div>
+              <div class="col-12"><label class="form-label">Miktar Hesaplama Betiği</label>
+                <textarea id="sufFormul" class="form-control form-control-sm" rows="2" placeholder="örn. 2*(GE_EN_M-0.21)"></textarea>
+                <div class="form-text small">Boş bırakılırsa ürün dökümde 0 miktarla görünür. Değişkenler: PRJ_COM_M, PRJ_COM_2M, alan kodları ve SUM_&lt;kod&gt;.</div></div>
+              <div class="col-md-6"><div class="form-check">
+                <input class="form-check-input" type="checkbox" id="sufOtomatik">
+                <label class="form-check-label small" for="sufOtomatik">Otomatik ekle (eşleşme aranmadan dökümde çıkar)</label></div></div>
+              <div class="col-md-6"><div class="form-check">
+                <input class="form-check-input" type="checkbox" id="sufAktif" checked>
+                <label class="form-check-label small" for="sufAktif">Aktif (pasif ürün yeni analizlerde kullanılmaz)</label></div></div>
+            </div>
+          </div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" id="sufKaydetBtn" onclick="satisUrunKaydet()">
+              <i class="bi bi-check-lg me-1"></i>Kaydet
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Satış — ürün ağacına bileşen ekleme -->
+    <div class="modal fade" id="modalSatisBomForm" tabindex="-1" data-bs-backdrop="static">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-3 bg-dark text-white">
+            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-diagram-3 me-2"></i>Ürün Ağacına Bileşen Ekle</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
+          </div>
+          <div class="modal-body p-3">
+            <label class="form-label">Bileşen ürün <span class="text-danger">*</span></label>
+            <input type="text" id="sbfAra" class="form-control form-control-sm" placeholder="Ürün adı veya kodu yazın..." autocomplete="off" oninput="satisBomAraGecikmeli()">
+            <div id="sbfOneriler" class="list-group mt-1 d-none" style="max-height:200px;overflow-y:auto;"></div>
+            <input type="hidden" id="sbfBilesenId">
+            <div class="row g-2 mt-1">
+              <div class="col-6"><label class="form-label">Miktar <span class="text-danger">*</span></label>
+                <input type="number" step="0.0001" id="sbfMiktar" class="form-control form-control-sm"></div>
+              <div class="col-6"><label class="form-label">Birim</label>
+                <input type="text" id="sbfBirim" class="form-control form-control-sm" placeholder="bileşenin birimi"></div>
+              <div class="col-12"><label class="form-label">Not</label>
+                <input type="text" id="sbfNot" class="form-control form-control-sm"></div>
+            </div>
+          </div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisBomKaydet()"><i class="bi bi-check-lg me-1"></i>Ekle</button>
           </div>
         </div>
       </div>
@@ -5092,12 +5178,15 @@ async function satisUrunSekmeInit() {
 async function satisUrunleriYukle() {
     const q = document.getElementById('satisUrunAra').value.trim();
     const kategori = document.getElementById('satisUrunKategoriSec').value;
-    const r = await secureFetch('/satis-urunler?q=' + encodeURIComponent(q) + (kategori ? '&kategori=' + kategori : '')).catch(() => null);
+    const pasifler = document.getElementById('satisUrunPasifler').checked ? '&pasifler=1' : '';
+    const r = await secureFetch('/satis-urunler?q=' + encodeURIComponent(q) + (kategori ? '&kategori=' + kategori : '') + pasifler).catch(() => null);
     if (!r || !r.ok) { showToast('Ürün listesi yüklenemedi.', 'error'); return; }
+    const yeniBtn = document.getElementById('satisUrunYeniBtn');
+    if (yeniBtn) yeniBtn.classList.toggle('d-none', !izinVarMi('satis.urun', 'YAZMA'));
     const tbody = document.getElementById('satisUrunTbody');
     const liste = r.urunler || [];
     if (!liste.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">${q || kategori ? 'Eşleşen ürün bulunamadı.' : 'Henüz ürün eklenmedi.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">${q || kategori ? 'Eşleşen ürün bulunamadı.' : 'Henüz ürün eklenmedi.'}</td></tr>`;
         document.getElementById('satisUrunSayac').innerText = '';
         return;
     }
@@ -5111,6 +5200,7 @@ async function satisUrunleriYukle() {
             <td class="text-end">${u.satis_fiyat != null ? formatTR(parseFloat(u.satis_fiyat)) + ' TL' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${u.kar_orani != null ? '%' + formatTR(parseFloat(u.kar_orani)) : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${u.formullu ? '<i class="bi bi-calculator text-mod-satis" title="Parametrik formüllü"></i>' : ''}</td>
+            <td class="text-center">${u.aktif === false ? '<span class="badge bg-secondary">Pasif</span>' : ''}</td>
         </tr>`).join('');
     document.getElementById('satisUrunSayac').innerText =
         liste.length >= 500 ? 'İlk 500 gösteriliyor — daraltmak için arama veya kategori seçin' : `${liste.length} ürün`;
@@ -5121,6 +5211,7 @@ async function satisUrunDetayAc(id) {
     if (!r || !r.ok) { showToast(r?.hata || 'Ürün detayı yüklenemedi.', 'error'); return; }
     const u = r.urun;
     window.sudAktifId = u.id;
+    window.sudAktifUrun = u;
     document.getElementById('sudBaslik').innerText = u.ad;
     const yazabilir = izinVarMi('satis.urun', 'YAZMA');
     document.getElementById('sudGovde').innerHTML = `
@@ -5130,6 +5221,9 @@ async function satisUrunDetayAc(id) {
             <div class="col-md-2"><span class="text-muted">Sınıf:</span> <b>${esc(u.sinif || '-')}</b></div>
             <div class="col-md-2"><span class="text-muted">Kâr Oranı:</span> <b>${u.kar_orani != null ? '%' + formatTR(parseFloat(u.kar_orani)) : '-'}</b></div>
             <div class="col-md-2"><span class="text-muted">Otomatik:</span> <b>${u.otomatik_eklenir ? 'Evet' : 'Hayır'}</b></div>
+            <div class="col-md-6 mt-1"><span class="text-muted">Eşleştirme Kodu:</span> <code class="small">${esc(u.uzun_kod || '-')}</code></div>
+            <div class="col-md-3 mt-1"><span class="text-muted">Ürün Kodu:</span> <b>${esc(u.kisa_kod || '-')}</b></div>
+            <div class="col-md-3 mt-1"><span class="text-muted">Durum:</span> ${u.aktif === false ? '<span class="badge bg-secondary">Pasif</span>' : '<span class="badge bg-success">Aktif</span>'}</div>
         </div>
         ${u.formul ? `
         <div class="p-2 bg-light border rounded mb-2">
@@ -5158,15 +5252,172 @@ async function satisUrunDetayAc(id) {
                     <td class="small text-muted">${esc((f.olusturan || '-').split('@')[0])}</td>
                 </tr>`).join('')}</tbody>
         </table></div>` : '<div class="text-muted small mb-2">Henüz fiyat girilmedi.</div>'}
+        <div class="d-flex justify-content-between align-items-center mb-1 mt-2">
+            <span class="fw-bold small"><i class="bi bi-diagram-3 me-1"></i>Ürün Ağacı (bu ürünün bileşenleri) — maliyet buradan hesaplanır</span>
+            ${yazabilir ? `<button class="btn btn-outline-primary btn-sm py-0" onclick="satisBomFormAc()"><i class="bi bi-plus"></i> Bileşen Ekle</button>` : ''}
+        </div>
         ${r.bom.length ? `
-        <div class="fw-bold small mb-1"><i class="bi bi-diagram-3 me-1"></i>Ürün Ağacı (bu ürünün bileşenleri)</div>
         <div class="table-responsive"><table class="table table-sm mb-0" style="font-size:0.8rem;">
-            <thead class="table-light"><tr><th>Bileşen</th><th class="text-end">Miktar</th></tr></thead>
+            <thead class="table-light"><tr><th>Bileşen</th><th class="text-end">Miktar</th>
+                <th class="text-end">Alış Fiyatı</th><th class="text-end">Satır Maliyeti</th>${yazabilir ? '<th style="width:40px;"></th>' : ''}</tr></thead>
             <tbody>${r.bom.map(b => `
-                <tr><td>${esc(b.bilesen_adi || '-')}</td>
-                <td class="text-end">${formatTR(parseFloat(b.miktar) || 0)} ${esc(b.bilesen_birim || b.birim || '')}</td></tr>`).join('')}</tbody>
-        </table></div>` : ''}`;
+                <tr><td>${esc(b.bilesen_adi || '-')}${b.notu ? `<br><small class="text-muted">${esc(b.notu)}</small>` : ''}</td>
+                <td class="text-end">${formatTR(parseFloat(b.miktar) || 0)} ${esc(b.bilesen_birim || b.birim || '')}</td>
+                <td class="text-end">${b.bilesen_alis != null ? formatTR(parseFloat(b.bilesen_alis)) + ' ' + esc(b.bilesen_pb || 'TL') : '<span class="text-muted">fiyat yok</span>'}</td>
+                <td class="text-end fw-semibold">${b.bilesen_alis != null ? formatTR(parseFloat(b.satir_maliyet) || 0) : '-'}</td>
+                ${yazabilir ? `<td class="text-center"><button class="btn btn-outline-danger btn-sm py-0" title="Ağaçtan çıkar" onclick="satisBomSil(${b.id})"><i class="bi bi-x"></i></button></td>` : ''}</tr>`).join('')}</tbody>
+        </table></div>` : '<div class="text-muted small">Bu ürünün ağacı yok; maliyeti hesaplanamaz (kendi alış fiyatı varsa o kullanılır).</div>'}`;
+    document.getElementById('sudAltButonlar').innerHTML = `
+        <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
+        ${yazabilir ? `<button class="btn btn-outline-primary btn-sm px-3" onclick="satisUrunFormAc(${u.id})"><i class="bi bi-pencil me-1"></i>Düzenle</button>` : ''}
+        ${izinVarMi('satis.urun', 'TAM') ? `<button class="btn btn-outline-danger btn-sm px-3" onclick="satisUrunSil(${u.id})"><i class="bi bi-trash me-1"></i>Sil</button>` : ''}`;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisUrunDetay')).show();
+}
+
+// ---- ÜRÜN/HİZMET TANIMI FORMU (eski "Ürün/Hizmet Tanımları" ekranı) ----
+async function satisUrunFormAc(id) {
+    bootstrap.Modal.getInstance(document.getElementById('modalSatisUrunDetay'))?.hide();
+    modalFormSifirla('modalSatisUrunForm');
+    window.sufAktifId = id || null;
+    document.getElementById('sufBaslik').innerText = id ? 'Ürün/Hizmet Düzenle' : 'Yeni Ürün/Hizmet';
+    if (!satisUrunKategorileri) {
+        const kr = await secureFetch('/satis-urun-kategoriler').catch(() => null);
+        satisUrunKategorileri = (kr && kr.ok) ? (kr.kategoriler || []) : [];
+    }
+    const adMap = {};
+    satisUrunKategorileri.forEach(k => adMap[k.eski_id] = k.ad);
+    document.getElementById('sufKategori').innerHTML = '<option value="">Seçiniz...</option>' +
+        satisUrunKategorileri.map(k => `<option value="${k.eski_id}">${esc(k.ust_id && adMap[k.ust_id] ? adMap[k.ust_id] + ' › ' + k.ad : k.ad)}</option>`).join('');
+    // Birim ve sınıf öneri listeleri mevcut üründen türer (eski sistemde tanım tablolarıydı)
+    const oneri = await secureFetch('/satis-urun-secenekler').catch(() => null);
+    if (oneri && oneri.ok) {
+        document.getElementById('sufBirimListe').innerHTML = (oneri.birimler || []).map(b => `<option value="${esc(b)}">`).join('');
+        document.getElementById('sufSinifListe').innerHTML = (oneri.siniflar || []).map(s => `<option value="${esc(s)}">`).join('');
+    }
+    document.getElementById('sufAktif').checked = true;
+    if (id) {
+        const r = await secureFetch('/satis-urun-detay/' + id).catch(() => null);
+        if (!r || !r.ok) { showToast('Ürün yüklenemedi.', 'error'); return; }
+        const u = r.urun;
+        document.getElementById('sufAd').value = u.ad || '';
+        document.getElementById('sufUzunKod').value = u.uzun_kod || '';
+        document.getElementById('sufKisaKod').value = u.kisa_kod || '';
+        document.getElementById('sufKategori').value = u.kategori_id || '';
+        document.getElementById('sufBirim').value = u.birim || '';
+        document.getElementById('sufSinif').value = u.sinif || '';
+        document.getElementById('sufKar').value = u.kar_orani != null ? u.kar_orani : '';
+        document.getElementById('sufSira').value = u.sira != null ? u.sira : '';
+        document.getElementById('sufFormul').value = u.formul || '';
+        document.getElementById('sufOtomatik').checked = !!u.otomatik_eklenir;
+        document.getElementById('sufAktif').checked = u.aktif !== false;
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisUrunForm')).show();
+}
+
+async function satisUrunKaydet() {
+    // Eski Product kısıtları: ad / eşleştirme kodu / ürün kodu zorunlu ve en az 3 karakter
+    for (const [alanId, etiket] of [['sufAd', 'Ürün adı'], ['sufUzunKod', 'Eşleştirme kodu'], ['sufKisaKod', 'Ürün kodu']]) {
+        const deger = document.getElementById(alanId).value.trim();
+        if (!deger) { alanHatasi(alanId); showToast(`${etiket} zorunludur.`, 'error'); return; }
+        if (deger.length < 3) { alanHatasi(alanId); showToast(`${etiket} en az 3 karakter olmalıdır.`, 'error'); return; }
+    }
+    const btn = document.getElementById('sufKaydetBtn');
+    btn.disabled = true;
+    showLoading();
+    try {
+        const r = await secureFetch('/satis-urun-kaydet', { method: 'POST', body: JSON.stringify({
+            id: window.sufAktifId || undefined,
+            ad: document.getElementById('sufAd').value.trim(),
+            uzun_kod: document.getElementById('sufUzunKod').value.trim(),
+            kisa_kod: document.getElementById('sufKisaKod').value.trim(),
+            kategori_id: document.getElementById('sufKategori').value || null,
+            birim: document.getElementById('sufBirim').value.trim(),
+            sinif: document.getElementById('sufSinif').value.trim(),
+            kar_orani: document.getElementById('sufKar').value,
+            sira: document.getElementById('sufSira').value,
+            formul: document.getElementById('sufFormul').value.trim(),
+            otomatik_eklenir: document.getElementById('sufOtomatik').checked,
+            aktif: document.getElementById('sufAktif').checked
+        }) });
+        if (!r || !r.ok) { showToast(r?.hata || 'Ürün kaydedilemedi.', 'error'); return; }
+        bootstrap.Modal.getInstance(document.getElementById('modalSatisUrunForm'))?.hide();
+        showToast('Ürün kaydedildi.', 'success');
+        satisUrunleriYukle();
+        satisUrunDetayAc(r.id);
+    } finally { btn.disabled = false; hideLoading(); }
+}
+
+async function satisUrunSil(id) {
+    if (!confirm('Bu ürün, fiyat geçmişi ve ürün ağacı kalıcı olarak silinecek. Devam edilsin mi?')) return;
+    showLoading();
+    const r = await secureFetch('/satis-urun-sil/' + id, { method: 'DELETE' }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Ürün silinemedi.', 'error'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalSatisUrunDetay'))?.hide();
+    showToast('Ürün silindi.', 'success');
+    satisUrunleriYukle();
+}
+
+// ---- ÜRÜN AĞACI (BOM) YÖNETİMİ ----
+function satisBomFormAc() {
+    modalFormSifirla('modalSatisBomForm');
+    document.getElementById('sbfBilesenId').value = '';
+    document.getElementById('sbfOneriler').classList.add('d-none');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisBomForm')).show();
+}
+
+let _sbfAramaTimer = null;
+function satisBomAraGecikmeli() {
+    clearTimeout(_sbfAramaTimer);
+    _sbfAramaTimer = setTimeout(satisBomAra, 300);
+}
+
+async function satisBomAra() {
+    const q = document.getElementById('sbfAra').value.trim();
+    const kutu = document.getElementById('sbfOneriler');
+    if (q.length < 2) { kutu.classList.add('d-none'); return; }
+    const r = await secureFetch('/satis-urunler?q=' + encodeURIComponent(q)).catch(() => null);
+    const liste = (r && r.ok ? r.urunler : []).filter(u => u.id !== window.sudAktifId).slice(0, 25);
+    kutu.innerHTML = liste.length
+        ? liste.map(u => `<button type="button" class="list-group-item list-group-item-action py-1 small"
+              onclick="satisBomOneriSec(${u.id}, ${JSON.stringify(u.ad).replace(/"/g, '&quot;')}, ${JSON.stringify(u.birim || '').replace(/"/g, '&quot;')})">
+              ${esc(u.ad)} <span class="text-muted">${esc(u.uzun_kod || '')}</span></button>`).join('')
+        : '<div class="list-group-item py-1 small text-muted">Eşleşen ürün bulunamadı.</div>';
+    kutu.classList.remove('d-none');
+}
+
+function satisBomOneriSec(id, ad, birim) {
+    document.getElementById('sbfBilesenId').value = id;
+    document.getElementById('sbfAra').value = ad;
+    if (birim && !document.getElementById('sbfBirim').value) document.getElementById('sbfBirim').value = birim;
+    document.getElementById('sbfOneriler').classList.add('d-none');
+}
+
+async function satisBomKaydet() {
+    const bilesenId = document.getElementById('sbfBilesenId').value;
+    if (!bilesenId) { alanHatasi('sbfAra'); showToast('Listeden bir bileşen seçilmelidir.', 'error'); return; }
+    const miktar = document.getElementById('sbfMiktar').value;
+    if (!miktar || parseFloat(miktar) <= 0) { alanHatasi('sbfMiktar'); showToast('Miktar 0\'dan büyük olmalıdır.', 'error'); return; }
+    showLoading();
+    const r = await secureFetch('/satis-urun-bom-kaydet', { method: 'POST', body: JSON.stringify({
+        urun_id: window.sudAktifId, bilesen_urun_id: parseInt(bilesenId), miktar,
+        birim: document.getElementById('sbfBirim').value, notu: document.getElementById('sbfNot').value
+    }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Bileşen eklenemedi.', 'error'); return; }
+    bootstrap.Modal.getInstance(document.getElementById('modalSatisBomForm'))?.hide();
+    showToast('Bileşen eklendi.', 'success');
+    satisUrunDetayAc(window.sudAktifId);
+}
+
+async function satisBomSil(bomId) {
+    if (!confirm('Bu bileşen ürün ağacından çıkarılacak; ürünün maliyeti buna göre yeniden hesaplanır. Devam edilsin mi?')) return;
+    showLoading();
+    const r = await secureFetch('/satis-urun-bom-sil/' + bomId, { method: 'DELETE' }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Bileşen çıkarılamadı.', 'error'); return; }
+    showToast('Bileşen çıkarıldı.', 'success');
+    satisUrunDetayAc(window.sudAktifId);
 }
 
 // ==================== SATIŞ — FİYAT ANALİZİ (Faz C3b) ====================

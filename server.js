@@ -6477,8 +6477,10 @@ app.get('/api/satis-urun-kategoriler', yetkiKontrol, async (req, res, next) => {
 
 app.get('/api/satis-urunler', yetkiKontrol, async (req, res, next) => {
     try {
-        const { q, kategori } = req.query;
-        const kosullar = ['u.aktif = true']; const deger = [];
+        const { q, kategori, pasifler } = req.query;
+        // Pasif ürünler normalde gizli; kütüphanede "pasifleri de göster" kutusu açıkken gelir
+        const kosullar = pasifler === '1' ? [] : ['u.aktif = true'];
+        const deger = [];
         if (kategori) { deger.push(parseInt(kategori)); kosullar.push(`u.kategori_id=$${deger.length}`); }
         if (q && q.trim()) {
             deger.push('%' + q.trim() + '%');
@@ -6486,7 +6488,7 @@ app.get('/api/satis-urunler', yetkiKontrol, async (req, res, next) => {
         }
         const r = await pool.query(`
             SELECT u.id, u.ad, u.uzun_kod, u.kisa_kod, u.birim, u.sinif, u.kar_orani,
-                   u.otomatik_eklenir, (u.formul IS NOT NULL AND u.formul <> '') AS formullu,
+                   u.otomatik_eklenir, u.aktif, (u.formul IS NOT NULL AND u.formul <> '') AS formullu,
                    k.ad AS kategori_adi,
                    fk.fiyat AS kendi_alis_fiyat, fk.para_birimi AS kendi_alis_pb
             FROM sat_urunler u
@@ -6495,7 +6497,7 @@ app.get('/api/satis-urunler', yetkiKontrol, async (req, res, next) => {
                 WHERE f.urun_id=u.id AND f.tip='ALIS'
                   AND f.baslangic <= CURRENT_DATE AND (f.bitis IS NULL OR f.bitis > CURRENT_DATE)
                 ORDER BY f.bitis DESC NULLS FIRST, f.baslangic DESC LIMIT 1) fk ON true
-            WHERE ${kosullar.join(' AND ')}
+            ${kosullar.length ? 'WHERE ' + kosullar.join(' AND ') : ''}
             ORDER BY u.sira, u.ad
             LIMIT 500
         `, deger);
@@ -6574,6 +6576,142 @@ app.post('/api/satis-urun-fiyat-kaydet', yetkiKontrol, async (req, res, next) =>
         res.json({ ok: true, id: ins.rows[0].id });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
+});
+
+// Ürün formundaki birim ve sınıf öneri listeleri (eski unit_type / product_class
+// tabloları; burada mevcut ürünlerden türetiliyor)
+app.get('/api/satis-urun-secenekler', yetkiKontrol, async (req, res, next) => {
+    try {
+        const birimler = (await pool.query(
+            `SELECT DISTINCT birim FROM sat_urunler WHERE birim IS NOT NULL AND birim <> '' ORDER BY birim`)).rows.map(r => r.birim);
+        const siniflar = (await pool.query(
+            `SELECT DISTINCT sinif FROM sat_urunler WHERE sinif IS NOT NULL AND sinif <> '' ORDER BY sinif`)).rows.map(r => r.sinif);
+        res.json({ ok: true, birimler, siniflar });
+    } catch (e) { next(e); }
+});
+
+// --- ÜRÜN/HİZMET TANIMI YÖNETİMİ (eski "Ürün/Hizmet Tanımları" ekranı) ---
+// Eski Product kısıtları: name/longCode/shortCode @NotNull @Size(min=3).
+// longCode = EŞLEŞTİRME KODU — analiz motorunun ürünü hangi seçeneklere bağlayacağını
+// belirler ('.' ile ayrılmış parçalar), o yüzden değişikliği analizi doğrudan etkiler.
+app.post('/api/satis-urun-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, ad, uzun_kod, kisa_kod, sira, otomatik_eklenir, formul,
+                kar_orani, kategori_id, birim, sinif, aktif } = req.body;
+        const metin = (v) => (v == null ? '' : String(v).trim());
+        const kontrol = [[metin(ad), 'Ürün adı'], [metin(uzun_kod), 'Eşleştirme kodu'], [metin(kisa_kod), 'Ürün kodu']];
+        for (const [deger, etiket] of kontrol) {
+            if (!deger) return res.json({ ok: false, hata: `${etiket} zorunludur.` });
+            if (deger.length < 3) return res.json({ ok: false, hata: `${etiket} en az 3 karakter olmalıdır.` });
+        }
+        const kar = kar_orani === '' || kar_orani == null ? null : parseFloat(kar_orani);
+        if (kar != null && (isNaN(kar) || kar < 0)) return res.json({ ok: false, hata: 'Brüt kâr oranı 0 veya daha büyük olmalıdır.' });
+        const kategori = kategori_id ? parseInt(kategori_id) : null;
+        if (kategori) {
+            const kv = await pool.query('SELECT 1 FROM sat_urun_kategoriler WHERE eski_id=$1', [kategori]);
+            if (!kv.rowCount) return res.json({ ok: false, hata: 'Seçilen ürün kategorisi bulunamadı.' });
+        }
+        const alanlar = [metin(ad), metin(uzun_kod), metin(kisa_kod),
+            sira === '' || sira == null ? null : parseInt(sira), !!otomatik_eklenir,
+            metin(formul) || null, kar, kategori, metin(birim) || null, metin(sinif) || null,
+            aktif === false ? false : true];
+        if (id) {
+            const eskiR = await pool.query('SELECT * FROM sat_urunler WHERE id=$1', [parseInt(id)]);
+            if (!eskiR.rowCount) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
+            await pool.query(`UPDATE sat_urunler SET ad=$1, uzun_kod=$2, kisa_kod=$3, sira=$4,
+                otomatik_eklenir=$5, formul=$6, kar_orani=$7, kategori_id=$8, birim=$9,
+                sinif=$10, aktif=$11 WHERE id=$12`, [...alanlar, parseInt(id)]);
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_urunler', kayit_id: parseInt(id),
+                ozet: `Ürün güncellendi: ${metin(ad)}`, eski_veri: eskiR.rows[0], yeni_veri: req.body });
+            return res.json({ ok: true, id: parseInt(id) });
+        }
+        const ins = await pool.query(`INSERT INTO sat_urunler
+            (ad, uzun_kod, kisa_kod, sira, otomatik_eklenir, formul, kar_orani, kategori_id, birim, sinif, aktif)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`, alanlar);
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_urunler', kayit_id: ins.rows[0].id,
+            ozet: `Yeni ürün: ${metin(ad)} (${metin(uzun_kod)})`, yeni_veri: req.body });
+        res.json({ ok: true, id: ins.rows[0].id });
+    } catch (e) { next(e); }
+});
+
+// Ürün silme: geçmiş analizlerde kullanılan ürün SİLİNMEZ (257 bin arşiv satırı ve
+// kilitli fiyatlar ona bağlı) — böyle bir üründe yalnız "pasife çekme" önerilir.
+app.delete('/api/satis-urun-sil/:id', yetkiKontrol, async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        const id = parseInt(req.params.id);
+        const u = (await client.query('SELECT * FROM sat_urunler WHERE id=$1', [id])).rows[0];
+        if (!u) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
+        const analizde = (await client.query('SELECT COUNT(*)::int c FROM sat_analiz_urunler WHERE urun_id=$1', [id])).rows[0].c;
+        if (analizde > 0) {
+            return res.json({ ok: false, kullanimda: true,
+                hata: `Bu ürün ${analizde} analiz satırında kullanılmış, silinemez. Yeni analizlerde çıkmaması için ürünü "pasif" yapabilirsiniz.` });
+        }
+        const agacta = (await client.query('SELECT COUNT(*)::int c FROM sat_urun_bom WHERE bilesen_urun_id=$1', [id])).rows[0].c;
+        if (agacta > 0) {
+            return res.json({ ok: false, kullanimda: true,
+                hata: `Bu ürün ${agacta} ürün ağacında bileşen olarak geçiyor, silinemez. Önce o ağaçlardan çıkarın.` });
+        }
+        await client.query('BEGIN');
+        await client.query('DELETE FROM sat_urun_bom WHERE urun_id=$1', [id]);
+        await client.query('DELETE FROM sat_urun_fiyatlar WHERE urun_id=$1', [id]);
+        await client.query('DELETE FROM sat_urunler WHERE id=$1', [id]);
+        await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_urunler', kayit_id: id,
+            ozet: `Ürün silindi: ${u.ad}`, eski_veri: u });
+        res.json({ ok: true });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
+// Ürün ağacı (BOM) satırı — maliyet buradan hesaplanır: Σ(miktar × bileşenin ALIŞ fiyatı)
+app.post('/api/satis-urun-bom-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { id, urun_id, bilesen_urun_id, miktar, birim, notu, sira } = req.body;
+        const m = miktar === '' || miktar == null ? null : parseFloat(miktar);
+        if (m == null || isNaN(m) || m <= 0) return res.json({ ok: false, hata: 'Miktar 0\'dan büyük olmalıdır.' });
+        const urunId = parseInt(urun_id), bilesenId = parseInt(bilesen_urun_id);
+        if (!urunId || !bilesenId) return res.json({ ok: false, hata: 'Ürün ve bileşen seçilmelidir.' });
+        if (urunId === bilesenId) return res.json({ ok: false, hata: 'Bir ürün kendi ağacına bileşen olarak eklenemez.' });
+        const b = await pool.query('SELECT ad, birim FROM sat_urunler WHERE id=$1', [bilesenId]);
+        if (!b.rowCount) return res.json({ ok: false, hata: 'Bileşen ürün bulunamadı.' });
+        // Döngü koruması: eklenecek bileşenin ağacında bu ürün varsa maliyet hesabı sonsuza girer
+        const dongu = await pool.query(`
+            WITH RECURSIVE agac(urun_id) AS (
+                SELECT bilesen_urun_id FROM sat_urun_bom WHERE urun_id=$1
+                UNION
+                SELECT bb.bilesen_urun_id FROM sat_urun_bom bb JOIN agac a ON bb.urun_id = a.urun_id
+            ) SELECT 1 FROM agac WHERE urun_id=$2 LIMIT 1`, [bilesenId, urunId]);
+        if (dongu.rowCount) return res.json({ ok: false, hata: 'Bu bileşen dolaylı olarak bu ürünü içeriyor; ağaçta döngü oluşur.' });
+        if (id) {
+            await pool.query(`UPDATE sat_urun_bom SET bilesen_urun_id=$1, miktar=$2, birim=$3, notu=$4, sira=$5 WHERE id=$6`,
+                [bilesenId, m, (birim || '').trim() || b.rows[0].birim || null,
+                 (notu || '').trim() || null, sira === '' || sira == null ? 0 : parseInt(sira), parseInt(id)]);
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_urun_bom', kayit_id: parseInt(id),
+                ozet: `Ürün ağacı satırı güncellendi: ${b.rows[0].ad} × ${m}` });
+            return res.json({ ok: true, id: parseInt(id) });
+        }
+        const ins = await pool.query(`INSERT INTO sat_urun_bom (urun_id, bilesen_urun_id, miktar, birim, notu, sira)
+            VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+            [urunId, bilesenId, m, (birim || '').trim() || b.rows[0].birim || null,
+             (notu || '').trim() || null, sira === '' || sira == null ? 0 : parseInt(sira)]);
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_urun_bom', kayit_id: ins.rows[0].id,
+            ozet: `Ürün ağacına bileşen eklendi: ${b.rows[0].ad} × ${m}` });
+        res.json({ ok: true, id: ins.rows[0].id });
+    } catch (e) { next(e); }
+});
+
+app.delete('/api/satis-urun-bom-sil/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const eski = (await pool.query(`SELECT b.*, u.ad AS bilesen_adi FROM sat_urun_bom b
+            LEFT JOIN sat_urunler u ON u.id=b.bilesen_urun_id WHERE b.id=$1`, [id])).rows[0];
+        if (!eski) return res.json({ ok: false, hata: 'Ağaç satırı bulunamadı.' });
+        await pool.query('DELETE FROM sat_urun_bom WHERE id=$1', [id]);
+        await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_urun_bom', kayit_id: id,
+            ozet: `Ürün ağacından çıkarıldı: ${eski.bilesen_adi || '-'}`, eski_veri: eski });
+        res.json({ ok: true });
+    } catch (e) { next(e); }
 });
 
 // ============================================================================
@@ -7965,9 +8103,14 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/satis-proje/, method: 'GET', modul: 'satis.proje', seviye: 'OKUMA' },
     { pattern: /^\/api\/satis-proje-donustur/, modul: 'satis.proje', seviye: 'TAM' },
     { pattern: /^\/api\/satis-proje/, modul: 'satis.proje', seviye: 'YAZMA' },
+    // Not: /api/satis-referanslar yalnız kapalı liste tanımlarını döndürür (müşteri türü,
+    // satış noktası, şartname türü...). Hem müşteri hem teklif formu kullandığı için tek
+    // bir modüle bağlanmadı; GET olduğundan oturum açmış herkes okuyabilir.
     // Satış — Ürün kütüphanesi + analiz motoru
     { pattern: /^\/api\/satis-(urun|analiz)/, method: 'GET', modul: 'satis.urun', seviye: 'OKUMA' },
     { pattern: /^\/api\/satis-analiz-talep/, modul: 'satis.teklif', seviye: 'YAZMA' },
+    // Ürün ve ürün ağacı silme geri alınamaz: TAM yetki
+    { pattern: /^\/api\/satis-urun(-bom)?-sil/, modul: 'satis.urun', seviye: 'TAM' },
     { pattern: /^\/api\/satis-(urun|analiz)/, modul: 'satis.urun', seviye: 'YAZMA' },
     // Satış — teklif aksiyonları ve sözleşme zinciri
     { pattern: /^\/api\/satis-sozlesme\//, method: 'GET', modul: 'satis.teklif', seviye: 'OKUMA' },
