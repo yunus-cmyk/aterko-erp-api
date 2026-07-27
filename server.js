@@ -6480,10 +6480,20 @@ app.get('/api/satis-urun-kategoriler', yetkiKontrol, async (req, res, next) => {
 
 app.get('/api/satis-urunler', yetkiKontrol, async (req, res, next) => {
     try {
-        const { q, kategori, pasifler } = req.query;
+        const { q, kategori, pasifler, gorunum, recetesiz } = req.query;
         // Pasif ürünler normalde gizli; kütüphanede "pasifleri de göster" kutusu açıkken gelir
         const kosullar = pasifler === '1' ? [] : ['u.aktif = true'];
         const deger = [];
+        // MALZEME AYRIMI: "Malzeme" kategorisindeki 2.050 kayıt ilk madde/sarf malzemesidir —
+        // ürün ağacı OLMAZ, maliyeti kendi alış fiyatından gelir ve başka ürünlerin ağacında
+        // bileşen olarak kullanılır. Mamuller ise ağacı olan (ya da olması gereken) ürünler.
+        if (gorunum === 'malzeme') kosullar.push(`k.ad = 'Malzeme'`);
+        else if (gorunum === 'mamul') kosullar.push(`COALESCE(k.ad, '') <> 'Malzeme'`);
+        // Reçetesi eksik MAMULLER (malzemeler hariç — onlarda reçetesizlik normaldir)
+        if (recetesiz === '1') {
+            kosullar.push(`COALESCE(k.ad, '') <> 'Malzeme'`);
+            kosullar.push(`NOT EXISTS (SELECT 1 FROM sat_urun_bom b WHERE b.urun_id = u.id)`);
+        }
         if (kategori) { deger.push(parseInt(kategori)); kosullar.push(`u.kategori_id=$${deger.length}`); }
         if (q && q.trim()) {
             deger.push('%' + q.trim() + '%');
@@ -6492,7 +6502,8 @@ app.get('/api/satis-urunler', yetkiKontrol, async (req, res, next) => {
         const r = await pool.query(`
             SELECT u.id, u.ad, u.uzun_kod, u.kisa_kod, u.birim, u.sinif, u.kar_orani,
                    u.otomatik_eklenir, u.aktif, (u.formul IS NOT NULL AND u.formul <> '') AS formullu,
-                   k.ad AS kategori_adi,
+                   k.ad AS kategori_adi, (k.ad = 'Malzeme') AS malzeme_mi,
+                   EXISTS (SELECT 1 FROM sat_urun_bom b WHERE b.urun_id = u.id) AS agaci_var,
                    fk.fiyat AS kendi_alis_fiyat, fk.para_birimi AS kendi_alis_pb
             FROM sat_urunler u
             LEFT JOIN sat_urun_kategoriler k ON k.eski_id = u.kategori_id
@@ -6521,7 +6532,9 @@ app.get('/api/satis-urun-detay/:id', yetkiKontrol, async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
         const u = await pool.query(`
-            SELECT u.*, k.ad AS kategori_adi FROM sat_urunler u
+            SELECT u.*, k.ad AS kategori_adi, (k.ad = 'Malzeme') AS malzeme_mi,
+                   (SELECT COUNT(*)::int FROM sat_urun_bom b WHERE b.bilesen_urun_id = u.id) AS kullanildigi_urun
+            FROM sat_urunler u
             LEFT JOIN sat_urun_kategoriler k ON k.eski_id = u.kategori_id WHERE u.id=$1`, [id]);
         if (u.rowCount === 0) return res.json({ ok: false, hata: 'Ürün bulunamadı.' });
         const fiyatlar = await pool.query(`

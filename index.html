@@ -401,7 +401,14 @@
             <span class="input-group-text"><i class="bi bi-search"></i></span>
             <input type="text" id="satisUrunAra" class="form-control" placeholder="Ürün adı veya kodu ara..." oninput="satisUrunAraGecikmeli()">
           </div>
-          <select id="satisUrunKategoriSec" class="form-select form-select-sm" style="max-width:320px;" onchange="satisUrunleriYukle()">
+          <select id="satisUrunGorunum" class="form-select form-select-sm" style="max-width:210px;" onchange="satisUrunleriYukle()"
+                  title="Malzemeler, diğer ürünlerin reçetesinde kullanılan ilk madde ve sarf kalemleridir; ürün ağaçları olmaz.">
+            <option value="hepsi">Hepsi (mamul + malzeme)</option>
+            <option value="mamul">Yalnız mamuller</option>
+            <option value="malzeme">Yalnız malzemeler</option>
+            <option value="recetesiz">Reçetesi eksik mamuller</option>
+          </select>
+          <select id="satisUrunKategoriSec" class="form-select form-select-sm" style="max-width:280px;" onchange="satisUrunleriYukle()">
             <option value="">Tüm kategoriler</option>
           </select>
           <div class="form-check form-check-sm d-flex align-items-center mb-0">
@@ -5179,7 +5186,11 @@ async function satisUrunleriYukle() {
     const q = document.getElementById('satisUrunAra').value.trim();
     const kategori = document.getElementById('satisUrunKategoriSec').value;
     const pasifler = document.getElementById('satisUrunPasifler').checked ? '&pasifler=1' : '';
-    const r = await secureFetch('/satis-urunler?q=' + encodeURIComponent(q) + (kategori ? '&kategori=' + kategori : '') + pasifler).catch(() => null);
+    // Görünüm: mamul / malzeme / reçetesi eksik mamuller (malzemede reçetesizlik normaldir)
+    const gorunum = document.getElementById('satisUrunGorunum').value;
+    const gorunumSorgu = gorunum === 'recetesiz' ? '&recetesiz=1'
+        : (gorunum && gorunum !== 'hepsi' ? '&gorunum=' + gorunum : '');
+    const r = await secureFetch('/satis-urunler?q=' + encodeURIComponent(q) + (kategori ? '&kategori=' + kategori : '') + pasifler + gorunumSorgu).catch(() => null);
     if (!r || !r.ok) { showToast('Ürün listesi yüklenemedi.', 'error'); return; }
     const yeniBtn = document.getElementById('satisUrunYeniBtn');
     if (yeniBtn) yeniBtn.classList.toggle('d-none', !izinVarMi('satis.urun', 'YAZMA'));
@@ -5192,11 +5203,14 @@ async function satisUrunleriYukle() {
     }
     tbody.innerHTML = liste.map(u => `
         <tr style="cursor:pointer;" onclick="satisUrunDetayAc(${u.id})">
-            <td><span class="fw-bold text-dark">${esc(u.ad)}</span>${u.uzun_kod ? `<span class="text-muted small d-block">${esc(u.uzun_kod)}</span>` : ''}</td>
+            <td><span class="fw-bold text-dark">${esc(u.ad)}</span>
+                ${u.malzeme_mi ? '<span class="badge bg-light text-dark border ms-1" title="İlk madde / sarf malzemesi — diğer ürünlerin reçetesinde kullanılır, kendi ağacı olmaz.">malzeme</span>' : ''}
+                ${!u.malzeme_mi && u.agaci_var === false ? '<span class="badge bg-warning text-dark ms-1" title="Mamul olduğu halde ürün ağacı tanımlı değil; maliyeti hesaplanamaz.">reçete yok</span>' : ''}
+                ${u.uzun_kod ? `<span class="text-muted small d-block">${esc(u.uzun_kod)}</span>` : ''}</td>
             <td class="small">${esc(u.kategori_adi || '-')}</td>
             <td class="small">${esc(u.birim || '-')}</td>
             <td class="text-end">${u.maliyet != null ? formatTR(parseFloat(u.maliyet)) + ' TL' :
-                (u.kendi_alis_fiyat != null ? `<span title="Hammadde alış fiyatı">${formatTR(parseFloat(u.kendi_alis_fiyat))} ${esc(u.kendi_alis_pb || 'TL')}</span>` : '<span class="text-muted">-</span>')}</td>
+                (u.kendi_alis_fiyat != null ? `<span title="${u.malzeme_mi ? 'Malzemenin kendi alış fiyatı' : 'Hammadde alış fiyatı'}">${formatTR(parseFloat(u.kendi_alis_fiyat))} ${esc(u.kendi_alis_pb || 'TL')}</span>` : '<span class="text-muted">-</span>')}</td>
             <td class="text-end">${u.satis_fiyat != null ? formatTR(parseFloat(u.satis_fiyat)) + ' TL' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${u.kar_orani != null ? '%' + formatTR(parseFloat(u.kar_orani)) : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${u.formullu ? '<i class="bi bi-calculator text-mod-satis" title="Parametrik formüllü"></i>' : ''}</td>
@@ -5252,6 +5266,11 @@ async function satisUrunDetayAc(id) {
                     <td class="small text-muted">${esc((f.olusturan || '-').split('@')[0])}</td>
                 </tr>`).join('')}</tbody>
         </table></div>` : '<div class="text-muted small mb-2">Henüz fiyat girilmedi.</div>'}
+        ${u.malzeme_mi ? `
+        <div class="alert alert-light border py-2 small mb-2"><i class="bi bi-box me-1"></i>
+            Bu bir <b>malzemedir</b> (ilk madde / sarf). Ürün ağacı olmaz; maliyeti kendi <b>alış fiyatından</b> gelir.
+            ${u.kullanildigi_urun > 0 ? `Şu an <b>${u.kullanildigi_urun}</b> ürünün reçetesinde bileşen olarak kullanılıyor.` : 'Henüz hiçbir ürünün reçetesinde kullanılmıyor.'}
+        </div>` : ''}
         <div class="d-flex justify-content-between align-items-center mb-1 mt-2">
             <span class="fw-bold small"><i class="bi bi-diagram-3 me-1"></i>Ürün Ağacı (bu ürünün bileşenleri) — maliyet buradan hesaplanır</span>
             ${yazabilir ? `<button class="btn btn-outline-primary btn-sm py-0" onclick="satisBomFormAc()"><i class="bi bi-plus"></i> Bileşen Ekle</button>` : ''}
@@ -5266,7 +5285,9 @@ async function satisUrunDetayAc(id) {
                 <td class="text-end">${b.bilesen_alis != null ? formatTR(parseFloat(b.bilesen_alis)) + ' ' + esc(b.bilesen_pb || 'TL') : '<span class="text-muted">fiyat yok</span>'}</td>
                 <td class="text-end fw-semibold">${b.bilesen_alis != null ? formatTR(parseFloat(b.satir_maliyet) || 0) : '-'}</td>
                 ${yazabilir ? `<td class="text-center"><button class="btn btn-outline-danger btn-sm py-0" title="Ağaçtan çıkar" onclick="satisBomSil(${b.id})"><i class="bi bi-x"></i></button></td>` : ''}</tr>`).join('')}</tbody>
-        </table></div>` : '<div class="text-muted small">Bu ürünün ağacı yok; maliyeti hesaplanamaz (kendi alış fiyatı varsa o kullanılır).</div>'}`;
+        </table></div>` : (u.malzeme_mi
+            ? '<div class="text-muted small">Malzemelerin ürün ağacı olmaz.</div>'
+            : '<div class="text-muted small">Bu mamulün ağacı yok; maliyeti hesaplanamaz (kendi alış fiyatı varsa o kullanılır).</div>')}`;
     document.getElementById('sudAltButonlar').innerHTML = `
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
         ${yazabilir ? `<button class="btn btn-outline-primary btn-sm px-3" onclick="satisUrunFormAc(${u.id})"><i class="bi bi-pencil me-1"></i>Düzenle</button>` : ''}
