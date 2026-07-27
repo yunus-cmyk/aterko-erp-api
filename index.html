@@ -452,8 +452,8 @@
           </div>
           <div class="modal-body p-3" id="spdGovde"></div>
           <div class="modal-footer py-2 flex-wrap">
-            <div class="me-auto d-flex gap-2 align-items-center" data-izin-modul="satis.proje" data-izin-seviye="YAZMA">
-              <label class="form-label mb-0 small">Durum:</label>
+            <div class="me-auto d-flex gap-2 align-items-center d-none" id="spdDurumKutusu">
+              <label class="form-label mb-0 small" title="Durum normalde sözleşme akışındaki adımlarla değişir; elle değiştirme yalnız ADMIN içindir.">Durum (ADMIN):</label>
               <select id="spdDurumSec" class="form-select form-select-sm" style="width:auto;"></select>
               <button class="btn btn-outline-primary btn-sm" onclick="satisProjeDurumKaydet()">Uygula</button>
             </div>
@@ -5382,6 +5382,10 @@ async function satisProjeDetayAc(id) {
                     <td class="text-center">${satisTeklifDurumBadge(t.durum)}</td>
                 </tr>`).join('')}</tbody>
         </table></div>` : '<hr class="my-2"><div class="text-muted small">Bu projeye bağlı teklif yok.</div>'}`;
+    // Elle durum değiştirme yalnız ADMIN'e açık (eski sistemde serbest seçim yok)
+    let adminMi = false;
+    try { adminMi = (JSON.parse(localStorage.getItem('aterko_user') || '{}').rol || '').toUpperCase() === 'ADMIN'; } catch (e) {}
+    document.getElementById('spdDurumKutusu').classList.toggle('d-none', !adminMi);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisProjeDetay')).show();
     izinleriUygula && izinleriUygula();
     satisSozlesmePaneliCiz(p);

@@ -6356,6 +6356,11 @@ app.post('/api/satis-proje-kaydet', yetkiKontrol, async (req, res, next) => {
 
 app.post('/api/satis-proje-durum', yetkiKontrol, async (req, res, next) => {
     try {
+        // Eski sistemde proje durumu YALNIZ tanımlı geçişlerle değişir; serbest seçim yok.
+        // Workspace'te istisna olarak ADMIN'e bırakıldı (Yunus kararı).
+        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+            return res.json({ ok: false, hata: 'Proje durumu yalnız sözleşme akışındaki adımlarla değişir. Elle değiştirme yetkisi ADMIN kullanıcılarındadır.' });
+        }
         const { id, durum } = req.body;
         if (!SATIS_DURUMLARI.includes(durum)) return res.json({ ok: false, hata: 'Geçersiz satış durumu.' });
         const eskiR = await pool.query(`SELECT satis_durumu, proje_kodu FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
