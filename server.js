@@ -1183,6 +1183,8 @@ app.get('/api/satinalma-listesi', yetkiKontrol, async (req, res, next) => {
         
         // Dropdown'lar için projeleri getir + hesaplanmış aşama (en ileri teslimat durumu)
         // hesaplanmis_durum: PROJE/ÜRETİM/MONTAJ vb. — yeni talep dropdown'ı bunlara göre süzülür
+        // YALNIZ TESLİMAT FAZI: satış fazındaki projeler (fırsatlar, sözleşmesi olmayan
+        // 3.790 kayıt) operasyon ekranlarında seçilemez — sözleşmeye dönüşünce gelirler.
         const projelerRes = await pool.query(`
             SELECT p.id, p.proje_kodu, p.musteri_adi, p.proje_adi,
                    COALESCE((
@@ -1194,6 +1196,7 @@ app.get('/api/satinalma-listesi', yetkiKontrol, async (req, res, next) => {
                        WHEN 'BEKLEMEDE' THEN 2 ELSE 1 END DESC LIMIT 1
                    ), p.durum, 'BEKLEMEDE') as hesaplanmis_durum
             FROM projeler p
+            WHERE COALESCE(p.faz, 'TESLIMAT') = 'TESLIMAT'
             ORDER BY p.id DESC
         `);
 
