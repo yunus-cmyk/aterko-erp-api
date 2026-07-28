@@ -889,9 +889,9 @@
               <table class="table mb-0 align-middle" style="font-size:0.82rem;">
                 <thead class="table-light">
                   <tr>
-                    <th>Kalem / Açıklama</th>
-                    <th width="90">Miktar</th>
-                    <th width="90">Birim</th>
+                    <th>Kalem / Açıklama / Bileşen Türü</th>
+                    <th width="150" title="Miktar ve birim; ikincil miktar teklif büyüklüğünü (m² vb.) verir">Miktar / Birim</th>
+                    <th width="150" title="Eski sistemdeki ikincil miktar — Teklif Edilen Proje Büyüklüğü buradan hesaplanır">İkincil Miktar</th>
                     <th width="130">Birim Fiyat</th>
                     <th width="120" class="text-end">Tutar</th>
                     <th width="60" class="text-center" title="Opsiyonel kalemler toplama dahil edilmez">Ops.</th>
@@ -7075,9 +7075,15 @@ function stfKalemEkle(k) {
     tr.dataset.kalemId = k.id || '';      // mevcut kalem kimliği — analiz verisi kopmasın
     tr.innerHTML = `
         <td><input type="text" class="form-control form-control-sm stf-k-ad" placeholder="Kalem adı" value="${esc(k.ad || '')}">
-            <input type="text" class="form-control form-control-sm mt-1 stf-k-aciklama" placeholder="Açıklama (opsiyonel)" value="${esc(k.aciklama || '')}"></td>
-        <td><input type="number" class="form-control form-control-sm text-end stf-k-miktar" value="${k.miktar != null ? k.miktar : 1}" step="0.01" oninput="stfToplamGuncelle()"></td>
-        <td><input type="text" class="form-control form-control-sm stf-k-birim" placeholder="Adet" value="${esc(k.birim || '')}"></td>
+            <input type="text" class="form-control form-control-sm mt-1 stf-k-aciklama" placeholder="Açıklama (opsiyonel)" value="${esc(k.aciklama || '')}">
+            <select class="form-select form-select-sm mt-1 stf-k-tur" title="Bileşen türü — analiz ve raporlama bunu kullanır">
+                <option value="">Bileşen türü seçiniz...</option>
+            </select></td>
+        <td><input type="number" class="form-control form-control-sm text-end stf-k-miktar" value="${k.miktar != null ? k.miktar : 1}" step="0.01" oninput="stfToplamGuncelle()">
+            <select class="form-select form-select-sm mt-1 stf-k-birim"><option value="">Birim...</option></select></td>
+        <td><input type="number" class="form-control form-control-sm text-end stf-k-ikincil" placeholder="örn. 34,19" value="${k.ikincil_miktar != null ? k.ikincil_miktar : ''}" step="0.01"
+                   title="Teklif Edilen Proje Büyüklüğü bu değerlerden hesaplanır">
+            <select class="form-select form-select-sm mt-1 stf-k-ikincil-birim"><option value="">İkincil birim...</option></select></td>
         <td><input type="number" class="form-control form-control-sm text-end stf-k-fiyat" value="${k.birim_fiyat != null ? k.birim_fiyat : ''}" step="0.01" oninput="stfToplamGuncelle()"></td>
         <td class="text-end fw-semibold stf-k-toplam">0,00</td>
         <td class="text-center"><input type="checkbox" class="form-check-input stf-k-ops" ${k.opsiyonel ? 'checked' : ''} onchange="stfToplamGuncelle()"></td>
@@ -7086,6 +7092,16 @@ function stfKalemEkle(k) {
             <button type="button" class="btn btn-outline-danger btn-sm py-0" title="Kaldır" onclick="this.closest('tr').remove(); stfToplamGuncelle();"><i class="bi bi-x"></i></button>
         </td>`;
     document.getElementById('stfKalemler').appendChild(tr);
+    // Kapalı listeler (bileşen türü / birim) referans tablosundan doldurulur
+    const ref = satisReferanslar || {};
+    const doldur = (sec, liste, secili, bosMetin) => {
+        sec.innerHTML = `<option value="">${bosMetin}</option>` +
+            [...liste, ...(secili && !liste.includes(secili) ? [secili] : [])]
+                .map(a => `<option value="${esc(a)}" ${a === secili ? 'selected' : ''}>${esc(a)}</option>`).join('');
+    };
+    doldur(tr.querySelector('.stf-k-tur'), (ref.bilesen_turu || []).map(x => x.ad), k.bilesen_turu || '', 'Bileşen türü seçiniz...');
+    doldur(tr.querySelector('.stf-k-birim'), (ref.birim || []).map(x => x.ad), k.birim || '', 'Birim...');
+    doldur(tr.querySelector('.stf-k-ikincil-birim'), (ref.birim || []).map(x => x.ad), k.ikincil_birim || '', 'İkincil birim...');
     stfToplamGuncelle();
 }
 
@@ -7196,12 +7212,18 @@ async function satisTeklifKaydet() {
         id: tr.dataset.kalemId || undefined,
         ad: tr.querySelector('.stf-k-ad').value,
         aciklama: tr.querySelector('.stf-k-aciklama').value,
+        bilesen_turu: tr.querySelector('.stf-k-tur').value,
         miktar: tr.querySelector('.stf-k-miktar').value,
         birim: tr.querySelector('.stf-k-birim').value,
+        ikincil_miktar: tr.querySelector('.stf-k-ikincil').value,
+        ikincil_birim: tr.querySelector('.stf-k-ikincil-birim').value,
         birim_fiyat: tr.querySelector('.stf-k-fiyat').value,
         opsiyonel: tr.querySelector('.stf-k-ops').checked
     })).filter(k => k.ad.trim());
     if (!kalemler.length) { showToast('En az bir teklif kalemi girilmelidir.', 'error'); return; }
+    // Bileşen türü eski sistemde zorunluydu; analiz ve raporlama buna dayanıyor
+    const turSiz = kalemler.filter(k => !(k.bilesen_turu || '').trim());
+    if (turSiz.length) { showToast(`Bileşen türü zorunludur — eksik kalem: ${turSiz.map(k => k.ad).join(', ')}`, 'error'); return; }
     const btn = document.getElementById('stfKaydetBtn');
     btn.disabled = true;
     showLoading();

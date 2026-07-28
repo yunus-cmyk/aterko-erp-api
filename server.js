@@ -6026,6 +6026,7 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             ikincil_miktar: k.ikincil_miktar ? parseFloat(k.ikincil_miktar) : null,
             ikincil_birim: (k.ikincil_birim || '').trim() || null,
             opsiyonel: !!k.opsiyonel, sira: i,
+            bilesen_turu: (k.bilesen_turu || '').trim() || null,
             birim_fiyat: parseFloat(k.birim_fiyat) || 0
         }));
         // Opsiyonel kalemler toplama dahil edilmez (eski sistemle aynı mantık)
@@ -6091,18 +6092,20 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                 const g = await client.query(`
                     UPDATE sat_teklif_kalemleri SET ad=$1, aciklama=$2, miktar=$3, birim=$4,
                         ikincil_miktar=$5, ikincil_birim=$6, ikincil_birim_sembol=$7,
-                        opsiyonel=$8, sira=$9, birim_fiyat=$10, toplam=$11
+                        opsiyonel=$8, sira=$9, birim_fiyat=$10, toplam=$11,
+                        bilesen_turu=COALESCE($14, bilesen_turu)
                     WHERE id=$12 AND teklif_id=$13`,
                     [k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar, k.ikincil_birim, sembol,
-                     k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.id, teklifId]);
+                     k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.id, teklifId, k.bilesen_turu]);
                 if (g.rowCount) continue;   // güncellendi; değilse (başka teklife ait id) yeni ekle
             }
             await client.query(`
                 INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim,
-                    ikincil_miktar, ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                    ikincil_miktar, ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam,
+                    bilesen_turu, analiz_durumu)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS')`,
                 [teklifId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar,
-                 k.ikincil_birim, sembol, k.opsiyonel, k.sira, k.birim_fiyat, tutar]);
+                 k.ikincil_birim, sembol, k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.bilesen_turu]);
         }
         // Toplamlar kalemlerden yeniden hesaplanır (eski calculateAndSaveProposalTotals birebir)
         await satisTeklifToplamlariHesapla(client, teklifId);
@@ -10997,7 +11000,57 @@ async function semaGuvence() {
             ['sartname_turu', '1', 'Prefabrik', null, 1], ['sartname_turu', '2', 'Konteyner', null, 2],
             ['sartname_turu', '3', 'Birleşimli Konteyner', null, 3], ['sartname_turu', '4', 'Hafif Çelik', null, 4],
             ['sartname_turu', '5', 'Ağır Çelik', null, 5], ['sartname_turu', '6', 'Foreva', null, 6],
-            ['sartname_turu', '7', 'Prefabrik Konut', null, 7], ['sartname_turu', '8', 'Şartnamesiz', null, 8]
+            ['sartname_turu', '7', 'Prefabrik Konut', null, 7], ['sartname_turu', '8', 'Şartnamesiz', null, 8],
+            // TEKLİF BİLEŞEN TÜRÜ (eski component_type) — teklif kalemi formunda zorunlu alan.
+            // Analiz motoru da kaleme bağlı bileşen türünü kullanır. Sıra eski order_no'dan.
+            ['bilesen_turu', '1', 'Prefabrike Ofis', null, 1010],
+            ['bilesen_turu', '2', 'Prefabrike Yatakhane', null, 1020],
+            ['bilesen_turu', '3', 'Prefabrike Yemekhane', null, 1030],
+            ['bilesen_turu', '4', 'Prefabrike WC-Duş', null, 1040],
+            ['bilesen_turu', '5', 'Prefabrike Diğer Şantiye Binası', null, 1050],
+            ['bilesen_turu', '6', 'Prefabrike Çok Amaçlı Bina', null, 1060],
+            ['bilesen_turu', '7', 'Prefabrike Ev', null, 1070],
+            ['bilesen_turu', '8', 'Prefabrike Sosyal Konut', null, 1080],
+            ['bilesen_turu', '9', 'Monoblok Konteyner', null, 2090],
+            ['bilesen_turu', '10', 'Demonte Konteyner', null, 2100],
+            ['bilesen_turu', '11', 'WC-Duş Konteyneri', null, 2110],
+            ['bilesen_turu', '12', 'WC Konteyneri', null, 2111],
+            ['bilesen_turu', '13', 'Güvenlik Kabini', null, 2112],
+            ['bilesen_turu', '14', 'Modüler Konteyner', null, 2115],
+            ['bilesen_turu', '15', 'Modüler Kabin', null, 2120],
+            ['bilesen_turu', '16', 'Modüler Ünite', null, 2121],
+            ['bilesen_turu', '17', 'Monoblok Konteyner Birleşimli Ofis', null, 2130],
+            ['bilesen_turu', '18', 'Monoblok Konteyner Birleşimli Yatakhane', null, 2140],
+            ['bilesen_turu', '19', 'Monoblok Konteyner Birleşimli Yemekhane', null, 2150],
+            ['bilesen_turu', '20', 'Monoblok Konteyner Birleşimli WC-Duş', null, 2160],
+            ['bilesen_turu', '21', 'Monoblok Konteyner Birleşimli Diğer Şantiye Binası', null, 2170],
+            ['bilesen_turu', '22', 'Monoblok Konteyner Birleşimli Çok Amaçlı Bina', null, 2180],
+            ['bilesen_turu', '23', 'Demonte Konteyner Birleşimli Ofis', null, 2190],
+            ['bilesen_turu', '24', 'Demonte Konteyner Birleşimli Yatakhane', null, 2200],
+            ['bilesen_turu', '25', 'Demonte Konteyner Birleşimli Yemekhane', null, 2210],
+            ['bilesen_turu', '26', 'Demonte Konteyner Birleşimli WC-Duş', null, 2220],
+            ['bilesen_turu', '27', 'Demonte Konteyner Birleşimli Diğer Şantiye Binası', null, 2230],
+            ['bilesen_turu', '28', 'Demonte Konteyner Birleşimli Çok Amaçlı Bina', null, 2240],
+            ['bilesen_turu', '29', 'Hafif Çelik Konut', null, 3250],
+            ['bilesen_turu', '30', 'Hafif Çelik Şantiye Binası', null, 3260],
+            ['bilesen_turu', '31', 'Hafif Çelik Çok Amaçlı Bina', null, 3270],
+            ['bilesen_turu', '32', 'Yapısal Çelik Depo-Hangar', null, 4280],
+            ['bilesen_turu', '33', 'Yapısal Çelik Çok Amaçlı Bina', null, 4290],
+            ['bilesen_turu', '34', 'Yapısal Çelik İdari Bina', null, 4300],
+            ['bilesen_turu', '35', 'Nakliye', null, 5000],
+            ['bilesen_turu', '36', 'Diğer', null, 6000],
+            ['bilesen_turu', '37', 'Montaj', null, 7000],
+            ['bilesen_turu', '38', 'Süpervizör', null, 8000],
+            ['bilesen_turu', '39', 'Demontaj', null, 9000],
+            // BİRİM TÜRLERİ (eski unit_type) — kalemin birimi ve ikincil birimi
+            ['birim', '1', 'Adet', null, 1], ['birim', '2', 'Metrekare', null, 2],
+            ['birim', '3', 'Metreküp', null, 3], ['birim', '4', 'Kilogram', null, 4],
+            ['birim', '5', 'Ton', null, 5], ['birim', '6', 'Metre', null, 6],
+            ['birim', '7', 'Metrekare Başına Düşen Kilogram', null, 7], ['birim', '8', 'Öğün', null, 8],
+            ['birim', '9', 'Kilometre', null, 9], ['birim', '10', 'Metretül', null, 10],
+            ['birim', '11', 'Dakika', null, 11], ['birim', '12', 'Litre', null, 12],
+            ['birim', '13', 'Gün', null, 13], ['birim', '14', 'Paket', null, 14],
+            ['birim', '15', 'Yevmiye', null, 15], ['birim', '16', 'Yol-Ulaşım', null, 16]
         ];
         for (const [tur, kod, ad, ust, sira] of REFERANS_TOHUM) {
             await pool.query(`INSERT INTO sat_referanslar (tur, kod, ad, ust_kod, sira)
