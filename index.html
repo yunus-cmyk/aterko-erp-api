@@ -117,8 +117,10 @@
     .yatay-kaydir::-webkit-scrollbar { display: none; }
     @media (max-width: 767.98px) {
       .header-box { padding: 8px 10px; gap: 8px; }
-      .header-box img { height: 24px !important; margin-right: 8px !important; }
-      .header-box h6 { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+      .header-box img { height: 20px !important; margin-right: 6px !important; flex: 0 0 auto; }
+      /* Sol blok (logo + başlık) daralabilmeli: ADMIN'de sağda 4 düğme var, sığmıyordu */
+      .header-box > div:first-child { min-width: 0; }
+      .header-box h6 { font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 28vw; }
       .header-box #userNameDisplay { display: none; }
       .header-box > div:last-child { flex: 0 0 auto; gap: 4px !important; }
       .header-box .btn { padding: 4px 8px; }
@@ -131,8 +133,10 @@
 
       /* Modül içi alt sekmeler ve buton grupları da aynı davranışta
          (Satış, Satınalma, Stok, Üretim... — bir kısmı nav-pills, bir kısmı btn-group) */
+      /* min-width:0 şart: kaydırılabilir şerit kendi içeriği kadar yer isteyip
+         satırı ekran dışına itiyordu (esnek kutu varsayılanı min-width:auto). */
       .nav-pills, .nav-tabs, .btn-group.yatay-kaydir {
-        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; max-width: 100%;
       }
       .nav-pills::-webkit-scrollbar, .nav-tabs::-webkit-scrollbar,
       .btn-group.yatay-kaydir::-webkit-scrollbar { display: none; }
@@ -339,6 +343,7 @@
             <li class="nav-item"><a class="nav-link py-1 px-3 active" id="satisSekmeMusteriler" onclick="switchSatisSekme('musteriler')">Müşteriler</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeTeklifler" onclick="switchSatisSekme('teklifler')">Teklifler</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeProjeler" onclick="switchSatisSekme('projeler')">Projeler</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeAnaliz" onclick="switchSatisSekme('analiz')" title="Analizi bekleyen teklif bileşenleri — teknik ofisin iş listesi">Analiz</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeUrunler" onclick="switchSatisSekme('urunler')">Ürünler</a></li>
           </ul>
         </div>
@@ -425,11 +430,20 @@
             <span class="input-group-text"><i class="bi bi-search"></i></span>
             <input type="text" id="satisProjeAra" class="form-control" placeholder="Kod, proje adı, müşteri, şehir ara..." oninput="satisProjeAraGecikmeli()">
           </div>
+          <select id="satisProjeKapsam" class="form-select form-select-sm" style="width:auto;" onchange="satisProjeKapsamDegisti()"
+                  title="Kapanmış fırsatlar (reddedilen, iptal, tamamlanan) günlük listeyi boğuyordu; varsayılan yalnız açık fırsatlar.">
+            <option value="guncel">Güncel fırsatlar (son 1 yıl)</option>
+            <option value="acik">Tüm açık fırsatlar</option>
+            <option value="kapali">Kapanmışlar (red / iptal / tamamlanan)</option>
+            <option value="hepsi">Hepsi</option>
+          </select>
           <select id="satisProjeDurumSec" class="form-select form-select-sm" style="width:auto;" onchange="satisProjeleriYukle()">
             <option value="">Tüm durumlar</option>
           </select>
           <span class="text-muted small ms-auto" id="satisProjeSayac"></span>
         </div>
+        <!-- Durum sayaç şeridi: tıklanınca o duruma süzer -->
+        <div id="satisProjeSayacSeridi" class="d-flex gap-2 flex-wrap mb-2"></div>
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
           <div class="table-responsive" style="max-height:70vh;">
             <table class="table table-hover mb-0 align-middle" style="font-size:0.85rem;">
@@ -445,6 +459,34 @@
                 </tr>
               </thead>
               <tbody id="satisProjeTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analiz kuyruğu alt sekmesi: teknik ofisin iş listesi -->
+      <div id="satisAnalizBolum" class="d-none">
+        <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
+          <select id="satisAnalizKuyrukDurum" class="form-select form-select-sm" style="width:auto;" onchange="satisAnalizKuyruguYukle()">
+            <option value="bekleyen">Analiz bekleyenler</option>
+            <option value="tamamlanan">Analizi tamamlananlar</option>
+          </select>
+          <div class="input-group input-group-sm" style="max-width:300px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="satisAnalizAra" class="form-control" placeholder="Proje, müşteri, bileşen ara..." oninput="satisAnalizKuyrukSuz()">
+          </div>
+          <span class="text-muted small ms-auto" id="satisAnalizSayac"></span>
+        </div>
+        <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
+          <div class="table-responsive" style="max-height:70vh;">
+            <table class="table table-hover mb-0 align-middle" style="font-size:0.85rem;">
+              <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                <tr>
+                  <th>Proje</th><th>Müşteri</th><th>Teklif</th><th>Bileşen</th>
+                  <th class="text-end">Miktar</th><th class="text-center">Döküm</th><th style="width:110px;"></th>
+                </tr>
+              </thead>
+              <tbody id="satisAnalizTbody"></tbody>
             </table>
           </div>
         </div>
@@ -600,7 +642,9 @@
             <h6 class="modal-title fw-bold mb-0"><i class="bi bi-compass me-2"></i><span id="spdBaslik">Satış Projesi</span></h6>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
           </div>
-          <div class="modal-body p-3" id="spdGovde"></div>
+          <!-- Proje = merkez: eski sistemdeki proje detay sekmelerinin karşılığı -->
+          <ul class="nav nav-pills nav-sm px-3 pt-2 gap-1" id="spdSekmeler" style="--bs-nav-pills-link-active-bg: var(--mod-satis);"></ul>
+          <div class="modal-body p-3 pt-2" id="spdGovde"></div>
           <div class="modal-footer py-2 flex-wrap">
             <div class="me-auto d-flex gap-2 align-items-center d-none" id="spdDurumKutusu">
               <label class="form-label mb-0 small" title="Durum normalde sözleşme akışındaki adımlarla değişir; elle değiştirme yalnız ADMIN içindir.">Durum (ADMIN):</label>
@@ -4931,6 +4975,19 @@ async function satisMusteriDetayAc(id) {
             <thead class="table-light"><tr><th>Ad</th><th>Ünvan</th><th>E-posta</th><th>Telefon</th></tr></thead>
             <tbody>${r.kisiler.map(k => `<tr><td class="fw-semibold">${esc(k.ad)}</td><td>${esc(k.unvan || '-')}</td><td>${esc(k.email || '-')}</td><td>${esc(k.telefon || '-')}</td></tr>`).join('')}</tbody>
         </table></div>` : ''}
+        ${(r.teklifler || []).length ? `
+        <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-file-earmark-text me-1"></i>Teklifler (${r.teklifler.length}${r.teklifler.length >= 50 ? ', son 50' : ''})</div>
+        <div class="table-responsive"><table class="table table-sm table-hover mb-2" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>No</th><th>Proje</th><th>Tarih</th><th class="text-end">Tutar</th><th class="text-center">Durum</th></tr></thead>
+            <tbody>${r.teklifler.map(t => `
+                <tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalSatisMusteriDetay'))?.hide(); satisTeklifDetayAc(${t.id});">
+                    <td class="fw-semibold">${esc(t.teklif_no || '-')}</td>
+                    <td class="small text-muted">${esc(t.proje_kodu || '-')}</td>
+                    <td>${t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'}</td>
+                    <td class="text-end">${formatTR(parseFloat(t.genel_toplam) || 0)} ${esc(t.para_birimi || 'TL')}</td>
+                    <td class="text-center">${satisTeklifDurumBadge(t.durum)}</td>
+                </tr>`).join('')}</tbody>
+        </table></div>` : ''}
         ${r.projeler.length ? `
         <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-kanban me-1"></i>Projeler (${r.projeler.length})</div>
         <div class="table-responsive"><table class="table table-sm mb-2" style="font-size:0.8rem;">
@@ -5205,21 +5262,70 @@ let satisMetinHavuzu = null;         // hazır metinler (bir kez yüklenir)
 let stfAramaZamanlayici = null;
 
 function switchSatisSekme(sekme) {
-    document.getElementById('satisSekmeMusteriler').classList.toggle('active', sekme === 'musteriler');
-    document.getElementById('satisSekmeTeklifler').classList.toggle('active', sekme === 'teklifler');
-    document.getElementById('satisSekmeProjeler').classList.toggle('active', sekme === 'projeler');
-    document.getElementById('satisSekmeUrunler').classList.toggle('active', sekme === 'urunler');
-    document.getElementById('satisMusterilerBolum').classList.toggle('d-none', sekme !== 'musteriler');
-    document.getElementById('satisTekliflerBolum').classList.toggle('d-none', sekme !== 'teklifler');
-    document.getElementById('satisProjelerBolum').classList.toggle('d-none', sekme !== 'projeler');
-    document.getElementById('satisUrunlerBolum').classList.toggle('d-none', sekme !== 'urunler');
+    const sekmeler = ['musteriler', 'teklifler', 'projeler', 'analiz', 'urunler'];
+    const bolumId = { musteriler: 'satisMusterilerBolum', teklifler: 'satisTekliflerBolum',
+        projeler: 'satisProjelerBolum', analiz: 'satisAnalizBolum', urunler: 'satisUrunlerBolum' };
+    const sekmeId = { musteriler: 'satisSekmeMusteriler', teklifler: 'satisSekmeTeklifler',
+        projeler: 'satisSekmeProjeler', analiz: 'satisSekmeAnaliz', urunler: 'satisSekmeUrunler' };
+    sekmeler.forEach(s => {
+        document.getElementById(sekmeId[s]).classList.toggle('active', s === sekme);
+        document.getElementById(bolumId[s]).classList.toggle('d-none', s !== sekme);
+    });
     document.getElementById('btnYeniSatisMusteri').classList.toggle('d-none', sekme !== 'musteriler');
     document.getElementById('btnYeniSatisTeklif').classList.toggle('d-none', sekme !== 'teklifler');
     document.getElementById('btnYeniSatisProje').classList.toggle('d-none', sekme !== 'projeler');
     if (sekme === 'teklifler') satisTeklifleriYukle();
     if (sekme === 'projeler') satisProjeleriYukle();
+    if (sekme === 'analiz') satisAnalizKuyruguYukle();
     if (sekme === 'urunler') satisUrunSekmeInit();
     izinleriUygula && izinleriUygula();
+}
+
+// ---- ANALİZ KUYRUĞU (teknik ofisin iş listesi) ----
+let satisAnalizKuyrukListe = [];
+async function satisAnalizKuyruguYukle() {
+    const d = document.getElementById('satisAnalizKuyrukDurum').value;
+    const r = await secureFetch('/satis-analiz-kuyrugu?durum=' + d).catch(() => null);
+    if (!r || !r.ok) { showToast('Analiz kuyruğu yüklenemedi.', 'error'); return; }
+    satisAnalizKuyrukListe = r.kalemler || [];
+    // Sekme etiketine bekleyen sayısını yaz
+    const bekleyen = (r.sayilar || []).find(x => x.durum === 'ANALIZ_SURECINDE');
+    const sekmeEl = document.getElementById('satisSekmeAnaliz');
+    if (sekmeEl) sekmeEl.innerHTML = 'Analiz' + (bekleyen && bekleyen.adet
+        ? ` <span class="badge bg-warning text-dark">${bekleyen.adet}</span>` : '');
+    satisAnalizKuyrukSuz();
+}
+
+function satisAnalizKuyrukSuz() {
+    const q = trAra(document.getElementById('satisAnalizAra').value || '');
+    const liste = satisAnalizKuyrukListe.filter(k => !q ||
+        trAra([k.proje_kodu, k.proje_adi, k.musteri_adi, k.ad, k.teklif_no].filter(Boolean).join(' ')).includes(q));
+    const tbody = document.getElementById('satisAnalizTbody');
+    if (!liste.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">${
+            satisAnalizKuyrukListe.length ? 'Eşleşen bileşen bulunamadı.' : 'Bekleyen analiz yok.'}</td></tr>`;
+        document.getElementById('satisAnalizSayac').innerText = '';
+        return;
+    }
+    tbody.innerHTML = liste.map(k => `
+        <tr>
+            <td><span class="fw-bold text-primary" style="cursor:pointer;" title="Projeyi aç"
+                onclick="satisProjeyeGit(${k.proje_id}, 'analiz')">${esc(k.proje_kodu || '-')}</span>
+                ${k.proje_faz === 'TESLIMAT' ? '<span class="badge bg-secondary ms-1" title="Bu projenin satışı kapandı, teslimat fazına geçti — analiz kaydı geride kalmış olabilir.">sözleşmeli</span>' : ''}
+                <br><small class="text-muted">${esc((k.proje_adi || '').slice(0, 28))}</small></td>
+            <td class="small">${esc((k.musteri_adi || '-').slice(0, 26))}</td>
+            <td class="small"><span class="text-primary" style="cursor:pointer;" onclick="satisTeklifDetayAc(${k.teklif_id})">${esc(k.teklif_no || '-')}</span></td>
+            <td>${esc(k.ad || '-')}${k.bilesen_turu ? `<br><small class="text-muted">${esc(k.bilesen_turu)}</small>` : ''}</td>
+            <td class="text-end">${formatTR(parseFloat(k.miktar) || 0)} ${esc(k.birim || '')}</td>
+            <td class="text-center">${k.dokum_satiri
+                ? `<span class="badge bg-light text-dark border">${k.dokum_satiri} malzeme</span>`
+                : '<span class="text-muted small">yok</span>'}</td>
+            <td class="text-center text-nowrap">
+                <button class="btn btn-outline-secondary btn-sm py-0" title="Öznitelikler" onclick="satisAnalizFormAc(${k.id}, '${escJsAttr(k.ad)}')"><i class="bi bi-sliders"></i></button>
+                <button class="btn btn-outline-primary btn-sm py-0" title="Fiyat analizi / malzeme dökümü" onclick="satisAnalizDokumAc(${k.id}, '${escJsAttr(k.ad)}')"><i class="bi bi-calculator"></i></button>
+            </td>
+        </tr>`).join('');
+    document.getElementById('satisAnalizSayac').innerText = `${liste.length} bileşen`;
 }
 
 // ==================== SATIŞ — ÜRÜN KÜTÜPHANESİ (Faz C3a) ====================
@@ -5713,10 +5819,20 @@ function satisProjeAraGecikmeli() {
     spAramaZamanlayici = setTimeout(satisProjeleriYukle, 350);
 }
 
+// Kapanmış sayılan durumlar (arka uçtaki SATIS_KAPALI_DURUMLAR ile aynı)
+const SATIS_KAPALI_DURUMLAR = ['REDDEDILEN', 'IPTAL', 'TAMAMLANAN'];
+
+function satisProjeKapsamDegisti() {
+    document.getElementById('satisProjeDurumSec').value = '';   // kapsam değişince durum süzgeci sıfırlanır
+    satisProjeleriYukle();
+}
+
 async function satisProjeleriYukle() {
     const q = document.getElementById('satisProjeAra').value.trim();
     const durum = document.getElementById('satisProjeDurumSec').value;
-    const r = await secureFetch('/satis-projeler?q=' + encodeURIComponent(q) + (durum ? '&durum=' + durum : '')).catch(() => null);
+    const kapsam = document.getElementById('satisProjeKapsam').value || 'guncel';
+    const r = await secureFetch('/satis-projeler?q=' + encodeURIComponent(q) +
+        (durum ? '&durum=' + durum : '') + '&kapsam=' + kapsam).catch(() => null);
     if (!r || !r.ok) { showToast('Satış projeleri yüklenemedi.', 'error'); return; }
     // Durum süzgeci: sayılarla doldur (seçim korunur)
     const sec = document.getElementById('satisProjeDurumSec');
@@ -5727,6 +5843,16 @@ async function satisProjeleriYukle() {
         Object.keys(SATIS_DURUM_ETIKET).filter(d => sayilar[d]).map(d =>
             `<option value="${d}">${SATIS_DURUM_ETIKET[d][0]} (${sayilar[d]})</option>`).join('');
     sec.value = onceki;
+    // Sayaç şeridi: açık durumlar tıklanabilir (kapanmışlar kapsam seçicisinde)
+    const acikDurumlar = Object.keys(SATIS_DURUM_ETIKET)
+        .filter(d => sayilar[d] && !SATIS_KAPALI_DURUMLAR.includes(d))
+        .sort((a, b) => sayilar[b] - sayilar[a]);
+    document.getElementById('satisProjeSayacSeridi').innerHTML = (kapsam === 'guncel' || kapsam === 'acik')
+        ? acikDurumlar.map(d => `<button class="btn btn-sm ${durum === d ? 'btn-dark' : 'btn-outline-secondary'} py-0 px-2"
+              style="font-size:0.75rem;" onclick="satisProjeDurumSuz('${d}')">${SATIS_DURUM_ETIKET[d][0]}
+              <span class="badge bg-light text-dark border ms-1">${sayilar[d]}</span></button>`).join('')
+          + (durum ? `<button class="btn btn-sm btn-link py-0 px-2" style="font-size:0.75rem;" onclick="satisProjeDurumSuz('')">süzgeci temizle</button>` : '')
+        : '';
     const tbody = document.getElementById('satisProjeTbody');
     const liste = r.projeler || [];
     if (!liste.length) {
@@ -5748,10 +5874,18 @@ async function satisProjeleriYukle() {
         liste.length >= 500 ? 'İlk 500 gösteriliyor — daraltmak için arama yapın' : `${liste.length} satış projesi`;
 }
 
-async function satisProjeDetayAc(id) {
+function satisProjeDurumSuz(durum) {
+    document.getElementById('satisProjeDurumSec').value = durum;
+    satisProjeleriYukle();
+}
+
+async function satisProjeDetayAc(id, sekme) {
     const r = await secureFetch('/satis-proje-detay/' + id).catch(() => null);
     if (!r || !r.ok) { showToast(r?.hata || 'Satış projesi yüklenemedi.', 'error'); return; }
     const p = r.proje;
+    // Başka bir projeye geçildiyse sekme başa döner; aynı proje tazeleniyorsa sekme korunur
+    if (window.spdAktifId !== p.id) window.spdSekme = 'genel';
+    if (sekme) window.spdSekme = sekme;
     window.spdAktifId = p.id;
     window.spdAktifDetay = r;
     document.getElementById('spdBaslik').innerText = `[${p.proje_kodu}] ${p.proje_adi || ''}`;
@@ -5759,10 +5893,44 @@ async function satisProjeDetayAc(id) {
     const sec = document.getElementById('spdDurumSec');
     sec.innerHTML = Object.keys(SATIS_DURUM_ETIKET).map(d =>
         `<option value="${d}" ${d === p.satis_durumu ? 'selected' : ''}>${SATIS_DURUM_ETIKET[d][0]}</option>`).join('');
+    // Sekme şeridi (eski sistemin proje detay sekmeleri): Genel | Teklifler | Analiz | Sözleşme | Yorumlar
+    const bekleyenAnaliz = (r.kalemler || []).filter(k => k.analiz_durumu === 'ANALIZ_SURECINDE').length;
+    const sekmeler = [
+        { kod: 'genel',    ad: 'Genel',     ikon: 'info-circle' },
+        { kod: 'teklifler',ad: 'Teklifler', ikon: 'file-earmark-text', rozet: r.teklifler.length },
+        { kod: 'analiz',   ad: 'Analiz',    ikon: 'calculator', rozet: (r.kalemler || []).length, uyari: bekleyenAnaliz },
+        { kod: 'sozlesme', ad: 'Sözleşme',  ikon: 'file-earmark-check' },
+        { kod: 'yorumlar', ad: 'Yorumlar',  ikon: 'chat-left-text', rozet: r.yorum_sayisi }
+    ];
+    document.getElementById('spdSekmeler').innerHTML = sekmeler.map(s => `
+        <li class="nav-item"><a class="nav-link py-1 px-3 ${s.kod === (window.spdSekme || 'genel') ? 'active' : ''}"
+            id="spdSekme_${s.kod}" onclick="satisProjeSekmeSec('${s.kod}')">
+            <i class="bi bi-${s.ikon} me-1"></i>${s.ad}
+            ${s.rozet ? `<span class="badge bg-light text-dark border ms-1">${s.rozet}</span>` : ''}
+            ${s.uyari ? `<span class="badge bg-warning text-dark ms-1" title="Analizi bekleyen kalem">${s.uyari}</span>` : ''}
+        </a></li>`).join('');
+    satisProjeSekmeSec(window.spdSekme || 'genel');
+    // Elle durum değiştirme yalnız ADMIN'e açık (eski sistemde serbest seçim yok)
+    document.getElementById('spdDurumKutusu').classList.toggle('d-none', !adminRolMu());
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisProjeDetay')).show();
+    izinleriUygula && izinleriUygula();
+}
+
+// Proje penceresindeki sekmeler — veri satisProjeDetayAc'te bir kez çekilir, sekmeler
+// aynı veriyi gösterir (yeniden istek yok).
+function satisProjeSekmeSec(sekme) {
+    window.spdSekme = sekme;
+    const r = window.spdAktifDetay; if (!r) return;
+    const p = r.proje;
+    document.querySelectorAll('#spdSekmeler .nav-link').forEach(a =>
+        a.classList.toggle('active', a.id === 'spdSekme_' + sekme));
+    const govde = document.getElementById('spdGovde');
     const bilgi = (etiket, deger) => deger ? `<div class="col-md-6 mb-1"><span class="text-muted small">${etiket}:</span> <span class="small fw-semibold">${esc(deger)}</span></div>` : '';
-    document.getElementById('spdGovde').innerHTML = `
+
+    if (sekme === 'genel') {
+        govde.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="fw-bold">${esc(p.musteri_adi || '-')}</span>
+            <span class="fw-bold ${p.sat_musteri_id ? 'text-decoration-underline' : ''}" ${p.sat_musteri_id ? `style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${p.sat_musteri_id})"` : ''}>${esc(p.musteri_adi || '-')}</span>
             ${satisProjeDurumBadge(p.satis_durumu)}
         </div>
         <div class="row">
@@ -5772,27 +5940,108 @@ async function satisProjeDetayAc(id) {
             ${bilgi('İrtibat', [p.irtibat_adi, p.irtibat_email, p.irtibat_telefon].filter(Boolean).join(' · '))}
             ${bilgi('Oluşturma', p.olusturma_tarihi ? formatTarihTR(p.olusturma_tarihi) : '')}
             ${bilgi('Açıklama', p.aciklama)}
-        </div>
-        <div id="spdSozlesmeAlani"></div>
-        ${r.teklifler.length ? `
-        <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-file-earmark-text me-1"></i>Teklifler (${r.teklifler.length})</div>
-        <div class="table-responsive"><table class="table table-sm mb-0" style="font-size:0.8rem;">
+        </div>`;
+        return;
+    }
+    if (sekme === 'teklifler') {
+        govde.innerHTML = r.teklifler.length ? `
+        <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
             <thead class="table-light"><tr><th>No</th><th>Tarih</th><th class="text-end">Tutar</th><th class="text-center">Durum</th></tr></thead>
             <tbody>${r.teklifler.map(t => `
-                <tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeDetay'))?.hide(); satisTeklifDetayAc(${t.id});">
+                <tr style="cursor:pointer;" onclick="satisTeklifiUstteAc(${t.id})">
                     <td class="fw-semibold">${esc(t.teklif_no || '-')}</td>
                     <td>${t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'}</td>
                     <td class="text-end">${formatTR(parseFloat(t.genel_toplam) || 0)} ${esc(t.para_birimi || 'TL')}</td>
                     <td class="text-center">${satisTeklifDurumBadge(t.durum)}</td>
                 </tr>`).join('')}</tbody>
-        </table></div>` : '<hr class="my-2"><div class="text-muted small">Bu projeye bağlı teklif yok.</div>'}`;
-    // Elle durum değiştirme yalnız ADMIN'e açık (eski sistemde serbest seçim yok)
-    let adminMi = false;
-    try { adminMi = (JSON.parse(localStorage.getItem('aterko_user') || '{}').rol || '').toUpperCase() === 'ADMIN'; } catch (e) {}
-    document.getElementById('spdDurumKutusu').classList.toggle('d-none', !adminMi);
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisProjeDetay')).show();
-    izinleriUygula && izinleriUygula();
-    satisSozlesmePaneliCiz(p);
+        </table></div>
+        <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Teklif üstte açılır; kapattığınızda bu pencereye dönersiniz.</div>`
+        : '<div class="text-muted small py-3">Bu projeye bağlı teklif yok. Alttaki <b>Teklif Oluştur</b> düğmesiyle ekleyebilirsiniz.</div>';
+        return;
+    }
+    if (sekme === 'analiz') {
+        const k = r.kalemler || [];
+        govde.innerHTML = k.length ? `
+        <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>Teklif</th><th>Bileşen</th><th class="text-end">Miktar</th>
+                <th class="text-center">Analiz</th><th class="text-end">Önerilen</th><th style="width:96px;"></th></tr></thead>
+            <tbody>${k.map(x => `
+                <tr>
+                    <td><span class="text-primary" style="cursor:pointer;" onclick="satisTeklifiUstteAc(${x.teklif_id})">${esc(x.teklif_no || '-')}</span></td>
+                    <td>${esc(x.ad || '-')}${x.bilesen_turu ? `<br><small class="text-muted">${esc(x.bilesen_turu)}</small>` : ''}</td>
+                    <td class="text-end">${formatTR(parseFloat(x.miktar) || 0)} ${esc(x.birim || '')}</td>
+                    <td class="text-center">${satisAnalizDurumBadge(x.analiz_durumu)}${x.dokum_satiri ? `<br><small class="text-muted">${x.dokum_satiri} malzeme</small>` : ''}</td>
+                    <td class="text-end">${x.onerilen_fiyat != null ? formatTR(parseFloat(x.onerilen_fiyat)) + ' ' + esc(x.para_birimi || 'TL') : '<span class="text-muted">-</span>'}</td>
+                    <td class="text-center text-nowrap">
+                        <button class="btn btn-outline-secondary btn-sm py-0" title="Öznitelikler" onclick="satisAnalizFormAc(${x.id}, '${escJsAttr(x.ad)}')"><i class="bi bi-sliders"></i></button>
+                        <button class="btn btn-outline-primary btn-sm py-0" title="Fiyat analizi / malzeme dökümü" onclick="satisAnalizDokumAc(${x.id}, '${escJsAttr(x.ad)}')"><i class="bi bi-calculator"></i></button>
+                    </td>
+                </tr>`).join('')}</tbody>
+        </table></div>`
+        : '<div class="text-muted small py-3">Bu projenin tekliflerinde henüz bileşen yok.</div>';
+        return;
+    }
+    if (sekme === 'sozlesme') {
+        govde.innerHTML = '<div id="spdSozlesmeAlani"></div>';
+        satisSozlesmePaneliCiz(p);
+        return;
+    }
+    if (sekme === 'yorumlar') {
+        govde.innerHTML = `<div class="text-muted small py-2">Bu projeye yazılmış <b>${r.yorum_sayisi || 0}</b> yorum var.</div>
+            <button class="btn btn-outline-secondary btn-sm" onclick="satisYorumlarAc('PROJE', window.spdAktifId, document.getElementById('spdBaslik').innerText)">
+                <i class="bi bi-chat-left-text me-1"></i>Yorumları Aç / Yeni Yorum</button>`;
+    }
+}
+
+// Teklifi projenin ÜSTÜNDE aç: proje penceresi arkada kalır, teklif kapanınca ona dönülür
+function satisTeklifiUstteAc(teklifId) {
+    window.spdGeriDonulecek = true;
+    satisTeklifDetayAc(teklifId, true);
+}
+
+// Müşteri kartına geç (proje/teklif penceresinden)
+async function satisMusteriKartinaGit(musteriId) {
+    if (!satisMusteriListe.length) await satisSekmeInit();
+    satisMusteriDetayAc(musteriId);
+}
+
+// Herhangi bir yerden projeye geç: satış fazındaysa satış penceresi, teslimat fazına
+// geçmişse (sözleşmesi yapılmış) Projeler modülü açılır.
+async function satisProjeyeGit(projeId, sekme) {
+    const r = await secureFetch('/satis-proje-detay/' + projeId).catch(() => null);
+    if (r && r.ok) { satisProjeDetayAc(projeId, sekme); return; }
+    showToast('Bu projenin satışı tamamlanmış; Projeler sekmesinde açılıyor.', 'info');
+    setTab('projeler');
+    if (typeof openProjeDetay === 'function') setTimeout(() => openProjeDetay(projeId), 600);
+}
+
+// Teklif penceresinden projesine geç. Proje zaten arkada açıksa yalnız teklifi kapat,
+// değilse projeyi aç (satış fazında değilse Projeler modülüne yönlendir).
+async function satisProjesineGit(projeId) {
+    const teklifEl = document.getElementById('modalSatisTeklifDetay');
+    const teklifModal = bootstrap.Modal.getInstance(teklifEl);
+    // Proje zaten arkada açıksa yalnız teklifi kapatmak yeterli
+    if (window.spdAktifId === projeId && document.getElementById('modalSatisProjeDetay').classList.contains('show')) {
+        teklifModal?.hide();
+        return;
+    }
+    // Kapanma animasyonu bitmeden yeni pencere açılırsa Bootstrap onu yutuyor:
+    // 'hidden' olayını bekle (gelmezse 400 ms sonra yine de devam et).
+    const kapanmayiBekle = () => new Promise(cozum => {
+        if (!teklifModal || !teklifEl.classList.contains('show')) return cozum();
+        let bitti = false;
+        const bir = () => { if (!bitti) { bitti = true; teklifEl.removeEventListener('hidden.bs.modal', bir); cozum(); } };
+        teklifEl.addEventListener('hidden.bs.modal', bir);
+        setTimeout(bir, 400);
+        teklifModal.hide();
+    });
+    await kapanmayiBekle();
+    const r = await secureFetch('/satis-proje-detay/' + projeId).catch(() => null);
+    if (r && r.ok) { satisProjeDetayAc(projeId); return; }
+    // Teslimat fazına geçmiş proje: satış ekranında yok, Projeler modülünde açılır
+    showToast('Bu proje teslimat fazında; Projeler sekmesinde açılıyor.', 'info');
+    setTab('projeler');
+    if (typeof openProjeDetay === 'function') setTimeout(() => openProjeDetay(projeId), 600);
 }
 
 // Sözleşme paneli + onay zinciri (eski sistemdeki proje aksiyonları birebir)
@@ -6055,7 +6304,8 @@ async function satisTeklifleriYukle() {
         liste.length >= 500 ? `İlk 500 gösteriliyor — daraltmak için arama yapın` : `${liste.length} teklif`;
 }
 
-async function satisTeklifDetayAc(id) {
+// ustte=true → proje penceresi arkada açık kalır (kapatınca ona dönülür)
+async function satisTeklifDetayAc(id, ustte) {
     const r = await secureFetch('/satis-teklif-detay/' + id).catch(() => null);
     if (!r || !r.ok) { showToast(r?.hata || 'Teklif detayı yüklenemedi.', 'error'); return; }
     const t = r.teklif;
@@ -6070,8 +6320,12 @@ async function satisTeklifDetayAc(id) {
     document.getElementById('stdGovde').innerHTML = `
         <div class="row mb-2 small">
             <div class="col-md-3"><span class="text-muted">Tarih:</span> <b>${t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'}</b></div>
-            <div class="col-md-4"><span class="text-muted">Müşteri:</span> <b>${esc(t.musteri_adi || '-')}</b></div>
-            <div class="col-md-3"><span class="text-muted">Proje:</span> <b>${t.proje_kodu ? esc(t.proje_kodu) + ' — ' + esc(t.proje_adi_goster || '') : '-'}</b></div>
+            <div class="col-md-4"><span class="text-muted">Müşteri:</span> ${t.musteri_id
+                ? `<b class="text-primary" style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${t.musteri_id})">${esc(t.musteri_adi || '-')}</b>`
+                : `<b>${esc(t.musteri_adi || '-')}</b>`}</div>
+            <div class="col-md-3"><span class="text-muted">Proje:</span> ${t.proje_id
+                ? `<b class="text-primary" style="cursor:pointer;" title="Projeye git" onclick="satisProjesineGit(${t.proje_id})">${esc(t.proje_kodu || '')} — ${esc(t.proje_adi_goster || '')}</b>`
+                : '<b>-</b>'}</div>
             <div class="col-md-2 text-end">${satisTeklifDurumBadge(t.durum)}</div>
             ${t.sartname_turu ? `<div class="col-md-3 mt-1"><span class="text-muted">Şartname Türü:</span> <b>${esc(t.sartname_turu)}</b></div>` : ''}
             ${t.toplam_buyukluk ? `<div class="col-md-4 mt-1"><span class="text-muted">Teklif Edilen Proje Büyüklüğü:</span> <b>${esc(t.toplam_buyukluk)}</b></div>` : ''}
@@ -6111,7 +6365,8 @@ async function satisTeklifDetayAc(id) {
             ${kosul('Ödeme Koşulları', t.odeme_kosullari)}
             ${kosul('Teslimat Koşulları', t.teslimat_kosullari)}
         </div>`;
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisTeklifDetay')).show();
+    if (ustte && typeof maliModalUstteAc === 'function') maliModalUstteAc('modalSatisTeklifDetay');
+    else bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisTeklifDetay')).show();
     izinleriUygula && izinleriUygula();
 }
 

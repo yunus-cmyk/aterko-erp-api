@@ -5855,7 +5855,14 @@ app.get('/api/satis-musteri-detay/:id', yetkiKontrol, async (req, res, next) => 
             SELECT id, proje_kodu, proje_adi, durum, musteri_adi
             FROM projeler WHERE sat_musteri_id=$1 ORDER BY proje_kodu DESC`, [id]);
         const mali = await pool.query('SELECT id, firma_adi, devir_alacak, durum FROM musteriler WHERE sat_musteri_id=$1', [id]);
-        res.json({ ok: true, musteri: m.rows[0], kisiler: kisiler.rows, projeler: projeler.rows, mali_cariler: mali.rows });
+        // Müşterinin teklifleri — "bu müşteriye ne teklif verdik" sorusu kartın içinden yanıtlanır
+        const teklifler = await pool.query(`
+            SELECT t.id, t.teklif_no, t.teklif_tarihi, t.durum, t.para_birimi, t.genel_toplam,
+                   p.proje_kodu, p.proje_adi
+            FROM sat_teklifler t LEFT JOIN projeler p ON p.id = t.proje_id
+            WHERE t.musteri_id=$1 ORDER BY t.teklif_tarihi DESC NULLS LAST LIMIT 50`, [id]);
+        res.json({ ok: true, musteri: m.rows[0], kisiler: kisiler.rows, projeler: projeler.rows,
+            mali_cariler: mali.rows, teklifler: teklifler.rows });
     } catch (e) { next(e); }
 });
 
@@ -6330,11 +6337,24 @@ const SATIS_DURUMLARI = ['TASLAK', 'ANALIZ_SURECINDE', 'ANALIZI_TAMAMLANAN', 'TE
     'SOZLESMESI_ONAYLANAN', 'SOZLESMESI_IMZALANAN', 'AVANS_ODEMESI_ALINAN',
     'DEVAM_EDEN_INCELENECEK', 'TAMAMLANAN', 'REDDEDILEN', 'IPTAL'];
 
+// KAPANMIŞ fırsat durumları: liste varsayılan olarak bunları GİZLER. Satış fazındaki
+// 3.790 projenin ~3.550'si bu üç durumda (arşiv); günlük çalışılan yaklaşık 240 kayıt.
+const SATIS_KAPALI_DURUMLAR = ['REDDEDILEN', 'IPTAL', 'TAMAMLANAN'];
+
 app.get('/api/satis-projeler', yetkiKontrol, async (req, res, next) => {
     try {
-        const { q, durum } = req.query;
+        const { q, durum, kapsam } = req.query;
         const kosullar = ["COALESCE(p.faz,'TESLIMAT') = 'SATIS'"]; const deger = [];
+        // Kapsam: guncel (varsayılan) = açık + son 1 yılda teklif hareketi görmüş; acik = tüm
+        // açıklar; kapali = red/iptal/tamamlanan; hepsi = süzgeç yok.
+        // 3.790 satış projesinin 2.156'sı kapanmış, açık kalan 1.634'ün de yalnız 187'si
+        // son bir yılda hareket görmüş — günlük çalışılan küme bu.
+        const acikKosul = `COALESCE(p.satis_durumu,'TASLAK') <> ALL('{${SATIS_KAPALI_DURUMLAR.join(',')}}')`;
+        const sonHareket = `(SELECT MAX(t2.teklif_tarihi) FROM sat_teklifler t2 WHERE t2.proje_id = p.id)`;
         if (durum && SATIS_DURUMLARI.includes(durum)) { deger.push(durum); kosullar.push(`p.satis_durumu=$${deger.length}`); }
+        else if (kapsam === 'kapali') kosullar.push(`p.satis_durumu = ANY('{${SATIS_KAPALI_DURUMLAR.join(',')}}')`);
+        else if (kapsam === 'acik') kosullar.push(acikKosul);
+        else if (kapsam !== 'hepsi') kosullar.push(`${acikKosul} AND ${sonHareket} >= CURRENT_DATE - 365`);
         if (q && q.trim()) {
             deger.push('%' + q.trim() + '%');
             kosullar.push(`(p.proje_kodu ILIKE $${deger.length} OR p.proje_adi ILIKE $${deger.length} OR p.musteri_adi ILIKE $${deger.length} OR p.sehir ILIKE $${deger.length})`);
@@ -6350,10 +6370,40 @@ app.get('/api/satis-projeler', yetkiKontrol, async (req, res, next) => {
             ORDER BY p.proje_kodu DESC
             LIMIT 500
         `, deger);
+        // Durum sayaçları AYNI KAPSAM içinde sayılır (durum süzgeci hariç) — yoksa şeritte
+        // "Teklif Sürecinde 1391" yazıp liste 187 gösteriyordu, sayılar tutarsız görünüyordu.
+        const kapsamKosul = kapsam === 'kapali' ? `p.satis_durumu = ANY('{${SATIS_KAPALI_DURUMLAR.join(',')}}')`
+            : kapsam === 'acik' ? acikKosul
+            : kapsam === 'hepsi' ? 'TRUE'
+            : `${acikKosul} AND ${sonHareket} >= CURRENT_DATE - 365`;
         const sayilar = await pool.query(`
-            SELECT satis_durumu AS durum, COUNT(*)::int adet FROM projeler
-            WHERE COALESCE(faz,'TESLIMAT')='SATIS' GROUP BY satis_durumu`);
-        res.json({ ok: true, projeler: r.rows, durum_sayilari: sayilar.rows });
+            SELECT p.satis_durumu AS durum, COUNT(*)::int adet FROM projeler p
+            WHERE COALESCE(p.faz,'TESLIMAT')='SATIS' AND ${kapsamKosul} GROUP BY p.satis_durumu`);
+        res.json({ ok: true, projeler: r.rows, durum_sayilari: sayilar.rows, kapsam: kapsam || 'guncel' });
+    } catch (e) { next(e); }
+});
+
+// ANALİZ KUYRUĞU — teknik ofisin iş listesi: analiz talep edilmiş ama tamamlanmamış
+// tüm teklif kalemleri. Eski sistemde bu kişiler projeden giriyordu; kuyruk görünümü yoktu.
+app.get('/api/satis-analiz-kuyrugu', yetkiKontrol, async (req, res, next) => {
+    try {
+        const durum = req.query.durum === 'tamamlanan' ? 'ANALIZ_TAMAMLANDI' : 'ANALIZ_SURECINDE';
+        const r = await pool.query(`
+            SELECT k.id, k.ad, k.miktar, k.birim, k.analiz_durumu, k.onerilen_fiyat, k.bilesen_turu,
+                   k.analiz_tarihi, k.analiz_eden,
+                   t.id AS teklif_id, t.teklif_no, t.para_birimi, t.teklif_tarihi,
+                   p.id AS proje_id, p.proje_kodu, p.proje_adi, p.satis_durumu, p.musteri_adi,
+                   COALESCE(p.faz, 'TESLIMAT') AS proje_faz, t.durum AS teklif_durumu,
+                   (SELECT COUNT(*)::int FROM sat_analiz_urunler a WHERE a.kalem_id = k.id) AS dokum_satiri
+            FROM sat_teklif_kalemleri k
+            JOIN sat_teklifler t ON t.id = k.teklif_id
+            LEFT JOIN projeler p ON p.id = t.proje_id
+            WHERE k.analiz_durumu = $1
+            ORDER BY t.teklif_tarihi DESC NULLS LAST, p.proje_kodu DESC, k.sira
+            LIMIT 500`, [durum]);
+        const sayilar = await pool.query(`
+            SELECT analiz_durumu AS durum, COUNT(*)::int adet FROM sat_teklif_kalemleri GROUP BY 1`);
+        res.json({ ok: true, kalemler: r.rows, sayilar: sayilar.rows });
     } catch (e) { next(e); }
 });
 
@@ -6367,7 +6417,22 @@ app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
                    m.ad AS musteri_adi
             FROM sat_teklifler t LEFT JOIN sat_musteriler m ON m.id=t.musteri_id
             WHERE t.proje_id=$1 ORDER BY t.teklif_tarihi DESC NULLS LAST`, [id]);
-        res.json({ ok: true, proje: p.rows[0], teklifler: teklifler.rows });
+        // ANALİZ SEKMESİ: projenin tüm tekliflerindeki kalemler tek listede — eski sistemde
+        // proje detayının "Analiz" sekmesi buydu (teklif teklif dolaşmadan tüm bileşenler).
+        const kalemler = await pool.query(`
+            SELECT k.id, k.ad, k.miktar, k.birim, k.analiz_durumu, k.onerilen_fiyat, k.birim_fiyat,
+                   k.analiz_tarihi, k.analiz_eden, k.bilesen_turu,
+                   t.id AS teklif_id, t.teklif_no, t.durum AS teklif_durumu, t.para_birimi,
+                   (SELECT COUNT(*)::int FROM sat_analiz_urunler a WHERE a.kalem_id = k.id) AS dokum_satiri
+            FROM sat_teklif_kalemleri k
+            JOIN sat_teklifler t ON t.id = k.teklif_id
+            WHERE t.proje_id=$1
+            ORDER BY t.teklif_tarihi DESC NULLS LAST, k.sira, k.id`, [id]);
+        const yorumSayisi = await pool.query(
+            `SELECT COUNT(*)::int c FROM sat_yorumlar WHERE proje_id=$1`, [id])
+            .catch(() => ({ rows: [{ c: 0 }] }));
+        res.json({ ok: true, proje: p.rows[0], teklifler: teklifler.rows, kalemler: kalemler.rows,
+            yorum_sayisi: yorumSayisi.rows[0].c });
     } catch (e) { next(e); }
 });
 
