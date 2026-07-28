@@ -889,6 +889,7 @@
               <table class="table mb-0 align-middle" style="font-size:0.82rem;">
                 <thead class="table-light">
                   <tr>
+                    <th width="34" class="text-center" title="Satırı tutup sürükleyerek sırayı değiştirebilirsiniz"><i class="bi bi-arrows-move text-muted"></i></th>
                     <th>Kalem / Açıklama / Bileşen Türü</th>
                     <th width="150" title="Miktar ve birim; ikincil miktar teklif büyüklüğünü (m² vb.) verir">Miktar / Birim</th>
                     <th width="150" title="Eski sistemdeki ikincil miktar — Teklif Edilen Proje Büyüklüğü buradan hesaplanır">İkincil Miktar</th>
@@ -7074,6 +7075,12 @@ function stfKalemEkle(k) {
     tr.className = 'stf-kalem';
     tr.dataset.kalemId = k.id || '';      // mevcut kalem kimliği — analiz verisi kopmasın
     tr.innerHTML = `
+        <td class="text-center align-middle stf-tutamac" title="Sürükleyerek sırayı değiştir">
+            <i class="bi bi-grip-vertical text-muted" style="cursor:grab; font-size:1.1rem;"></i>
+            <div class="d-flex flex-column align-items-center mt-1 d-md-none">
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 mb-1" title="Yukarı taşı" onclick="stfKalemTasi(this,-1)"><i class="bi bi-chevron-up" style="font-size:0.65rem;"></i></button>
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Aşağı taşı" onclick="stfKalemTasi(this,1)"><i class="bi bi-chevron-down" style="font-size:0.65rem;"></i></button>
+            </div></td>
         <td><input type="text" class="form-control form-control-sm stf-k-ad" placeholder="Kalem adı" value="${esc(k.ad || '')}">
             <input type="text" class="form-control form-control-sm mt-1 stf-k-aciklama" placeholder="Açıklama (opsiyonel)" value="${esc(k.aciklama || '')}">
             <select class="form-select form-select-sm mt-1 stf-k-tur" title="Bileşen türü — analiz ve raporlama bunu kullanır">
@@ -7102,7 +7109,60 @@ function stfKalemEkle(k) {
     doldur(tr.querySelector('.stf-k-tur'), (ref.bilesen_turu || []).map(x => x.ad), k.bilesen_turu || '', 'Bileşen türü seçiniz...');
     doldur(tr.querySelector('.stf-k-birim'), (ref.birim || []).map(x => x.ad), k.birim || '', 'Birim...');
     doldur(tr.querySelector('.stf-k-ikincil-birim'), (ref.birim || []).map(x => x.ad), k.ikincil_birim || '', 'İkincil birim...');
+    stfSuruklemeKur();
     stfToplamGuncelle();
+}
+
+// ---- KALEM SIRALAMA (sürükle-bırak) ----
+// Kalemin sırası satır sırasından türer (kaydetmede sira = satır indeksi), bu yüzden
+// satırları yer değiştirmek yeterli; ayrı bir "sıra no" alanına gerek yok.
+// Sürükleme YALNIZ tutamaçtan başlar — yoksa alan içinde metin seçmek sürükleme sanılıyor.
+let _stfSuruklenen = null;
+function stfSuruklemeKur() {
+    const gövde = document.getElementById('stfKalemler');
+    if (!gövde || gövde.dataset.suruklemeKurulu) return;
+    gövde.dataset.suruklemeKurulu = '1';
+
+    gövde.addEventListener('mousedown', e => {
+        const tutamac = e.target.closest('.stf-tutamac');
+        const satir = e.target.closest('.stf-kalem');
+        if (tutamac && satir) satir.draggable = true;
+    });
+    gövde.addEventListener('mouseup', () => {
+        gövde.querySelectorAll('.stf-kalem').forEach(t => t.draggable = false);
+    });
+    gövde.addEventListener('dragstart', e => {
+        const satir = e.target.closest('.stf-kalem');
+        if (!satir) return;
+        _stfSuruklenen = satir;
+        satir.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', '');   // Firefox sürüklemeyi başlatmıyor
+    });
+    gövde.addEventListener('dragover', e => {
+        if (!_stfSuruklenen) return;
+        e.preventDefault();
+        const hedef = e.target.closest('.stf-kalem');
+        if (!hedef || hedef === _stfSuruklenen) return;
+        const r = hedef.getBoundingClientRect();
+        const ustYari = (e.clientY - r.top) < r.height / 2;
+        gövde.insertBefore(_stfSuruklenen, ustYari ? hedef : hedef.nextSibling);
+    });
+    gövde.addEventListener('drop', e => e.preventDefault());
+    gövde.addEventListener('dragend', () => {
+        if (_stfSuruklenen) _stfSuruklenen.style.opacity = '';
+        gövde.querySelectorAll('.stf-kalem').forEach(t => t.draggable = false);
+        _stfSuruklenen = null;
+        showToast('Kalem sırası değişti; kaydettiğinizde geçerli olur.', 'info');
+    });
+}
+
+// Dokunmatik ekranlarda sürükleme yatay kaydırmayla çakıştığı için ok düğmeleri
+function stfKalemTasi(btn, yon) {
+    const satir = btn.closest('.stf-kalem');
+    if (!satir) return;
+    if (yon < 0 && satir.previousElementSibling) satir.parentNode.insertBefore(satir, satir.previousElementSibling);
+    if (yon > 0 && satir.nextElementSibling) satir.parentNode.insertBefore(satir.nextElementSibling, satir);
 }
 
 function stfToplamGuncelle() {
