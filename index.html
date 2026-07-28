@@ -636,7 +636,7 @@
 
     <!-- Satış — proje (fırsat) detay: salt izleme; durum/dönüşüm footer'da -->
     <div class="modal fade" id="modalSatisProjeDetay" tabindex="-1">
-      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-dark text-white">
             <h6 class="modal-title fw-bold mb-0"><i class="bi bi-compass me-2"></i><span id="spdBaslik">Satış Projesi</span></h6>
@@ -645,22 +645,8 @@
           <!-- Proje = merkez: eski sistemdeki proje detay sekmelerinin karşılığı -->
           <ul class="nav nav-pills nav-sm px-3 pt-2 gap-1" id="spdSekmeler" style="--bs-nav-pills-link-active-bg: var(--mod-satis);"></ul>
           <div class="modal-body p-3 pt-2" id="spdGovde"></div>
-          <div class="modal-footer py-2 flex-wrap">
-            <div class="me-auto d-flex gap-2 align-items-center d-none" id="spdDurumKutusu">
-              <label class="form-label mb-0 small" title="Durum normalde sözleşme akışındaki adımlarla değişir; elle değiştirme yalnız ADMIN içindir.">Durum (ADMIN):</label>
-              <select id="spdDurumSec" class="form-select form-select-sm" style="width:auto;"></select>
-              <button class="btn btn-outline-primary btn-sm" onclick="satisProjeDurumKaydet()">Uygula</button>
-            </div>
-            <button class="btn btn-success btn-sm px-3 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="TAM" onclick="satisProjeDonustur()">
-              <i class="bi bi-arrow-right-circle me-1"></i>Sözleşmeye Dönüştür
-            </button>
-            <button class="btn btn-outline-primary btn-sm px-3" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisProjedenTeklifAc(window.spdAktifId)"><i class="bi bi-file-earmark-plus me-1"></i>Teklif Oluştur</button>
-            <button class="btn btn-outline-secondary btn-sm px-3" onclick="satisYorumlarAc('PROJE', window.spdAktifId, document.getElementById('spdBaslik').innerText)"><i class="bi bi-chat-left-text me-1"></i>Yorumlar</button>
-            <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
-            <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc(window.spdAktifId)">
-              <i class="bi bi-pencil-square me-1"></i>Düzenle
-            </button>
-          </div>
+          <!-- Butonlar SEKMEYE ÖZEL: satisProjeAksiyonlariCiz() doldurur -->
+          <div class="modal-footer py-2 flex-wrap" id="spdAltButonlar"></div>
         </div>
       </div>
     </div>
@@ -5903,10 +5889,6 @@ async function satisProjeDetayAc(id, sekme) {
     window.spdAktifId = p.id;
     window.spdAktifDetay = r;
     document.getElementById('spdBaslik').innerText = `[${p.proje_kodu}] ${p.proje_adi || ''}`;
-    // Durum seçici
-    const sec = document.getElementById('spdDurumSec');
-    sec.innerHTML = Object.keys(SATIS_DURUM_ETIKET).map(d =>
-        `<option value="${d}" ${d === p.satis_durumu ? 'selected' : ''}>${SATIS_DURUM_ETIKET[d][0]}</option>`).join('');
     // Sekme şeridi (eski sistemin proje detay sekmeleri): Genel | Teklifler | Analiz | Sözleşme | Yorumlar
     const bekleyenAnaliz = (r.kalemler || []).filter(k => k.analiz_durumu === 'ANALIZ_SURECINDE').length;
     const sekmeler = [
@@ -5923,10 +5905,47 @@ async function satisProjeDetayAc(id, sekme) {
             ${s.rozet ? `<span class="badge bg-light text-dark border ms-1">${s.rozet}</span>` : ''}
             ${s.uyari ? `<span class="badge bg-warning text-dark ms-1" title="Analizi bekleyen kalem">${s.uyari}</span>` : ''}
         </a></li>`).join('');
-    satisProjeSekmeSec(window.spdSekme || 'genel');
-    // Elle durum değiştirme yalnız ADMIN'e açık (eski sistemde serbest seçim yok)
-    document.getElementById('spdDurumKutusu').classList.toggle('d-none', !adminRolMu());
+    satisProjeSekmeSec(window.spdSekme || 'genel');   // sekme + o sekmenin butonlarını çizer
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisProjeDetay')).show();
+    izinleriUygula && izinleriUygula();
+}
+
+// SEKMEYE ÖZEL AKSİYONLAR — eski sistemde de eylemler bulunduğun sekmeye aitti;
+// hepsini alt şeritte birden göstermek hangi düğmenin neye ait olduğunu gizliyordu.
+function satisProjeAksiyonlariCiz(sekme) {
+    const kutu = document.getElementById('spdAltButonlar');
+    if (!kutu) return;
+    const p = window.spdAktifDetay?.proje || {};
+    const kapat = '<button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>';
+    let sol = '', sag = '';
+
+    if (sekme === 'genel') {
+        // Durum yalnız ADMIN'de elle değiştirilebilir (eski sistemde serbest seçim yok)
+        if (adminRolMu()) {
+            sol = `<div class="d-flex gap-2 align-items-center me-auto">
+                <label class="form-label mb-0 small" title="Durum normalde sözleşme akışındaki adımlarla değişir; elle değiştirme yalnız ADMIN içindir.">Durum (ADMIN):</label>
+                <select id="spdDurumSec" class="form-select form-select-sm" style="width:auto;">
+                    ${Object.keys(SATIS_DURUM_ETIKET).map(d =>
+                        `<option value="${d}" ${d === p.satis_durumu ? 'selected' : ''}>${SATIS_DURUM_ETIKET[d][0]}</option>`).join('')}
+                </select>
+                <button class="btn btn-outline-primary btn-sm" onclick="satisProjeDurumKaydet()">Uygula</button>
+            </div>`;
+        }
+        sag = `<button class="btn btn-success btn-sm px-3 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="TAM" onclick="satisProjeDonustur()">
+                 <i class="bi bi-arrow-right-circle me-1"></i>Sözleşmeye Dönüştür</button>
+               <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc(window.spdAktifId)">
+                 <i class="bi bi-pencil-square me-1"></i>Düzenle</button>`;
+    } else if (sekme === 'teklifler') {
+        sag = `<button class="btn btn-primary btn-sm px-3 fw-bold" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisProjedenTeklifAc(window.spdAktifId)">
+                 <i class="bi bi-file-earmark-plus me-1"></i>Teklif Oluştur</button>`;
+    } else if (sekme === 'analiz') {
+        sol = `<span class="small text-muted me-auto"><i class="bi bi-info-circle me-1"></i>Analiz işlemleri satırlardaki düğmelerden yapılır.</span>`;
+    } else if (sekme === 'yorumlar') {
+        sag = `<button class="btn btn-primary btn-sm px-3 fw-bold" onclick="satisYorumlarAc('PROJE', window.spdAktifId, document.getElementById('spdBaslik').innerText)">
+                 <i class="bi bi-chat-left-text me-1"></i>Yorum Ekle</button>`;
+    }
+    // Sözleşme sekmesinin düğmeleri panelin kendi içinde (zincir adımları + oluştur/düzenle/sil)
+    kutu.innerHTML = sol + kapat + sag;
     izinleriUygula && izinleriUygula();
 }
 
@@ -5938,6 +5957,7 @@ function satisProjeSekmeSec(sekme) {
     const p = r.proje;
     document.querySelectorAll('#spdSekmeler .nav-link').forEach(a =>
         a.classList.toggle('active', a.id === 'spdSekme_' + sekme));
+    satisProjeAksiyonlariCiz(sekme);
     const govde = document.getElementById('spdGovde');
     const d = (v) => (v == null || v === '') ? '-' : esc(v);
 
@@ -6168,7 +6188,9 @@ async function satisSozlesmeAksiyon(projeId, aksiyon, ad) {
 }
 
 async function satisProjeDurumKaydet() {
-    const durum = document.getElementById('spdDurumSec').value;
+    const sec = document.getElementById('spdDurumSec');
+    if (!sec) { showToast('Durum seçici yalnız Genel sekmesinde kullanılabilir.', 'error'); return; }
+    const durum = sec.value;
     showLoading();
     const r = await secureFetch('/satis-proje-durum', { method: 'POST',
         body: JSON.stringify({ id: window.spdAktifId, durum }) }).catch(() => null);
