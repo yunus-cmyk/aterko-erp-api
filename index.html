@@ -4952,22 +4952,36 @@ async function satisMusteriDetayAc(id) {
     window.smdAktifId = m.id;
     window.smdAktifDetay = r;
     document.getElementById('smdBaslik').innerText = m.ad;
-    const bilgi = (etiket, deger) => deger ? `<div class="col-md-6 mb-1"><span class="text-muted small">${etiket}:</span> <span class="small fw-semibold">${esc(deger)}</span></div>` : '';
+    const d = (v) => (v == null || v === '') ? '-' : esc(v);
     document.getElementById('smdGovde').innerHTML = `
-        <div class="row">
-            ${bilgi('Firma Ünvanı', m.uzun_ad && m.uzun_ad !== m.ad ? m.uzun_ad : '')}
-            ${bilgi('Müşteri Türü', m.tip)}${bilgi('Durum', m.durum === 'PASIF' ? 'Pasif' : 'Aktif')}
-            ${bilgi('Müşteri Alt Türü', m.alt_tur)}
-            ${bilgi('Satış Durumu', (m.satis_durumu || '') + (m.durum_gun != null ? ` (${m.durum_gun} gündür)` : ''))}
-            ${bilgi('Satış Noktası', m.satis_noktasi)}
-            ${bilgi('E-posta', m.email)}${bilgi('Telefon', m.telefon)}
-            ${bilgi('Ülke', m.ulke)}${bilgi('Şehir', m.sehir)}
-            ${bilgi('İşletme Türü', m.sektor)}${bilgi('Bizi Nereden Duydu', m.nasil_duydu)}
-            ${bilgi('Adres', m.adres)}${bilgi('Fatura Adresi', m.fatura_adresi)}
-            ${bilgi('Vergi Dairesi', m.vergi_dairesi)}${bilgi('Vergi No', m.vergi_no)}
-            ${bilgi('IBAN', m.iban)}${bilgi('Temsilci', m.temsilci_email)}
-            ${bilgi('Kayıt', m.kayit_tarihi ? formatTarihTR(m.kayit_tarihi) : '')}
-            ${bilgi('Mali Not', m.mali_not)}
+        <div class="row g-3 mb-2">
+            ${detayKutusu('Müşteri Bilgileri', 'person', 'col-lg-6', [
+                detayAlani('Firma Ünvanı', d(m.uzun_ad && m.uzun_ad !== m.ad ? m.uzun_ad : ''), true),
+                detayAlani('Müşteri Türü', d(m.tip)),
+                detayAlani('Alt Tür', d(m.alt_tur)),
+                detayAlani('İşletme Türü', d(m.sektor)),
+                detayAlani('Durum', m.durum === 'PASIF'
+                    ? '<span class="badge bg-secondary">Pasif</span>' : '<span class="badge bg-success">Aktif</span>'),
+                detayAlani('Satış Durumu', d(m.satis_durumu) +
+                    (m.durum_gun != null ? ` <span class="text-muted fw-normal">(${m.durum_gun} gündür)</span>` : ''), true),
+                detayAlani('Satış Noktası', d(m.satis_noktasi)),
+                detayAlani('Temsilci', d(m.temsilci_email)),
+                detayAlani('Bizi Nereden Duydu', d(m.nasil_duydu)),
+                detayAlani('Kayıt', m.kayit_tarihi ? formatTarihTR(m.kayit_tarihi) : '-')
+            ])}
+            ${detayKutusu('İletişim ve Adres', 'geo-alt', 'col-lg-6', [
+                detayAlani('E-posta', d(m.email), true),
+                detayAlani('Telefon', d(m.telefon)),
+                detayAlani('Şehir / Ülke', d([m.sehir, m.ulke].filter(Boolean).join(' / '))),
+                detayAlani('Adres', d(m.adres), true),
+                detayAlani('Fatura Adresi', d(m.fatura_adresi), true)
+            ])}
+            ${detayKutusu('Mali Bilgiler', 'cash-coin', 'col-12', [
+                detayAlani('Vergi Dairesi', d(m.vergi_dairesi)),
+                detayAlani('Vergi No', d(m.vergi_no)),
+                detayAlani('IBAN', d(m.iban), true),
+                ...(m.mali_not ? [detayAlani('Mali Not', esc(m.mali_not), true)] : [])
+            ])}
         </div>
         ${r.kisiler.length ? `
         <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-people me-1"></i>İlgili Kişiler (${r.kisiler.length})</div>
@@ -5925,21 +5939,29 @@ function satisProjeSekmeSec(sekme) {
     document.querySelectorAll('#spdSekmeler .nav-link').forEach(a =>
         a.classList.toggle('active', a.id === 'spdSekme_' + sekme));
     const govde = document.getElementById('spdGovde');
-    const bilgi = (etiket, deger) => deger ? `<div class="col-md-6 mb-1"><span class="text-muted small">${etiket}:</span> <span class="small fw-semibold">${esc(deger)}</span></div>` : '';
+    const d = (v) => (v == null || v === '') ? '-' : esc(v);
 
     if (sekme === 'genel') {
         govde.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="fw-bold ${p.sat_musteri_id ? 'text-decoration-underline' : ''}" ${p.sat_musteri_id ? `style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${p.sat_musteri_id})"` : ''}>${esc(p.musteri_adi || '-')}</span>
-            ${satisProjeDurumBadge(p.satis_durumu)}
-        </div>
-        <div class="row">
-            ${bilgi('Proje Türü', p.proje_turu)}${bilgi('Satış Türü', p.satis_turu)}
-            ${bilgi('Şehir', p.sehir)}${bilgi('Ülke', p.ulke)}
-            ${bilgi('Adres', p.adres)}${bilgi('Temsilci', p.satis_temsilcisi)}
-            ${bilgi('İrtibat', [p.irtibat_adi, p.irtibat_email, p.irtibat_telefon].filter(Boolean).join(' · '))}
-            ${bilgi('Oluşturma', p.olusturma_tarihi ? formatTarihTR(p.olusturma_tarihi) : '')}
-            ${bilgi('Açıklama', p.aciklama)}
+        <div class="row g-3">
+            ${detayKutusu('Fırsat Bilgileri', 'compass', 'col-lg-6', [
+                detayAlani('Müşteri', p.sat_musteri_id
+                    ? `<span class="text-primary" style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${p.sat_musteri_id})">${esc(p.musteri_adi || '-')}</span>`
+                    : d(p.musteri_adi), true),
+                detayAlani('Satış Durumu', satisProjeDurumBadge(p.satis_durumu), true),
+                detayAlani('Proje Türü', d(p.proje_turu)),
+                detayAlani('Satış Türü', d(p.satis_turu)),
+                detayAlani('Temsilci', d(p.satis_temsilcisi)),
+                detayAlani('Oluşturma', p.olusturma_tarihi ? formatTarihTR(p.olusturma_tarihi) : '-')
+            ])}
+            ${detayKutusu('Yer ve İrtibat', 'geo-alt', 'col-lg-6', [
+                detayAlani('Şehir / Ülke', d([p.sehir, p.ulke].filter(Boolean).join(' / '))),
+                detayAlani('Adres', d(p.adres), true),
+                detayAlani('İrtibat', d([p.irtibat_adi, p.irtibat_email, p.irtibat_telefon].filter(Boolean).join(' · ')), true)
+            ])}
+            ${p.aciklama ? detayKutusu('Açıklama', 'chat-left-text', 'col-12', [
+                `<div class="col-12"><span class="text-dark small" style="white-space:pre-wrap;">${esc(p.aciklama)}</span></div>`
+            ]) : ''}
         </div>`;
         return;
     }
@@ -6053,7 +6075,7 @@ async function satisSozlesmePaneliCiz(proje) {
     // Sözleşme ancak ONAYLANAN bir teklif varsa oluşturulabilir (eski kural)
     const onayliTeklifVar = (window.spdAktifDetay?.teklifler || []).some(t => t.durum === 'ONAYLANAN');
     if (!s) {
-        alan.innerHTML = `<hr class="my-2"><div class="d-flex justify-content-between align-items-center">
+        alan.innerHTML = `<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 py-2">
             <span class="small text-muted"><i class="bi bi-file-earmark-x me-1"></i>Bu projede sözleşme yok.</span>
             ${onayliTeklifVar && izinVarMi('satis.teklif', 'TAM') ? `<button class="btn btn-outline-success btn-sm py-0" onclick="satisSozlesmeOlustur(${proje.id})">
                 <i class="bi bi-file-earmark-check me-1"></i>Onaylanan Tekliften Sözleşme Oluştur</button>`
@@ -6077,16 +6099,16 @@ async function satisSozlesmePaneliCiz(proje) {
     const adminMiKullanici = adminRolMu();
     const sonrakiGoster = sonraki && (!ticariOnayAdimi.includes(sonraki.aksiyon) || adminMiKullanici);
     alan.innerHTML = `
-        <hr class="my-2">
-        <div class="fw-bold small mb-1"><i class="bi bi-file-earmark-check me-1"></i>Sözleşme</div>
-        <div class="row small mb-2">
-            <div class="col-md-4"><span class="text-muted">Kod:</span> <b>${esc(s.kod || '-')}</b></div>
-            <div class="col-md-4"><span class="text-muted">Tarih:</span> <b>${s.tarih ? formatTarihTR(s.tarih) : '-'}</b></div>
-            <div class="col-md-4"><span class="text-muted">Teklif:</span> <b>${esc(s.teklif_no || '-')}</b></div>
-            <div class="col-md-4"><span class="text-muted">Tutar:</span> <b>${formatTR(parseFloat(s.tutar) || 0)} ${esc(s.para_birimi || 'TL')}</b></div>
-            <div class="col-md-4"><span class="text-muted">KDV:</span> <b>%${parseFloat(s.kdv_orani) || 0}</b></div>
-            <div class="col-md-4"><span class="text-muted">Toplam (TL):</span> <b class="text-primary">${formatTR(parseFloat(s.toplam_tl) || 0)}</b></div>
-            ${parseFloat(s.kur) !== 1 ? `<div class="col-md-4"><span class="text-muted">Sabitlenen kur:</span> <b>${formatTR(parseFloat(s.kur))}</b></div>` : ''}
+        <div class="row g-3 mb-3">
+            ${detayKutusu('Sözleşme', 'file-earmark-check', 'col-12', [
+                detayAlani('Sözleşme Kodu', esc(s.kod || '-')),
+                detayAlani('Tarih', s.tarih ? formatTarihTR(s.tarih) : '-'),
+                detayAlani('Dayandığı Teklif', esc(s.teklif_no || '-')),
+                detayAlani('Tutar', `${formatTR(parseFloat(s.tutar) || 0)} ${esc(s.para_birimi || 'TL')}`),
+                detayAlani('KDV', '%' + (parseFloat(s.kdv_orani) || 0)),
+                detayAlani('Toplam (TL)', `<span class="text-primary">${formatTR(parseFloat(s.toplam_tl) || 0)}</span>`),
+                ...(parseFloat(s.kur) !== 1 ? [detayAlani('Sabitlenen Kur', formatTR(parseFloat(s.kur)))] : [])
+            ])}
         </div>
         ${yazabilir ? `<div class="d-flex gap-2 flex-wrap">
             ${sonrakiGoster ? `<button class="btn btn-${sonraki.renk} btn-sm" onclick="satisSozlesmeAksiyon(${proje.id}, '${sonraki.aksiyon}', '${escJsAttr(sonraki.ad)}')">
@@ -6318,17 +6340,22 @@ async function satisTeklifDetayAc(id, ustte) {
         <div class="col-md-6"><div class="fw-bold small border-bottom pb-1 mb-1">${baslik}</div>
         <div class="small text-muted" style="white-space:pre-wrap;">${esc(icerik)}</div></div>` : '';
     document.getElementById('stdGovde').innerHTML = `
-        <div class="row mb-2 small">
-            <div class="col-md-3"><span class="text-muted">Tarih:</span> <b>${t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'}</b></div>
-            <div class="col-md-4"><span class="text-muted">Müşteri:</span> ${t.musteri_id
-                ? `<b class="text-primary" style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${t.musteri_id})">${esc(t.musteri_adi || '-')}</b>`
-                : `<b>${esc(t.musteri_adi || '-')}</b>`}</div>
-            <div class="col-md-3"><span class="text-muted">Proje:</span> ${t.proje_id
-                ? `<b class="text-primary" style="cursor:pointer;" title="Projeye git" onclick="satisProjesineGit(${t.proje_id})">${esc(t.proje_kodu || '')} — ${esc(t.proje_adi_goster || '')}</b>`
-                : '<b>-</b>'}</div>
-            <div class="col-md-2 text-end">${satisTeklifDurumBadge(t.durum)}</div>
-            ${t.sartname_turu ? `<div class="col-md-3 mt-1"><span class="text-muted">Şartname Türü:</span> <b>${esc(t.sartname_turu)}</b></div>` : ''}
-            ${t.toplam_buyukluk ? `<div class="col-md-4 mt-1"><span class="text-muted">Teklif Edilen Proje Büyüklüğü:</span> <b>${esc(t.toplam_buyukluk)}</b></div>` : ''}
+        <div class="row g-3 mb-3">
+            ${detayKutusu('Teklif Bilgileri', 'file-earmark-text', 'col-lg-6', [
+                detayAlani('Tarih', t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'),
+                detayAlani('Durum', satisTeklifDurumBadge(t.durum)),
+                detayAlani('Müşteri', t.musteri_id
+                    ? `<span class="text-primary" style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${t.musteri_id})">${esc(t.musteri_adi || '-')}</span>`
+                    : esc(t.musteri_adi || '-'), true),
+                detayAlani('Proje', t.proje_id
+                    ? `<span class="text-primary" style="cursor:pointer;" title="Projeye git" onclick="satisProjesineGit(${t.proje_id})">${esc(t.proje_kodu || '')} — ${esc(t.proje_adi_goster || '')}</span>`
+                    : '-', true)
+            ])}
+            ${detayKutusu('Kapsam', 'rulers', 'col-lg-6', [
+                detayAlani('Şartname Türü', t.sartname_turu ? esc(t.sartname_turu) : '-', true),
+                detayAlani('Teklif Edilen Proje Büyüklüğü', t.toplam_buyukluk ? esc(t.toplam_buyukluk) : '-', true),
+                detayAlani('Para Birimi / KDV', `${esc(pb)} / %${esc(t.kdv_orani ?? '-')}`, true)
+            ])}
         </div>
         <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:0.82rem;">
             <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th><th class="text-center">Analiz</th><th style="width:120px;"></th></tr></thead>
