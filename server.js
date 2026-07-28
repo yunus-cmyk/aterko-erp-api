@@ -93,19 +93,44 @@ if (!JWT_SECRET) {
     if (!process.env[k]) console.error(`❌ Eksik ortam değişkeni: ${k}`);
 });
 
-const yetkiKontrol = (req, res, next) => {
+// Eski (roller alanı olmayan) token'lar için kullanıcının rollerini kısa süreli önbellekle
+const ROL_TAZELE_CACHE = new Map();   // kullanici_id → { roller, ts }
+async function tokenRolleriniTamamla(user) {
+    if (Array.isArray(user.roller) && user.roller.length) return user.roller;
+    const onbellek = ROL_TAZELE_CACHE.get(user.id);
+    if (onbellek && Date.now() - onbellek.ts < 60000) return onbellek.roller;
+    const roller = await kullanicininRolleri(user.id, user.rol).catch(() => (user.rol ? [user.rol] : []));
+    ROL_TAZELE_CACHE.set(user.id, { roller, ts: Date.now() });
+    return roller;
+}
+function rolTazeleCacheTemizle(kullaniciId) {
+    if (kullaniciId) ROL_TAZELE_CACHE.delete(kullaniciId); else ROL_TAZELE_CACHE.clear();
+}
+
+const yetkiKontrol = async (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(403).json({ ok: false, hata: "Yetkisiz erişim. Lütfen giriş yapın." });
     }
     const token = authHeader.split(' ')[1];
+    let cozuldu;
     try {
-        req.user = jwt.verify(token, JWT_SECRET);
+        cozuldu = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        return res.status(401).json({ ok: false, hata: "Oturum süreniz dolmuş." });
+    }
+    try {
+        req.user = cozuldu;
+        // ÇOKLU ROL: token'da roller dizisi varsa o geçerli; yoksa (eski token)
+        // kullanıcının güncel rolleri DB'den tamamlanır.
+        req.user.roller = await tokenRolleriniTamamla(req.user);
         // Token'dan gelen kullaniciYansit header'ı varsa (admin simülasyon için)
         const yansit = req.headers['x-yansit-rol'];
-        if (yansit && (req.user.rol === 'ADMIN' || req.user.rol === 'Admin')) {
+        if (yansit && req.user.roller.some(r => r === 'ADMIN' || r === 'Admin')) {
             req.user.gercek_rol = req.user.rol;
+            req.user.gercek_roller = req.user.roller;
             req.user.rol = yansit;
+            req.user.roller = [yansit];          // simülasyonda YALNIZ o rol geçerli
             req.user.simulasyon = true;
         }
         // İzin middleware'ini çağır (genelIzinMiddleware tanımlı olmalı)
@@ -113,9 +138,7 @@ const yetkiKontrol = (req, res, next) => {
             return genelIzinMiddleware(req, res, next);
         }
         next();
-    } catch (err) {
-        return res.status(401).json({ ok: false, hata: "Oturum süreniz dolmuş." });
-    }
+    } catch (err) { next(err); }
 };
 
 app.post('/api/auth/google', async (req, res, next) => {
@@ -136,9 +159,12 @@ app.post('/api/auth/google', async (req, res, next) => {
         if (user.durum !== 'AKTIF') return res.status(401).json({ ok: false, hata: "Hesabınız pasif durumdadır." });
 
         await pool.query("UPDATE kullanicilar SET son_giris = NOW() WHERE id = $1", [user.id]);
-        const token = jwt.sign({ id: user.id, email: user.email, rol: user.rol, adSoyad: user.ad_soyad }, JWT_SECRET, { expiresIn: '12h' });
+        // ÇOKLU ROL: birincil rol + ek roller token'a yazılır (izinler birleşimden çözülür)
+        const roller = await kullanicininRolleri(user.id, user.rol);
+        const token = jwt.sign({ id: user.id, email: user.email, rol: user.rol, roller, adSoyad: user.ad_soyad },
+            JWT_SECRET, { expiresIn: '12h' });
 
-        res.json({ ok: true, token: token, kullanici: { adSoyad: user.ad_soyad, yetki: user.rol, email: user.email } });
+        res.json({ ok: true, token: token, kullanici: { adSoyad: user.ad_soyad, yetki: user.rol, roller, email: user.email } });
     } catch (error) {
         console.error("🔥 GİZLİ LOGIN HATASI:", error);
         res.status(401).json({ ok: false, hata: "Google ile giriş başarısız." });
@@ -446,8 +472,8 @@ app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
 // Projeler modülünde FİYAT görme yetkisi: YAZMA veya TAM gerekir.
 // OKUMA seviyesindeki kullanıcıya tutarlar SUNUCUDA maskelenir (ekrana hiç inmez).
 async function projeFiyatGorebilir(req) {
-    if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return true;
-    const izinler = await getKullaniciIzinleri(req.user.rol);
+    if (adminMi(req)) return true;
+    const izinler = await getKullaniciIzinleri(etkinRoller(req));
     return ['YAZMA', 'TAM'].includes(izinler['projeler']);
 }
 
@@ -528,7 +554,7 @@ app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
 // ============================================================================
 app.post('/api/proje-onayla', yetkiKontrol, async (req, res, next) => {
     try {
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
+        if (!adminMi(req))
             return res.status(403).json({ ok: false, hata: 'Proje onayı yalnızca ADMIN yetkisindedir.' });
         const { proje_id } = req.body;
         const u = await pool.query(
@@ -541,7 +567,7 @@ app.post('/api/proje-onayla', yetkiKontrol, async (req, res, next) => {
 
 app.post('/api/proje-onay-geri-al', yetkiKontrol, async (req, res, next) => {
     try {
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
+        if (!adminMi(req))
             return res.status(403).json({ ok: false, hata: 'Onay geri alma yalnızca ADMIN yetkisindedir.' });
         const { proje_id } = req.body;
         // Projede aktif iş emri varsa geri alınamaz — önce iş emri silinmeli/iptal edilmeli
@@ -774,7 +800,7 @@ app.post('/api/urun-listesi-onaya-gonder', yetkiKontrol, async (req, res, next) 
 // ADMIN onayla (yayınla)
 app.post('/api/urun-listesi-onayla', yetkiKontrol, async (req, res, next) => {
     try {
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        if (!adminMi(req)) {
             return res.json({ ok: false, hata: 'Sadece ADMIN onaylayabilir.' });
         }
         const { teslimat_id } = req.body;
@@ -804,7 +830,7 @@ app.post('/api/urun-listesi-onayla', yetkiKontrol, async (req, res, next) => {
 // ADMIN reddet (TASLAK'a geri al + not)
 app.post('/api/urun-listesi-reddet', yetkiKontrol, async (req, res, next) => {
     try {
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        if (!adminMi(req)) {
             return res.json({ ok: false, hata: 'Sadece ADMIN reddedebilir.' });
         }
         const { teslimat_id, red_notu } = req.body;
@@ -834,7 +860,7 @@ app.post('/api/urun-listesi-reddet', yetkiKontrol, async (req, res, next) => {
 // Ek ürünü ADMIN onayla (yayınlı listede sonradan eklenen)
 app.post('/api/urun-listesi-ek-urun-onayla', yetkiKontrol, async (req, res, next) => {
     try {
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        if (!adminMi(req)) {
             return res.json({ ok: false, hata: 'Sadece ADMIN onaylayabilir.' });
         }
         const { teslimat_urun_id } = req.body;
@@ -850,7 +876,7 @@ app.post('/api/urun-listesi-ek-urun-onayla', yetkiKontrol, async (req, res, next
 // Ek ürünü reddet (sil)
 app.post('/api/urun-listesi-ek-urun-reddet', yetkiKontrol, async (req, res, next) => {
     try {
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        if (!adminMi(req)) {
             return res.json({ ok: false, hata: 'Sadece ADMIN reddedebilir.' });
         }
         const { teslimat_urun_id } = req.body;
@@ -1490,7 +1516,8 @@ app.delete('/api/siparis-not-sil/:id', yetkiKontrol, async (req, res, next) => {
         const not = await pool.query('SELECT yazan_email FROM siparis_notlari WHERE id=$1', [req.params.id]);
         if (not.rowCount === 0) return res.json({ ok: false, hata: 'Not bulunamadı.' });
         const isOwner = (not.rows[0].yazan_email || '').toLowerCase() === (req.user.email || '').toLowerCase();
-        const isAdmin = (req.user.gercek_rol || req.user.rol) === 'ADMIN';
+        const isAdmin = (req.user.gercek_roller || req.user.roller || [req.user.rol])
+            .some(r => r === 'ADMIN' || r === 'Admin');
         if (!isOwner && !isAdmin) return res.json({ ok: false, hata: 'Bu notu silme yetkiniz yok.' });
         await pool.query('DELETE FROM siparis_notlari WHERE id=$1', [req.params.id]);
         res.json({ ok: true, mesaj: 'Not silindi.' });
@@ -2587,8 +2614,8 @@ app.get('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
 app.post('/api/mali-ayar', yetkiKontrol, async (req, res, next) => {
     try {
         // ADMIN ya da mali.tedarikci TAM yetkisi (örn. MUHASEBE) ayar yazabilir
-        const tamMi = (req.user.rol === 'ADMIN' || req.user.rol === 'Admin')
-            || (await getKullaniciIzinleri(req.user.rol))['mali.tedarikci'] === 'TAM';
+        const tamMi = (adminMi(req))
+            || (await getKullaniciIzinleri(etkinRoller(req)))['mali.tedarikci'] === 'TAM';
         if (!tamMi)
             return res.status(403).json({ ok: false, hata: 'Mali ayarları yalnızca ADMIN ya da TAM yetkili roller değiştirebilir.' });
         let hesaplar = Array.isArray(req.body.hesaplar) ? req.body.hesaplar
@@ -2791,8 +2818,8 @@ async function maliKasaBakiye() {
 // Müşteri hareketlerinde uç içi yetki (kural katmanı hareket uçlarını tedarikçi modülüne bağlar)
 const MALI_IZIN_SIRA = { YOK: 0, OKUMA: 1, YAZMA: 2, TAM: 3 };
 async function maliMusteriYetkiVar(req, gerekli) {
-    if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return true;
-    const iz = await getKullaniciIzinleri(req.user.rol);
+    if (adminMi(req)) return true;
+    const iz = await getKullaniciIzinleri(etkinRoller(req));
     return (MALI_IZIN_SIRA[iz['mali.musteri'] || 'YOK'] || 0) >= MALI_IZIN_SIRA[gerekli];
 }
 
@@ -3359,7 +3386,11 @@ async function bildirimGonder(olayKodu, context = {}) {
         // 1) Roller → o roldeki (pasif olmayan) kullanıcılar
         if (k.roller && k.roller.length) {
             const uR = await pool.query(
-                "SELECT email FROM kullanicilar WHERE rol = ANY($1) AND durum='AKTIF' AND email IS NOT NULL", [k.roller]);
+                `SELECT DISTINCT k.email FROM kullanicilar k
+                 WHERE k.durum='AKTIF' AND k.email IS NOT NULL
+                   AND (k.rol = ANY($1) OR EXISTS (
+                        SELECT 1 FROM kullanici_rolleri kr JOIN roller ro ON ro.id = kr.rol_id
+                        WHERE kr.kullanici_id = k.id AND ro.ad = ANY($1)))`, [k.roller]);
             uR.rows.forEach(u => aliciSet.add(u.email));
         }
         // 2) Ekstra belirli e-postalar
@@ -3376,7 +3407,11 @@ async function bildirimGonder(olayKodu, context = {}) {
         const ccSet = new Set();
         if (k.cc_roller && k.cc_roller.length) {
             const cR = await pool.query(
-                "SELECT email FROM kullanicilar WHERE rol = ANY($1) AND durum='AKTIF' AND email IS NOT NULL", [k.cc_roller]);
+                `SELECT DISTINCT k.email FROM kullanicilar k
+                 WHERE k.durum='AKTIF' AND k.email IS NOT NULL
+                   AND (k.rol = ANY($1) OR EXISTS (
+                        SELECT 1 FROM kullanici_rolleri kr JOIN roller ro ON ro.id = kr.rol_id
+                        WHERE kr.kullanici_id = k.id AND ro.ad = ANY($1)))`, [k.cc_roller]);
             cR.rows.forEach(u => ccSet.add(u.email));
         }
         (k.cc_emailler || []).forEach(e => e && ccSet.add(e));
@@ -3463,7 +3498,10 @@ app.post('/api/teklif-iste', yetkiKontrol, async (req, res, next) => {
 
         // Tedarikçi + admin + isteyen bilgileri
         const tedR = await pool.query("SELECT id, firma_adi, email FROM tedarikciler WHERE id = ANY($1::integer[])", [tedarikci_idler]);
-        const admR = await pool.query("SELECT email FROM kullanicilar WHERE rol IN ('ADMIN','Admin') AND durum='AKTIF'");
+        const admR = await pool.query(`SELECT DISTINCT k.email FROM kullanicilar k
+            WHERE k.durum='AKTIF' AND (k.rol IN ('ADMIN','Admin') OR EXISTS (
+                  SELECT 1 FROM kullanici_rolleri kr JOIN roller ro ON ro.id = kr.rol_id
+                  WHERE kr.kullanici_id = k.id AND ro.ad IN ('ADMIN','Admin')))`);
         const adminMails = admR.rows.map(a => a.email).filter(Boolean);
         const isteyenEmail = req.user.email;
         const isteyenAd = req.user.adSoyad || req.user.email;
@@ -4929,7 +4967,7 @@ app.post('/api/is-emri-guncelle', yetkiKontrol, async (req, res, next) => {
 app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
     try {
         // Yayınlama = onay → yalnız ADMIN
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
+        if (!adminMi(req))
             return res.status(403).json({ ok: false, hata: 'İş emri yayınlama (onay) yetkisi yalnızca ADMIN\'dedir.' });
         const { id } = req.body;
         // Atomik geçiş — yalnız HAZIRLANDI'dan; mükerrer tıklama ikinci mail üretmez
@@ -4974,7 +5012,7 @@ app.post('/api/is-emri-sil', yetkiKontrol, async (req, res, next) => {
 // Yayınlanmış iş emrini İPTAL et — yalnız ADMIN; iz kalır, alıcılara bilgi gider, şartname açılır
 app.post('/api/is-emri-iptal', yetkiKontrol, async (req, res, next) => {
     try {
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin')
+        if (!adminMi(req))
             return res.status(403).json({ ok: false, hata: 'Yayınlanmış iş emrini yalnızca ADMIN iptal edebilir.' });
         const { id, neden } = req.body;
         if (!neden || !String(neden).trim()) return res.json({ ok: false, hata: 'İptal nedeni zorunludur.' });
@@ -5174,7 +5212,7 @@ async function auditLogla(req, opts) {
 
 // Audit log listesi (sadece ADMIN)
 app.get('/api/audit-log', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.status(403).json({ ok: false, hata: 'Sadece ADMIN erişebilir.' });
     }
     try {
@@ -5833,8 +5871,8 @@ app.post('/api/satis-musteri-kaydet', yetkiKontrol, async (req, res, next) => {
         const durumNorm = (durum === 'PASIF') ? 'PASIF' : 'AKTIF';
         // Mali not yalnız ADMIN veya mali yetkisi olanlarca değiştirilebilir
         // (eski CustomerServiceImpl.checkFinancialAuthorityForFinancialNote birebir)
-        const maliYetki = req.user.rol === 'ADMIN' || req.user.rol === 'Admin' ||
-            ['TAM', 'YAZMA'].includes((await getKullaniciIzinleri(req.user.rol))['mali.musteri'] || 'YOK');
+        const maliYetki = adminMi(req) ||
+            ['TAM', 'YAZMA'].includes((await getKullaniciIzinleri(etkinRoller(req)))['mali.musteri'] || 'YOK');
         if (id) {
             const eskiR = await pool.query('SELECT * FROM sat_musteriler WHERE id=$1', [id]);
             if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
@@ -6391,7 +6429,7 @@ app.post('/api/satis-proje-durum', yetkiKontrol, async (req, res, next) => {
     try {
         // Eski sistemde proje durumu YALNIZ tanımlı geçişlerle değişir; serbest seçim yok.
         // Workspace'te istisna olarak ADMIN'e bırakıldı (Yunus kararı).
-        if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+        if (!adminMi(req)) {
             return res.json({ ok: false, hata: 'Proje durumu yalnız sözleşme akışındaki adımlarla değişir. Elle değiştirme yetkisi ADMIN kullanıcılarındadır.' });
         }
         const { id, durum } = req.body;
@@ -7018,7 +7056,7 @@ app.post('/api/satis-analiz-form-olustur', yetkiKontrol, izinGerekli('satis.tekl
 });
 
 // Tekrarlanabilir bölümün yeni örneği (Duvar 2, Pencere 3...)
-app.post('/api/satis-analiz-bolum-ekle', yetkiKontrol, izinGerekli('satis.teklif', 'YAZMA'), async (req, res, next) => {
+app.post('/api/satis-analiz-bolum-ekle', yetkiKontrol, izinGerekliHerhangi([['satis.teklif','YAZMA'], ['satis.urun','YAZMA']]), async (req, res, next) => {
     const client = await pool.connect();
     try {
         const { kalem_id, urun_kategori_eski_id } = req.body;
@@ -7045,7 +7083,7 @@ app.post('/api/satis-analiz-bolum-ekle', yetkiKontrol, izinGerekli('satis.teklif
     finally { client.release(); }
 });
 
-app.delete('/api/satis-analiz-bolum-sil/:id', yetkiKontrol, izinGerekli('satis.teklif', 'YAZMA'), async (req, res, next) => {
+app.delete('/api/satis-analiz-bolum-sil/:id', yetkiKontrol, izinGerekliHerhangi([['satis.teklif','YAZMA'], ['satis.urun','YAZMA']]), async (req, res, next) => {
     try {
         const b = (await pool.query('SELECT * FROM sat_analiz_bolumler WHERE id=$1', [parseInt(req.params.id)])).rows[0];
         if (!b) return res.json({ ok: false, hata: 'Bölüm bulunamadı.' });
@@ -7087,7 +7125,7 @@ app.get('/api/satis-analiz-kopya-kaynaklari/:kalemId', yetkiKontrol, async (req,
     } catch (e) { next(e); }
 });
 
-app.post('/api/satis-analiz-kopyala', yetkiKontrol, izinGerekli('satis.teklif', 'YAZMA'), async (req, res, next) => {
+app.post('/api/satis-analiz-kopyala', yetkiKontrol, izinGerekliHerhangi([['satis.teklif','YAZMA'], ['satis.urun','YAZMA']]), async (req, res, next) => {
     const client = await pool.connect();
     try {
         const hedefId = parseInt(req.body.hedef_kalem_id);
@@ -7132,7 +7170,7 @@ app.post('/api/satis-analiz-kopyala', yetkiKontrol, izinGerekli('satis.teklif', 
 });
 
 // Form kaydet: bölüm kapsam işaretleri + parametre değerleri
-app.post('/api/satis-analiz-form-kaydet', yetkiKontrol, izinGerekli('satis.teklif', 'YAZMA'), async (req, res, next) => {
+app.post('/api/satis-analiz-form-kaydet', yetkiKontrol, izinGerekliHerhangi([['satis.teklif','YAZMA'], ['satis.urun','YAZMA']]), async (req, res, next) => {
     const client = await pool.connect();
     try {
         const { kalem_id, kapsam, degerler } = req.body;
@@ -7495,8 +7533,10 @@ app.post('/api/satis-teklif-ver', yetkiKontrol, izinGerekli('satis.teklif', 'YAZ
 });
 
 // Kabul Et: opsiyonel kalem varsa ENGELLE; projedeki diğer açık teklifler REVİZE olur;
-// bu teklif ONAYLANAN, proje SATIŞI TAMAMLANAN
-app.post('/api/satis-teklif-kabul', yetkiKontrol, izinGerekli('satis.teklif', 'YAZMA'), async (req, res, next) => {
+// bu teklif ONAYLANAN, proje SATIŞI TAMAMLANAN.
+// YETKİ: eski sistemde bu tek düğme SATIŞ MÜDÜRÜ yetkisi istiyordu (hasSalesManagerAuthority);
+// teklif verme/revize/ret satış kullanıcısına açıktı. Karşılığı: satis.teklif_onay izni.
+app.post('/api/satis-teklif-kabul', yetkiKontrol, izinGerekli('satis.teklif_onay', 'TAM'), async (req, res, next) => {
     const client = await pool.connect();
     try {
         const id = parseInt(req.body.id);
@@ -7689,6 +7729,10 @@ app.get('/api/satis-sozlesme/:projeId', yetkiKontrol, async (req, res, next) => 
 });
 
 // Sözleşme onay zinciri (ProjectStateServiceImpl birebir)
+// TİCARİ İŞLER ONAYI: eski sistemde "Sözleşmeyi Onayla" ve "Revize Talep Et" düğmeleri
+// ROLE_COMM_AFFAIRS_MANAGER (Ticari İşler Müdürü) yetkisindeydi. O rolün sahibi yeni
+// sisteme aktarılmadığı için Yunus kararı (2026-07-28): yalnız ADMIN onaylar.
+const SOZLESME_ADMIN_AKSIYONLARI = ['onayla', 'revize-talep'];
 const SOZLESME_AKSIYONLARI = {
     'onay-talep':      { durum: PRJ.SOZLESME_HAZIR,        ad: 'Ticari işler onayı talep edildi' },
     'onayla':          { durum: PRJ.SOZLESME_ONAYLANDI,    ad: 'Sözleşme onaylandı' },
@@ -7704,6 +7748,10 @@ app.post('/api/satis-sozlesme-aksiyon', yetkiKontrol, izinGerekli('satis.proje',
         const { proje_id, aksiyon } = req.body;
         const a = SOZLESME_AKSIYONLARI[aksiyon];
         if (!a) return res.json({ ok: false, hata: 'Geçersiz sözleşme aksiyonu.' });
+        if (SOZLESME_ADMIN_AKSIYONLARI.includes(aksiyon) && !adminMi(req)) {
+            return res.json({ ok: false, izin_hatasi: true,
+                hata: 'Sözleşmeyi onaylamak veya revize talebi açmak ticari işler onayıdır; bu yetki yalnız ADMIN kullanıcılarındadır.' });
+        }
         const p = await client.query(`SELECT proje_kodu, satis_durumu, COALESCE(faz,'TESLIMAT') faz FROM projeler WHERE id=$1`, [parseInt(proje_id)]);
         if (!p.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
         if (p.rows[0].faz !== 'SATIS') return res.json({ ok: false, hata: 'Bu proje teslimat fazında; satış aksiyonları uygulanamaz.' });
@@ -7862,6 +7910,10 @@ const MODUL_KATALOG = [
     { kod: 'satinalma.rapor',     ad: 'Satınalma — Rapor (Genel Bakış)', grup: 'Satınalma' },
     { kod: 'satis.musteri',       ad: 'Satış — Müşteriler',  grup: 'Satış' },
     { kod: 'satis.teklif',        ad: 'Satış — Teklifler',   grup: 'Satış' },
+    // Eski sistemdeki SATIŞ MÜDÜRÜ (ROLE_SALES_MANAGER) yetkisinin karşılığı:
+    // teklifi "müşteri kabul etti" diye onaylamak yalnız bu izinle yapılır.
+    // Teklif verme/revize/ret satis.teklif YAZMA ile, kabul ayrı kapıda.
+    { kod: 'satis.teklif_onay',   ad: 'Satış — Teklif Kabul Onayı (Satış Müdürü)', grup: 'Satış' },
     { kod: 'satis.proje',         ad: 'Satış — Projeler (Fırsatlar)', grup: 'Satış' },
     { kod: 'satis.urun',          ad: 'Satış — Ürün Kütüphanesi', grup: 'Satış' },
     { kod: 'mali.tedarikci',      ad: 'Mali İşler — Tedarikçi Cari', grup: 'Mali İşler' },
@@ -7887,7 +7939,7 @@ app.get('/api/modul-katalog', yetkiKontrol, (req, res) => {
 
 // --- BİLDİRİM KURALLARI PANELİ (sadece ADMIN) ---
 app.get('/api/bildirim-kurallari', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.status(403).json({ ok: false, hata: 'Sadece ADMIN.' });
     }
     try {
@@ -7898,7 +7950,7 @@ app.get('/api/bildirim-kurallari', yetkiKontrol, async (req, res, next) => {
 });
 
 app.post('/api/bildirim-kural-guncelle', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN.' });
     }
     try {
@@ -7914,7 +7966,7 @@ app.post('/api/bildirim-kural-guncelle', yetkiKontrol, async (req, res, next) =>
 
 // Tüm roller (sistem + özel)
 app.get('/api/roller', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.status(403).json({ ok: false, hata: 'Sadece ADMIN.' });
     }
     try {
@@ -7930,7 +7982,7 @@ app.get('/api/roller', yetkiKontrol, async (req, res, next) => {
 
 // Rol kaydet (ekle/güncelle)
 app.post('/api/rol-kaydet', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN.' });
     }
     try {
@@ -7965,7 +8017,7 @@ app.post('/api/rol-kaydet', yetkiKontrol, async (req, res, next) => {
 
 // Rol sil — sistem rolleri silinemez, kullanıcı atanmış roller silinemez
 app.delete('/api/rol-sil/:id', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN.' });
     }
     try {
@@ -7986,7 +8038,7 @@ app.delete('/api/rol-sil/:id', yetkiKontrol, async (req, res, next) => {
 
 // İzin matrisi: tüm rollerin tüm modüllerdeki seviyeleri
 app.get('/api/rol-izinleri', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.status(403).json({ ok: false, hata: 'Sadece ADMIN.' });
     }
     try {
@@ -8008,7 +8060,7 @@ app.get('/api/rol-izinleri', yetkiKontrol, async (req, res, next) => {
 // İzin matrisini toplu güncelle
 // Body: { izinler: [{rol_id, modul_kod, seviye}] }
 app.post('/api/rol-izinleri-kaydet', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN.' });
     }
     const client = await pool.connect();
@@ -8042,36 +8094,99 @@ async function rolListesiniGetir() {
     return r.rows.map(x => x.ad);
 }
 
-// Bir rolün tüm modüllerdeki izin haritasını döndür
-// ADMIN için tüm modüller TAM (matriste yoksa bile)
+// Bir kullanıcının tüm modüllerdeki izin haritasını döndür.
+// ÇOKLU ROL: parametre tek rol adı VEYA rol adı dizisi olabilir; birden fazla rolde
+// aynı modül geçiyorsa EN YÜKSEK seviye kazanır (YOK < OKUMA < YAZMA < TAM).
+// ADMIN rollerden biriyse tüm modüller TAM.
 const IZIN_CACHE = new Map();
-async function getKullaniciIzinleri(rolAd) {
-    if (!rolAd) return {};
-    if (IZIN_CACHE.has(rolAd)) return IZIN_CACHE.get(rolAd);
+const SEVIYE_SIRA = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
+async function getKullaniciIzinleri(rolAdVeyaDizi) {
+    const roller = (Array.isArray(rolAdVeyaDizi) ? rolAdVeyaDizi : [rolAdVeyaDizi])
+        .filter(Boolean).map(r => String(r).trim());
+    if (!roller.length) return {};
+    const anahtar = [...new Set(roller)].sort().join('|');
+    if (IZIN_CACHE.has(anahtar)) return IZIN_CACHE.get(anahtar);
 
     const izinler = {};
     // ADMIN her şeye TAM
-    if (rolAd === 'ADMIN' || rolAd === 'Admin') {
+    if (roller.some(r => r === 'ADMIN' || r === 'Admin')) {
         MODUL_KATALOG.forEach(m => { izinler[m.kod] = 'TAM'; });
-        IZIN_CACHE.set(rolAd, izinler);
+        IZIN_CACHE.set(anahtar, izinler);
         return izinler;
     }
-    // Diğer roller için DB'den oku
+    // Diğer roller için DB'den oku (hepsi tek sorguda)
     const r = await pool.query(`
         SELECT ri.modul_kod, ri.seviye
         FROM rol_izinleri ri
         JOIN roller ro ON ri.rol_id = ro.id
-        WHERE ro.ad = $1
-    `, [rolAd]);
+        WHERE ro.ad = ANY($1::text[])
+    `, [roller]);
     // Varsayılan tüm modüller YOK
     MODUL_KATALOG.forEach(m => { izinler[m.kod] = 'YOK'; });
-    // DB'deki tanımları overwrite et
-    r.rows.forEach(row => { izinler[row.modul_kod] = row.seviye; });
-    IZIN_CACHE.set(rolAd, izinler);
+    // Rollerin birleşimi: en yüksek seviye kazanır
+    r.rows.forEach(row => {
+        const mevcut = izinler[row.modul_kod] || 'YOK';
+        if ((SEVIYE_SIRA[row.seviye] || 0) > (SEVIYE_SIRA[mevcut] || 0)) izinler[row.modul_kod] = row.seviye;
+    });
+    IZIN_CACHE.set(anahtar, izinler);
     return izinler;
 }
 
+// Kullanıcının etkin rol listesi: birincil rol (kullanicilar.rol) + ek roller.
+// Simülasyonda yalnız yansıtılan rol geçerlidir.
+function etkinRoller(req) {
+    if (!req || !req.user) return [];
+    if (Array.isArray(req.user.roller) && req.user.roller.length) return req.user.roller;
+    return req.user.rol ? [req.user.rol] : [];
+}
+function adminMi(req) {
+    return etkinRoller(req).some(r => r === 'ADMIN' || r === 'Admin');
+}
+// Token eskiyse (roller alanı yok) veya kullanıcıya sonradan rol eklendiyse DB'den tazele
+async function kullanicininRolleri(kullaniciId, birincilRol) {
+    const r = await pool.query(`
+        SELECT ro.ad FROM kullanici_rolleri kr JOIN roller ro ON ro.id = kr.rol_id
+        WHERE kr.kullanici_id = $1`, [kullaniciId]).catch(() => ({ rows: [] }));
+    const liste = r.rows.map(x => x.ad);
+    if (birincilRol && !liste.includes(birincilRol)) liste.push(birincilRol);
+    return liste.length ? liste : (birincilRol ? [birincilRol] : []);
+}
+
 function izinCacheTemizle() { IZIN_CACHE.clear(); }
+
+// Kullanıcının rol listesini yaz (birincil + ek roller). Tam değişim: eskiler silinir.
+async function kullaniciRolleriniYaz(kullaniciId, rolAdlari) {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        await client.query('DELETE FROM kullanici_rolleri WHERE kullanici_id=$1', [kullaniciId]);
+        for (const ad of rolAdlari) {
+            await client.query(`INSERT INTO kullanici_rolleri (kullanici_id, rol_id)
+                SELECT $1, id FROM roller WHERE ad=$2 ON CONFLICT DO NOTHING`, [kullaniciId, ad]);
+        }
+        await client.query('COMMIT');
+    } catch (e) { await client.query('ROLLBACK'); throw e; }
+    finally { client.release(); }
+    rolTazeleCacheTemizle(kullaniciId);
+}
+
+// Birden fazla modülden HERHANGİ BİRİ yeterliyse kullanılır.
+// Örn. analiz formu: satış tarafı (satis.teklif) da teknik ofis (satis.urun) da kaydedebilir —
+// eski sistemde aynı ekranın "sales" ve "project" modları buydu.
+function izinGerekliHerhangi(ciftler) {
+    return async (req, res, next) => {
+        try {
+            if (adminMi(req)) return next();
+            const izinler = await getKullaniciIzinleri(etkinRoller(req));
+            const sira = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
+            const gecti = ciftler.some(([modul, seviye]) =>
+                (sira[izinler[modul] || 'YOK'] || 0) >= (sira[seviye] || 0));
+            if (gecti) return next();
+            return res.status(403).json({ ok: false, izin_hatasi: true,
+                hata: 'Yetkin yok: ' + ciftler.map(([m, s]) => `${m} → ${s}`).join(' veya ') + ' gerekli.' });
+        } catch (e) { next(e); }
+    };
+}
 
 // İzin gerektiren middleware
 // Kullanım: app.post('/x', yetkiKontrol, izinGerekli('modul.kod', 'YAZMA'), handler)
@@ -8079,9 +8194,9 @@ function izinGerekli(modulKod, gerekliSeviye = 'OKUMA') {
     return async (req, res, next) => {
         try {
             // ADMIN her zaman geçer
-            if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return next();
+            if (adminMi(req)) return next();
 
-            const izinler = await getKullaniciIzinleri(req.user.rol);
+            const izinler = await getKullaniciIzinleri(etkinRoller(req));
             const sahip = izinler[modulKod] || 'YOK';
             const seviyeSira = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
             if (seviyeSira[sahip] < seviyeSira[gerekliSeviye]) {
@@ -8226,7 +8341,7 @@ async function genelIzinMiddleware(req, res, next) {
     // yetkiKontrol'den sonra çalışır, req.user mevcut
     if (!req.user) return next();
     // ADMIN her zaman geçer
-    if (req.user.rol === 'ADMIN' || req.user.rol === 'Admin') return next();
+    if (adminMi(req)) return next();
 
     // /me/izinler ve auth gibi her zaman erişilebilir olmalı
     // Görev Takip: izin katmanını atla; asıl kapı route'lardaki cekirdekEkipKontrol (cekirdek_ekip=TRUE)
@@ -8237,7 +8352,7 @@ async function genelIzinMiddleware(req, res, next) {
         if (!k.pattern.test(req.path)) continue;
         if (k.method && k.method !== req.method) continue;
         // İzin kontrolü
-        const izinler = await getKullaniciIzinleri(req.user.rol);
+        const izinler = await getKullaniciIzinleri(etkinRoller(req));
         const sahip = izinler[k.modul] || 'YOK';
         const seviyeSira = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
         if (seviyeSira[sahip] < seviyeSira[k.seviye]) {
@@ -8264,12 +8379,16 @@ app.get('/api/me/izinler', yetkiKontrol, async (req, res, next) => {
         // yetkiKontrol middleware'i X-Yansit-Rol header'ını zaten işledi:
         // simülasyonda req.user.rol = yansıtılan rol, req.user.gercek_rol = ADMIN, req.user.simulasyon = true.
         // Bu yüzden burada tekrar kontrol etmiyoruz — middleware'in sonucunu kullanıyoruz.
-        const etkinRol = req.user.rol;
+        // ÇOKLU ROL: etkin roller birleşiminden izin haritası çıkar. Görüntülemede
+        // birincil rol başta olacak şekilde listelenir ("SATIS + YONETIM" gibi).
+        const roller = etkinRoller(req);
+        const etkinRol = req.user.rol || roller[0];
         const simulasyon = !!req.user.simulasyon;
-        const izinler = await getKullaniciIzinleri(etkinRol);
+        const izinler = await getKullaniciIzinleri(roller);
         const ce = await pool.query("SELECT cekirdek_ekip FROM kullanicilar WHERE id=$1", [req.user.id]);
         const cekirdek_ekip = !!(ce.rows[0] && ce.rows[0].cekirdek_ekip);
-        res.json({ ok: true, rol: etkinRol, gercek_rol: req.user.gercek_rol || req.user.rol, simulasyon, izinler, modul_katalog: MODUL_KATALOG, cekirdek_ekip });
+        res.json({ ok: true, rol: etkinRol, roller, gercek_rol: req.user.gercek_rol || req.user.rol,
+            simulasyon, izinler, modul_katalog: MODUL_KATALOG, cekirdek_ekip });
     } catch (e) { next(e); }
 });
 
@@ -8460,7 +8579,7 @@ app.post('/api/gorev-not', yetkiKontrol, cekirdekEkipKontrol, async (req, res, n
 
 // Görevi KALICI sil — yalnızca ADMIN (iz bırakmaz; gorev_notlari ON DELETE CASCADE ile birlikte silinir)
 app.delete('/api/gorev-sil/:id', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.status(403).json({ ok: false, hata: 'Görevi yalnızca ADMIN silebilir.' });
+    if (!adminMi(req)) return res.status(403).json({ ok: false, hata: 'Görevi yalnızca ADMIN silebilir.' });
     try {
         const r = await pool.query("DELETE FROM yonetim_gorevleri WHERE id=$1 RETURNING id", [req.params.id]);
         if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Görev bulunamadı.' });
@@ -8483,13 +8602,16 @@ async function getKullaniciRolleri() {
 function rolCacheTemizle() { KULLANICI_ROLLERI_CACHE = null; }
 
 app.get('/api/kullanicilar', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.status(403).json({ ok: false, hata: 'Sadece ADMIN erişebilir.' });
     }
     try {
+        // ÇOKLU ROL: her kullanıcının ek rolleri de dizi olarak döner (birincil rol dahil)
         const r = await pool.query(`
-            SELECT id, email, ad_soyad, rol, durum, son_giris, kayit_tarihi, cekirdek_ekip
-            FROM kullanicilar ORDER BY id ASC
+            SELECT k.id, k.email, k.ad_soyad, k.rol, k.durum, k.son_giris, k.kayit_tarihi, k.cekirdek_ekip,
+                   COALESCE(ARRAY(SELECT ro.ad FROM kullanici_rolleri kr JOIN roller ro ON ro.id = kr.rol_id
+                                  WHERE kr.kullanici_id = k.id ORDER BY ro.ad), ARRAY[]::text[]) AS roller
+            FROM kullanicilar k ORDER BY k.id ASC
         `);
         const roller = await getKullaniciRolleri();
         res.json({ ok: true, data: r.rows, roller });
@@ -8497,11 +8619,11 @@ app.get('/api/kullanicilar', yetkiKontrol, async (req, res, next) => {
 });
 
 app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
     }
     try {
-        const { id, email, ad_soyad, rol, durum, cekirdek_ekip } = req.body;
+        const { id, email, ad_soyad, rol, durum, cekirdek_ekip, roller } = req.body;
         const emailNorm = (email || '').trim().toLowerCase();
         const adSoyadNorm = (ad_soyad || '').trim();
         const rolNorm = (rol || 'KULLANICI').trim().toUpperCase();
@@ -8514,21 +8636,27 @@ app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
         const gecerliRoller = await getKullaniciRolleri();
         if (!gecerliRoller.includes(rolNorm)) return res.json({ ok: false, hata: 'Geçersiz rol: ' + rolNorm });
         if (!['AKTIF','PASIF'].includes(durumNorm)) return res.json({ ok: false, hata: 'Geçersiz durum.' });
+        // ÇOKLU ROL: birincil rol her zaman listeye dahildir
+        const rolListesi = [...new Set([rolNorm, ...(Array.isArray(roller) ? roller : [])
+            .map(x => String(x || '').trim().toUpperCase()).filter(Boolean)])];
+        const gecersiz = rolListesi.filter(x => !gecerliRoller.includes(x));
+        if (gecersiz.length) return res.json({ ok: false, hata: 'Geçersiz rol: ' + gecersiz.join(', ') });
 
         let eski = null;
         if (id) {
             const eR = await pool.query('SELECT * FROM kullanicilar WHERE id=$1', [id]);
             if (eR.rowCount > 0) eski = eR.rows[0];
-            // Kendinin rolünü ADMIN'den çıkaramaz
-            if (eski && eski.email === req.user.email && eski.rol === 'ADMIN' && rolNorm !== 'ADMIN') {
+            // Kendinin ADMIN yetkisini kaldıramaz (birincil ya da ek rol olarak)
+            if (eski && eski.email === req.user.email && eski.rol === 'ADMIN' && !rolListesi.includes('ADMIN')) {
                 return res.json({ ok: false, hata: 'Kendi ADMIN yetkinizi kaldıramazsınız.' });
             }
             await pool.query(`
                 UPDATE kullanicilar SET email=$1, ad_soyad=$2, rol=$3, durum=$4, cekirdek_ekip=$5 WHERE id=$6
             `, [emailNorm, adSoyadNorm, rolNorm, durumNorm, !!cekirdek_ekip, id]);
+            await kullaniciRolleriniYaz(id, rolListesi);
             await auditLogla(req, {
                 eylem: 'UPDATE', tablo: 'kullanicilar', kayit_id: id,
-                ozet: `Kullanıcı güncellendi: ${emailNorm} (rol: ${rolNorm}, durum: ${durumNorm})`,
+                ozet: `Kullanıcı güncellendi: ${emailNorm} (roller: ${rolListesi.join(' + ')}, durum: ${durumNorm})`,
                 eski_veri: eski, yeni_veri: req.body
             });
         } else {
@@ -8538,9 +8666,10 @@ app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
             const ins = await pool.query(`
                 INSERT INTO kullanicilar (email, ad_soyad, rol, durum, cekirdek_ekip) VALUES ($1,$2,$3,$4,$5) RETURNING id
             `, [emailNorm, adSoyadNorm, rolNorm, durumNorm, !!cekirdek_ekip]);
+            await kullaniciRolleriniYaz(ins.rows[0].id, rolListesi);
             await auditLogla(req, {
                 eylem: 'CREATE', tablo: 'kullanicilar', kayit_id: ins.rows[0].id,
-                ozet: `Yeni kullanıcı: ${emailNorm} (${rolNorm})`, yeni_veri: req.body
+                ozet: `Yeni kullanıcı: ${emailNorm} (${rolListesi.join(' + ')})`, yeni_veri: req.body
             });
         }
         res.json({ ok: true, mesaj: 'Kullanıcı kaydedildi.' });
@@ -8548,7 +8677,7 @@ app.post('/api/kullanici-kaydet', yetkiKontrol, async (req, res, next) => {
 });
 
 app.delete('/api/kullanici-sil/:id', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
     }
     try {
@@ -8614,7 +8743,7 @@ app.get('/api/teknik-sartname-sablonu/:binaTuru', yetkiKontrol, async (req, res,
 });
 
 app.post('/api/teknik-sartname-sablonu-kaydet', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
     }
     try {
@@ -8652,7 +8781,7 @@ async function _binaTuruTabloCogalt(client, tablo, kaynak, hedef) {
 // Bina türü çoğalt: form_tanimlari + teknik_sartname_sablonu birlikte (transaction)
 // Bir bina türünü sıfırla: form_tanimlari + teknik_sartname_sablonu satırlarını siler (yeniden çoğaltmak için)
 app.delete('/api/teknik-sartname-turu-sifirla/:binaTuru', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN sıfırlayabilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN sıfırlayabilir.' });
     const bt = req.params.binaTuru;
     if (bt === 'Prefabrik') return res.json({ ok: false, hata: 'Prefabrik ana şablondur, sıfırlanamaz.' });
     try {
@@ -8668,7 +8797,7 @@ app.delete('/api/teknik-sartname-turu-sifirla/:binaTuru', yetkiKontrol, async (r
 });
 
 app.post('/api/teknik-sartname-cogalt', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN çoğaltabilir.' });
     }
     const { kaynak, hedef } = req.body;
@@ -8695,7 +8824,7 @@ app.post('/api/teknik-sartname-cogalt', yetkiKontrol, async (req, res, next) => 
 
 // Teknik şartname şablonuna yeni satır (ve gerekirse yeni bölüm) ekle
 app.post('/api/teknik-sartname-sablonu-ekle', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN ekleyebilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN ekleyebilir.' });
     try {
         const { kur } = require('./lib/sartname-ayristir');
         const { bina_turu, bolum_no, bolum_adi, bolum_gizle, soru, tip, karar, secenekler, metin, ham, yeni_tablo, baslik_gizle } = req.body;
@@ -8740,7 +8869,7 @@ app.get('/api/teknik-sartname-alanlar/:binaTuru', yetkiKontrol, async (req, res,
 
 // Teknik şartname şablonundan satır sil
 app.delete('/api/teknik-sartname-sablonu-sil/:id', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
     try {
         const r = await pool.query("DELETE FROM teknik_sartname_sablonu WHERE id=$1 RETURNING soru", [req.params.id]);
         if (!r.rowCount) return res.status(404).json({ ok: false, hata: 'Satır bulunamadı.' });
@@ -8750,7 +8879,7 @@ app.delete('/api/teknik-sartname-sablonu-sil/:id', yetkiKontrol, async (req, res
 
 // Satırı taşı: aynı bölümde yukarı/aşağı (komşuyla sıra değiş) VEYA başka bölüme (hedef_bolum_no)
 app.post('/api/teknik-sartname-sablonu-tasi', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
     const { id, yon, hedef_bolum_no, hedef_bolum_adi } = req.body;
     try {
         const sR = await pool.query("SELECT * FROM teknik_sartname_sablonu WHERE id=$1", [id]);
@@ -8788,7 +8917,7 @@ app.post('/api/teknik-sartname-sablonu-tasi', yetkiKontrol, async (req, res, nex
 
 // #4 — Bölümü bir üst/alt bölümle sıra takası yap (bina türü içinde)
 app.post('/api/teknik-sartname-bolum-tasi', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
     const { bina_turu, bolum_no, yon } = req.body;
     const client = await pool.connect();
     try {
@@ -8812,7 +8941,7 @@ app.post('/api/teknik-sartname-bolum-tasi', yetkiKontrol, async (req, res, next)
 
 // #4 — Bölümü tüm satırlarıyla sil
 app.post('/api/teknik-sartname-bolum-sil', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
     const { bina_turu, bolum_no } = req.body;
     try {
         const r = await pool.query("DELETE FROM teknik_sartname_sablonu WHERE bina_turu=$1 AND bolum_no=$2", [bina_turu, bolum_no]);
@@ -8821,7 +8950,7 @@ app.post('/api/teknik-sartname-bolum-sil', yetkiKontrol, async (req, res, next) 
 });
 
 app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN düzenleyebilir.' });
     }
     try {
@@ -8870,7 +8999,7 @@ app.post('/api/form-tanimi-kaydet', yetkiKontrol, async (req, res, next) => {
 });
 
 app.delete('/api/form-tanimi-sil/:id', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') {
+    if (!adminMi(req)) {
         return res.json({ ok: false, hata: 'Sadece ADMIN silebilir.' });
     }
     try {
@@ -8886,7 +9015,7 @@ app.delete('/api/form-tanimi-sil/:id', yetkiKontrol, async (req, res, next) => {
 
 // Form sorusunu aynı bölümde yukarı/aşağı taşı (komşuyla soru_sirasi swap)
 app.post('/api/form-tanimi-tasi', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN taşıyabilir.' });
     const { id, yon } = req.body;
     try {
         const sR = await pool.query("SELECT * FROM form_tanimlari WHERE id=$1", [id]);
@@ -8914,7 +9043,7 @@ app.post('/api/form-tanimi-tasi', yetkiKontrol, async (req, res, next) => {
 
 // Audit log özet (admin için)
 app.get('/api/audit-log-ozet', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Yetki yok.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Yetki yok.' });
     try {
         const son24 = await pool.query(`SELECT COUNT(*)::int as n FROM audit_log WHERE kayit_tarihi > NOW() - INTERVAL '24 hours'`);
         const eylemler = await pool.query(`
@@ -9251,7 +9380,7 @@ async function raporCronKur() {
 
 // Manuel test (ADMIN) — raporu yalnızca isteyen kişiye gönderir
 app.post('/api/gunluk-rapor-test', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.status(403).json({ ok:false, hata:'Sadece ADMIN.' });
+    if (!adminMi(req)) return res.status(403).json({ ok:false, hata:'Sadece ADMIN.' });
     try {
         await gunlukRaporGonder(req.user.email);
         res.json({ ok: true, mesaj: `Test raporu ${req.user.email} adresine gönderildi.` });
@@ -9270,7 +9399,7 @@ app.get('/api/gunluk-rapor-ayar', yetkiKontrol, async (req, res, next) => {
 
 // Günlük rapor ayarı: kaydet (ADMIN) + cron'u yeniden kur
 app.post('/api/gunluk-rapor-ayar', yetkiKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN değiştirebilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN değiştirebilir.' });
     try {
         const { aktif, saat, ek_alicilar } = req.body;
         const saatGecerli = /^([01]\d|2[0-3]):[0-5]\d$/.test(saat || '');
@@ -9422,7 +9551,7 @@ app.get('/api/gorev-rapor-ayar', yetkiKontrol, cekirdekEkipKontrol, async (req, 
     } catch (e) { next(e); }
 });
 app.post('/api/gorev-rapor-ayar', yetkiKontrol, cekirdekEkipKontrol, async (req, res, next) => {
-    if (req.user.rol !== 'ADMIN' && req.user.rol !== 'Admin') return res.json({ ok: false, hata: 'Sadece ADMIN değiştirebilir.' });
+    if (!adminMi(req)) return res.json({ ok: false, hata: 'Sadece ADMIN değiştirebilir.' });
     try {
         const { aktif, periyot, gun, saat, ek_alicilar } = req.body;
         const saatGecerli = /^([01]\d|2[0-3]):[0-5]\d$/.test(saat || '');
@@ -10623,6 +10752,39 @@ async function semaGuvence() {
                 `, [modul, seviye, rolAd]).catch(e => console.error('⚠️ mali izin tohumu:', e.message));
             }
         }
+        // ÇOKLU ROL (2026-07-28): bir kullanıcıya birden fazla rol verilebilir.
+        // kullanicilar.rol BİRİNCİL rol olarak kalır (mail yönlendirme, ekranda gösterim);
+        // ek roller burada tutulur, izinler ikisinin BİRLEŞİMİNDEN çözülür.
+        await pool.query(`CREATE TABLE IF NOT EXISTS kullanici_rolleri (
+            kullanici_id INTEGER NOT NULL REFERENCES kullanicilar(id) ON DELETE CASCADE,
+            rol_id INTEGER NOT NULL REFERENCES roller(id) ON DELETE CASCADE,
+            PRIMARY KEY (kullanici_id, rol_id)
+        )`).catch(e => console.error('⚠️ kullanici_rolleri:', e.message));
+        // Mevcut kullanıcıların birincil rolü tabloya taşınır (idempotent)
+        await pool.query(`
+            INSERT INTO kullanici_rolleri (kullanici_id, rol_id)
+            SELECT k.id, r.id FROM kullanicilar k JOIN roller r ON r.ad = k.rol
+            ON CONFLICT DO NOTHING
+        `).catch(e => console.error('⚠️ kullanici_rolleri tohumu:', e.message));
+
+        // TEKNİK OFİS — satış analizindeki payı (eski ROLE_PROJECT_USER):
+        // malzeme dökümünü üretip analizi tamamlar, teklifi görüntüler ama teklif veremez.
+        for (const [modul, seviye] of [['satis.urun', 'YAZMA'], ['satis.teklif', 'OKUMA']]) {
+            await pool.query(`
+                INSERT INTO rol_izinleri (rol_id, modul_kod, seviye)
+                SELECT r.id, $1::varchar, $2::varchar FROM roller r
+                WHERE r.ad = 'TEKNIK_OFIS'
+                  AND NOT EXISTS (SELECT 1 FROM rol_izinleri ri WHERE ri.rol_id = r.id AND ri.modul_kod = $1)
+            `, [modul, seviye]).catch(e => console.error('⚠️ teknik ofis satış izni:', e.message));
+        }
+        // TEKLİF KABUL ONAYI (eski ROLE_SALES_MANAGER) — Yunus kararı: YONETIM rolünde.
+        await pool.query(`
+            INSERT INTO rol_izinleri (rol_id, modul_kod, seviye)
+            SELECT r.id, 'satis.teklif_onay'::varchar, 'TAM'::varchar FROM roller r
+            WHERE r.ad = 'YONETIM'
+              AND NOT EXISTS (SELECT 1 FROM rol_izinleri ri WHERE ri.rol_id = r.id AND ri.modul_kod = 'satis.teklif_onay')
+        `).catch(e => console.error('⚠️ teklif onay izni:', e.message));
+
         // Teklif Havuzu ayrı izin satırı: mevcut davranış korunarak her rolün
         // satinalma.talepler seviyesi satinalma.teklif'e kopyalanır (yalnız yoksa)
         await pool.query(`
