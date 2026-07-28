@@ -891,8 +891,8 @@
                   <tr>
                     <th width="34" class="text-center" title="Satırı tutup sürükleyerek sırayı değiştirebilirsiniz"><i class="bi bi-arrows-move text-muted"></i></th>
                     <th>Kalem / Açıklama / Bileşen Türü</th>
-                    <th width="150" title="Miktar ve birim; ikincil miktar teklif büyüklüğünü (m² vb.) verir">Miktar / Birim</th>
-                    <th width="150" title="Eski sistemdeki ikincil miktar — Teklif Edilen Proje Büyüklüğü buradan hesaplanır">İkincil Miktar</th>
+                    <th width="150" title="Bileşenin (binanın) tek birimdeki büyüklüğü — teklif büyüklüğü büyüklük × miktar olarak hesaplanır">Büyüklük</th>
+                    <th width="150" title="Bu bileşenden kaç adet — tutar miktar × birim fiyat">Miktar</th>
                     <th width="130">Birim Fiyat</th>
                     <th width="120" class="text-end">Tutar</th>
                     <th width="60" class="text-center" title="Opsiyonel kalemler toplama dahil edilmez">Ops.</th>
@@ -6462,7 +6462,7 @@ async function satisTeklifDetayAc(id, ustte) {
             ])}
         </div>
         <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:0.82rem;">
-            <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th><th class="text-center">Analiz</th><th style="width:120px;"></th></tr></thead>
+            <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end" title="Bileşenin tek birimdeki büyüklüğü">Büyüklük</th><th class="text-end" title="Bu bileşenden kaç adet">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th><th class="text-center">Analiz</th><th style="width:120px;"></th></tr></thead>
             <tbody>${r.kalemler.map((k, i) => `
                 <tr class="${k.opsiyonel ? 'text-muted fst-italic' : ''}">
                     <td>${i + 1}</td>
@@ -6470,6 +6470,9 @@ async function satisTeklifDetayAc(id, ustte) {
                         ${k.bilesen_turu ? `<span class="badge bg-light text-dark border ms-1">${esc(k.bilesen_turu)}</span>` : ''}
                         ${k.aciklama ? `<br><small class="text-muted">${esc(k.aciklama)}</small>` : ''}
                         ${k.onerilen_fiyat != null ? `<br><small class="text-success"><i class="bi bi-calculator me-1"></i>Analizden önerilen: <b>${formatTR(parseFloat(k.onerilen_fiyat))} ${pb}</b>${k.analiz_tarihi ? ' (' + formatTarihTR(k.analiz_tarihi) + ')' : ''}</small>` : ''}</td>
+                    <td class="text-end">${k.ikincil_miktar != null
+                        ? formatTR(parseFloat(k.ikincil_miktar)) + ' ' + esc(k.ikincil_birim_sembol || k.ikincil_birim || '')
+                        : '<span class="text-muted">-</span>'}</td>
                     <td class="text-end">${formatTR(parseFloat(k.miktar) || 0)} ${esc(k.birim || '')}</td>
                     <td class="text-end">${formatTR(parseFloat(k.birim_fiyat) || 0)} ${pb}</td>
                     <td class="text-end fw-semibold">${formatTR(parseFloat(k.toplam) || 0)} ${pb}</td>
@@ -7083,14 +7086,24 @@ function stfKalemEkle(k) {
             </div></td>
         <td><input type="text" class="form-control form-control-sm stf-k-ad" placeholder="Kalem adı" value="${esc(k.ad || '')}">
             <input type="text" class="form-control form-control-sm mt-1 stf-k-aciklama" placeholder="Açıklama (opsiyonel)" value="${esc(k.aciklama || '')}">
-            <select class="form-select form-select-sm mt-1 stf-k-tur" title="Bileşen türü — analiz ve raporlama bunu kullanır">
+            <select class="form-select form-select-sm mt-1 stf-k-tur" onchange="stfTurDegisti(this)"
+                    title="Bileşen türü — büyüklük alanının çıkıp çıkmayacağını ve birimini bu belirler">
                 <option value="">Bileşen türü seçiniz...</option>
             </select></td>
-        <td><input type="number" class="form-control form-control-sm text-end stf-k-miktar" value="${k.miktar != null ? k.miktar : 1}" step="0.01" oninput="stfToplamGuncelle()">
-            <select class="form-select form-select-sm mt-1 stf-k-birim"><option value="">Birim...</option></select></td>
-        <td><input type="number" class="form-control form-control-sm text-end stf-k-ikincil" placeholder="örn. 34,19" value="${k.ikincil_miktar != null ? k.ikincil_miktar : ''}" step="0.01"
-                   title="Teklif Edilen Proje Büyüklüğü bu değerlerden hesaplanır">
-            <select class="form-select form-select-sm mt-1 stf-k-ikincil-birim"><option value="">İkincil birim...</option></select></td>
+        <td class="stf-buyukluk-hucre">
+            <div class="input-group input-group-sm stf-buyukluk-kutu">
+                <input type="number" class="form-control form-control-sm text-end stf-k-ikincil" placeholder="örn. 34,19"
+                       value="${k.ikincil_miktar != null ? k.ikincil_miktar : ''}" step="0.01"
+                       title="Bileşenin tek birimdeki büyüklüğü">
+                <span class="input-group-text stf-k-buyukluk-birim px-2" style="font-size:0.75rem;">-</span>
+            </div>
+            <small class="text-muted stf-buyukluk-yok d-none">Bu tür için büyüklük girilmez</small></td>
+        <td><div class="input-group input-group-sm">
+                <input type="number" class="form-control form-control-sm text-end stf-k-miktar" value="${k.miktar != null ? k.miktar : 1}" step="1" min="1"
+                       oninput="stfToplamGuncelle()" title="Bu bileşenden kaç adet">
+                <span class="input-group-text px-2" style="font-size:0.75rem;">Adet</span>
+            </div>
+            <input type="hidden" class="stf-k-birim" value="Adet"></td>
         <td><input type="number" class="form-control form-control-sm text-end stf-k-fiyat" value="${k.birim_fiyat != null ? k.birim_fiyat : ''}" step="0.01" oninput="stfToplamGuncelle()"></td>
         <td class="text-end fw-semibold stf-k-toplam">0,00</td>
         <td class="text-center"><input type="checkbox" class="form-check-input stf-k-ops" ${k.opsiyonel ? 'checked' : ''} onchange="stfToplamGuncelle()"></td>
@@ -7100,18 +7113,47 @@ function stfKalemEkle(k) {
         </td>`;
     document.getElementById('stfKalemler').appendChild(tr);
     // Kapalı listeler (bileşen türü / birim) referans tablosundan doldurulur
-    const ref = satisReferanslar || {};
-    const doldur = (sec, liste, secili, bosMetin) => {
-        sec.innerHTML = `<option value="">${bosMetin}</option>` +
-            [...liste, ...(secili && !liste.includes(secili) ? [secili] : [])]
-                .map(a => `<option value="${esc(a)}" ${a === secili ? 'selected' : ''}>${esc(a)}</option>`).join('');
-    };
-    doldur(tr.querySelector('.stf-k-tur'), (ref.bilesen_turu || []).map(x => x.ad), k.bilesen_turu || '', 'Bileşen türü seçiniz...');
-    doldur(tr.querySelector('.stf-k-birim'), (ref.birim || []).map(x => x.ad), k.birim || '', 'Birim...');
-    doldur(tr.querySelector('.stf-k-ikincil-birim'), (ref.birim || []).map(x => x.ad), k.ikincil_birim || '', 'İkincil birim...');
+    // Bileşen türü listesi kategorilere göre gruplanır (39 türü düz liste hâlinde taramak zor)
+    const turler = (satisReferanslar || {}).bilesen_turu || [];
+    const gruplar = {};
+    turler.forEach(t => (gruplar[t.ust_kod || 'Diğer'] = gruplar[t.ust_kod || 'Diğer'] || []).push(t));
+    const turSec = tr.querySelector('.stf-k-tur');
+    turSec.innerHTML = '<option value="">Bileşen türü seçiniz...</option>' +
+        Object.entries(gruplar).map(([kat, liste]) => `<optgroup label="${esc(kat)}">` +
+            liste.map(t => `<option value="${esc(t.ad)}" data-birim="${esc(t.ek_bilgi || '')}" ${t.ad === k.bilesen_turu ? 'selected' : ''}>${esc(t.ad)}</option>`).join('') +
+            '</optgroup>').join('');
+    // Listede olmayan eski bir tür varsa kaybolmasın
+    if (k.bilesen_turu && !turler.some(t => t.ad === k.bilesen_turu)) {
+        turSec.insertAdjacentHTML('beforeend', `<option value="${esc(k.bilesen_turu)}" data-birim="${esc(k.ikincil_birim || '')}" selected>${esc(k.bilesen_turu)}</option>`);
+    }
+    stfTurDegisti(turSec);
     stfSuruklemeKur();
     stfToplamGuncelle();
 }
+
+// Bileşen türü değişince BÜYÜKLÜK alanı ayarlanır: eski sistemde component_type
+// satırındaki secondary_unit_type doluysa alan görünür ve birimi oradan gelir
+// (kullanıcı seçmez); boşsa (Nakliye, Diğer) alan hiç gösterilmez ve değer tutulmaz.
+function stfTurDegisti(sec) {
+    const tr = sec.closest('.stf-kalem'); if (!tr) return;
+    const secenek = sec.options[sec.selectedIndex];
+    const birim = secenek ? (secenek.dataset.birim || '') : '';
+    const kutu = tr.querySelector('.stf-buyukluk-kutu');
+    const yok = tr.querySelector('.stf-buyukluk-yok');
+    const girdi = tr.querySelector('.stf-k-ikincil');
+    tr.querySelector('.stf-k-buyukluk-birim').innerText = birim ? (BIRIM_SEMBOL[birim] || birim) : '-';
+    kutu.classList.toggle('d-none', !birim);
+    yok.classList.toggle('d-none', !!birim);
+    if (!birim) girdi.value = '';          // tür desteklemiyorsa büyüklük tutulmaz
+}
+// Birim kısaltmaları — eski sistemin unit_type.symbol değerleriyle birebir
+// (sunucudaki BIRIM_SEMBOL ile aynı; ekranda ve PDF'te aynı sembol görünsün diye)
+const BIRIM_SEMBOL = {
+    'Adet': 'adet', 'Metrekare': 'm²', 'Metreküp': 'm³', 'Kilogram': 'kg', 'Ton': 'ton',
+    'Metre': 'm', 'Metrekare Başına Düşen Kilogram': 'kg/m2', 'Öğün': 'öğün', 'Kilometre': 'km',
+    'Metretül': 'mtül', 'Dakika': 'dk', 'Litre': 'litre', 'Gün': 'Gün', 'Paket': 'paket',
+    'Yevmiye': 'yev.', 'Yol-Ulaşım': 'km'
+};
 
 // ---- KALEM SIRALAMA (sürükle-bırak) ----
 // Kalemin sırası satır sırasından türer (kaydetmede sira = satır indeksi), bu yüzden
@@ -7273,17 +7315,26 @@ async function satisTeklifKaydet() {
         ad: tr.querySelector('.stf-k-ad').value,
         aciklama: tr.querySelector('.stf-k-aciklama').value,
         bilesen_turu: tr.querySelector('.stf-k-tur').value,
+        buyukluk_birimi: (tr.querySelector('.stf-k-tur').options[tr.querySelector('.stf-k-tur').selectedIndex] || {}).dataset?.birim || '',
         miktar: tr.querySelector('.stf-k-miktar').value,
-        birim: tr.querySelector('.stf-k-birim').value,
+        birim: 'Adet',
         ikincil_miktar: tr.querySelector('.stf-k-ikincil').value,
-        ikincil_birim: tr.querySelector('.stf-k-ikincil-birim').value,
         birim_fiyat: tr.querySelector('.stf-k-fiyat').value,
         opsiyonel: tr.querySelector('.stf-k-ops').checked
     })).filter(k => k.ad.trim());
     if (!kalemler.length) { showToast('En az bir teklif kalemi girilmelidir.', 'error'); return; }
-    // Bileşen türü eski sistemde zorunluydu; analiz ve raporlama buna dayanıyor
-    const turSiz = kalemler.filter(k => !(k.bilesen_turu || '').trim());
-    if (turSiz.length) { showToast(`Bileşen türü zorunludur — eksik kalem: ${turSiz.map(k => k.ad).join(', ')}`, 'error'); return; }
+    // Eski proposalComponent doğrulamaları: ad ≥3, tür zorunlu, miktar ≥1, fiyat ≥0,
+    // büyüklük (tür destekliyorsa) zorunlu ve ≥1
+    for (const k of kalemler) {
+        const ad = (k.ad || '').trim();
+        if (ad.length < 3) { showToast(`Kalem adı en az 3 karakter olmalıdır: "${ad}"`, 'error'); return; }
+        if (!(k.bilesen_turu || '').trim()) { showToast(`Bileşen türü zorunludur: "${ad}"`, 'error'); return; }
+        if (!(parseFloat(k.miktar) >= 1)) { showToast(`Miktar en az 1 olmalıdır: "${ad}"`, 'error'); return; }
+        if (parseFloat(k.birim_fiyat || 0) < 0) { showToast(`Birim fiyat negatif olamaz: "${ad}"`, 'error'); return; }
+        if (k.buyukluk_birimi && !(parseFloat(k.ikincil_miktar) >= 1)) {
+            showToast(`"${ad}" için büyüklük (${k.buyukluk_birimi}) zorunludur ve en az 1 olmalıdır.`, 'error'); return;
+        }
+    }
     const btn = document.getElementById('stfKaydetBtn');
     btn.disabled = true;
     showLoading();
