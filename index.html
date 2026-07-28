@@ -105,6 +105,60 @@
     .sp-card.bugun { border-left: 3px solid #ff9800; }
     .sp-card.gelecek { border-left: 3px solid #1976d2; }
 
+    /* ==================== MOBİL UYUM (< 768px) ====================
+       Telefonda üç sorun vardı: (1) üst şerit taşıyordu — başlık iki satıra
+       kırılıp arama ikonuna biniyor, "Çıkış Yap" ekran dışında kalıyordu;
+       (2) 12 ana sekme alt alta sarmalanıp ekranın yarısını kaplıyordu, aynısı
+       modül içi alt sekmelerde de oluyordu; (3) arama kutuları masaüstü için
+       konmuş max-width değerleri yüzünden dar kalıyordu.
+       Çözüm: sekmeler tek satır + yatay kaydırma, üst şerit sıkışabilir,
+       kutular tam genişlik. Masaüstü görünümü hiç değişmiyor. */
+    .yatay-kaydir { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .yatay-kaydir::-webkit-scrollbar { display: none; }
+    @media (max-width: 767.98px) {
+      .header-box { padding: 8px 10px; gap: 8px; }
+      .header-box img { height: 24px !important; margin-right: 8px !important; }
+      .header-box h6 { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+      .header-box #userNameDisplay { display: none; }
+      .header-box > div:last-child { flex: 0 0 auto; gap: 4px !important; }
+      .header-box .btn { padding: 4px 8px; }
+
+      /* Ana sekme şeridi: sarmalama yok, tek satır kaydırılır */
+      .tabs-box { top: 50px; padding: 0 4px; }   /* mobil üst şerit yüksekliği */
+      .tabs-box .nav-pills { flex-wrap: nowrap; }
+      .tabs-box .nav-link { padding: 8px 11px; font-size: 0.85rem; white-space: nowrap; }
+      .tabs-box .nav-link i { margin-right: 4px !important; }
+
+      /* Modül içi alt sekmeler ve buton grupları da aynı davranışta
+         (Satış, Satınalma, Stok, Üretim... — bir kısmı nav-pills, bir kısmı btn-group) */
+      .nav-pills, .nav-tabs, .btn-group.yatay-kaydir {
+        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+      }
+      .nav-pills::-webkit-scrollbar, .nav-tabs::-webkit-scrollbar,
+      .btn-group.yatay-kaydir::-webkit-scrollbar { display: none; }
+      .nav-pills .nav-link, .nav-tabs .nav-link { white-space: nowrap; }
+      .btn-group.yatay-kaydir .btn { white-space: nowrap; flex: 0 0 auto; }
+
+      /* Arama ve filtre kutuları: masaüstü max-width'leri telefonda daraltıyordu */
+      .input-group { max-width: 100% !important; }
+      select.form-select { max-width: 100% !important; }
+      /* 12px, Bootstrap satır (.row) negatif kenar boşluğuyla birebir: daha azı
+         sayfayı 2px yatay kaydırıyordu (bazı modül kapsayıcılarında iç dolgu yok). */
+      .content-area { padding: 12px; }
+      /* Modül başlığı + alt sekme + buton aynı satıra sığmaz; alt alta insinler.
+         min-width:0 şart — yoksa içteki kaydırılabilir sekme şeridi daralmayı
+         reddedip satırı ekran dışına itiyor. */
+      .arac-cubugu-mobil { flex-wrap: wrap; gap: 8px; }
+      .arac-cubugu-mobil > * { min-width: 0; max-width: 100%; }
+
+      /* Bildirim listesi ekrandan taşmasın */
+      #bildirimMenu { width: auto !important; max-width: calc(100vw - 16px); }
+
+      /* Butonlu araç çubukları alt alta düzgün insin */
+      .btn-group-mobil-blok { width: 100%; }
+      .btn-group-mobil-blok .btn { flex: 1 1 0; }
+    }
+
     /* TEKNİK ŞARTNAME FORM — iki sütun arası ayıraç */
     @media (min-width: 768px) {
       #tsModalBody .ts-alan.col-md-6:nth-child(odd) {
@@ -244,11 +298,13 @@
         </div>
       </div>
 
-      <button class="btn btn-sm btn-outline-light" onclick="cikisYap()">Çıkış Yap</button>
+      <button class="btn btn-sm btn-outline-light" onclick="cikisYap()" title="Çıkış Yap">
+        <i class="bi bi-box-arrow-right"></i><span class="d-none d-md-inline ms-1">Çıkış Yap</span>
+      </button>
     </div>
   </div>
 
-  <div class="tabs-box py-2 px-1">
+  <div class="tabs-box py-2 px-1 yatay-kaydir">
     <ul class="nav nav-pills">
       <li class="nav-item"><a class="nav-link" id="nav-anasayfa" onclick="setTab('anasayfa')"><i class="bi bi-house-door-fill me-2"></i>Ana Sayfa</a></li>
       <li class="nav-item"><a class="nav-link active" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-2"></i>Projeler</a></li>
@@ -276,7 +332,7 @@
     <!-- ============ MALİ İŞLER (cari takip — Faz 1) ============ -->
     <!-- SATIŞ MODÜLÜ (Faz C1+C2): Müşteriler + Teklifler -->
     <div id="satisArea" class="d-none p-3">
-      <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-3 arac-cubugu-mobil">
         <div class="d-flex align-items-center gap-3">
           <h5 class="mb-0 fw-bold text-mod-satis"><i class="bi bi-briefcase me-2"></i>Satış</h5>
           <ul class="nav nav-pills nav-sm" style="--bs-nav-pills-link-active-bg: var(--mod-satis);">
@@ -867,7 +923,7 @@
     <div id="maliArea" class="d-none p-3">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h5 class="mb-0 fw-bold text-mod-mali"><i class="bi bi-cash-stack me-2"></i>Mali İşler</h5>
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 arac-cubugu-mobil">
           <span id="maliKurRozet" class="badge bg-light text-dark border"></span>
           <span id="maliMuhletRozet" class="badge bg-light text-dark border"></span>
           <button class="btn btn-sm btn-outline-secondary d-none" id="btnMaliAyar" onclick="maliAyarAc()"><i class="bi bi-gear me-1"></i>Ayarlar</button>
@@ -981,8 +1037,8 @@
     </div>
 
     <div id="stokArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div class="btn-group btn-group-sm shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-3 arac-cubugu-mobil">
+            <div class="btn-group btn-group-sm shadow-sm yatay-kaydir">
                 <button class="btn btn-dark active" id="btnStokOzet" onclick="switchStokSubTab('ozet')">
                     <i class="bi bi-list-ul me-1"></i> Stok Özeti
                 </button>
@@ -1278,8 +1334,8 @@
       </div>
     </div>
     <div id="satinalmaArea" class="d-none p-3">
-    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
-        <div class="btn-group btn-group-sm shadow-sm">
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom arac-cubugu-mobil">
+        <div class="btn-group btn-group-sm shadow-sm yatay-kaydir">
             <button class="btn btn-dark active" id="btnSubTalepler" onclick="switchSatinalmaSubTab('talepler')">
                 <i class="bi bi-card-list me-1"></i> Talep Havuzu
             </button>
@@ -1562,8 +1618,8 @@
     </div>
 
     <div id="sevkiyatArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
-            <div class="btn-group btn-group-sm shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom arac-cubugu-mobil">
+            <div class="btn-group btn-group-sm shadow-sm yatay-kaydir">
                 <button class="btn btn-dark active" id="svkTab-hazir" onclick="switchSevkiyatSekme('hazir')">
                     <i class="bi bi-truck-flatbed me-1"></i> Sevkiyata Hazır
                 </button>
@@ -1938,8 +1994,8 @@
 
     <!-- ROLLER & İZİN MATRİSİ (sadece ADMIN) -->
     <div id="rollerArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
-            <div class="btn-group btn-group-sm shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom arac-cubugu-mobil">
+            <div class="btn-group btn-group-sm shadow-sm yatay-kaydir">
                 <button class="btn btn-dark active" id="rolTab-liste" onclick="switchRolSekme('liste')">
                     <i class="bi bi-person-badge me-1"></i> Rol Listesi
                 </button>
@@ -2684,8 +2740,8 @@
 
     <!-- ÜRETİM MODÜLÜ -->
     <div id="uretimArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
-            <div class="btn-group btn-group-sm shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom arac-cubugu-mobil">
+            <div class="btn-group btn-group-sm shadow-sm yatay-kaydir">
                 <button class="btn btn-dark active" id="urtTab-plan" onclick="switchUretimSekme('plan')">
                     <i class="bi bi-card-checklist me-1"></i> Üretim Planı
                 </button>
@@ -2973,8 +3029,8 @@
     </div>
 
     <div id="ozetArea" class="d-none p-3">
-        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
-            <div class="btn-group btn-group-sm shadow-sm">
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom arac-cubugu-mobil">
+            <div class="btn-group btn-group-sm shadow-sm yatay-kaydir">
                 <button class="btn btn-dark active" id="ozTab-genel" onclick="switchOzetSekme('genel')">
                     <i class="bi bi-bar-chart me-1"></i> Genel Bakış
                 </button>
@@ -8329,7 +8385,7 @@ function dashboardKpiRender(k) {
         <div class="col-6 col-md-3">
             <div class="card border-0 shadow-sm h-100" style="cursor:pointer;" onclick="setTab('${c.tab}')">
                 <div class="card-body d-flex align-items-center">
-                    <div class="rounded-circle d-flex align-items-center justify-content-center bg-${c.renk} bg-opacity-10 me-3" style="width:48px; height:48px;">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center bg-${c.renk} bg-opacity-10 me-3" style="width:48px; height:48px; flex:0 0 48px;">
                         <i class="bi ${c.ikon} text-${c.renk}" style="font-size:1.5rem;"></i>
                     </div>
                     <div>
@@ -9727,7 +9783,7 @@ async function auditOzetYukle() {
         <div class="col-md-4">
             <div class="card border-0 shadow-sm">
                 <div class="card-body d-flex align-items-center">
-                    <div class="rounded-circle d-flex align-items-center justify-content-center bg-${c.renk} bg-opacity-10 me-3" style="width:48px; height:48px;">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center bg-${c.renk} bg-opacity-10 me-3" style="width:48px; height:48px; flex:0 0 48px;">
                         <i class="bi ${c.ikon} text-${c.renk}" style="font-size:1.5rem;"></i>
                     </div>
                     <div>
