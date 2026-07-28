@@ -346,6 +346,8 @@
             <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeAnaliz" onclick="switchSatisSekme('analiz')" title="Analizi bekleyen teklif bileşenleri — teknik ofisin iş listesi">Analiz</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-3" id="satisSekmeUrunler" onclick="switchSatisSekme('urunler')">Ürünler</a></li>
           </ul>
+          <!-- AÇIK PROJE SEKMELERİ: listeden tıklanan proje burada kendi sekmesinde açılır -->
+          <ul class="nav nav-pills nav-sm" id="satisProjeSekmeleri" style="--bs-nav-pills-link-active-bg: var(--mod-satis);"></ul>
         </div>
         <div>
           <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" id="btnYeniSatisMusteri" data-izin-modul="satis.musteri" data-izin-seviye="YAZMA" onclick="satisMusteriFormAc()">
@@ -536,6 +538,19 @@
           </div>
         </div>
       </div>
+
+      <!-- AÇIK PROJE SAYFASI: aynı anda tek proje görünür (sekmeler arasında geçilir),
+           veriler önbellekte tutulduğu için sekme değişiminde yeniden istek atılmaz. -->
+      <div id="satisProjeSayfalari" class="d-none">
+        <div class="d-flex justify-content-between align-items-center mb-2 arac-cubugu-mobil">
+          <h6 class="mb-0 fw-bold"><i class="bi bi-compass me-2 text-mod-satis"></i><span id="spdBaslikS">Satış Projesi</span></h6>
+          <button class="btn btn-outline-secondary btn-sm" onclick="satisProjeSekmesiKapat(window.spdAktifId)">
+            <i class="bi bi-x-lg me-1"></i>Sekmeyi Kapat</button>
+        </div>
+        <ul class="nav nav-pills nav-sm gap-1 mb-2" id="spdSekmelerS" style="--bs-nav-pills-link-active-bg: var(--mod-satis);"></ul>
+        <div id="spdGovdeS"></div>
+        <div class="d-flex justify-content-end flex-wrap gap-2 mt-3 pt-3 border-top" id="spdAltButonlarS"></div>
+      </div>
     </div>
 
     <!-- Satış — ürün detay: fiyat geçmişi, formül, ürün ağacı; yeni fiyat girişi -->
@@ -630,23 +645,6 @@
             <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Vazgeç</button>
             <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisBomKaydet()"><i class="bi bi-check-lg me-1"></i>Ekle</button>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Satış — proje (fırsat) detay: salt izleme; durum/dönüşüm footer'da -->
-    <div class="modal fade" id="modalSatisProjeDetay" tabindex="-1">
-      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content border-0 shadow-lg">
-          <div class="modal-header py-3 bg-dark text-white">
-            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-compass me-2"></i><span id="spdBaslik">Satış Projesi</span></h6>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Kapat"></button>
-          </div>
-          <!-- Proje = merkez: eski sistemdeki proje detay sekmelerinin karşılığı -->
-          <ul class="nav nav-pills nav-sm px-3 pt-2 gap-1" id="spdSekmeler" style="--bs-nav-pills-link-active-bg: var(--mod-satis);"></ul>
-          <div class="modal-body p-3 pt-2" id="spdGovde"></div>
-          <!-- Butonlar SEKMEYE ÖZEL: satisProjeAksiyonlariCiz() doldurur -->
-          <div class="modal-footer py-2 flex-wrap" id="spdAltButonlar"></div>
         </div>
       </div>
     </div>
@@ -5079,9 +5077,8 @@ async function satisProjedenTeklifAc(projeId) {
     hideLoading();
     if (!r || !r.ok) { showToast(r?.hata || 'Teklif oluşturulamadı.', 'error'); return; }
     showToast(`Teklif oluşturuldu: ${r.teklif_no}`, 'success');
-    bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeDetay'))?.hide();
-    switchSatisSekme('teklifler');
-    setTimeout(() => satisTeklifDetayAc(r.id), 400);
+    await satisProjeSekmesiTazele(projeId, 'teklifler');   // proje sekmesi açık kalır
+    setTimeout(() => satisTeklifDetayAc(r.id, true), 300); // teklif üstte açılır
 }
 
 function satisTemsilciSecenekleriDoldur(secili) {
@@ -5261,7 +5258,11 @@ let satisTeklifDurumFiltresi = '';   // '' = tümü
 let satisMetinHavuzu = null;         // hazır metinler (bir kez yüklenir)
 let stfAramaZamanlayici = null;
 
+let _satisAktifSekme = 'musteriler';
+
 function switchSatisSekme(sekme) {
+    _satisAktifSekme = sekme;
+    const projeSekmesi = String(sekme).startsWith('proje:');
     const sekmeler = ['musteriler', 'teklifler', 'projeler', 'analiz', 'urunler'];
     const bolumId = { musteriler: 'satisMusterilerBolum', teklifler: 'satisTekliflerBolum',
         projeler: 'satisProjelerBolum', analiz: 'satisAnalizBolum', urunler: 'satisUrunlerBolum' };
@@ -5271,6 +5272,8 @@ function switchSatisSekme(sekme) {
         document.getElementById(sekmeId[s]).classList.toggle('active', s === sekme);
         document.getElementById(bolumId[s]).classList.toggle('d-none', s !== sekme);
     });
+    // Açık proje sayfası yalnız proje sekmesindeyken görünür
+    document.getElementById('satisProjeSayfalari').classList.toggle('d-none', !projeSekmesi);
     document.getElementById('btnYeniSatisMusteri').classList.toggle('d-none', sekme !== 'musteriler');
     document.getElementById('btnYeniSatisTeklif').classList.toggle('d-none', sekme !== 'teklifler');
     document.getElementById('btnYeniSatisProje').classList.toggle('d-none', sekme !== 'projeler');
@@ -5278,6 +5281,8 @@ function switchSatisSekme(sekme) {
     if (sekme === 'projeler') satisProjeleriYukle();
     if (sekme === 'analiz') satisAnalizKuyruguYukle();
     if (sekme === 'urunler') satisUrunSekmeInit();
+    if (projeSekmesi) { satisProjeSekmeleriCiz(); satisProjeSayfasiniCiz(parseInt(sekme.slice(6))); }
+    else satisProjeSekmeleriCiz();
     izinleriUygula && izinleriUygula();
 }
 
@@ -5879,18 +5884,90 @@ function satisProjeDurumSuz(durum) {
     satisProjeleriYukle();
 }
 
-async function satisProjeDetayAc(id, sekme) {
-    const r = await secureFetch('/satis-proje-detay/' + id).catch(() => null);
-    if (!r || !r.ok) { showToast(r?.hata || 'Satış projesi yüklenemedi.', 'error'); return; }
-    const p = r.proje;
-    // Başka bir projeye geçildiyse sekme başa döner; aynı proje tazeleniyorsa sekme korunur
-    if (window.spdAktifId !== p.id) window.spdSekme = 'genel';
-    if (sekme) window.spdSekme = sekme;
-    window.spdAktifId = p.id;
-    window.spdAktifDetay = r;
-    document.getElementById('spdBaslik').innerText = `[${p.proje_kodu}] ${p.proje_adi || ''}`;
-    // Sekme şeridi (eski sistemin proje detay sekmeleri): Genel | Teklifler | Analiz | Sözleşme | Yorumlar
-    const bekleyenAnaliz = (r.kalemler || []).filter(k => k.analiz_durumu === 'ANALIZ_SURECINDE').length;
+// ============================================================================
+// PROJE SEKMELERİ — listeden tıklanan proje, Satış içinde kendi sekmesinde açılır.
+// Aynı anda birkaç proje açık kalabilir; içerik alanı tektir (görünen sekmenin
+// verisi önbellekten çizilir, sekme değişiminde yeniden istek atılmaz).
+// spdEk: '' → eski pencere kabuğu, 'S' → sayfa kabuğu. spdEl() ikisi arasında seçer.
+// ============================================================================
+let spdEk = 'S';
+const spdEl = (ad) => document.getElementById(ad + spdEk) || document.getElementById(ad);
+let satisAcikProjeler = [];              // [{id, kod, ad, veri, icSekme}]
+const SATIS_MAX_PROJE_SEKME = 5;
+
+function satisProjeSekmeleriCiz() {
+    const serit = document.getElementById('satisProjeSekmeleri');
+    if (!serit) return;
+    serit.innerHTML = satisAcikProjeler.map(k => `
+        <li class="nav-item">
+            <a class="nav-link py-1 ps-3 pe-2 d-flex align-items-center gap-2 ${_satisAktifSekme === 'proje:' + k.id ? 'active' : ''}"
+               id="satisSekmeProje_${k.id}" onclick="satisProjeSekmesineGec(${k.id})" title="${esc(k.ad || '')}">
+                <span>${esc(k.kod)}</span>
+                <i class="bi bi-x-lg" style="font-size:0.7rem;" title="Sekmeyi kapat"
+                   onclick="event.stopPropagation(); satisProjeSekmesiKapat(${k.id});"></i>
+            </a>
+        </li>`).join('');
+}
+
+async function satisProjeSekmesiAc(projeId, icSekme) {
+    let kayit = satisAcikProjeler.find(x => x.id === projeId);
+    if (!kayit) {
+        const r = await secureFetch('/satis-proje-detay/' + projeId).catch(() => null);
+        if (!r || !r.ok) { showToast(r?.hata || 'Satış projesi yüklenemedi.', 'error'); return; }
+        kayit = { id: projeId, kod: r.proje.proje_kodu, ad: r.proje.proje_adi, veri: r, icSekme: 'genel' };
+        satisAcikProjeler.push(kayit);
+        if (satisAcikProjeler.length > SATIS_MAX_PROJE_SEKME) {
+            const dusen = satisAcikProjeler.shift();
+            showToast(`En fazla ${SATIS_MAX_PROJE_SEKME} proje sekmesi açık kalır; ${dusen.kod} kapatıldı.`, 'info');
+        }
+    }
+    if (icSekme) kayit.icSekme = icSekme;
+    satisProjeSekmeleriCiz();
+    switchSatisSekme('proje:' + projeId);
+}
+
+function satisProjeSekmesineGec(projeId) { switchSatisSekme('proje:' + projeId); }
+
+function satisProjeSekmesiKapat(projeId) {
+    const i = satisAcikProjeler.findIndex(x => x.id === projeId);
+    if (i < 0) return;
+    satisAcikProjeler.splice(i, 1);
+    satisProjeSekmeleriCiz();
+    // Kapatılan sekme açıksa: kalan son proje sekmesine, yoksa Projeler listesine dön
+    if (_satisAktifSekme === 'proje:' + projeId) {
+        const kalan = satisAcikProjeler[satisAcikProjeler.length - 1];
+        switchSatisSekme(kalan ? 'proje:' + kalan.id : 'projeler');
+    }
+}
+
+// Açık sekmenin verisini sayfaya çizer (yeniden istek yok)
+function satisProjeSayfasiniCiz(projeId) {
+    const k = satisAcikProjeler.find(x => x.id === projeId);
+    if (!k) return;
+    window.spdAktifId = k.id;
+    window.spdAktifDetay = k.veri;
+    window.spdSekme = k.icSekme || 'genel';
+    const p = k.veri.proje;
+    spdEl('spdBaslik').innerText = `[${p.proje_kodu}] ${p.proje_adi || ''}`;
+    satisProjeIcSekmeleriCiz(k.veri);
+    satisProjeSekmeSec(window.spdSekme);
+}
+
+// Proje sekmesinin verisini sunucudan tazele (kaydetme/aksiyon sonrası)
+async function satisProjeSekmesiTazele(projeId, icSekme) {
+    const r = await secureFetch('/satis-proje-detay/' + projeId).catch(() => null);
+    if (!r || !r.ok) return;
+    const k = satisAcikProjeler.find(x => x.id === projeId);
+    if (!k) return;
+    k.veri = r; k.kod = r.proje.proje_kodu; k.ad = r.proje.proje_adi;
+    if (icSekme) k.icSekme = icSekme;
+    satisProjeSekmeleriCiz();
+    if (_satisAktifSekme === 'proje:' + projeId) satisProjeSayfasiniCiz(projeId);
+}
+
+// İç sekme şeridi (Genel | Teklifler | Analiz | Sözleşme | Yorumlar)
+function satisProjeIcSekmeleriCiz(r) {
+    const bekleyenAnaliz = (r.kalemler || []).filter(x => x.analiz_durumu === 'ANALIZ_SURECINDE').length;
     const sekmeler = [
         { kod: 'genel',    ad: 'Genel',     ikon: 'info-circle' },
         { kod: 'teklifler',ad: 'Teklifler', ikon: 'file-earmark-text', rozet: r.teklifler.length },
@@ -5898,25 +5975,28 @@ async function satisProjeDetayAc(id, sekme) {
         { kod: 'sozlesme', ad: 'Sözleşme',  ikon: 'file-earmark-check' },
         { kod: 'yorumlar', ad: 'Yorumlar',  ikon: 'chat-left-text', rozet: r.yorum_sayisi }
     ];
-    document.getElementById('spdSekmeler').innerHTML = sekmeler.map(s => `
+    spdEl('spdSekmeler').innerHTML = sekmeler.map(s => `
         <li class="nav-item"><a class="nav-link py-1 px-3 ${s.kod === (window.spdSekme || 'genel') ? 'active' : ''}"
             id="spdSekme_${s.kod}" onclick="satisProjeSekmeSec('${s.kod}')">
             <i class="bi bi-${s.ikon} me-1"></i>${s.ad}
             ${s.rozet ? `<span class="badge bg-light text-dark border ms-1">${s.rozet}</span>` : ''}
             ${s.uyari ? `<span class="badge bg-warning text-dark ms-1" title="Analizi bekleyen kalem">${s.uyari}</span>` : ''}
         </a></li>`).join('');
-    satisProjeSekmeSec(window.spdSekme || 'genel');   // sekme + o sekmenin butonlarını çizer
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisProjeDetay')).show();
-    izinleriUygula && izinleriUygula();
+}
+
+// Eski çağrı adı korunuyor: artık pencere yerine SEKME açar (tüm çağrı yerleri
+// —liste, analiz kuyruğu, teklif detayı— değişmeden yeni akışa geçti).
+async function satisProjeDetayAc(id, sekme) {
+    await satisProjeSekmesiAc(id, sekme);
 }
 
 // SEKMEYE ÖZEL AKSİYONLAR — eski sistemde de eylemler bulunduğun sekmeye aitti;
 // hepsini alt şeritte birden göstermek hangi düğmenin neye ait olduğunu gizliyordu.
 function satisProjeAksiyonlariCiz(sekme) {
-    const kutu = document.getElementById('spdAltButonlar');
+    const kutu = spdEl('spdAltButonlar');
     if (!kutu) return;
     const p = window.spdAktifDetay?.proje || {};
-    const kapat = '<button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>';
+    const kapat = '';   // kapatma üst şeritte ve sekmedeki X'te; altta tekrarlanmıyor
     let sol = '', sag = '';
 
     if (sekme === 'genel') {
@@ -5941,7 +6021,7 @@ function satisProjeAksiyonlariCiz(sekme) {
     } else if (sekme === 'analiz') {
         sol = `<span class="small text-muted me-auto"><i class="bi bi-info-circle me-1"></i>Analiz işlemleri satırlardaki düğmelerden yapılır.</span>`;
     } else if (sekme === 'yorumlar') {
-        sag = `<button class="btn btn-primary btn-sm px-3 fw-bold" onclick="satisYorumlarAc('PROJE', window.spdAktifId, document.getElementById('spdBaslik').innerText)">
+        sag = `<button class="btn btn-primary btn-sm px-3 fw-bold" onclick="satisYorumlarAc('PROJE', window.spdAktifId, spdEl('spdBaslik').innerText)">
                  <i class="bi bi-chat-left-text me-1"></i>Yorum Ekle</button>`;
     }
     // Sözleşme sekmesinin düğmeleri panelin kendi içinde (zincir adımları + oluştur/düzenle/sil)
@@ -5953,12 +6033,15 @@ function satisProjeAksiyonlariCiz(sekme) {
 // aynı veriyi gösterir (yeniden istek yok).
 function satisProjeSekmeSec(sekme) {
     window.spdSekme = sekme;
+    // Her projenin iç sekmesi kendi kaydında hatırlanır (sekmeler arası gidip gelirken kaybolmasın)
+    const kayit = satisAcikProjeler.find(x => x.id === window.spdAktifId);
+    if (kayit) kayit.icSekme = sekme;
     const r = window.spdAktifDetay; if (!r) return;
     const p = r.proje;
-    document.querySelectorAll('#spdSekmeler .nav-link').forEach(a =>
+    spdEl('spdSekmeler').querySelectorAll('.nav-link').forEach(a =>
         a.classList.toggle('active', a.id === 'spdSekme_' + sekme));
     satisProjeAksiyonlariCiz(sekme);
-    const govde = document.getElementById('spdGovde');
+    const govde = spdEl('spdGovde');
     const d = (v) => (v == null || v === '') ? '-' : esc(v);
 
     if (sekme === 'genel') {
@@ -6030,7 +6113,7 @@ function satisProjeSekmeSec(sekme) {
     }
     if (sekme === 'yorumlar') {
         govde.innerHTML = `<div class="text-muted small py-2">Bu projeye yazılmış <b>${r.yorum_sayisi || 0}</b> yorum var.</div>
-            <button class="btn btn-outline-secondary btn-sm" onclick="satisYorumlarAc('PROJE', window.spdAktifId, document.getElementById('spdBaslik').innerText)">
+            <button class="btn btn-outline-secondary btn-sm" onclick="satisYorumlarAc('PROJE', window.spdAktifId, spdEl('spdBaslik').innerText)">
                 <i class="bi bi-chat-left-text me-1"></i>Yorumları Aç / Yeni Yorum</button>`;
     }
 }
@@ -6063,7 +6146,7 @@ async function satisProjesineGit(projeId) {
     const teklifEl = document.getElementById('modalSatisTeklifDetay');
     const teklifModal = bootstrap.Modal.getInstance(teklifEl);
     // Proje zaten arkada açıksa yalnız teklifi kapatmak yeterli
-    if (window.spdAktifId === projeId && document.getElementById('modalSatisProjeDetay').classList.contains('show')) {
+    if (window.spdAktifId === projeId && _satisAktifSekme === 'proje:' + projeId) {
         teklifModal?.hide();
         return;
     }
@@ -6161,7 +6244,7 @@ function satisSozlesmeDuzenle(s) {
         hideLoading();
         if (!r || !r.ok) { showToast(r?.hata || 'Sözleşme güncellenemedi.', 'error'); return; }
         showToast('Sözleşme güncellendi.', 'success');
-        satisProjeDetayAc(window.spdAktifId);
+        satisProjeSekmesiTazele(window.spdAktifId, 'sozlesme');
     }).catch(() => { hideLoading(); showToast('Sözleşme güncellenemedi.', 'error'); });
 }
 async function satisSozlesmeSil(id, projeId) {
@@ -6171,7 +6254,7 @@ async function satisSozlesmeSil(id, projeId) {
     hideLoading();
     if (!r || !r.ok) { showToast(r?.hata || 'Sözleşme silinemedi.', 'error'); return; }
     showToast('Sözleşme silindi.', 'success');
-    satisProjeDetayAc(projeId);
+    satisProjeSekmesiTazele(projeId, 'sozlesme');
     satisProjeleriYukle();
 }
 
@@ -6183,7 +6266,7 @@ async function satisSozlesmeAksiyon(projeId, aksiyon, ad) {
     hideLoading();
     if (!r || !r.ok) { showToast(r?.hata || 'İşlem yapılamadı.', 'error'); return; }
     showToast(r.mesaj || 'İşlem tamamlandı.', 'success');
-    satisProjeDetayAc(projeId);
+    satisProjeSekmesiTazele(projeId, 'sozlesme');
     satisProjeleriYukle();
 }
 
@@ -6197,7 +6280,7 @@ async function satisProjeDurumKaydet() {
     hideLoading();
     if (!r || !r.ok) { showToast(r?.hata || 'Durum güncellenemedi.', 'error'); return; }
     showToast('Satış durumu güncellendi.', 'success');
-    satisProjeDetayAc(window.spdAktifId);
+    satisProjeSekmesiTazele(window.spdAktifId, 'genel');
     satisProjeleriYukle();
 }
 
@@ -6210,7 +6293,7 @@ async function satisProjeDonustur() {
         body: JSON.stringify({ id: window.spdAktifId }) }).catch(() => null);
     hideLoading();
     if (!r || !r.ok) { showToast(r?.hata || 'Dönüşüm yapılamadı.', 'error'); return; }
-    bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeDetay'))?.hide();
+    satisProjeSekmesiKapat(window.spdAktifId);   // proje artık teslimat fazında
     showToast(r.mesaj || 'Proje sözleşme sürecine alındı.', 'success');
     satisProjeleriYukle();
 }
@@ -6232,8 +6315,6 @@ function spfMusteriSec(id, ad) {
 }
 
 async function satisProjeFormAc(id) {
-    const detayModal = bootstrap.Modal.getInstance(document.getElementById('modalSatisProjeDetay'));
-    if (detayModal) detayModal.hide();
     if (!satisMusteriListe.length) await satisSekmeInit();
     modalFormSifirla('modalSatisProjeForm');
     document.getElementById('spfMusteriOneriler').classList.add('d-none');
@@ -6474,7 +6555,7 @@ async function satisSozlesmeOlustur(projeId) {
     if (!r || !r.ok) { showToast(r?.hata || 'Sözleşme oluşturulamadı.', 'error'); return; }
     showToast(`Sözleşme oluşturuldu: ${r.kod}`, 'success');
     satisTeklifleriYukle();
-    if (window.spdAktifId) satisProjeDetayAc(window.spdAktifId);
+    if (window.spdAktifId) satisProjeSekmesiTazele(window.spdAktifId, 'sozlesme');
 }
 
 // --- ANALİZ: durum rozeti ve pencereler ---
