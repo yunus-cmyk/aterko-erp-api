@@ -14774,20 +14774,26 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
             <a href="#" class="fw-bold text-decoration-none" onclick="event.preventDefault(); bootstrap.Modal.getInstance(document.getElementById('modalSiparisDetay'))?.hide(); switchSatinalmaSubTab('talepler'); setTimeout(()=>openTalepDetayModal(${baglıTalep.id}, '${baglıTalep.talep_no}'), 300);">${esc(baglıTalep.talep_no)}</a>
             <span class="ms-2">${getSatinalmaDurumBadge(baglıTalep.durum)}</span>
         </div>` : ''}
-        <div class="row g-2 mb-3">
-            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş No</span><span class="fw-bold text-primary">${esc(siparisNo)}</span></div></div>
-            <div class="col-md-6"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">İlgili Proje</span><span class="fw-bold text-dark">${sip?.proje ? `${esc(sip.proje.kodu || '')}${sip.proje.musteri ? ' / ' + esc(sip.proje.musteri) : ''}${sip.proje.adi ? ' - ' + esc(sip.proje.adi) : ''}` : '-'}</span></div></div>
-            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Tedarikçi</span><span class="fw-bold text-dark">${esc(sip?.tedarikci_adi || '-')}</span></div></div>
-            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş Tarihi</span><span>${formatTarihTR(sip?.siparis_tarihi) || '-'}</span></div></div>
-            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Termin</span>${renderTerminTarihi(sip?.termin_tarihi)}</div></div>
-            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Kalem Sayısı</span><span class="fw-bold">${kalemler.length}</span></div></div>
-            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Para / KDV</span>${esc(para)} / %${kdv}</div></div>
-        </div>
-        <div class="row g-2 mb-3">
-            ${sh.odeme_vade ? `<div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Ödeme Vadesi</span><span>${esc(sh.odeme_vade)}</span></div></div>` : ''}
-            ${sh.teslim_nakliye ? `<div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Nakliye Şekli</span><span>${esc(sh.teslim_nakliye)}</span></div></div>` : ''}
-            ${sh.teslim_adresi ? `<div class="col-md-6"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Teslimat Adresi</span><span>${esc(sh.teslim_adresi)}</span></div></div>` : ''}
-            <div class="col-md-12"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Sipariş Notu</span><span>${sh.siparis_notu ? esc(sh.siparis_notu) : '<span class="text-muted">—</span>'}</span></div></div>
+        <div class="row g-3 mb-3">
+            ${detayKutusu('Sipariş Bilgileri', 'file-earmark-text', 'col-lg-6', [
+                detayAlani('Sipariş No', `<span class="text-primary">${esc(siparisNo)}</span>`),
+                detayAlani('Sipariş Tarihi', formatTarihTR(sip?.siparis_tarihi) || '-'),
+                detayAlani('Tedarikçi', esc(sip?.tedarikci_adi || '-'), true),
+                detayAlani('İlgili Proje', sip?.proje
+                    ? `${esc(sip.proje.kodu || '')}${sip.proje.musteri ? ' / ' + esc(sip.proje.musteri) : ''}${sip.proje.adi ? ' - ' + esc(sip.proje.adi) : ''}`
+                    : '-', true),
+                detayAlani('Termin', renderTerminTarihi(sip?.termin_tarihi)),
+                detayAlani('Kalem Sayısı', kalemler.length)
+            ])}
+            ${detayKutusu('Ticari Koşullar', 'cash-coin', 'col-lg-6', [
+                detayAlani('Para / KDV', `${esc(para)} / %${kdv}`),
+                detayAlani('Ödeme Vadesi', sh.odeme_vade ? esc(sh.odeme_vade) : '-'),
+                detayAlani('Nakliye Şekli', sh.teslim_nakliye ? esc(sh.teslim_nakliye) : '-'),
+                detayAlani('Teslimat Adresi', sh.teslim_adresi ? esc(sh.teslim_adresi) : '-', true)
+            ])}
+            ${sh.siparis_notu ? detayKutusu('Sipariş Notu', 'chat-left-text', 'col-12', [
+                `<div class="col-12"><span class="text-dark small" style="white-space:pre-wrap;">${esc(sh.siparis_notu)}</span></div>`
+            ]) : ''}
         </div>
         <div class="table-responsive">
             <table class="table table-sm align-middle" style="font-size:0.85rem;">
@@ -17627,6 +17633,32 @@ function renderGenelBakisSiparisler(liste, body) {
     }).join('');
 }
 
+// ============================================================================
+// DETAY EKRANI KUTU DÜZENİ (ortak) — her alanı ayrı kutuya koymak yerine birbirine
+// yakın alanlar tek kutuda "başlık + değer" olarak durur. Satış modülü de bunu kullanır.
+//   detayAlani(etiket, deger, tamGenislik)  → kutu içinde "etiket | değer" satırı.
+//        Alanlar iki sütuna dizilir; uzun değerler (adres, açıklama) tam genişlik ister.
+//   detayKutusu(baslik, ikon, sinif, alanlar) → başlıklı kutu
+// İkon YALNIZ kutu başlığında; alan başına ikon koymak listeyi dağınık gösteriyordu.
+// ============================================================================
+function detayAlani(etiket, deger, tamGenislik) {
+    return `<div class="col-12 ${tamGenislik ? '' : 'col-md-6'}">
+        <div class="d-flex gap-2 py-1 border-bottom" style="border-color:#f1f3f5 !important;">
+            <span class="text-muted flex-shrink-0" style="width:118px; font-size:0.75rem; line-height:1.5;">${etiket}</span>
+            <span class="fw-semibold text-dark" style="font-size:0.85rem; line-height:1.5; min-width:0;">${deger}</span>
+        </div>
+    </div>`;
+}
+function detayKutusu(baslik, ikon, sinif, alanlar) {
+    return `<div class="${sinif || 'col-12'}">
+        <div class="p-3 bg-white border rounded shadow-sm h-100">
+            <div class="fw-bold text-uppercase text-muted mb-2 pb-1 border-bottom" style="font-size:0.7rem; letter-spacing:0.4px;">
+                <i class="bi bi-${ikon} me-1"></i>${baslik}</div>
+            <div class="row gx-4 gy-0">${alanlar.join('')}</div>
+        </div>
+    </div>`;
+}
+
 function renderProjeDetay(proje, teslimatlar) {
     pdOnayAlaniDoldur(proje);   // ADMIN'e Onayla / Onayı Geri Al butonu (TASLAK↔SÖZLEŞME)
     document.getElementById("pdBaslik").innerHTML = `<i class="bi bi-folder2-open me-2 text-primary"></i>[${esc(proje.proje_kodu)}] ${esc(proje.musteri_adi)} - ${esc(proje.proje_adi)}`;
@@ -17638,30 +17670,46 @@ function renderProjeDetay(proje, teslimatlar) {
     const toplamKdv = toplamKdvsiz * kdvOran / 100;
     const toplamKdvli = toplamKdvsiz + toplamKdv;
 
+    // GRUPLU KUTU DÜZENİ: her alan ayrı kutu yerine, birbirine yakın alanlar tek
+    // kutuda başlık + değer olarak duruyor (20 kutu → 4 kutu + açıklama + toplamlar).
     document.getElementById("pdAnaBilgiler").innerHTML = `
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-hash me-1"></i>Proje Kodu</span><span class="fw-bold text-primary">${esc(proje.proje_kodu)}</span></div></div>
-        <div class="col-md-3"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-person me-1"></i>Müşteri / Kurum</span><span class="fw-bold text-dark">${esc(proje.musteri_adi)}</span></div></div>
-        <div class="col-md-3"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-briefcase me-1"></i>Proje Adı</span><span class="fw-bold text-dark">${esc(proje.proje_adi)}</span></div></div>
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-calendar3 me-1"></i>Sözleşme Tarihi</span><span class="fw-bold text-dark">${formatTarihTR(proje.sozlesme_tarihi) || '-'}</span></div></div>
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-tags me-1"></i>Satış Türü</span><span class="fw-bold text-dark">${esc(proje.satis_turu || '-')}</span></div></div>
-
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-currency-exchange me-1"></i>Para Birimi</span><span class="fw-bold text-dark">${esc(proje.para_birimi || 'TL')}</span></div></div>
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-percent me-1"></i>KDV Oranı</span><span class="fw-bold text-dark">%${esc(proje.kdv_orani)}</span></div></div>
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-truck me-1"></i>Nakliye</span><span class="fw-bold text-dark">${esc(proje.nakliye || '-')}</span></div></div>
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-boxes me-1"></i>Teslimat Sayısı</span><span class="fw-bold text-dark">${teslimatlar.length} Bina</span></div></div>
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-activity me-1"></i>Mevcut Durum</span>${getDurumBadge(proje.durum)}</div></div>
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-clock-history me-1"></i>Oluşturma</span><span class="fw-bold text-dark small">${formatTarihTR(proje.olusturma_tarihi) || '-'}</span></div></div>
-        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-person-badge me-1"></i>Satış Temsilcisi</span><span class="fw-bold text-dark">${esc(proje.satis_temsilcisi || '-')}</span></div></div>
-
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-tag me-1"></i>Proje Türü</span><span class="fw-bold text-dark">${esc(proje.proje_turu || '-')}</span></div></div>
-        <div class="col-md-2"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-geo-alt me-1"></i>Şehir / Ülke</span><span class="fw-bold text-dark">${esc([proje.sehir, proje.ulke].filter(Boolean).join(' / ') || '-')}</span></div></div>
-        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-pin-map me-1"></i>Adres</span><span class="fw-bold text-dark small">${esc(proje.adres || '-')}</span></div></div>
-        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-person-lines-fill me-1"></i>İrtibat Kişisi</span><span class="fw-bold text-dark small">${esc(proje.irtibat_adi || '-')}${proje.irtibat_email ? ' · ' + esc(proje.irtibat_email) : ''}${proje.irtibat_telefon ? ' · ' + esc(proje.irtibat_telefon) : ''}</span></div></div>
-        ${proje.aciklama ? `<div class="col-12"><div class="p-2 bg-white border rounded shadow-sm"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-chat-left-text me-1"></i>Açıklama</span><span class="text-dark small" style="white-space:pre-wrap;">${esc(proje.aciklama)}</span></div></div>` : ''}
-        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-link-45deg me-1"></i>ASET</span>${proje.aset_link ? `<a class="fw-bold small text-decoration-none" target="_blank" rel="noopener" href="${esc(proje.aset_link)}">${esc(proje.aset_link)}</a>` : '<span class="text-muted">-</span>'}</div></div>
-        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-google me-1"></i>DRIVE</span>${proje.drive_link ? `<a class="fw-bold small text-decoration-none" target="_blank" rel="noopener" href="${esc(proje.drive_link)}">${esc(proje.drive_link)}</a>` : '<span class="text-muted">-</span>'}</div></div>
-        <div class="col-md-4"><div class="p-2 bg-white border rounded shadow-sm h-100"><span class="d-block small text-muted fw-bold mb-1"><i class="bi bi-file-earmark-pdf me-1"></i>Sözleşme</span>
-            <button class="btn btn-sm btn-outline-primary py-0" onclick="prjDosyaAc(${proje.id}, null, 'SOZLESME', '${escJs(proje.proje_kodu || '')} Sözleşme Dosyaları')"><i class="bi bi-folder2-open me-1"></i>Görüntüle / Yükle</button></div></div>
+        ${detayKutusu('Proje Bilgileri', 'folder2-open', 'col-lg-6', [
+            detayAlani('Proje Kodu', `<span class="text-primary">${esc(proje.proje_kodu)}</span>`),
+            detayAlani('Durum', getDurumBadge(proje.durum)),
+            detayAlani('Müşteri / Kurum', esc(proje.musteri_adi), true),
+            detayAlani('Proje Adı', esc(proje.proje_adi), true),
+            detayAlani('Proje Türü', esc(proje.proje_turu || '-')),
+            detayAlani('Satış Türü', esc(proje.satis_turu || '-')),
+            detayAlani('Teslimat', teslimatlar.length + ' bina'),
+            detayAlani('Oluşturma', formatTarihTR(proje.olusturma_tarihi) || '-')
+        ])}
+        ${detayKutusu('Sözleşme ve Ticari Koşullar', 'file-earmark-text', 'col-lg-6', [
+            detayAlani('Sözleşme Tarihi', formatTarihTR(proje.sozlesme_tarihi) || '-'),
+            detayAlani('Satış Temsilcisi', esc(proje.satis_temsilcisi || '-')),
+            detayAlani('Para Birimi', esc(proje.para_birimi || 'TL')),
+            detayAlani('KDV Oranı', '%' + esc(proje.kdv_orani)),
+            detayAlani('Nakliye', esc(proje.nakliye || '-')),
+            detayAlani('Sözleşme Dosyaları',
+                `<button class="btn btn-sm btn-outline-primary py-0" onclick="prjDosyaAc(${proje.id}, null, 'SOZLESME', '${escJs(proje.proje_kodu || '')} Sözleşme Dosyaları')"><i class="bi bi-folder2-open me-1"></i>Görüntüle / Yükle</button>`, true)
+        ])}
+        ${detayKutusu('Yer ve İrtibat', 'geo-alt', 'col-lg-6', [
+            detayAlani('Şehir / Ülke', esc([proje.sehir, proje.ulke].filter(Boolean).join(' / ') || '-')),
+            detayAlani('Adres', esc(proje.adres || '-'), true),
+            detayAlani('İrtibat Kişisi',
+                esc(proje.irtibat_adi || '-') + (proje.irtibat_email ? ' · ' + esc(proje.irtibat_email) : '') +
+                (proje.irtibat_telefon ? ' · ' + esc(proje.irtibat_telefon) : ''), true)
+        ])}
+        ${detayKutusu('Bağlantılar', 'link-45deg', 'col-lg-6', [
+            detayAlani('ASET', proje.aset_link
+                ? `<a class="text-decoration-none text-break" target="_blank" rel="noopener" href="${esc(proje.aset_link)}">${esc(proje.aset_link)}</a>`
+                : '<span class="text-muted">-</span>', true),
+            detayAlani('Drive', proje.drive_link
+                ? `<a class="text-decoration-none text-break" target="_blank" rel="noopener" href="${esc(proje.drive_link)}">${esc(proje.drive_link)}</a>`
+                : '<span class="text-muted">-</span>', true)
+        ])}
+        ${proje.aciklama ? detayKutusu('Açıklama', 'chat-left-text', 'col-12', [
+            `<div class="col-12"><span class="text-dark small" style="white-space:pre-wrap;">${esc(proje.aciklama)}</span></div>`
+        ]) : ''}
 
         <div class="col-12 mt-2">
           <div class="card border-0 shadow-sm bg-light">
@@ -17722,12 +17770,7 @@ function renderProjeDetay(proje, teslimatlar) {
         if (isHafifCelik || t.dis_duvar_kesiti) ozelAlanlar.push({ etiket: 'Dış Duvar Kesiti', deger: t.dis_duvar_kesiti || '-' });
         if (isHafifCelik || t.ic_duvar_kesiti) ozelAlanlar.push({ etiket: 'İç Duvar Kesiti', deger: t.ic_duvar_kesiti || '-' });
 
-        const ozelHTML = ozelAlanlar.map(a => `
-            <div class="col-md-3"><div class="p-2 border rounded bg-light h-100">
-                <span class="d-block small text-muted fw-bold">${esc(a.etiket)}</span>
-                <span class="fw-bold text-dark">${esc(String(a.deger))}</span>
-            </div></div>
-        `).join('');
+        const ozelHTML = ozelAlanlar.map(a => detayAlani(esc(a.etiket), esc(String(a.deger)))).join('');
 
         // Sevkiyat tarihleri — ek_veriler.sevkiyatlar varsa onu kullan, yoksa sevkiyat_baslangici'ni göster
         const sevkiyatlar = (t.ek_veriler && Array.isArray(t.ek_veriler.sevkiyatlar) && t.ek_veriler.sevkiyatlar.length > 0)
@@ -17752,40 +17795,31 @@ function renderProjeDetay(proje, teslimatlar) {
 
         icerikler.innerHTML += `
             <div class="tab-pane fade show ${aktif}" id="${paneId}" role="tabpanel">
-                <div class="row g-2 mb-2">
-                  <div class="col-12"><h6 class="text-muted fw-bold small text-uppercase border-bottom pb-1 mb-2"><i class="bi bi-info-circle me-1"></i>Genel</h6></div>
-                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Bina Adı</span><span class="fw-bold text-dark">${esc(t.bina_adi)}</span></div></div>
-                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Bina Türü</span><span class="fw-bold text-dark">${esc(t.bina_turu || '-')}</span></div></div>
-                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Bina Tipi</span><span class="fw-bold text-dark">${esc(t.bina_tipi || '-')}</span></div></div>
-                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Durum</span>${getDurumBadge(t.durum)}</div></div>
-
-                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Büyüklük</span><span class="fw-bold text-dark">${t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '-'}</span></div></div>
-                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold">Kurulum / Bina Yeri</span><span class="fw-bold text-dark">${esc(t.bina_yeri || '-')}</span></div></div>
-                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold"><i class="bi bi-wrench-adjustable me-1"></i>Sahada Montaj</span>${t.montaj_gerekli ? '<span class="badge bg-warning text-dark">🔧 Gerekli (Montajlı)</span>' : '<span class="badge bg-success">✅ Gerekmez (Direkt teslim)</span>'}</div></div>
-                  <div class="col-md-3"><div class="p-2 border rounded bg-light h-100"><span class="d-block small text-muted fw-bold"><i class="bi bi-calendar-week me-1"></i>Sevkiyat ${sevkiyatlar.length > 1 ? '(' + sevkiyatlar.length + ' tarih)' : ''}</span>${sevkiyatHTML}</div></div>
+                <div class="row g-3 mb-2">
+                  ${detayKutusu('Genel', 'info-circle', 'col-lg-6', [
+                      detayAlani('Bina Adı', esc(t.bina_adi), true),
+                      detayAlani('Bina Türü', esc(t.bina_turu || '-')),
+                      detayAlani('Bina Tipi', esc(t.bina_tipi || '-')),
+                      detayAlani('Durum', getDurumBadge(t.durum)),
+                      detayAlani('Büyüklük', t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '-'),
+                      detayAlani('Kurulum / Bina Yeri', esc(t.bina_yeri || '-'), true),
+                      detayAlani('Sahada Montaj', t.montaj_gerekli
+                          ? '<span class="badge bg-warning text-dark">Gerekli (Montajlı)</span>'
+                          : '<span class="badge bg-success">Gerekmez (Direkt teslim)</span>', true),
+                      detayAlani('Sevkiyat' + (sevkiyatlar.length > 1 ? ` (${sevkiyatlar.length} tarih)` : ''), sevkiyatHTML, true)
+                  ])}
+                  ${detayKutusu('Mali Bilgiler', 'cash-coin', 'col-lg-6', [
+                      detayAlani("KDV'siz Sözleşme Tutarı", `<span class="fs-6">${fiyatHucre(formatTR(tKdvsiz) + ' ' + esc(proje.para_birimi || 'TL'))}</span>`, true),
+                      detayAlani(`KDV'li Tutar (%${proje.kdv_orani})`, `<span class="fs-6 text-primary">${fiyatHucre(formatTR(tKdvli) + ' ' + esc(proje.para_birimi || 'TL'))}</span>`, true),
+                      detayAlani('Kayıt Tarihi', formatTarihTR(t.olusturma_tarihi) || '-', true)
+                  ])}
+                  ${ozelAlanlar.length > 0
+                      ? detayKutusu(esc(t.bina_turu) + ' Özellikleri', 'sliders', 'col-12', [ozelHTML])
+                      : ''}
                 </div>
 
-                ${ozelAlanlar.length > 0 ? `
-                <div class="row g-2 mb-2">
-                  <div class="col-12"><h6 class="text-muted fw-bold small text-uppercase border-bottom pb-1 mb-2 mt-2"><i class="bi bi-sliders me-1"></i>${esc(t.bina_turu)} Özellikleri</h6></div>
-                  ${ozelHTML}
-                </div>` : ''}
-
-                <div class="row g-2 mb-2">
-                  <div class="col-12"><h6 class="text-muted fw-bold small text-uppercase border-bottom pb-1 mb-2 mt-2"><i class="bi bi-cash-coin me-1"></i>Mali Bilgiler</h6></div>
-                  <div class="col-md-6"><div class="p-3 border rounded bg-light h-100">
-                    <span class="d-block small text-muted fw-bold">KDV'siz Sözleşme Tutarı</span>
-                    <span class="fw-bold text-dark fs-5">${fiyatHucre(formatTR(tKdvsiz) + ' ' + esc(proje.para_birimi || 'TL'))}</span>
-                  </div></div>
-                  <div class="col-md-6"><div class="p-3 border rounded bg-light h-100">
-                    <span class="d-block small text-muted fw-bold">KDV'li Tutar (%${proje.kdv_orani})</span>
-                    <span class="fw-bold text-primary fs-5">${fiyatHucre(formatTR(tKdvli) + ' ' + esc(proje.para_birimi || 'TL'))}</span>
-                  </div></div>
-                </div>
-
-                <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
-                  <small class="text-muted"><i class="bi bi-clock-history me-1"></i>Kayıt: ${formatTarihTR(t.olusturma_tarihi) || '-'}</small>
-                  <div class="d-flex gap-2">
+                <div class="d-flex justify-content-end align-items-center mt-3 pt-3 border-top">
+                  <div class="d-flex gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-primary" onclick="openTeknikSartname(${t.id})">
                         <i class="bi bi-file-earmark-text me-1"></i>Teknik Şartname
                     </button>
