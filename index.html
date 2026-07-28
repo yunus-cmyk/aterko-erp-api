@@ -829,7 +829,7 @@
             <div class="me-auto d-flex gap-2 align-items-center flex-wrap" id="stdAksiyonlar"></div>
             <button class="btn btn-outline-secondary btn-sm px-3" onclick="satisTeklifPdfIndir()"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</button>
             <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
-            <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisTeklifFormAc(window.stdAktifId)">
+            <button class="btn btn-primary btn-sm px-4 fw-bold" id="stdDuzenleBtn" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisTeklifFormAc(window.stdAktifId)">
               <i class="bi bi-pencil-square me-1"></i>Düzenle
             </button>
           </div>
@@ -6528,7 +6528,43 @@ function satisTeklifAksiyonlariCiz(t) {
     if (t.durum === 'ONAYLANAN' && t.proje_id && izinVarMi('satis.teklif', 'TAM')) {
         a.push(btn('success', 'file-earmark-check', 'Sözleşme Oluştur', `satisSozlesmeOlustur(${t.proje_id})`));
     }
+    // SİL — eski sistemde teklif detayında her zaman görünürdü. Bizde kayıt güvenliği
+    // için yalnız TASLAK silinebiliyor (verilmiş teklif arşiv kaydıdır); düğme yine de
+    // görünür ama pasif olur ki kullanıcı "silme yok" sanmasın.
+    if (izinVarMi('satis.teklif', 'TAM')) {
+        a.push(t.durum === 'TASLAK'
+            ? btn('outline-danger', 'trash', 'Sil', 'satisTeklifSil()')
+            : `<button class="btn btn-outline-danger btn-sm" disabled title="Yalnız TASLAK teklif silinebilir — verilmiş teklif arşiv kaydıdır. Gerekiyorsa Reddet ya da Revize Et kullanın."><i class="bi bi-trash me-1"></i>Sil</button>`);
+    }
     kutu.innerHTML = a.join(' ');
+    // Eski kural: REVIZE edilmiş (yerine yenisi çıkmış) teklifi yalnız yönetim düzenler
+    const duzenle = document.getElementById('stdDuzenleBtn');
+    if (duzenle) {
+        const kilitli = t.durum === 'REVIZE' && !adminRolMu() && !(window.kullaniciRolleri || []).includes('YONETIM');
+        duzenle.disabled = kilitli;
+        duzenle.title = kilitli ? 'Revize edilmiş teklifi yalnız yönetim düzenleyebilir.' : '';
+    }
+}
+
+// Teklif silme — kalemler, analiz dökümü/değerleri ve yorumlar da gider (eski
+// ProposalDeleter zinciriyle aynı). Bu yüzden onay metni ne gideceğini açıkça yazar.
+async function satisTeklifSil() {
+    const t = window.stdAktifDetay?.teklif;
+    if (!t) return;
+    const kalemSayisi = (window.stdAktifDetay.kalemler || []).length;
+    if (!confirm(`${t.teklif_no || 'Teklif'} kalıcı olarak silinecek.\n\n` +
+        `${kalemSayisi} kalem ve bunlara ait analiz formları, malzeme dökümleri ve yorumlar da silinir.\n\n` +
+        `Bu işlem geri alınamaz. Devam edilsin mi?`)) return;
+    showLoading();
+    try {
+        const r = await secureFetch('/satis-teklif-sil/' + t.id, { method: 'DELETE' });
+        if (!r.ok) { showToast(r.hata || 'Teklif silinemedi.', 'error'); return; }
+        showToast('Teklif silindi.', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('modalSatisTeklifDetay'))?.hide();
+        window.stdAktifId = null;
+        satisTeklifleriYukle?.();
+        if (typeof satisProjeSekmesiTazele === 'function' && t.proje_id) satisProjeSekmesiTazele(t.proje_id);
+    } finally { hideLoading(); }
 }
 
 const SATIS_TEKLIF_AKSIYON = {
