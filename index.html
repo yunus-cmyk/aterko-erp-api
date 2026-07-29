@@ -353,9 +353,8 @@
           <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" id="btnYeniSatisMusteri" data-izin-modul="satis.musteri" data-izin-seviye="YAZMA" onclick="satisMusteriFormAc()">
             <i class="bi bi-plus-lg me-1"></i>Yeni Müşteri
           </button>
-          <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniSatisTeklif" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisTeklifFormAc()">
-            <i class="bi bi-plus-lg me-1"></i>Yeni Teklif
-          </button>
+<!-- "Yeni Teklif" düğmesi kaldırıldı (2026-07-29): teklif yalnız proje içinden
+               oluşturulur — Satış > Proje > Teklifler > Teklif Oluştur (eski sistemle aynı). -->
           <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniSatisProje" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc()">
             <i class="bi bi-plus-lg me-1"></i>Yeni Fırsat
           </button>
@@ -669,8 +668,6 @@
               </div>
               <div class="col-md-4"><label class="form-label">Satış Durumu</label>
                 <select id="spfDurum" class="form-select form-select-sm"></select></div>
-              <div class="col-md-4"><label class="form-label">Proje Türü</label>
-                <input type="text" id="spfTur" class="form-control form-control-sm" placeholder="örn. Prefabrik Yapı"></div>
               <div class="col-md-4"><label class="form-label">Satış Temsilcisi</label>
                 <input type="text" id="spfTemsilci" class="form-control form-control-sm"></div>
               <div class="col-md-4"><label class="form-label">Şehir</label>
@@ -4207,10 +4204,6 @@ STK-002		50	adet
                             <input type="url" id="pjDriveLink" class="form-control form-control-sm" placeholder="https://drive.google.com/open?id=...">
                         </div>
                         <div class="col-md-2">
-                            <label class="form-label"><i class="bi bi-tag me-1"></i>Proje Türü</label>
-                            <input type="text" id="pjProjeTuru" class="form-control form-control-sm" placeholder="örn. Prefabrik Yapı">
-                        </div>
-                        <div class="col-md-2">
                             <label class="form-label"><i class="bi bi-geo-alt me-1"></i>Şehir</label>
                             <input type="text" id="pjSehir" class="form-control form-control-sm">
                         </div>
@@ -5341,7 +5334,6 @@ function switchSatisSekme(sekme) {
     // Açık proje sayfası yalnız proje sekmesindeyken görünür
     document.getElementById('satisProjeSayfalari').classList.toggle('d-none', !projeSekmesi);
     document.getElementById('btnYeniSatisMusteri').classList.toggle('d-none', sekme !== 'musteriler');
-    document.getElementById('btnYeniSatisTeklif').classList.toggle('d-none', sekme !== 'teklifler');
     document.getElementById('btnYeniSatisProje').classList.toggle('d-none', sekme !== 'projeler');
     if (sekme === 'teklifler') satisTeklifleriYukle();
     if (sekme === 'projeler') satisProjeleriYukle();
@@ -6167,7 +6159,6 @@ function satisProjeSekmeSec(sekme) {
                     ? `<span class="text-primary" style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${p.sat_musteri_id})">${esc(p.musteri_adi || '-')}</span>`
                     : d(p.musteri_adi), true),
                 detayAlani('Satış Durumu', satisProjeDurumBadge(p.satis_durumu), true),
-                detayAlani('Proje Türü', d(p.proje_turu)),
                 detayAlani('Satış Türü', d(p.satis_turu)),
                 detayAlani('Temsilci', d(p.satis_temsilcisi)),
                 detayAlani('Oluşturma', p.olusturma_tarihi ? formatTarihTR(p.olusturma_tarihi) : '-')
@@ -6474,7 +6465,6 @@ async function satisProjeFormAc(id) {
         document.getElementById('spfAd').value = p.proje_adi || '';
         spfMusteriSec(p.sat_musteri_id || '', p.musteri_adi || '');
         durumSec.value = p.satis_durumu || 'TASLAK';
-        document.getElementById('spfTur').value = p.proje_turu || '';
         document.getElementById('spfTemsilci').value = p.satis_temsilcisi || '';
         document.getElementById('spfSehir').value = p.sehir || '';
         document.getElementById('spfUlke').value = p.ulke || '';
@@ -6503,7 +6493,6 @@ async function satisProjeKaydet() {
             proje_adi: ad,
             sat_musteri_id: parseInt(musteriId),
             satis_durumu: document.getElementById('spfDurum').value,
-            proje_turu: document.getElementById('spfTur').value.trim(),
             satis_temsilcisi: document.getElementById('spfTemsilci').value.trim(),
             sehir: document.getElementById('spfSehir').value.trim(),
             ulke: document.getElementById('spfUlke').value.trim(),
@@ -7528,6 +7517,8 @@ async function stfProjeSecenekleriDoldur(seciliId) {
 }
 
 async function satisTeklifFormAc(id) {
+    // Teklif yalnız proje içinden doğar; bu form salt DÜZENLEME içindir.
+    if (!id) { showToast('Yeni teklif proje içinden oluşturulur: Satış > Proje > Teklifler > Teklif Oluştur.', 'error'); return; }
     const detayModal = bootstrap.Modal.getInstance(document.getElementById('modalSatisTeklifDetay'));
     if (detayModal) detayModal.hide();
     if (!satisMusteriListe.length) await satisSekmeInit();
@@ -7542,6 +7533,13 @@ async function satisTeklifFormAc(id) {
         const t = window.stdAktifDetay.teklif;
         stfMusteriSec(t.musteri_id || '', t.musteri_adi || '');
         document.getElementById('stfTarih').value = t.teklif_tarihi ? t.teklif_tarihi.slice(0, 10) : '';
+        // SALT OKUNUR üçlü (Yunus 2026-07-29): müşteri ve proje tekliften değiştirilemez,
+        // teklif tarihi oluşturma tarihidir — sunucu da payload'ı yok sayar.
+        const musteriAlani = document.getElementById('stfMusteriAra');
+        musteriAlani.readOnly = true; musteriAlani.classList.add('bg-light');
+        musteriAlani.title = 'Müşteri projeden gelir; tekliften değiştirilemez.';
+        document.getElementById('stfTarih').readOnly = true;
+        document.getElementById('stfTarih').classList.add('bg-light');
         document.getElementById('stfPara').value = t.para_birimi || 'TL';
         document.getElementById('stfKdv').value = String(parseFloat(t.kdv_orani) || 20);
         document.getElementById('stfDahil').value = t.dahil_isler || '';
@@ -7550,6 +7548,8 @@ async function satisTeklifFormAc(id) {
         document.getElementById('stfTeslimat').value = t.teslimat_kosullari || '';
         document.getElementById('stfNotlar').value = t.notlar || '';
         await stfProjeSecenekleriDoldur(t.proje_id);
+        const projeSec = document.getElementById('stfProje');
+        projeSec.disabled = true; projeSec.title = 'Teklif, oluşturulduğu projeye bağlıdır.';
         (window.stdAktifDetay.kalemler || []).forEach(k => stfKalemEkle(k));
     } else {
         document.getElementById('stfTarih').value = new Date().toISOString().slice(0, 10);
@@ -17869,7 +17869,6 @@ function openYeniProjeModal(duzenlemeData) {
     if(document.getElementById("pjKdv")) document.getElementById("pjKdv").value = p.kdv_orani || "20";
     if(document.getElementById("pjSatisTemsilcisi")) document.getElementById("pjSatisTemsilcisi").value = p.satis_temsilcisi || "";
     if(document.getElementById("pjAsetLink")) document.getElementById("pjAsetLink").value = p.aset_link || "";
-    document.getElementById("pjProjeTuru").value = p.proje_turu || "";
     document.getElementById("pjSehir").value = p.sehir || "";
     document.getElementById("pjUlke").value = p.ulke || "";
     document.getElementById("pjAdres").value = p.adres || "";
@@ -18300,7 +18299,6 @@ function renderProjeDetay(proje, teslimatlar) {
             detayAlani('Durum', getDurumBadge(proje.durum)),
             detayAlani('Müşteri / Kurum', esc(proje.musteri_adi), true),
             detayAlani('Proje Adı', esc(proje.proje_adi), true),
-            detayAlani('Proje Türü', esc(proje.proje_turu || '-')),
             detayAlani('Satış Türü', esc(proje.satis_turu || '-')),
             detayAlani('Teslimat', teslimatlar.length + ' bina'),
             detayAlani('Oluşturma', formatTarihTR(proje.olusturma_tarihi) || '-')
@@ -18390,6 +18388,9 @@ function renderProjeDetay(proje, teslimatlar) {
         const isHafifCelik = t.bina_turu === 'Hafif Çelik';
 
         const ozelAlanlar = [];
+        // Bina Tipi ve Büyüklük, Genel'den Bina Özellikleri'ne taşındı (Yunus 2026-07-29)
+        ozelAlanlar.push({ etiket: 'Bina Tipi', deger: t.bina_tipi || '-' });
+        ozelAlanlar.push({ etiket: 'Büyüklük', deger: t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '-' });
         if (isPrefabrik || t.kat_yuksekligi) ozelAlanlar.push({ etiket: 'Kat Yüksekliği', deger: t.kat_yuksekligi ? t.kat_yuksekligi + ' mm' : '-' });
         if (isPrefabrik || t.kat_adedi) ozelAlanlar.push({ etiket: 'Kat Adedi', deger: t.kat_adedi || '-' });
         if (isPrefabrik || t.bina_adedi) ozelAlanlar.push({ etiket: 'Bina Adedi', deger: t.bina_adedi || '-' });
@@ -18427,9 +18428,7 @@ function renderProjeDetay(proje, teslimatlar) {
                   ${detayKutusu('Genel', 'info-circle', 'col-lg-6', [
                       detayAlani('Bina Adı', esc(t.bina_adi), true),
                       detayAlani('Bina Türü', esc(t.bina_turu || '-')),
-                      detayAlani('Bina Tipi', esc(t.bina_tipi || '-')),
                       detayAlani('Durum', getDurumBadge(t.durum)),
-                      detayAlani('Büyüklük', t.buyukluk_m2 ? t.buyukluk_m2 + ' m²' : '-'),
                       detayAlani('Kurulum / Bina Yeri', esc(t.bina_yeri || '-'), true),
                       detayAlani('Sahada Montaj', t.montaj_gerekli
                           ? '<span class="badge bg-warning text-dark">Gerekli (Montajlı)</span>'
@@ -18442,7 +18441,7 @@ function renderProjeDetay(proje, teslimatlar) {
                       detayAlani('Kayıt Tarihi', formatTarihTR(t.olusturma_tarihi) || '-', true)
                   ])}
                   ${ozelAlanlar.length > 0
-                      ? detayKutusu(esc(t.bina_turu) + ' Özellikleri', 'sliders', 'col-12', [ozelHTML])
+                      ? detayKutusu('Bina Özellikleri', 'sliders', 'col-12', [ozelHTML])
                       : ''}
                 </div>
 
@@ -18760,7 +18759,6 @@ function saveProjeGelis() {
         satis_temsilcisi: document.getElementById("pjSatisTemsilcisi")?.value.trim() || '',
         aset_link: document.getElementById("pjAsetLink")?.value.trim() || '',
         drive_link: document.getElementById("pjDriveLink")?.value.trim() || '',
-        proje_turu: document.getElementById("pjProjeTuru").value.trim(),
         sehir: document.getElementById("pjSehir").value.trim(),
         ulke: document.getElementById("pjUlke").value.trim(),
         adres: document.getElementById("pjAdres").value.trim(),

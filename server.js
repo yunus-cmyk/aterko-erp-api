@@ -6147,6 +6147,11 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
         const araToplam = temiz.filter(k => !k.opsiyonel).reduce((s, k) => s + k.miktar * k.birim_fiyat, 0);
         const kdvTutar = araToplam * kdv / 100;
         const genel = araToplam + kdvTutar;
+        // ESKİ SİSTEM KURALI (Yunus 2026-07-29): teklif ancak PROJE içinden oluşturulur
+        // (satis-proje-teklif-olustur → {kod}-TEK-NN taslağı). Bu uç yalnız DÜZENLER;
+        // müşteri/proje/teklif tarihi salt okunurdur ve burada asla değiştirilmez.
+        if (!id) return res.json({ ok: false,
+            hata: 'Yeni teklif proje içinden oluşturulur: Satış > Proje > Teklifler > Teklif Oluştur.' });
         await client.query('BEGIN');
         let teklifId = id;
         const alanlar = [musteri_id, proje_id || null, teklif_tarihi || new Date(),
@@ -6157,6 +6162,10 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
         if (id) {
             const eskiR = await client.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
             if (eskiR.rowCount === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Teklif bulunamadı.' }); }
+            // Salt okunur üçlü: kayıttaki değerler payload'a bakılmaksızın korunur
+            alanlar[0] = eskiR.rows[0].musteri_id;
+            alanlar[1] = eskiR.rows[0].proje_id;
+            alanlar[2] = eskiR.rows[0].teklif_tarihi;
             await client.query(`
                 UPDATE sat_teklifler SET musteri_id=$1, proje_id=$2, teklif_tarihi=$3, para_birimi=$4,
                     kdv_orani=$5, ara_toplam=$6, kdv_tutar=$7, genel_toplam=$8, iskontolu_toplam=$9,
@@ -6230,7 +6239,7 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
         // Toplamlar kalemlerden yeniden hesaplanır (eski calculateAndSaveProposalTotals birebir)
         await satisTeklifToplamlariHesapla(client, teklifId);
         // Müşteri satış durumu otomatiği (eski ProposalExtServiceImpl.save birebir)
-        await musteriDurumGuncelle(client, musteri_id);
+        await musteriDurumGuncelle(client, alanlar[0]);
         await client.query('COMMIT');
         await auditLogla(req, { eylem: id ? 'UPDATE' : 'CREATE', tablo: 'sat_teklifler', kayit_id: teklifId,
             ozet: `Teklif ${id ? 'güncellendi' : 'oluşturuldu'} (${temiz.length} kalem, ${formatParaLog(genel)} ${para_birimi || 'TL'})`, yeni_veri: req.body });
@@ -6587,7 +6596,7 @@ app.post('/api/satis-proje-kaydet', yetkiKontrol, async (req, res, next) => {
             await client.query('BEGIN');
             await client.query(`
                 UPDATE projeler SET proje_adi=$1, sat_musteri_id=$2, musteri_adi=$3, satis_durumu=$4,
-                    proje_turu=$5, sehir=$6, ulke=$7, adres=$8, irtibat_adi=$9, irtibat_email=$10,
+                    proje_turu=COALESCE($5, proje_turu), sehir=$6, ulke=$7, adres=$8, irtibat_adi=$9, irtibat_email=$10,
                     irtibat_telefon=$11, aciklama=$12, satis_temsilcisi=$13
                 WHERE id=$14`, [...alanlar, id]);
             // Müşteri değişmiş olabilir: her iki müşterinin de durumu tazelenir
