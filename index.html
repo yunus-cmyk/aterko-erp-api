@@ -915,10 +915,8 @@
                   <option value="1">1</option><option value="0">0</option>
                 </select>
               </div>
-              <div class="col-md-2">
-                <label class="form-label">Şartname Türü <span class="text-danger">*</span></label>
-                <select id="stfSartname" class="form-select form-select-sm"><option value="">Seçiniz...</option></select>
-              </div>
+              <!-- Şartname Türü kaldırıldı (2026-07-29): teknik şartname yeni sistemde
+                   TESLİMAT BAŞINA yapılır; teklif düzeyinde şartname kavramı yok. -->
             </div>
             <div class="d-flex justify-content-between align-items-center mb-1">
               <span class="fw-bold small"><i class="bi bi-list-ul me-1"></i>Teklif Kalemleri</span>
@@ -4826,10 +4824,22 @@ function izinAttributesUygula() {
 }
 
 // Navbar sekmelerini ve dropdown'u izinlere göre göster/gizle
+async function binaTipiSozluguYukle() {
+    try {
+        const r = await secureFetch('/satis-referanslar');
+        if (r && r.ok && (r.bina_tipi || []).length) {
+            const yeni = {};
+            r.bina_tipi.forEach(x => (yeni[x.ust_kod || 'Diğer'] = yeni[x.ust_kod || 'Diğer'] || []).push(x.ad));
+            tipSecenekleri = yeni;
+        }
+    } catch (e) { /* yedek gömülü liste geçerli kalır */ }
+}
+
 function izinleriUygula() {
     // FAZ 1: Projeler'e doğrudan proje girişi yalnız ADMIN yedeği
     const ypBtn = document.getElementById('btnYeniProje');
     if (ypBtn) ypBtn.classList.toggle('d-none', !adminRolMu());
+    binaTipiSozluguYukle();   // bina tipi sözlüğü tek kaynaktan
     // Üst navbar sekmeleri
     const sekmeModulMap = {
         'nav-anasayfa':     'anasayfa',
@@ -6588,7 +6598,6 @@ async function satisTeklifDetayAc(id, ustte) {
                     : '-', true)
             ])}
             ${detayKutusu('Kapsam', 'rulers', 'col-lg-6', [
-                detayAlani('Şartname Türü', t.sartname_turu ? esc(t.sartname_turu) : '-', true),
                 detayAlani('Teklif Edilen Proje Büyüklüğü', t.toplam_buyukluk ? esc(t.toplam_buyukluk) : '-', true),
                 detayAlani('Para Birimi / KDV', `${esc(pb)} / %${esc(t.kdv_orani ?? '-')}`, true)
             ])}
@@ -7518,11 +7527,9 @@ async function satisTeklifFormAc(id) {
     window.stfAktifId = id || null;
     document.getElementById('stfBaslik').innerText = id ? 'Teklif Düzenle' : 'Yeni Teklif';
     await stfMetinHavuzuDoldur();
-    const stfRef = await satisReferanslariYukle();
-    const sartnameAdlari = (stfRef.sartname_turu || []).map(x => x.ad);
+    await satisReferanslariYukle();
     if (id && window.stdAktifDetay && window.stdAktifDetay.teklif.id === id) {
         const t = window.stdAktifDetay.teklif;
-        satisSecenekDoldur('stfSartname', sartnameAdlari, t.sartname_turu || '');
         stfMusteriSec(t.musteri_id || '', t.musteri_adi || '');
         document.getElementById('stfTarih').value = t.teklif_tarihi ? t.teklif_tarihi.slice(0, 10) : '';
         document.getElementById('stfPara').value = t.para_birimi || 'TL';
@@ -7535,7 +7542,6 @@ async function satisTeklifFormAc(id) {
         await stfProjeSecenekleriDoldur(t.proje_id);
         (window.stdAktifDetay.kalemler || []).forEach(k => stfKalemEkle(k));
     } else {
-        satisSecenekDoldur('stfSartname', sartnameAdlari, '');
         document.getElementById('stfTarih').value = new Date().toISOString().slice(0, 10);
         await stfProjeSecenekleriDoldur(null);
         stfKalemEkle();
@@ -7552,7 +7558,7 @@ async function satisTeklifKaydet() {
     // Eski teklif formundaki zorunlu alanlar: şartname türü, para birimi ve dört koşul metni
     // (teklif koşulları, ödeme, teslimat, kapsam dahil/hariç). Hazır metin havuzundan seçilebilir.
     const teklifZorunlu = [
-        ['stfSartname', 'Şartname türü'], ['stfPara', 'Para birimi'],
+        ['stfPara', 'Para birimi'],
         ['stfNotlar', 'Teklif koşulları'], ['stfOdeme', 'Ödeme koşulları'],
         ['stfTeslimat', 'Teslimat koşulları'], ['stfDahil', 'Teklife dahil olanlar'],
         ['stfHaric', 'Teklife dahil olmayanlar']
@@ -7607,7 +7613,6 @@ async function satisTeklifKaydet() {
             odeme_kosullari: document.getElementById('stfOdeme').value.trim(),
             teslimat_kosullari: document.getElementById('stfTeslimat').value.trim(),
             notlar: document.getElementById('stfNotlar').value.trim(),
-            sartname_turu: document.getElementById('stfSartname').value,
             kalemler
         }) });
         if (!r || !r.ok) { showToast(r?.hata || 'Teklif kaydedilemedi.', 'error'); return; }
@@ -18460,7 +18465,9 @@ function updateTeslimatDurumu(teslimatId, yeniDurum, projeId) {
 // E-TABLO ZEKASI: KOŞULLU TESLİMAT (BİNA) MOTORU
 // =====================================================================
 
-const tipSecenekleri = {
+// Bina tipi sözlüğü — asıl kaynak sat_referanslar (tur='bina_tipi'); gömülü liste
+// yalnız YEDEK (referans yüklenemezse). binaTipiSozluguYukle açılışta günceller.
+let tipSecenekleri = {
     "Prefabrik": ["Sac-EPS-Sac Sandviç Panel", "Sac-Taşyünü-Sac Sandviç Panel", "Betopan-EPS-Betopan Pres Panel", "Betopan-Taşyünü-Betopan Karkaslı Panel", "Trapez Sac-Taşyünü-Betopan Karkaslı Panel", "Mikrolambri Sac-Taşyünü-Betopan Karkaslı Panel", "Mikrolambri Sac-Taşyünü-Mikrolambri Sac Karkaslı Panel", "Derzli Betopan-EPS-Betopan Pres Panel", "Derzli Betopan-Taşyünü-Betopan Karkaslı Panel"],
     "Konteyner": ["Monoblok Konteyner", "Demonte Konteyner", "Monoblok Birleşimli Konteyner", "Demonte Birleşimli Konteyner"],
     "Hafif Çelik": ["Hafif Çelik Bina", "Hafif Çelik Konut"],

@@ -6037,6 +6037,11 @@ app.delete('/api/satis-musteri-kisi-sil/:id', yetkiKontrol, izinGerekli('satis.m
 // ==================== SATIŞ MODÜLÜ — TEKLİFLER (Faz C2) ====================
 const TEKLIF_DURUMLARI = ['TASLAK', 'CEVAP_BEKLENEN', 'REVIZE', 'ONAYLANAN', 'REDDEDILEN'];
 
+// ŞARTNAME TÜRÜ TAMAMEN DEVRE DIŞI (Yunus kararı 2026-07-29): teknik şartname yeni
+// sistemde TESLİMAT BAŞINA yapılır; teklife tür atamak eski sistemin kalıntısıydı.
+// sat_teklifler.sartname_turu yalnız eski kayıtların arşivi olarak durur — okunmaz,
+// yazılmaz, ekranda gösterilmez.
+
 app.get('/api/satis-teklifler', yetkiKontrol, async (req, res, next) => {
     try {
         const { q, durum } = req.query;
@@ -6087,7 +6092,7 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
     try {
         const { id, musteri_id, proje_id, teklif_tarihi, para_birimi, kdv_orani, notlar,
                 odeme_kosullari, teslimat_kosullari, dahil_isler, haric_isler,
-                iskontolu_toplam, sartname_turu, kalemler } = req.body;
+                iskontolu_toplam, kalemler } = req.body;
         if (!musteri_id) { return res.json({ ok: false, hata: 'Müşteri seçilmelidir.' }); }
         if (!Array.isArray(kalemler) || !kalemler.filter(k => (k.ad || '').trim()).length) {
             return res.json({ ok: false, hata: 'En az bir teklif kalemi girilmelidir.' });
@@ -6142,7 +6147,7 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             para_birimi || 'TL', kdv, araToplam, kdvTutar, genel,
             iskontolu_toplam ? parseFloat(iskontolu_toplam) : null,
             notlar || null, odeme_kosullari || null, teslimat_kosullari || null,
-            dahil_isler || null, haric_isler || null, (sartname_turu || '').trim() || null];
+            dahil_isler || null, haric_isler || null];
         if (id) {
             const eskiR = await client.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
             if (eskiR.rowCount === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Teklif bulunamadı.' }); }
@@ -6150,8 +6155,8 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                 UPDATE sat_teklifler SET musteri_id=$1, proje_id=$2, teklif_tarihi=$3, para_birimi=$4,
                     kdv_orani=$5, ara_toplam=$6, kdv_tutar=$7, genel_toplam=$8, iskontolu_toplam=$9,
                     notlar=$10, odeme_kosullari=$11, teslimat_kosullari=$12, dahil_isler=$13,
-                    haric_isler=$14, sartname_turu=$15, guncelleme=now()
-                WHERE id=$16`, [...alanlar, id]);
+                    haric_isler=$14, guncelleme=now()
+                WHERE id=$15`, [...alanlar, id]);
             // Kalemler kimlikleriyle güncellenir; YALNIZ formdan çıkarılanlar silinir.
             // (Eskiden hepsi silinip yeniden eklenirdi → analiz formu, öznitelik değerleri,
             //  malzeme dökümü ve kilitli fiyatlar sahipsiz kalıyordu.)
@@ -6172,8 +6177,8 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             const ins = await client.query(`
                 INSERT INTO sat_teklifler (musteri_id, proje_id, teklif_tarihi, para_birimi, kdv_orani,
                     ara_toplam, kdv_tutar, genel_toplam, iskontolu_toplam, notlar, odeme_kosullari,
-                    teslimat_kosullari, dahil_isler, haric_isler, sartname_turu, durum, olusturan)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'TASLAK',$16) RETURNING id`,
+                    teslimat_kosullari, dahil_isler, haric_isler, durum, olusturan)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'TASLAK',$15) RETURNING id`,
                 [...alanlar, req.user.email]);
             teklifId = ins.rows[0].id;
             // Teklif kodu eski sistemle birebir: {projeKodu}-TEK-NN (proje yoksa W-{id})
@@ -11329,7 +11334,28 @@ async function semaGuvence() {
             ['birim', '9', 'Kilometre', null, 9], ['birim', '10', 'Metretül', null, 10],
             ['birim', '11', 'Dakika', null, 11], ['birim', '12', 'Litre', null, 12],
             ['birim', '13', 'Gün', null, 13], ['birim', '14', 'Paket', null, 14],
-            ['birim', '15', 'Yevmiye', null, 15], ['birim', '16', 'Yol-Ulaşım', null, 16]
+            ['birim', '15', 'Yevmiye', null, 15], ['birim', '16', 'Yol-Ulaşım', null, 16],
+            // BİNA TİPİ (Yunus kararı 2026-07-29): tek sözlük — formlardaki gömülü liste
+            // buraya taşındı; ust_kod = bina türü. ARK, eski Hafif Çelik kayıtlarından
+            // gelen gerçek bir tip olarak eklendi (duvar kalınlığı ayrı alanda tutulur).
+            ['bina_tipi', 'P1', 'Sac-EPS-Sac Sandviç Panel', 'Prefabrik', 10],
+            ['bina_tipi', 'P2', 'Sac-Taşyünü-Sac Sandviç Panel', 'Prefabrik', 20],
+            ['bina_tipi', 'P3', 'Betopan-EPS-Betopan Pres Panel', 'Prefabrik', 30],
+            ['bina_tipi', 'P4', 'Betopan-Taşyünü-Betopan Karkaslı Panel', 'Prefabrik', 40],
+            ['bina_tipi', 'P5', 'Trapez Sac-Taşyünü-Betopan Karkaslı Panel', 'Prefabrik', 50],
+            ['bina_tipi', 'P6', 'Mikrolambri Sac-Taşyünü-Betopan Karkaslı Panel', 'Prefabrik', 60],
+            ['bina_tipi', 'P7', 'Mikrolambri Sac-Taşyünü-Mikrolambri Sac Karkaslı Panel', 'Prefabrik', 70],
+            ['bina_tipi', 'P8', 'Derzli Betopan-EPS-Betopan Pres Panel', 'Prefabrik', 80],
+            ['bina_tipi', 'P9', 'Derzli Betopan-Taşyünü-Betopan Karkaslı Panel', 'Prefabrik', 90],
+            ['bina_tipi', 'K1', 'Monoblok Konteyner', 'Konteyner', 110],
+            ['bina_tipi', 'K2', 'Demonte Konteyner', 'Konteyner', 120],
+            ['bina_tipi', 'K3', 'Monoblok Birleşimli Konteyner', 'Konteyner', 130],
+            ['bina_tipi', 'K4', 'Demonte Birleşimli Konteyner', 'Konteyner', 140],
+            ['bina_tipi', 'H1', 'Hafif Çelik Bina', 'Hafif Çelik', 210],
+            ['bina_tipi', 'H2', 'Hafif Çelik Konut', 'Hafif Çelik', 220],
+            ['bina_tipi', 'H3', 'ARK', 'Hafif Çelik', 230],
+            ['bina_tipi', 'Y1', 'Yapısal Çelik Hangar', 'Yapısal Çelik', 310],
+            ['bina_tipi', 'Y2', 'Yapısal Çelik Diğer', 'Yapısal Çelik', 320]
         ];
         for (const [tur, kod, ad, ust, sira, ekBilgi] of REFERANS_TOHUM) {
             // Yapısal alanlar (kategori, sıra, büyüklük birimi) mevcut satırlarda da tazelenir;
