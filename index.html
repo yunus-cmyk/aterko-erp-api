@@ -6225,15 +6225,19 @@ function satisProjeSekmeSec(sekme) {
     }
     if (sekme === 'analiz') {
         const k = r.kalemler || [];
+        // Sütun düzeni Teknik Şartnameler sekmesiyle AYNI (Yunus 2026-07-29):
+        // Teklif | Bileşen (Bina) | Tür / Tip | m² — sonra analize özgü sütunlar
         govde.innerHTML = k.length ? `
         <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
-            <thead class="table-light"><tr><th>Teklif</th><th>Bileşen</th><th class="text-end">Miktar</th>
+            <thead class="table-light"><tr><th>Teklif</th><th>Bileşen (Bina)</th><th>Tür / Tip</th>
+                <th class="text-end">m²</th>
                 <th class="text-center">Analiz</th><th class="text-end">Önerilen</th><th style="width:96px;"></th></tr></thead>
             <tbody>${k.map(x => `
                 <tr>
                     <td><span class="text-primary" style="cursor:pointer;" onclick="satisTeklifiUstteAc(${x.teklif_id})">${esc(x.teklif_no || '-')}</span></td>
-                    <td>${esc(x.ad || '-')}${x.bina_turu ? `<br><small class="text-muted">${esc(x.bina_turu)}${x.bina_tipi ? ' — ' + esc(x.bina_tipi) : ''}</small>` : (x.bilesen_turu ? `<br><small class="text-muted">${esc(x.bilesen_turu)}</small>` : '')}</td>
-                    <td class="text-end">${formatTR(parseFloat(x.miktar) || 0)} ${esc(x.birim || '')}</td>
+                    <td>${esc(x.ad || '-')}</td>
+                    <td>${x.bina_turu ? `${esc(x.bina_turu)}${x.bina_tipi ? ' — ' + esc(x.bina_tipi) : ''}` : (x.bilesen_turu ? esc(x.bilesen_turu) : '-')}</td>
+                    <td class="text-end">${x.ikincil_miktar != null ? formatTR(parseFloat(x.ikincil_miktar)) : '-'}</td>
                     <td class="text-center">${satisAnalizDurumBadge(x.analiz_durumu)}${x.dokum_satiri ? `<br><small class="text-muted">${x.dokum_satiri} malzeme</small>` : ''}</td>
                     <td class="text-end">${x.onerilen_fiyat != null ? formatTR(parseFloat(x.onerilen_fiyat)) + ' ' + esc(x.para_birimi || 'TL') : '<span class="text-muted">-</span>'}</td>
                     <td class="text-center text-nowrap">
