@@ -355,9 +355,7 @@
           </button>
 <!-- "Yeni Teklif" düğmesi kaldırıldı (2026-07-29): teklif yalnız proje içinden
                oluşturulur — Satış > Proje > Teklifler > Teklif Oluştur (eski sistemle aynı). -->
-          <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniSatisProje" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc()">
-            <i class="bi bi-plus-lg me-1"></i>Yeni Fırsat
-          </button>
+          <!-- "Yeni Fırsat" düğmesi kaldırıldı (2026-07-29): fırsat yalnız müşteri kartı içinden açılır. -->
         </div>
       </div>
       <div id="satisMusterilerBolum">
@@ -666,15 +664,24 @@
                 <input type="hidden" id="spfMusteriId">
                 <div id="spfMusteriOneriler" class="list-group position-absolute w-100 shadow-sm d-none" style="z-index:1060; max-height:220px; overflow-y:auto;"></div>
               </div>
-              <div class="col-md-4"><label class="form-label">Satış Durumu</label>
-                <select id="spfDurum" class="form-select form-select-sm"></select></div>
+              <div class="col-md-4"><label class="form-label">Satış Türü</label>
+                <select id="spfSatisTuru" class="form-select form-select-sm">
+                    <option value="">Seçiniz...</option>
+                    <option value="Yurtiçi">Yurtiçi</option>
+                    <option value="İhracat">İhracat</option>
+                    <option value="İhraç kayıtlı">İhraç kayıtlı</option>
+                </select></div>
               <div class="col-md-4"><label class="form-label">Satış Temsilcisi</label>
                 <input type="text" id="spfTemsilci" class="form-control form-control-sm"></div>
               <div class="col-md-4"><label class="form-label">Şehir</label>
                 <input type="text" id="spfSehir" class="form-control form-control-sm"></div>
               <div class="col-md-4"><label class="form-label">Ülke</label>
                 <input type="text" id="spfUlke" class="form-control form-control-sm" placeholder="Türkiye"></div>
-              <div class="col-md-4"><label class="form-label">İrtibat Adı Soyadı</label>
+                            <div class="col-12"><label class="form-label">Müşteri Kişisinden Doldur <small class="text-muted">(istersen — proje kişisi müşteridekinden farklı olabilir)</small></label>
+                <select id="spfKisiSec" class="form-select form-select-sm" onchange="spfKisidenDoldur(this)">
+                    <option value="">Elle gireceğim / seçme</option>
+                </select></div>
+<div class="col-md-4"><label class="form-label">İrtibat Adı Soyadı</label>
                 <input type="text" id="spfIrtibatAdi" class="form-control form-control-sm"></div>
               <div class="col-md-6"><label class="form-label">İrtibat E-Posta</label>
                 <input type="email" id="spfIrtibatEmail" class="form-control form-control-sm"></div>
@@ -5032,25 +5039,26 @@ async function satisMusteriDetayAc(id) {
             <thead class="table-light"><tr><th>Ad</th><th>Ünvan</th><th>E-posta</th><th>Telefon</th></tr></thead>
             <tbody>${r.kisiler.map(k => `<tr><td class="fw-semibold">${esc(k.ad)}</td><td>${esc(k.unvan || '-')}</td><td>${esc(k.email || '-')}</td><td>${esc(k.telefon || '-')}</td></tr>`).join('')}</tbody>
         </table></div>` : ''}
-        ${(r.teklifler || []).length ? `
-        <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-file-earmark-text me-1"></i>Teklifler (${r.teklifler.length}${r.teklifler.length >= 50 ? ', son 50' : ''})</div>
-        <div class="table-responsive"><table class="table table-sm table-hover mb-2" style="font-size:0.8rem;">
-            <thead class="table-light"><tr><th>No</th><th>Proje</th><th>Tarih</th><th class="text-end">Tutar</th><th class="text-center">Durum</th></tr></thead>
-            <tbody>${r.teklifler.map(t => `
-                <tr style="cursor:pointer;" onclick="bootstrap.Modal.getInstance(document.getElementById('modalSatisMusteriDetay'))?.hide(); satisTeklifDetayAc(${t.id});">
-                    <td class="fw-semibold">${esc(t.teklif_no || '-')}</td>
-                    <td class="small text-muted">${esc(t.proje_kodu || '-')}</td>
-                    <td>${t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'}</td>
-                    <td class="text-end">${formatTR(parseFloat(t.genel_toplam) || 0)} ${esc(t.para_birimi || 'TL')}</td>
-                    <td class="text-center">${satisTeklifDurumBadge(t.durum)}</td>
-                </tr>`).join('')}</tbody>
-        </table></div>` : ''}
+        <hr class="my-2"><div class="d-flex align-items-center justify-content-between mb-1">
+            <div class="fw-bold small"><i class="bi bi-kanban me-1"></i>Projeler (${r.projeler.length})</div>
+            <button class="btn btn-outline-primary btn-sm py-0" data-izin-modul="satis.proje" data-izin-seviye="YAZMA"
+                onclick="satisProjeFormAc(null, { musteriId: ${m.id}, musteriAdi: '${escJsAttr(m.ad)}' })">
+                <i class="bi bi-plus-circle me-1"></i>Yeni Proje (Fırsat)</button>
+        </div>
         ${r.projeler.length ? `
-        <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-kanban me-1"></i>Projeler (${r.projeler.length})</div>
-        <div class="table-responsive"><table class="table table-sm mb-2" style="font-size:0.8rem;">
-            <thead class="table-light"><tr><th>Kod</th><th>Proje</th><th>Durum</th></tr></thead>
-            <tbody>${r.projeler.map(p => `<tr><td class="fw-semibold">${esc(p.proje_kodu)}</td><td>${esc(p.proje_adi || '-')}</td><td>${typeof getDurumBadge === 'function' ? getDurumBadge(p.durum) : esc(p.durum)}</td></tr>`).join('')}</tbody>
-        </table></div>` : ''}
+        <div class="table-responsive"><table class="table table-sm table-hover mb-2" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>Kod</th><th>Proje</th><th class="text-center">Faz</th><th>Durum</th></tr></thead>
+            <tbody>${r.projeler.map(p => `
+                <tr style="cursor:pointer;" title="Projeyi aç"
+                    onclick="bootstrap.Modal.getInstance(document.getElementById('modalSatisMusteriDetay'))?.hide(); ${p.faz === 'SATIS' ? `satisProjeSekmesiAc(${p.id})` : `openProjeDetay(${p.id})`};">
+                    <td class="fw-semibold text-primary">${esc(p.proje_kodu)}</td>
+                    <td>${esc(p.proje_adi || '-')}</td>
+                    <td class="text-center"><span class="badge ${p.faz === 'SATIS' ? 'bg-light text-dark border' : 'bg-dark'}">${p.faz === 'SATIS' ? 'Satış' : 'Teslimat'}</span></td>
+                    <td>${p.faz === 'SATIS'
+                        ? (typeof SATIS_DURUM_ETIKET !== 'undefined' && SATIS_DURUM_ETIKET[p.satis_durumu] ? `<span class="badge ${SATIS_DURUM_ETIKET[p.satis_durumu][1]}">${SATIS_DURUM_ETIKET[p.satis_durumu][0]}</span>` : esc(p.satis_durumu || '-'))
+                        : (typeof getDurumBadge === 'function' ? getDurumBadge(p.durum) : esc(p.durum))}</td>
+                </tr>`).join('')}</tbody>
+        </table></div>` : '<div class="text-muted small mb-2">Bu müşteriye ait proje yok — ilk fırsatı yukarıdaki düğmeyle açabilirsiniz.</div>'}
         ${r.mali_cariler.length ? `
         <hr class="my-2"><div class="fw-bold small mb-1"><i class="bi bi-cash-stack me-1 text-mod-mali"></i>Mali İşler Bağlantısı</div>
         <div class="small text-muted">${r.mali_cariler.map(c => `${esc(c.firma_adi)} — cari kart bağlı`).join('<br>')}</div>` : ''}
@@ -5334,7 +5342,6 @@ function switchSatisSekme(sekme) {
     // Açık proje sayfası yalnız proje sekmesindeyken görünür
     document.getElementById('satisProjeSayfalari').classList.toggle('d-none', !projeSekmesi);
     document.getElementById('btnYeniSatisMusteri').classList.toggle('d-none', sekme !== 'musteriler');
-    document.getElementById('btnYeniSatisProje').classList.toggle('d-none', sekme !== 'projeler');
     if (sekme === 'teklifler') satisTeklifleriYukle();
     if (sekme === 'projeler') satisProjeleriYukle();
     if (sekme === 'analiz') satisAnalizKuyruguYukle();
@@ -6077,9 +6084,9 @@ function satisProjeIcSekmeleriCiz(r) {
     const sekmeler = [
         { kod: 'genel',    ad: 'Genel',     ikon: 'info-circle' },
         { kod: 'teklifler',ad: 'Teklifler', ikon: 'file-earmark-text', rozet: r.teklifler.length },
+        { kod: 'sartnameler', ad: 'Teknik Şartnameler', ikon: 'file-earmark-ruled', rozet: (r.kalemler || []).length },
         { kod: 'analiz',   ad: 'Analiz',    ikon: 'calculator', rozet: (r.kalemler || []).length, uyari: bekleyenAnaliz },
-        { kod: 'teslimatlar', ad: 'Teslimatlar', ikon: 'building', rozet: (r.teslimatlar || []).length },
-        { kod: 'sozlesme', ad: 'Sözleşme',  ikon: 'file-earmark-check' },
+        { kod: 'sozlesme', ad: 'Sözleşme',  ikon: 'file-earmark-check', rozet: (r.teslimatlar || []).length || null },
         { kod: 'yorumlar', ad: 'Yorumlar',  ikon: 'chat-left-text', rozet: r.yorum_sayisi }
     ];
     spdEl('spdSekmeler').innerHTML = sekmeler.map(s => `
@@ -6190,35 +6197,28 @@ function satisProjeSekmeSec(sekme) {
         : '<div class="text-muted small py-3">Bu projeye bağlı teklif yok. Alttaki <b>Teklif Oluştur</b> düğmesiyle ekleyebilirsiniz.</div>';
         return;
     }
-    if (sekme === 'teslimatlar') {
-        const ts = r.teslimatlar || [];
-        // FAZ 1: teklif kabulünde türetilen teslimat taslakları — satışta düzenlenir,
-        // avans tahsilatıyla proje bunlarla birlikte Projeler modülüne geçer.
-        govde.innerHTML = ts.length ? `
-        <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Teslimatlar teklif kabulünde
-            kalemlerden türetildi. Avans tahsil edildiğinde proje bu teslimatlarla Projeler modülüne otomatik geçer.</div>
+    if (sekme === 'sartnameler') {
+        // TEKNİK ŞARTNAMELER (Yunus 2026-07-29): teslimat/bileşen listesi — şartname
+        // teslimat bazlıdır; teslimat Sözleşme Oluştur ile doğduğundan öncesinde pasiftir.
+        const k = (r.kalemler || []).filter(x => x.bina_turu !== 'Diğer' || x.bina_tipi);
+        govde.innerHTML = k.length ? `
         <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
-            <thead class="table-light"><tr><th>Bina Adı</th><th>Tür / Tip</th><th class="text-end">m²</th>
-                <th class="text-end">Adet</th><th>Kat</th><th class="text-end">KDV'siz Tutar</th><th class="text-center">Durum</th><th style="width:56px;"></th></tr></thead>
-            <tbody>${[...ts.filter(t => t.bina_turu !== 'Diğer'), ...ts.filter(t => t.bina_turu === 'Diğer')].map((t, i, dizi) => `
-                ${t.bina_turu === 'Diğer' && (i === 0 || dizi[i - 1].bina_turu !== 'Diğer')
-                    ? `<tr class="table-secondary"><td colspan="8" class="py-1 fw-bold small"><i class="bi bi-box me-1"></i>Diğer (bina olmayan bileşenler)</td></tr>` : ''}
+            <thead class="table-light"><tr><th>Teklif</th><th>Bileşen (Bina)</th><th>Tür / Tip</th>
+                <th class="text-end">m²</th><th class="text-center" style="width:150px;">Teknik Şartname</th></tr></thead>
+            <tbody>${k.map(x => `
                 <tr>
-                    <td>${esc(t.bina_adi || '-')}</td>
-                    <td>${esc(t.bina_turu || '-')}${t.bina_tipi ? `<br><small class="text-muted">${esc(t.bina_tipi)}</small>` : ''}
-                        ${t.konteyner_ebadi ? `<br><small class="text-muted">${esc(t.konteyner_ebadi)}${t.konteyner_miktari ? ' × ' + formatTR(parseFloat(t.konteyner_miktari)) : ''}</small>` : ''}</td>
-                    <td class="text-end">${t.buyukluk_m2 != null ? formatTR(parseFloat(t.buyukluk_m2)) : '-'}</td>
-                    <td class="text-end">${t.bina_adedi != null ? t.bina_adedi : (t.konteyner_miktari != null ? formatTR(parseFloat(t.konteyner_miktari)) : '-')}</td>
-                    <td>${[t.kat_adedi ? t.kat_adedi + ' kat' : null, t.kat_yuksekligi ? t.kat_yuksekligi + ' mm' : null].filter(Boolean).join(' / ') || '-'}</td>
-                    <td class="text-end">${t.kdvsiz_tutar != null ? formatTR(parseFloat(t.kdvsiz_tutar)) : '-'}</td>
-                    <td class="text-center"><span class="badge bg-light text-dark border">${esc(t.durum || '-')}</span></td>
-                    <td class="text-center"><button class="btn btn-outline-primary btn-sm py-0" title="Düzenle"
-                        data-izin-modul="satis.proje" data-izin-seviye="YAZMA"
-                        onclick='satisTeslimatDuzenle(${JSON.stringify(JSON.stringify(t))})'><i class="bi bi-pencil"></i></button></td>
+                    <td><span class="text-primary" style="cursor:pointer;" onclick="satisTeklifiUstteAc(${x.teklif_id})">${esc(x.teklif_no || '-')}</span></td>
+                    <td>${esc(x.ad || '-')}</td>
+                    <td>${x.bina_turu ? `${esc(x.bina_turu)}${x.bina_tipi ? ' — ' + esc(x.bina_tipi) : ''}` : (x.bilesen_turu ? esc(x.bilesen_turu) : '-')}</td>
+                    <td class="text-end">${x.ikincil_miktar != null ? formatTR(parseFloat(x.ikincil_miktar)) : '-'}</td>
+                    <td class="text-center">${x.teslimat_id
+                        ? `<button class="btn btn-outline-primary btn-sm py-0" onclick="openTeknikSartname(${x.teslimat_id})"><i class="bi bi-file-earmark-text me-1"></i>Şartname</button>`
+                        : '<span class="text-muted small" title="Teslimatlar Sözleşme Oluştur ile doğar; şartname ondan sonra düzenlenir.">Sözleşme sonrası</span>'}</td>
                 </tr>`).join('')}</tbody>
-        </table></div>`
-        : `<div class="text-muted small py-3">Henüz teslimat taslağı yok. Teslimatlar, bir teklif <b>kabul edildiğinde</b>
-            kalemlerden otomatik türetilir; bina tanımları (tip, kat, ebat) teklif kalemi formunda girilir.</div>`;
+        </table></div>
+        <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Teknik şartname teslimat başınadır;
+            bileşen bilgileri teklif içinden revize edilir ve buraya otomatik yansır.</div>`
+        : '<div class="text-muted small py-3">Teklif bileşeni yok — şartname, teklif kalemleri girildikten sonra oluşur.</div>';
         return;
     }
     if (sekme === 'analiz') {
@@ -6230,7 +6230,7 @@ function satisProjeSekmeSec(sekme) {
             <tbody>${k.map(x => `
                 <tr>
                     <td><span class="text-primary" style="cursor:pointer;" onclick="satisTeklifiUstteAc(${x.teklif_id})">${esc(x.teklif_no || '-')}</span></td>
-                    <td>${esc(x.ad || '-')}${x.bilesen_turu ? `<br><small class="text-muted">${esc(x.bilesen_turu)}</small>` : ''}</td>
+                    <td>${esc(x.ad || '-')}${x.bina_turu ? `<br><small class="text-muted">${esc(x.bina_turu)}${x.bina_tipi ? ' — ' + esc(x.bina_tipi) : ''}</small>` : (x.bilesen_turu ? `<br><small class="text-muted">${esc(x.bilesen_turu)}</small>` : '')}</td>
                     <td class="text-end">${formatTR(parseFloat(x.miktar) || 0)} ${esc(x.birim || '')}</td>
                     <td class="text-center">${satisAnalizDurumBadge(x.analiz_durumu)}${x.dokum_satiri ? `<br><small class="text-muted">${x.dokum_satiri} malzeme</small>` : ''}</td>
                     <td class="text-end">${x.onerilen_fiyat != null ? formatTR(parseFloat(x.onerilen_fiyat)) + ' ' + esc(x.para_birimi || 'TL') : '<span class="text-muted">-</span>'}</td>
@@ -6244,7 +6244,39 @@ function satisProjeSekmeSec(sekme) {
         return;
     }
     if (sekme === 'sozlesme') {
-        govde.innerHTML = '<div id="spdSozlesmeAlani"></div>';
+        // Sözleşme paneli + (Yunus 2026-07-29) TESLİMATLAR burada: Sözleşme Oluştur
+        // onaylı teklifin kalemlerinden teslimatları türetir; liste salt görüntülemedir,
+        // revizyon TEKLİF içinden yapılır ve buraya otomatik yansır.
+        const onayliTeklif = (r.teklifler || []).find(t => t.durum === 'ONAYLANAN');
+        const ts = r.teslimatlar || [];
+        govde.innerHTML = `
+            ${!ts.length ? `<div class="d-flex align-items-center gap-2 mb-3">
+                <button class="btn btn-success btn-sm px-3 fw-bold" data-izin-modul="satis.teklif" data-izin-seviye="TAM"
+                    ${onayliTeklif ? `onclick="satisSozlesmeOlustur(${p.id})"` : 'disabled'}
+                    title="${onayliTeklif ? 'Onaylı teklifin kalemlerinden sözleşme ve teslimatlar oluşturulur' : 'Önce bir teklifin KABUL edilmesi gerekir'}">
+                    <i class="bi bi-file-earmark-check me-1"></i>Sözleşme Oluştur</button>
+                ${!onayliTeklif ? '<span class="small text-muted">Önce bir teklif kabul edilmeli.</span>' : ''}
+            </div>` : ''}
+            <div id="spdSozlesmeAlani"></div>
+            ${ts.length ? `
+            <hr class="my-3"><div class="fw-bold small mb-2"><i class="bi bi-building me-1"></i>Sözleşme Teslimatları (${ts.length})
+                <small class="text-muted fw-normal ms-2">revizyon teklif içinden yapılır, buraya otomatik yansır</small></div>
+            <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
+                <thead class="table-light"><tr><th>Bina Adı</th><th>Tür / Tip</th><th class="text-end">m²</th>
+                    <th class="text-end">Adet</th><th class="text-end">KDV'siz Tutar</th><th class="text-center">Durum</th></tr></thead>
+                <tbody>${[...ts.filter(t => t.bina_turu !== 'Diğer'), ...ts.filter(t => t.bina_turu === 'Diğer')].map((t, i, dizi) => `
+                    ${t.bina_turu === 'Diğer' && (i === 0 || dizi[i - 1].bina_turu !== 'Diğer')
+                        ? `<tr class="table-secondary"><td colspan="6" class="py-1 fw-bold small"><i class="bi bi-box me-1"></i>Diğer (bina olmayan bileşenler)</td></tr>` : ''}
+                    <tr>
+                        <td>${esc(t.bina_adi || '-')}</td>
+                        <td>${esc(t.bina_turu || '-')}${t.bina_tipi ? `<br><small class="text-muted">${esc(t.bina_tipi)}</small>` : ''}
+                            ${t.konteyner_ebadi ? `<br><small class="text-muted">${esc(t.konteyner_ebadi)}</small>` : ''}</td>
+                        <td class="text-end">${t.buyukluk_m2 != null ? formatTR(parseFloat(t.buyukluk_m2)) : '-'}</td>
+                        <td class="text-end">${t.bina_adedi != null ? t.bina_adedi : (t.konteyner_miktari != null ? formatTR(parseFloat(t.konteyner_miktari)) : '-')}</td>
+                        <td class="text-end">${t.kdvsiz_tutar != null ? formatTR(parseFloat(t.kdvsiz_tutar)) : '-'}</td>
+                        <td class="text-center"><span class="badge bg-light text-dark border">${esc(t.durum || '-')}</span></td>
+                    </tr>`).join('')}</tbody>
+            </table></div>` : ''}`;
         satisSozlesmePaneliCiz(p);
         return;
     }
@@ -6451,20 +6483,30 @@ function spfMusteriSec(id, ad) {
     document.getElementById('spfMusteriOneriler').classList.add('d-none');
 }
 
-async function satisProjeFormAc(id) {
+// Yeni fırsat YALNIZ müşteri kartından açılır (Yunus 2026-07-29): musteriCtx =
+// { musteriId, musteriAdi }. Müşteri alanı her iki modda da SALT OKUNURDUR.
+// Durum seçimi yok: fırsat TASLAK doğar, sonrası otomatik akış (ADMIN istisnası ayrı).
+async function satisProjeFormAc(id, musteriCtx) {
+    if (!id && !musteriCtx) {
+        showToast('Yeni proje (fırsat) müşteri kartı içinden açılır: Satış > Müşteriler > müşteri > Yeni Proje.', 'error');
+        return;
+    }
     if (!satisMusteriListe.length) await satisSekmeInit();
     modalFormSifirla('modalSatisProjeForm');
     document.getElementById('spfMusteriOneriler').classList.add('d-none');
     window.spfAktifId = id || null;
     document.getElementById('spfBaslik').innerText = id ? 'Fırsat Düzenle' : 'Yeni Fırsat';
-    const durumSec = document.getElementById('spfDurum');
-    durumSec.innerHTML = Object.keys(SATIS_DURUM_ETIKET).map(d =>
-        `<option value="${d}">${SATIS_DURUM_ETIKET[d][0]}</option>`).join('');
+    const musteriAlani = document.getElementById('spfMusteriAra');
+    musteriAlani.readOnly = true; musteriAlani.classList.add('bg-light');
+    musteriAlani.oninput = null; musteriAlani.onfocus = null;
+    musteriAlani.title = 'Müşteri karttan gelir; buradan değiştirilemez.';
+    let kisiMusteriId = null;
     if (id && window.spdAktifDetay && window.spdAktifDetay.proje.id === id) {
         const p = window.spdAktifDetay.proje;
         document.getElementById('spfAd').value = p.proje_adi || '';
         spfMusteriSec(p.sat_musteri_id || '', p.musteri_adi || '');
-        durumSec.value = p.satis_durumu || 'TASLAK';
+        kisiMusteriId = p.sat_musteri_id;
+        document.getElementById('spfSatisTuru').value = p.satis_turu || '';
         document.getElementById('spfTemsilci').value = p.satis_temsilcisi || '';
         document.getElementById('spfSehir').value = p.sehir || '';
         document.getElementById('spfUlke').value = p.ulke || '';
@@ -6473,10 +6515,31 @@ async function satisProjeFormAc(id) {
         document.getElementById('spfIrtibatTelefon').value = p.irtibat_telefon || '';
         document.getElementById('spfAdres').value = p.adres || '';
         document.getElementById('spfAciklama').value = p.aciklama || '';
-    } else {
-        durumSec.value = 'TASLAK';
+    } else if (musteriCtx) {
+        spfMusteriSec(musteriCtx.musteriId, musteriCtx.musteriAdi);
+        kisiMusteriId = musteriCtx.musteriId;
+    }
+    // Müşteri kişileri: istersen irtibat bilgilerini karttan doldur (elle de girilebilir)
+    const kisiSec = document.getElementById('spfKisiSec');
+    kisiSec.innerHTML = '<option value="">Elle gireceğim / seçme</option>';
+    if (kisiMusteriId) {
+        const kd = (window.smdAktifDetay && window.smdAktifDetay.musteri.id === kisiMusteriId)
+            ? window.smdAktifDetay
+            : await secureFetch('/satis-musteri-detay/' + kisiMusteriId).catch(() => null);
+        window.spfKisiler = (kd && kd.ok !== false && kd.kisiler) ? kd.kisiler : [];
+        kisiSec.innerHTML += window.spfKisiler.map((k, i) =>
+            `<option value="${i}">${esc(k.ad)}${k.unvan ? ' — ' + esc(k.unvan) : ''}</option>`).join('');
     }
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisProjeForm')).show();
+}
+
+// Seçilen müşteri kişisinin bilgileri irtibat alanlarına kopyalanır (sonrasında elle değiştirilebilir)
+function spfKisidenDoldur(sec) {
+    const k = (window.spfKisiler || [])[parseInt(sec.value)];
+    if (!k) return;
+    document.getElementById('spfIrtibatAdi').value = k.ad || '';
+    document.getElementById('spfIrtibatEmail').value = k.email || '';
+    document.getElementById('spfIrtibatTelefon').value = k.telefon || '';
 }
 
 async function satisProjeKaydet() {
@@ -6492,7 +6555,7 @@ async function satisProjeKaydet() {
             id: window.spfAktifId || undefined,
             proje_adi: ad,
             sat_musteri_id: parseInt(musteriId),
-            satis_durumu: document.getElementById('spfDurum').value,
+            satis_turu: document.getElementById('spfSatisTuru').value,
             satis_temsilcisi: document.getElementById('spfTemsilci').value.trim(),
             sehir: document.getElementById('spfSehir').value.trim(),
             ulke: document.getElementById('spfUlke').value.trim(),
@@ -6595,7 +6658,7 @@ async function satisTeklifDetayAc(id, ustte) {
             ])}
         </div>
         <div class="table-responsive"><table class="table table-sm align-middle" style="font-size:0.82rem;">
-            <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end" title="Bileşenin tek birimdeki büyüklüğü">Büyüklük</th><th class="text-end" title="Bu bileşenden kaç adet">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th><th class="text-center">Analiz</th><th style="width:120px;"></th></tr></thead>
+            <thead class="table-light"><tr><th>#</th><th>Kalem</th><th class="text-end" title="Bileşenin tek birimdeki büyüklüğü">Büyüklük</th><th class="text-end" title="Bu bileşenden kaç adet">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th><th class="text-center">Analiz</th></tr></thead>
             <tbody>${r.kalemler.map((k, i) => `
                 <tr class="${k.opsiyonel ? 'text-muted fst-italic' : ''}">
                     <td>${i + 1}</td>
@@ -6611,10 +6674,8 @@ async function satisTeklifDetayAc(id, ustte) {
                     <td class="text-end">${formatTR(parseFloat(k.birim_fiyat) || 0)} ${pb}</td>
                     <td class="text-end fw-semibold">${formatTR(parseFloat(k.toplam) || 0)} ${pb}</td>
                     <td class="text-center">${satisAnalizDurumBadge(k.analiz_durumu)}</td>
-                    <td class="text-center text-nowrap">
-                        <button class="btn btn-outline-secondary btn-sm py-0" title="Öznitelikler (analiz formu)" onclick="satisAnalizFormAc(${k.id}, '${escJsAttr(k.ad)}')"><i class="bi bi-sliders"></i></button>
-                        <button class="btn btn-outline-primary btn-sm py-0" title="Fiyat analizi / malzeme dökümü" onclick="satisAnalizDokumAc(${k.id}, '${escJsAttr(k.ad)}')"><i class="bi bi-calculator"></i></button>
-                    </td>
+                    <!-- Analiz butonları kaldırıldı (2026-07-29): analiz işlemleri yalnız
+                         proje detayındaki Analiz sekmesinden yapılır. -->
                 </tr>`).join('')}
             </tbody>
         </table></div>
@@ -6659,9 +6720,8 @@ function satisTeklifAksiyonlariCiz(t) {
         a.push(btn('outline-danger', 'x-lg', 'Reddet', 'satisTeklifAksiyon(\'reddet\')'));
     if (t.durum === 'CEVAP_BEKLENEN')
         a.push(btn('outline-secondary', 'arrow-repeat', 'Revize Et', 'satisTeklifAksiyon(\'revize\')'));
-    if (t.durum === 'ONAYLANAN' && t.proje_id && izinVarMi('satis.teklif', 'TAM')) {
-        a.push(btn('success', 'file-earmark-check', 'Sözleşme Oluştur', `satisSozlesmeOlustur(${t.proje_id})`));
-    }
+    // 'Sözleşme Oluştur' teklif penceresinden kaldırıldı (2026-07-29):
+    // artık proje detayındaki SÖZLEŞME sekmesinden yapılır (teslimatlar orada doğar).
     // SİL — eski sistemde teklif detayında her zaman görünürdü. Bizde kayıt güvenliği
     // için yalnız TASLAK silinebiliyor (verilmiş teklif arşiv kaydıdır); düğme yine de
     // görünür ama pasif olur ki kullanıcı "silme yok" sanmasın.
@@ -6722,12 +6782,12 @@ async function satisTeklifAksiyon(aksiyon) {
 }
 
 async function satisSozlesmeOlustur(projeId) {
-    if (!confirm('Onaylanan tekliften sözleşme oluşturulacak; tutar, koşullar ve kur tekliften alınıp sabitlenecek. Devam edilsin mi?')) return;
+    if (!confirm('Onaylanan tekliften sözleşme oluşturulacak; tutar, koşullar ve kur sabitlenecek ve TESLİMATLAR teklif kalemlerinden türetilecek. Devam edilsin mi?')) return;
     showLoading();
     const r = await secureFetch('/satis-sozlesme-olustur', { method: 'POST', body: JSON.stringify({ proje_id: projeId }) }).catch(() => null);
     hideLoading();
     if (!r || !r.ok) { showToast(r?.hata || 'Sözleşme oluşturulamadı.', 'error'); return; }
-    showToast(`Sözleşme oluşturuldu: ${r.kod}`, 'success');
+    showToast(r.mesaj || `Sözleşme oluşturuldu: ${r.kod}`, 'success');
     satisTeklifleriYukle();
     if (window.spdAktifId) satisProjeSekmesiTazele(window.spdAktifId, 'sozlesme');
 }

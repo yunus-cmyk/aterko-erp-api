@@ -5926,7 +5926,8 @@ app.get('/api/satis-musteri-detay/:id', yetkiKontrol, async (req, res, next) => 
         if (m.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
         const kisiler = await pool.query('SELECT * FROM sat_musteri_kisiler WHERE musteri_id=$1 ORDER BY ad', [id]);
         const projeler = await pool.query(`
-            SELECT id, proje_kodu, proje_adi, durum, musteri_adi
+            SELECT id, proje_kodu, proje_adi, durum, musteri_adi,
+                   COALESCE(faz,'TESLIMAT') AS faz, satis_durumu
             FROM projeler WHERE sat_musteri_id=$1 ORDER BY proje_kodu DESC`, [id]);
         const mali = await pool.query('SELECT id, firma_adi, devir_alacak, durum FROM musteriler WHERE sat_musteri_id=$1', [id]);
         // Müşterinin teklifleri — "bu müşteriye ne teklif verdik" sorusu kartın içinden yanıtlanır
@@ -6093,7 +6094,8 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
         const { id, musteri_id, proje_id, teklif_tarihi, para_birimi, kdv_orani, notlar,
                 odeme_kosullari, teslimat_kosullari, dahil_isler, haric_isler,
                 iskontolu_toplam, kalemler } = req.body;
-        if (!musteri_id) { return res.json({ ok: false, hata: 'Müşteri seçilmelidir.' }); }
+        // musteri_id doğrulaması kaldırıldı (2026-07-29): müşteri artık payload'dan
+        // değil KAYITTAN gelir (salt okunur üçlü) — güncellemede eskiR'den atanır.
         if (!Array.isArray(kalemler) || !kalemler.filter(k => (k.ad || '').trim()).length) {
             return res.json({ ok: false, hata: 'En az bir teklif kalemi girilmelidir.' });
         }
@@ -6154,13 +6156,14 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             hata: 'Yeni teklif proje içinden oluşturulur: Satış > Proje > Teklifler > Teklif Oluştur.' });
         await client.query('BEGIN');
         let teklifId = id;
+        let eskiR = null;   // güncellenen teklifin mevcut kaydı (salt-okunur üçlü + senkron için)
         const alanlar = [musteri_id, proje_id || null, teklif_tarihi || new Date(),
             para_birimi || 'TL', kdv, araToplam, kdvTutar, genel,
             iskontolu_toplam ? parseFloat(iskontolu_toplam) : null,
             notlar || null, odeme_kosullari || null, teslimat_kosullari || null,
             dahil_isler || null, haric_isler || null];
         if (id) {
-            const eskiR = await client.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
+            eskiR = await client.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
             if (eskiR.rowCount === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Teklif bulunamadı.' }); }
             // Salt okunur üçlü: kayıttaki değerler payload'a bakılmaksızın korunur
             alanlar[0] = eskiR.rows[0].musteri_id;
@@ -6238,6 +6241,15 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
         }
         // Toplamlar kalemlerden yeniden hesaplanır (eski calculateAndSaveProposalTotals birebir)
         await satisTeklifToplamlariHesapla(client, teklifId);
+        // TESLİMAT SENKRONU (Yunus 2026-07-29): teslimata yalnız teklif içinden ulaşılır —
+        // sözleşmesi kurulmuş projede ONAYLI teklifin kalemi düzenlenince bağlı teslimatlar
+        // da tazelenir (iş emri açılmışsa dokunulmaz). Bina tipi değişikliğinin Analiz/
+        // Şartname listelerine yansımaması sorununun kökten çözümü.
+        const g = eskiR ? eskiR.rows[0] : null;
+        if (g && g.proje_id && g.durum === 'ONAYLANAN') {
+            const soz = await client.query('SELECT id FROM sat_sozlesmeler WHERE proje_id=$1', [g.proje_id]);
+            if (soz.rowCount) await satisTeslimatlariTuret(client, g.proje_id, teklifId, req);
+        }
         // Müşteri satış durumu otomatiği (eski ProposalExtServiceImpl.save birebir)
         await musteriDurumGuncelle(client, alanlar[0]);
         await client.query('COMMIT');
@@ -6555,10 +6567,13 @@ app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
         const kalemler = await pool.query(`
             SELECT k.id, k.ad, k.miktar, k.birim, k.analiz_durumu, k.onerilen_fiyat, k.birim_fiyat,
                    k.analiz_tarihi, k.analiz_eden, k.bilesen_turu,
+                   k.bina_turu, k.bina_tipi, k.ikincil_miktar,
                    t.id AS teklif_id, t.teklif_no, t.durum AS teklif_durumu, t.para_birimi,
+                   ts.id AS teslimat_id,
                    (SELECT COUNT(*)::int FROM sat_analiz_urunler a WHERE a.kalem_id = k.id) AS dokum_satiri
             FROM sat_teklif_kalemleri k
             JOIN sat_teklifler t ON t.id = k.teklif_id
+            LEFT JOIN proje_teslimatlari ts ON ts.teklif_kalem_id = k.id
             WHERE t.proje_id=$1
             ORDER BY t.teklif_tarihi DESC NULLS LAST, k.sira, k.id`, [id]);
         const yorumSayisi = await pool.query(
@@ -6577,15 +6592,19 @@ app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
 app.post('/api/satis-proje-kaydet', yetkiKontrol, async (req, res, next) => {
     const client = await pool.connect();
     try {
-        const { id, proje_adi, sat_musteri_id, satis_durumu, proje_turu, sehir, ulke, adres,
+        // Durum payload'dan ALINMAZ (Yunus 2026-07-29): yeni fırsat TASLAK doğar,
+        // sonrası eski sistem otomatiği (teklif ver/kabul/analiz/sözleşme zinciri);
+        // elle değişiklik yalnız ADMIN'in ayrı ucuyla yapılır.
+        const { id, proje_adi, sat_musteri_id, satis_turu, proje_turu, sehir, ulke, adres,
                 irtibat_adi, irtibat_email, irtibat_telefon, aciklama, satis_temsilcisi } = req.body;
+        const SATIS_TURLERI = ['Yurtiçi', 'İhracat', 'İhraç kayıtlı'];
+        const satisTuruNorm = SATIS_TURLERI.includes(satis_turu) ? satis_turu : null;
         const adNorm = (proje_adi || '').trim();
         if (!adNorm) return res.json({ ok: false, hata: 'Proje adı zorunludur.' });
         if (!sat_musteri_id) return res.json({ ok: false, hata: 'Müşteri seçilmelidir.' });
         const mR = await client.query('SELECT ad FROM sat_musteriler WHERE id=$1', [sat_musteri_id]);
         if (mR.rowCount === 0) return res.json({ ok: false, hata: 'Müşteri bulunamadı.' });
-        const durumNorm = SATIS_DURUMLARI.includes(satis_durumu) ? satis_durumu : 'TASLAK';
-        const alanlar = [adNorm, sat_musteri_id, mR.rows[0].ad, durumNorm,
+        const alanlar = [adNorm, sat_musteri_id, mR.rows[0].ad, satisTuruNorm,
             (proje_turu || '').trim() || null, (sehir || '').trim() || null, (ulke || '').trim() || null,
             (adres || '').trim() || null, (irtibat_adi || '').trim() || null,
             (irtibat_email || '').trim() || null, (irtibat_telefon || '').trim() || null,
@@ -6595,7 +6614,8 @@ app.post('/api/satis-proje-kaydet', yetkiKontrol, async (req, res, next) => {
             if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı (teslimat fazındaki projeler buradan düzenlenemez).' });
             await client.query('BEGIN');
             await client.query(`
-                UPDATE projeler SET proje_adi=$1, sat_musteri_id=$2, musteri_adi=$3, satis_durumu=$4,
+                UPDATE projeler SET proje_adi=$1, sat_musteri_id=$2, musteri_adi=$3,
+                    satis_turu=COALESCE($4, satis_turu),
                     proje_turu=COALESCE($5, proje_turu), sehir=$6, ulke=$7, adres=$8, irtibat_adi=$9, irtibat_email=$10,
                     irtibat_telefon=$11, aciklama=$12, satis_temsilcisi=$13
                 WHERE id=$14`, [...alanlar, id]);
@@ -6613,10 +6633,10 @@ app.post('/api/satis-proje-kaydet', yetkiKontrol, async (req, res, next) => {
         const kodR = await client.query(`SELECT COALESCE(MAX(proje_kodu::int), 72000) + 1 AS yeni FROM projeler WHERE proje_kodu ~ '^[0-9]{5}$'`);
         const yeniKod = String(kodR.rows[0].yeni);
         const ins = await client.query(`
-            INSERT INTO projeler (proje_kodu, proje_adi, sat_musteri_id, musteri_adi, satis_durumu,
+            INSERT INTO projeler (proje_kodu, proje_adi, sat_musteri_id, musteri_adi, satis_turu,
                 proje_turu, sehir, ulke, adres, irtibat_adi, irtibat_email, irtibat_telefon,
-                aciklama, satis_temsilcisi, faz, durum)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'SATIS','TASLAK') RETURNING id`,
+                aciklama, satis_temsilcisi, satis_durumu, faz, durum)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'TASLAK','SATIS','TASLAK') RETURNING id`,
             [yeniKod, ...alanlar]);
         // Proje kaydında müşteri durumu otomatiği (eski ProjectServiceImpl.save birebir)
         await musteriDurumGuncelle(client, sat_musteri_id);
@@ -6636,6 +6656,10 @@ app.post('/api/satis-proje-durum', yetkiKontrol, async (req, res, next) => {
             return res.json({ ok: false, hata: 'Proje durumu yalnız sözleşme akışındaki adımlarla değişir. Elle değiştirme yetkisi ADMIN kullanıcılarındadır.' });
         }
         const { id, durum } = req.body;
+        // Yunus kuralı (2026-07-29): durum akışı otomatiktir (eski sistem geçişleri);
+        // elle "zorla" değiştirme yalnız ADMIN yedeğidir.
+        if (!adminMi(req)) return res.status(403).json({ ok: false, izin_hatasi: true,
+            hata: 'Proje durumu otomatik ilerler; elle değiştirme yalnız ADMIN yetkisidir.' });
         if (!SATIS_DURUMLARI.includes(durum)) return res.json({ ok: false, hata: 'Geçersiz satış durumu.' });
         const eskiR = await pool.query(`SELECT satis_durumu, proje_kodu FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
         if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı.' });
@@ -7912,20 +7936,15 @@ app.post('/api/satis-teklif-kabul', yetkiKontrol, izinGerekli('satis.teklif_onay
                 [t.rows[0].proje_id, id]);
         }
         await client.query(`UPDATE sat_teklifler SET durum='ONAYLANAN', guncelleme=now() WHERE id=$1`, [id]);
-        // FAZ 1: kabul anında teslimat taslakları türetilir — proje SATIŞ fazında kalır,
-        // ekip Satış > proje detayı > Teslimatlar sekmesinde düzenler.
-        let turet = null;
+        // Teslimatlar artık KABULDE DEĞİL, Sözleşme Oluştur'da türetilir (Yunus 2026-07-29 —
+        // eski sisteme daha da yakın: teslimat, sözleşmenin sonucudur).
         if (t.rows[0].proje_id) {
             await projeDurumGuncelle(client, t.rows[0].proje_id, PRJ.SATIS_TAMAMLANDI, req, 'Teklif kabul edildi');
-            turet = await satisTeslimatlariTuret(client, t.rows[0].proje_id, id, req);
         }
         await client.query('COMMIT');
-        const turetOzet = turet
-            ? ` Teslimat taslakları: ${turet.olusan} oluştu${turet.guncellenen ? `, ${turet.guncellenen} güncellendi` : ''}${turet.korunan ? `, ${turet.korunan} iş emirli teslimata dokunulmadı` : ''}${turet.atlanan ? ` (${turet.atlanan} bina-dışı kalem atlandı)` : ''}.`
-            : '';
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_teklifler', kayit_id: id,
-            ozet: `Teklif KABUL edildi: ${t.rows[0].teklif_no}; diğer teklifler revizeye alındı.${turetOzet}` });
-        res.json({ ok: true, mesaj: `Teklif kabul edildi.${turetOzet} Artık sözleşme oluşturabilirsiniz.` });
+            ozet: `Teklif KABUL edildi: ${t.rows[0].teklif_no}; diğer teklifler revizeye alındı.` });
+        res.json({ ok: true, mesaj: 'Teklif kabul edildi. Sözleşme sekmesinden sözleşme oluşturabilirsiniz.' });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
 });
@@ -8080,13 +8099,17 @@ app.post('/api/satis-sozlesme-olustur', yetkiKontrol, izinGerekli('satis.teklif'
              tutarTL, kdvTL, tutarTL + kdvTL, teklif.odeme_kosullari, teklif.teslimat_kosullari,
              teklif.dahil_isler, teklif.haric_isler, teklif.notlar, req.user.email]);
         await projeDurumGuncelle(client, projeId, PRJ.SOZLESME_TASLAK, req, 'Sözleşme oluşturuldu');
+        // TESLİMATLAR BURADA DOĞAR (Yunus 2026-07-29): onaylı teklifin kalemlerinden
+        // türetilir — eski recreateDeliverables'ın sözleşme sonrası konumuna döndü.
+        const turet = await satisTeslimatlariTuret(client, projeId, teklif.id, req);
         // Müşteri satış durumu otomatiği (eski ContractServiceImpl.save birebir)
         const mR = await client.query('SELECT sat_musteri_id FROM projeler WHERE id=$1', [projeId]);
         await musteriDurumGuncelle(client, mR.rows[0]?.sat_musteri_id);
         await client.query('COMMIT');
+        const turetOzet = ` Teslimatlar: ${turet.olusan} oluştu${turet.guncellenen ? `, ${turet.guncellenen} güncellendi` : ''}${turet.korunan ? `, ${turet.korunan} iş emirli korundu` : ''}.`;
         await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_sozlesmeler', kayit_id: ins.rows[0].id,
-            ozet: `Tekliften sözleşme oluşturuldu: ${kod} (teklif ${teklif.teklif_no}, ${formatParaLog(tutar)} ${teklif.para_birimi || 'TL'})` });
-        res.json({ ok: true, id: ins.rows[0].id, kod });
+            ozet: `Tekliften sözleşme oluşturuldu: ${kod} (teklif ${teklif.teklif_no}, ${formatParaLog(tutar)} ${teklif.para_birimi || 'TL'}).${turetOzet}` });
+        res.json({ ok: true, id: ins.rows[0].id, kod, mesaj: `Sözleşme oluşturuldu: ${kod}.${turetOzet}` });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
 });
