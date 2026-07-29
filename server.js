@@ -7422,6 +7422,41 @@ app.post('/api/satis-analiz-uret', yetkiKontrol, izinGerekli('satis.urun', 'YAZM
     finally { client.release(); }
 });
 
+// FİYATLARI TEKRAR HESAPLA (eski calculate-and-save-prices birebir): döküm
+// satırlarına ve miktarlara DOKUNMADAN yalnız fiyat kilitlerini bugünkü ürün
+// ağacı fiyatlarıyla tazeler. "Dökümü Üret"ten farkı: satır eşleştirmesi
+// yeniden yapılmaz, elle eklenen/düzenlenen satırlar da yerinde kalır.
+app.post('/api/satis-analiz-fiyat-tazele', yetkiKontrol, izinGerekli('satis.urun', 'YAZMA'), async (req, res, next) => {
+    const client = await pool.connect();
+    try {
+        const kalemId = parseInt(req.body.kalem_id);
+        const kalem = await satisAnalizKalemiAl(client, kalemId);
+        if (!kalem) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        if (kalem.analiz_durumu !== 'ANALIZ_SURECINDE') return res.json({ ok: false, hata: SATIS_ANALIZ_SUREC_MESAJ });
+        const satirlar = (await client.query(
+            'SELECT id, urun_id FROM sat_analiz_urunler WHERE kalem_id=$1 AND urun_id IS NOT NULL', [kalemId])).rows;
+        if (!satirlar.length) return res.json({ ok: false, hata: 'Bu kalemde tazelenecek döküm satırı yok.' });
+        const guncel = await satisUrunMaliyetleri(client, [...new Set(satirlar.map(s => s.urun_id))]);
+        const bugun = new Date().toISOString().slice(0, 10);
+        let tazelenen = 0, fiyatsiz = 0;
+        await client.query('BEGIN');
+        for (const s of satirlar) {
+            const g = guncel[s.urun_id];
+            if (!g || !g.hesaplanabilir) { fiyatsiz++; continue; }   // fiyatı hesaplanamayan satırın kilidi korunur
+            await client.query(`UPDATE sat_analiz_urunler
+                SET kilit_maliyet=$1, kilit_satis=$2, kilit_tarihi=$3,
+                    kilit_para_birimi=COALESCE(kilit_para_birimi, 'TL')
+                WHERE id=$4`, [g.maliyet, g.satis, bugun, s.id]);
+            tazelenen++;
+        }
+        await client.query('COMMIT');
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_analiz_urunler', kayit_id: kalemId,
+            ozet: `Analiz fiyatları tazelendi (kalem #${kalemId}): ${tazelenen} satır ${bugun} kuruyla yeniden kilitlendi${fiyatsiz ? `, ${fiyatsiz} satır fiyatsız (kilidi korundu)` : ''}` });
+        res.json({ ok: true, tazelenen, fiyatsiz });
+    } catch (e) { await client.query('ROLLBACK'); next(e); }
+    finally { client.release(); }
+});
+
 // Analiz dökümünde elle düzeltme (eski "Ürün & Hizmetler" ızgarası birebir):
 // miktar/fiyat elle değiştirilebilir; işaretlenen satır yeniden üretimde KORUNUR.
 app.post('/api/satis-analiz-satir', yetkiKontrol, izinGerekli('satis.urun', 'YAZMA'), async (req, res, next) => {

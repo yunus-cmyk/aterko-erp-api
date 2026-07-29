@@ -7026,8 +7026,21 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
         ${izinVarMi('satis.teklif', 'YAZMA') && !surecte ? `<button class="btn btn-outline-warning btn-sm px-3" onclick="satisAnalizTalep()"><i class="bi bi-send me-1"></i>${aDurum === 'ANALIZ_TAMAMLANDI' ? 'Yeniden Analiz Talep Et' : 'Analiz Talep Et'}</button>` : ''}
         ${yazabilir ? `<button class="btn btn-outline-primary btn-sm px-3" onclick="satisAnalizUret()"><i class="bi bi-arrow-repeat me-1"></i>Dökümü Üret</button>` : ''}
+        ${yazabilir && satirlar.length ? `<button class="btn btn-outline-primary btn-sm px-3" title="Satırlara ve miktarlara dokunmadan yalnız fiyat kilitlerini bugünkü fiyatlarla tazeler" onclick="satisAnalizFiyatTazele()"><i class="bi bi-calculator me-1"></i>Fiyatları Tekrar Hesapla</button>` : ''}
         ${yazabilir && satirlar.length ? `<button class="btn btn-success btn-sm px-3 fw-bold" onclick="satisAnalizTamamla()"><i class="bi bi-check-lg me-1"></i>Analizi Tamamla</button>` : ''}`;
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
+}
+
+// Eski "Fiyatları tekrar hesapla" (calculate-and-save-prices) birebir:
+// satırlar ve miktarlar aynen kalır, yalnız fiyat kilitleri bugünle tazelenir.
+async function satisAnalizFiyatTazele() {
+    if (!confirm('Döküm satırları ve miktarlar korunacak; yalnız maliyet ve satış fiyatı kilitleri BUGÜNKÜ ürün ağacı fiyatlarıyla yeniden hesaplanacak. Devam edilsin mi?')) return;
+    showLoading();
+    const r = await secureFetch('/satis-analiz-fiyat-tazele', { method: 'POST', body: JSON.stringify({ kalem_id: window.sanKalemId }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Fiyatlar tazelenemedi.', 'error'); return; }
+    showToast(`${r.tazelenen} satırın fiyatı bugünle kilitlendi.${r.fiyatsiz ? ` ${r.fiyatsiz} satırın fiyatı hesaplanamadı (kilidi korundu).` : ''}`, 'success');
+    satisAnalizDokumAc(window.sanKalemId, window.sanKalemAd);
 }
 
 async function satisAnalizUret() {
