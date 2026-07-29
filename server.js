@@ -7469,11 +7469,21 @@ app.post('/api/satis-analiz-satir', yetkiKontrol, izinGerekli('satis.urun', 'YAZ
             if (!eski.rowCount) return res.json({ ok: false, hata: 'Analiz satırı bulunamadı.' });
             const sk = await satisAnalizKalemiAl(pool, eski.rows[0].kalem_id);
             if (sk && sk.analiz_durumu !== 'ANALIZ_SURECINDE') return res.json({ ok: false, hata: SATIS_ANALIZ_SUREC_MESAJ });
-            await pool.query(`UPDATE sat_analiz_urunler SET miktar=$1, kilit_maliyet=$2, kilit_satis=$3,
-                notu=$4, elle_duzenlendi=true WHERE id=$5`,
-                [m, kilit_maliyet === '' || kilit_maliyet == null ? null : parseFloat(kilit_maliyet),
-                 kilit_satis === '' || kilit_satis == null ? null : parseFloat(kilit_satis),
-                 (notu || '').trim() || null, parseInt(id)]);
+            // koru() deseni: GÖNDERİLMEYEN alan ezilmez. Eskiden yalnız miktar gönderilince
+            // kilit fiyatları ve not NULL'a siliniyordu — sessiz veri kaybıydı.
+            const sira = req.body.sira;
+            await pool.query(`UPDATE sat_analiz_urunler SET miktar=$1,
+                kilit_maliyet = CASE WHEN $2::boolean THEN $3::numeric ELSE kilit_maliyet END,
+                kilit_satis   = CASE WHEN $4::boolean THEN $5::numeric ELSE kilit_satis END,
+                notu          = CASE WHEN $6::boolean THEN $7 ELSE notu END,
+                sira          = CASE WHEN $8::boolean THEN $9::bigint ELSE sira END,
+                elle_duzenlendi=true WHERE id=$10`,
+                [m,
+                 kilit_maliyet !== undefined, kilit_maliyet === '' || kilit_maliyet == null ? null : parseFloat(kilit_maliyet),
+                 kilit_satis !== undefined, kilit_satis === '' || kilit_satis == null ? null : parseFloat(kilit_satis),
+                 notu !== undefined, (notu || '').trim() || null,
+                 sira !== undefined && sira !== '' && !isNaN(parseInt(sira)), sira === undefined || sira === '' ? null : parseInt(sira),
+                 parseInt(id)]);
             await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_analiz_urunler', kayit_id: parseInt(id),
                 ozet: `Analiz satırı elle düzenlendi (miktar ${m})`, eski_veri: eski.rows[0], yeni_veri: req.body });
             return res.json({ ok: true, id: parseInt(id) });
@@ -7525,7 +7535,7 @@ app.get('/api/satis-analiz-kalem/:kalemId', yetkiKontrol, async (req, res, next)
         // Döküm satırları kategoriye göre gruplanır (eski ekran/PDF gibi):
         // sıralama önce kategori sırası, kategori içinde eski sıra numarası.
         const urunler = await pool.query(`
-            SELECT a.id, a.urun_id, a.miktar, a.notu, a.elle_duzenlendi,
+            SELECT a.id, a.urun_id, a.miktar, a.notu, a.sira, a.elle_duzenlendi,
                    a.kilit_maliyet, a.kilit_satis, a.kilit_para_birimi, a.kilit_tarihi,
                    u.ad AS urun_adi, u.birim, u.kar_orani,
                    COALESCE(k.ad, 'Diğer') AS kategori_ad

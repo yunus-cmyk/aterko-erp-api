@@ -7024,7 +7024,11 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
                 return `
                 <tr data-satir="${u.id}">
                     <td>${esc(u.urun_adi || '-')}${u.elle_duzenlendi ? ' <span class="badge bg-info text-dark">elle</span>' : ''}
-                        ${u.notu ? `<br><small class="text-muted">${esc(u.notu)}</small>` : ''}</td>
+                        ${yazabilir ? `
+                        <div class="d-flex gap-1 mt-1">
+                            <input type="text" class="form-control form-control-sm san-d-notu" placeholder="Not" value="${esc(u.notu || '')}" style="font-size:0.72rem;">
+                            <input type="number" class="form-control form-control-sm text-end san-d-sira" title="Kategori içindeki sıra numarası" value="${u.sira != null ? u.sira : ''}" style="width:90px;font-size:0.72rem;">
+                        </div>` : (u.notu ? `<br><small class="text-muted">${esc(u.notu)}</small>` : '')}</td>
                     <td class="text-end">${yazabilir ? `<input type="number" step="0.01" class="form-control form-control-sm text-end san-d-miktar" value="${u.miktar != null ? u.miktar : ''}">` : formatTR(m)} <small>${esc(u.birim || '')}</small></td>
                     <td class="text-end">${u.kilit_maliyet != null ? formatTR(parseFloat(u.kilit_maliyet)) : '<span class="text-muted">-</span>'}</td>
                     <td class="text-end">${ks != null ? formatTR(ks) : '<span class="text-muted">-</span>'}</td>
@@ -7087,7 +7091,9 @@ async function satisAnalizSatirKaydet(id, btn) {
     const tr = btn.closest('tr');
     showLoading();
     const r = await secureFetch('/satis-analiz-satir', { method: 'POST', body: JSON.stringify({
-        id, miktar: tr.querySelector('.san-d-miktar').value }) }).catch(() => null);
+        id, miktar: tr.querySelector('.san-d-miktar').value,
+        notu: tr.querySelector('.san-d-notu')?.value ?? undefined,
+        sira: tr.querySelector('.san-d-sira')?.value ?? undefined }) }).catch(() => null);
     hideLoading();
     if (!r || !r.ok) { showToast(r?.hata || 'Satır kaydedilemedi.', 'error'); return; }
     showToast('Satır güncellendi.', 'success');
