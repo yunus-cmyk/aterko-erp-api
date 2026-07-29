@@ -413,6 +413,13 @@ app.get('/api/stok-hareket-audit/:id', yetkiKontrol, izinGerekli('stok', 'OKUMA'
 // Yeni Proje Kaydet
 // YENİ: Proje ve Alt Teslimatları (Binaları) Tek Seferde Kaydet
 app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
+    // FAZ 1 (Yunus kararı 2026-07-29): Projeler'e doğrudan proje açılamaz — her proje
+    // Satış'ta doğar, sözleşme zinciri avansla biter, proje otomatik buraya düşer.
+    // Yardımcı kayıtlar (10000/40000 gibi) için istisna yalnız ADMIN'dedir.
+    if (!adminMi(req)) {
+        return res.status(403).json({ ok: false, izin_hatasi: true,
+            hata: 'Projeler doğrudan açılmaz: proje Satış modülünde oluşturulur, sözleşme süreci tamamlanınca (avans tahsilatıyla) otomatik olarak buraya aktarılır. İstisnai kayıt gerekiyorsa bir ADMIN kullanıcısına başvurun.' });
+    }
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -6106,6 +6113,11 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                 ikincil_birim: buyuklukBirimi || null,
                 opsiyonel: !!k.opsiyonel, sira: i,
                 bilesen_turu: tur,
+                // FAZ 1: bina tanımı ilk kez teklif bileşeninde girilir (teslimata türetilir)
+                bina_tipi: (k.bina_tipi || '').trim() || null,
+                kat_adedi: (k.kat_adedi || '').trim() || null,
+                kat_yuksekligi: (k.kat_yuksekligi || '').trim() || null,
+                konteyner_ebadi: (k.konteyner_ebadi || '').trim() || null,
                 birim_fiyat: parseFloat(k.birim_fiyat) || 0
             };
         });
@@ -6184,19 +6196,22 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                     UPDATE sat_teklif_kalemleri SET ad=$1, aciklama=$2, miktar=$3, birim=$4,
                         ikincil_miktar=$5, ikincil_birim=$6, ikincil_birim_sembol=$7,
                         opsiyonel=$8, sira=$9, birim_fiyat=$10, toplam=$11,
-                        bilesen_turu=COALESCE($14, bilesen_turu)
+                        bilesen_turu=COALESCE($14, bilesen_turu),
+                        bina_tipi=$15, kat_adedi=$16, kat_yuksekligi=$17, konteyner_ebadi=$18
                     WHERE id=$12 AND teklif_id=$13`,
                     [k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar, k.ikincil_birim, sembol,
-                     k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.id, teklifId, k.bilesen_turu]);
+                     k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.id, teklifId, k.bilesen_turu,
+                     k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi]);
                 if (g.rowCount) continue;   // güncellendi; değilse (başka teklife ait id) yeni ekle
             }
             await client.query(`
                 INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim,
                     ikincil_miktar, ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam,
-                    bilesen_turu, analiz_durumu)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS')`,
+                    bilesen_turu, analiz_durumu, bina_tipi, kat_adedi, kat_yuksekligi, konteyner_ebadi)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS',$14,$15,$16,$17)`,
                 [teklifId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar,
-                 k.ikincil_birim, sembol, k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.bilesen_turu]);
+                 k.ikincil_birim, sembol, k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.bilesen_turu,
+                 k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi]);
         }
         // Toplamlar kalemlerden yeniden hesaplanır (eski calculateAndSaveProposalTotals birebir)
         await satisTeklifToplamlariHesapla(client, teklifId);
@@ -6526,8 +6541,13 @@ app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
         const yorumSayisi = await pool.query(
             `SELECT COUNT(*)::int c FROM sat_yorumlar WHERE proje_id=$1`, [id])
             .catch(() => ({ rows: [{ c: 0 }] }));
+        // FAZ 1 — TESLİMATLAR SEKMESİ: kabulde türetilen teslimat taslakları satışta görünür/düzenlenir
+        const teslimatlar = await pool.query(`
+            SELECT id, teklif_kalem_id, bina_adi, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
+                   konteyner_ebadi, konteyner_miktari, buyukluk_m2, bina_adedi, kdvsiz_tutar, durum
+            FROM proje_teslimatlari WHERE proje_id=$1 ORDER BY id`, [id]);
         res.json({ ok: true, proje: p.rows[0], teklifler: teklifler.rows, kalemler: kalemler.rows,
-            yorum_sayisi: yorumSayisi.rows[0].c });
+            teslimatlar: teslimatlar.rows, yorum_sayisi: yorumSayisi.rows[0].c });
     } catch (e) { next(e); }
 });
 
@@ -6603,10 +6623,42 @@ app.post('/api/satis-proje-durum', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
-// Sözleşmeye dönüşüm: faz SATIS → TESLIMAT. Proje TASLAK durumuyla Projeler
-// sekmesine düşer; teslimatlar girilir, mevcut onay akışı SÖZLEŞME'ye çevirir.
+// FAZ 1 — Satış sekmesinden teslimat taslağı düzenleme (kabulde türetilen satırlar).
+// Yalnız tanım alanları; İŞ EMRİ açılmış teslimat değiştirilemez.
+app.post('/api/satis-teslimat-guncelle', yetkiKontrol, izinGerekli('satis.proje', 'YAZMA'), async (req, res, next) => {
+    try {
+        const { id, bina_adi, bina_tipi, kat_adedi, kat_yuksekligi, konteyner_ebadi,
+                konteyner_miktari, buyukluk_m2, bina_adedi, kdvsiz_tutar } = req.body;
+        const t = await pool.query(`SELECT t.*, COALESCE(p.faz,'TESLIMAT') faz FROM proje_teslimatlari t
+            JOIN projeler p ON p.id=t.proje_id WHERE t.id=$1`, [parseInt(id)]);
+        if (!t.rowCount) return res.json({ ok: false, hata: 'Teslimat bulunamadı.' });
+        if (t.rows[0].faz !== 'SATIS') return res.json({ ok: false, hata: 'Bu proje teslimat fazında; teslimatlar Projeler modülünden düzenlenir.' });
+        const ise = await pool.query('SELECT id FROM is_emirleri WHERE teslimat_id=$1 LIMIT 1', [parseInt(id)]);
+        if (ise.rowCount) return res.json({ ok: false, hata: 'Bu teslimat için iş emri açılmış; artık satıştan düzenlenemez.' });
+        const adNorm = (bina_adi || '').trim();
+        if (!adNorm) return res.json({ ok: false, hata: 'Bina adı zorunludur.' });
+        await pool.query(`UPDATE proje_teslimatlari SET
+            bina_adi=$1, bina_tipi=$2, kat_adedi=$3, kat_yuksekligi=$4, konteyner_ebadi=$5,
+            konteyner_miktari=$6, buyukluk_m2=$7, bina_adedi=$8, kdvsiz_tutar=$9
+            WHERE id=$10`,
+            [adNorm, (bina_tipi || '').trim() || null, (kat_adedi || '').trim() || null,
+             (kat_yuksekligi || '').trim() || null, (konteyner_ebadi || '').trim() || null,
+             konteyner_miktari === '' || konteyner_miktari == null ? null : parseFloat(konteyner_miktari),
+             buyukluk_m2 === '' || buyukluk_m2 == null ? null : parseFloat(buyukluk_m2),
+             bina_adedi === '' || bina_adedi == null ? null : parseInt(bina_adedi),
+             kdvsiz_tutar === '' || kdvsiz_tutar == null ? null : parseFloat(kdvsiz_tutar), parseInt(id)]);
+        await auditLogla(req, { eylem: 'UPDATE', tablo: 'proje_teslimatlari', kayit_id: parseInt(id),
+            ozet: `Teslimat taslağı satıştan düzenlendi: ${adNorm}`, eski_veri: t.rows[0], yeni_veri: req.body });
+        res.json({ ok: true, mesaj: 'Teslimat güncellendi.' });
+    } catch (e) { next(e); }
+});
+
+// Sözleşmeye dönüşüm — ARTIK OTOMATİK: avans tahsilatıyla faz kendiliğinden döner
+// (satis-sozlesme-aksiyon). Bu uç istisnai durumlar için ADMIN yedeği olarak duruyor.
 app.post('/api/satis-proje-donustur', yetkiKontrol, async (req, res, next) => {
     try {
+        if (!adminMi(req)) return res.status(403).json({ ok: false, izin_hatasi: true,
+            hata: 'Projeler modülüne geçiş otomatiktir (avans tahsilatıyla). Elle geçiş yalnız ADMIN yedeğidir.' });
         const { id } = req.body;
         const eskiR = await pool.query(`SELECT proje_kodu, proje_adi, satis_durumu FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
         if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı.' });
@@ -7745,6 +7797,62 @@ app.post('/api/satis-teklif-ver', yetkiKontrol, izinGerekli('satis.teklif', 'YAZ
 // bu teklif ONAYLANAN, proje SATIŞI TAMAMLANAN.
 // YETKİ: eski sistemde bu tek düğme SATIŞ MÜDÜRÜ yetkisi istiyordu (hasSalesManagerAuthority);
 // teklif verme/revize/ret satış kullanıcısına açıktı. Karşılığı: satis.teklif_onay izni.
+// FAZ 1 — Teklif kabulünde teslimat taslakları türetilir (eski recreateDeliverables'ın
+// Satış'a çekilmiş hali). Yalnız gerçek bina kategorileri (Prefabrik/Konteyner/Hafif
+// Çelik/Yapısal Çelik) teslimata dönüşür; Nakliye/Montaj gibi "Diğer" kategorisi
+// kalemler üretim gerektirmediği için atlanır. Eski sistemden fark (Yunus onayı):
+// adet kadar ayrı teslimat yerine TEK satır + bina_adedi.
+// İdempotent: teklif_kalem_id bağıyla — mevcut teslimatın İŞ EMRİ varsa DOKUNULMAZ.
+async function satisTeslimatlariTuret(client, projeId, teklifId, req) {
+    const kalemler = (await client.query(`
+        SELECT k.id, k.ad, k.aciklama, k.miktar, k.ikincil_miktar, k.toplam,
+               k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi,
+               r.ust_kod AS kategori
+        FROM sat_teklif_kalemleri k
+        LEFT JOIN sat_referanslar r ON r.tur='bilesen_turu' AND r.ad=k.bilesen_turu
+        WHERE k.teklif_id=$1 AND COALESCE(k.opsiyonel,false)=false
+        ORDER BY k.sira, k.id`, [teklifId])).rows;
+    const BINA_KATEGORILERI = ['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik'];
+    let olusan = 0, guncellenen = 0, korunan = 0, atlanan = 0;
+    for (const k of kalemler) {
+        if (!BINA_KATEGORILERI.includes(k.kategori)) { atlanan++; continue; }
+        const alanlar = {
+            bina_adi: k.ad, bina_turu: k.kategori, bina_tipi: k.bina_tipi || null,
+            kat_adedi: k.kat_adedi || null, kat_yuksekligi: k.kat_yuksekligi || null,
+            konteyner_ebadi: k.kategori === 'Konteyner' ? (k.konteyner_ebadi || null) : null,
+            konteyner_miktari: k.kategori === 'Konteyner' ? k.miktar : null,
+            buyukluk_m2: k.ikincil_miktar || null,
+            bina_adedi: k.kategori === 'Konteyner' ? null : (parseInt(k.miktar) || 1),
+            kdvsiz_tutar: k.toplam || null
+        };
+        const mevcut = await client.query(
+            'SELECT id FROM proje_teslimatlari WHERE teklif_kalem_id=$1', [k.id]);
+        if (mevcut.rowCount) {
+            const teslimatId = mevcut.rows[0].id;
+            const ise = await client.query('SELECT id FROM is_emirleri WHERE teslimat_id=$1 LIMIT 1', [teslimatId]);
+            if (ise.rowCount) { korunan++; continue; }   // iş emri açılmış teslimata dokunulmaz
+            await client.query(`UPDATE proje_teslimatlari SET
+                bina_adi=$1, bina_turu=$2, bina_tipi=$3, kat_adedi=$4, kat_yuksekligi=$5,
+                konteyner_ebadi=$6, konteyner_miktari=$7, buyukluk_m2=$8, bina_adedi=$9, kdvsiz_tutar=$10
+                WHERE id=$11`,
+                [alanlar.bina_adi, alanlar.bina_turu, alanlar.bina_tipi, alanlar.kat_adedi,
+                 alanlar.kat_yuksekligi, alanlar.konteyner_ebadi, alanlar.konteyner_miktari,
+                 alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar, teslimatId]);
+            guncellenen++;
+        } else {
+            await client.query(`INSERT INTO proje_teslimatlari
+                (proje_id, teklif_kalem_id, bina_adi, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
+                 konteyner_ebadi, konteyner_miktari, buyukluk_m2, bina_adedi, kdvsiz_tutar, durum)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'PROJE')`,
+                [projeId, k.id, alanlar.bina_adi, alanlar.bina_turu, alanlar.bina_tipi,
+                 alanlar.kat_adedi, alanlar.kat_yuksekligi, alanlar.konteyner_ebadi,
+                 alanlar.konteyner_miktari, alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar]);
+            olusan++;
+        }
+    }
+    return { olusan, guncellenen, korunan, atlanan };
+}
+
 app.post('/api/satis-teklif-kabul', yetkiKontrol, izinGerekli('satis.teklif_onay', 'TAM'), async (req, res, next) => {
     const client = await pool.connect();
     try {
@@ -7764,11 +7872,20 @@ app.post('/api/satis-teklif-kabul', yetkiKontrol, izinGerekli('satis.teklif_onay
                 [t.rows[0].proje_id, id]);
         }
         await client.query(`UPDATE sat_teklifler SET durum='ONAYLANAN', guncelleme=now() WHERE id=$1`, [id]);
-        if (t.rows[0].proje_id) await projeDurumGuncelle(client, t.rows[0].proje_id, PRJ.SATIS_TAMAMLANDI, req, 'Teklif kabul edildi');
+        // FAZ 1: kabul anında teslimat taslakları türetilir — proje SATIŞ fazında kalır,
+        // ekip Satış > proje detayı > Teslimatlar sekmesinde düzenler.
+        let turet = null;
+        if (t.rows[0].proje_id) {
+            await projeDurumGuncelle(client, t.rows[0].proje_id, PRJ.SATIS_TAMAMLANDI, req, 'Teklif kabul edildi');
+            turet = await satisTeslimatlariTuret(client, t.rows[0].proje_id, id, req);
+        }
         await client.query('COMMIT');
+        const turetOzet = turet
+            ? ` Teslimat taslakları: ${turet.olusan} oluştu${turet.guncellenen ? `, ${turet.guncellenen} güncellendi` : ''}${turet.korunan ? `, ${turet.korunan} iş emirli teslimata dokunulmadı` : ''}${turet.atlanan ? ` (${turet.atlanan} bina-dışı kalem atlandı)` : ''}.`
+            : '';
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_teklifler', kayit_id: id,
-            ozet: `Teklif KABUL edildi: ${t.rows[0].teklif_no}; projedeki diğer teklifler revizeye alındı` });
-        res.json({ ok: true, mesaj: 'Teklif kabul edildi. Artık sözleşme oluşturabilirsiniz.' });
+            ozet: `Teklif KABUL edildi: ${t.rows[0].teklif_no}; diğer teklifler revizeye alındı.${turetOzet}` });
+        res.json({ ok: true, mesaj: `Teklif kabul edildi.${turetOzet} Artık sözleşme oluşturabilirsiniz.` });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
 });
@@ -7972,8 +8089,18 @@ app.post('/api/satis-sozlesme-aksiyon', yetkiKontrol, izinGerekli('satis.proje',
         if (!soz.rowCount) return res.json({ ok: false, hata: 'Bu projede sözleşme yok. Önce tekliften sözleşme oluşturun.' });
         await client.query('BEGIN');
         await projeDurumGuncelle(client, parseInt(proje_id), a.durum, req, a.ad);
+        // FAZ 1 (Yunus kararı): zincirin son mali adımı olan AVANS ile proje otomatik
+        // Projeler modülüne geçer — düğmeye gerek yok. Teslimat taslakları kabulde
+        // türetildiği için proje Projeler'e eksiksiz ve SÖZLEŞME durumuyla düşer.
+        let fazMesaj = '';
+        if (aksiyon === 'avans-alindi') {
+            await client.query(`UPDATE projeler SET faz='TESLIMAT', durum='SÖZLEŞME' WHERE id=$1`, [parseInt(proje_id)]);
+            fazMesaj = ` ${p.rows[0].proje_kodu} Projeler modülüne alındı (SÖZLEŞME).`;
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'projeler', kayit_id: parseInt(proje_id),
+                ozet: `Avans tahsilatıyla otomatik faz geçişi: ${p.rows[0].proje_kodu} satıştan Projeler'e (SÖZLEŞME)` });
+        }
         await client.query('COMMIT');
-        res.json({ ok: true, mesaj: a.ad + '.', durum: a.durum });
+        res.json({ ok: true, mesaj: a.ad + '.' + fazMesaj, durum: a.durum });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
 });
@@ -8447,6 +8574,7 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/satis-proje/, method: 'GET', modul: 'satis.proje', seviye: 'OKUMA' },
     { pattern: /^\/api\/satis-proje-donustur/, modul: 'satis.proje', seviye: 'TAM' },
     { pattern: /^\/api\/satis-proje/, modul: 'satis.proje', seviye: 'YAZMA' },
+    { pattern: /^\/api\/satis-teslimat-guncelle/, modul: 'satis.proje', seviye: 'YAZMA' },
     // Not: /api/satis-referanslar yalnız kapalı liste tanımlarını döndürür (müşteri türü,
     // satış noktası, şartname türü...). Hem müşteri hem teklif formu kullandığı için tek
     // bir modüle bağlanmadı; GET olduğundan oturum açmış herkes okuyabilir.
@@ -11472,6 +11600,18 @@ async function semaGuvence() {
         // PDF'inin devamına sayfa olarak birleştirilir (tedarikçi teklifi, teknik detay).
         await pool.query(`ALTER TABLE siparis_dosyalari
             ADD COLUMN IF NOT EXISTS pdfe_dahil BOOLEAN NOT NULL DEFAULT false`).catch(() => {});
+
+        // FAZ 1 — Teslimatlar Satış'ta doğar (Yunus kararı 2026-07-29):
+        // Bina tanımı İLK KEZ teklif bileşeni oluşturulurken girilir; teklif kabulünde
+        // teslimat taslakları bu alanlardan türetilir. teklif_kalem_id türetme bağı
+        // (hangi teslimat hangi kalemden doğdu — eskideki copied_from karşılığı).
+        await pool.query(`ALTER TABLE sat_teklif_kalemleri
+            ADD COLUMN IF NOT EXISTS bina_tipi TEXT,
+            ADD COLUMN IF NOT EXISTS kat_adedi TEXT,
+            ADD COLUMN IF NOT EXISTS kat_yuksekligi TEXT,
+            ADD COLUMN IF NOT EXISTS konteyner_ebadi TEXT`).catch(() => {});
+        await pool.query(`ALTER TABLE proje_teslimatlari
+            ADD COLUMN IF NOT EXISTS teklif_kalem_id INTEGER`).catch(() => {});
 
         // Müşteri satış durumu (customer_status) — AKTIF/PASIF'ten AYRI bir alan:
         // Potansiyel / Görüşme Yapılmış / Teklif Sürecinde / Satış Gerçekleşmiş

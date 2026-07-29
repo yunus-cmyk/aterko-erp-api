@@ -837,6 +837,45 @@
       </div>
     </div>
 
+    <!-- FAZ 1 — Satış: teslimat taslağı düzenleme -->
+    <div class="modal fade" id="modalSatisTeslimat" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+          <div class="modal-header py-2 bg-dark text-white">
+            <h6 class="modal-title fw-bold"><i class="bi bi-building me-2"></i>Teslimat Taslağı Düzenle</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-3 row g-2">
+            <input type="hidden" id="sptId">
+            <div class="col-12"><label class="form-label small mb-0">Bina Adı <span class="text-danger">*</span></label>
+              <input type="text" id="sptAd" class="form-control form-control-sm"></div>
+            <div class="col-12"><label class="form-label small mb-0">Bina Tipi</label>
+              <select id="sptTip" class="form-select form-select-sm"></select></div>
+            <div class="col-6 spt-kat"><label class="form-label small mb-0">Kat Adedi</label>
+              <select id="sptKatAdedi" class="form-select form-select-sm"><option value="">-</option>
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+            <div class="col-6 spt-kat"><label class="form-label small mb-0">Kat Yüksekliği (mm)</label>
+              <select id="sptKatYuk" class="form-select form-select-sm"><option value="">-</option>
+                <option value="2500">2500</option><option value="2800">2800</option><option value="3000">3000</option></select></div>
+            <div class="col-6 spt-ebat"><label class="form-label small mb-0">Konteyner Ebadı</label>
+              <input type="text" id="sptEbat" class="form-control form-control-sm" placeholder="örn. 3x7 m"></div>
+            <div class="col-6 spt-ebat"><label class="form-label small mb-0">Konteyner Miktarı</label>
+              <input type="number" id="sptKonMiktar" class="form-control form-control-sm"></div>
+            <div class="col-4"><label class="form-label small mb-0">Büyüklük (m²)</label>
+              <input type="number" step="0.01" id="sptM2" class="form-control form-control-sm"></div>
+            <div class="col-4 spt-kat"><label class="form-label small mb-0">Bina Adedi</label>
+              <input type="number" id="sptAdet" class="form-control form-control-sm"></div>
+            <div class="col-4"><label class="form-label small mb-0">KDV'siz Tutar</label>
+              <input type="number" step="0.01" id="sptTutar" class="form-control form-control-sm"></div>
+          </div>
+          <div class="modal-footer py-2">
+            <button class="btn btn-light border btn-sm px-3" data-bs-dismiss="modal">Vazgeç</button>
+            <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisTeslimatKaydet()">Kaydet</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Satış — teklif yeni/düzenle -->
     <div class="modal fade" id="modalSatisTeklifForm" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
@@ -1569,7 +1608,9 @@
   <div id="projeArea" class="d-none p-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="fw-bold text-dark mb-0"><i class="bi bi-buildings-fill me-2 text-primary"></i>Proje ve Şantiye Takibi</h5>
-            <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3" onclick="openYeniProjeModal()">
+            <!-- FAZ 1: proje Satış'ta doğar, avansla buraya otomatik gelir — doğrudan
+                 giriş yalnız ADMIN yedeğidir (10000/40000 gibi yardımcı kayıtlar) -->
+            <button class="btn btn-primary btn-sm fw-bold shadow-sm px-3 d-none" id="btnYeniProje" onclick="openYeniProjeModal()">
                 <i class="bi bi-plus-lg me-1"></i> Yeni Proje Tanımla
             </button>
         </div>
@@ -4786,6 +4827,9 @@ function izinAttributesUygula() {
 
 // Navbar sekmelerini ve dropdown'u izinlere göre göster/gizle
 function izinleriUygula() {
+    // FAZ 1: Projeler'e doğrudan proje girişi yalnız ADMIN yedeği
+    const ypBtn = document.getElementById('btnYeniProje');
+    if (ypBtn) ypBtn.classList.toggle('d-none', !adminRolMu());
     // Üst navbar sekmeleri
     const sekmeModulMap = {
         'nav-anasayfa':     'anasayfa',
@@ -5977,6 +6021,53 @@ async function satisProjeSekmesiTazele(projeId, icSekme) {
     if (_satisAktifSekme === 'proje:' + projeId) satisProjeSayfasiniCiz(projeId);
 }
 
+// FAZ 1 — Satış: teslimat taslağı düzenleme (kabulde türetilen satırlar)
+function satisTeslimatDuzenle(jsonStr) {
+    const t = JSON.parse(jsonStr);
+    document.getElementById('sptId').value = t.id;
+    document.getElementById('sptAd').value = t.bina_adi || '';
+    document.getElementById('sptM2').value = t.buyukluk_m2 != null ? t.buyukluk_m2 : '';
+    document.getElementById('sptAdet').value = t.bina_adedi != null ? t.bina_adedi : '';
+    document.getElementById('sptTutar').value = t.kdvsiz_tutar != null ? t.kdvsiz_tutar : '';
+    document.getElementById('sptKatAdedi').value = t.kat_adedi || '';
+    document.getElementById('sptKatYuk').value = t.kat_yuksekligi || '';
+    document.getElementById('sptEbat').value = t.konteyner_ebadi || '';
+    document.getElementById('sptKonMiktar').value = t.konteyner_miktari != null ? t.konteyner_miktari : '';
+    // Bina tipi seçenekleri türe göre; kayıtlı değer listede yoksa eklenir
+    const tipSec = document.getElementById('sptTip');
+    const liste = tipSecenekleri[t.bina_turu] || [];
+    tipSec.innerHTML = '<option value="">Seçiniz...</option>' +
+        liste.map(x => `<option value="${esc(x)}" ${x === t.bina_tipi ? 'selected' : ''}>${esc(x)}</option>`).join('');
+    if (t.bina_tipi && !liste.includes(t.bina_tipi)) {
+        tipSec.insertAdjacentHTML('beforeend', `<option value="${esc(t.bina_tipi)}" selected>${esc(t.bina_tipi)}</option>`);
+    }
+    const konteyner = t.bina_turu === 'Konteyner';
+    document.querySelectorAll('#modalSatisTeslimat .spt-kat').forEach(el => el.classList.toggle('d-none', konteyner));
+    document.querySelectorAll('#modalSatisTeslimat .spt-ebat').forEach(el => el.classList.toggle('d-none', !konteyner));
+    maliModalUstteAc ? maliModalUstteAc('modalSatisTeslimat')
+        : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisTeslimat')).show();
+}
+
+async function satisTeslimatKaydet() {
+    showLoading();
+    const r = await secureFetch('/satis-teslimat-guncelle', { method: 'POST', body: JSON.stringify({
+        id: document.getElementById('sptId').value,
+        bina_adi: document.getElementById('sptAd').value,
+        bina_tipi: document.getElementById('sptTip').value,
+        kat_adedi: document.getElementById('sptKatAdedi').value,
+        kat_yuksekligi: document.getElementById('sptKatYuk').value,
+        konteyner_ebadi: document.getElementById('sptEbat').value,
+        konteyner_miktari: document.getElementById('sptKonMiktar').value,
+        buyukluk_m2: document.getElementById('sptM2').value,
+        bina_adedi: document.getElementById('sptAdet').value,
+        kdvsiz_tutar: document.getElementById('sptTutar').value }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Teslimat kaydedilemedi.', 'error'); return; }
+    showToast(r.mesaj, 'success');
+    bootstrap.Modal.getInstance(document.getElementById('modalSatisTeslimat'))?.hide();
+    if (window.spdAktifId) satisProjeSekmesiTazele?.(window.spdAktifId) ?? satisProjeSayfasiniCiz?.(window.spdAktifId);
+}
+
 // İç sekme şeridi (Genel | Teklifler | Analiz | Sözleşme | Yorumlar)
 function satisProjeIcSekmeleriCiz(r) {
     const bekleyenAnaliz = (r.kalemler || []).filter(x => x.analiz_durumu === 'ANALIZ_SURECINDE').length;
@@ -5984,6 +6075,7 @@ function satisProjeIcSekmeleriCiz(r) {
         { kod: 'genel',    ad: 'Genel',     ikon: 'info-circle' },
         { kod: 'teklifler',ad: 'Teklifler', ikon: 'file-earmark-text', rozet: r.teklifler.length },
         { kod: 'analiz',   ad: 'Analiz',    ikon: 'calculator', rozet: (r.kalemler || []).length, uyari: bekleyenAnaliz },
+        { kod: 'teslimatlar', ad: 'Teslimatlar', ikon: 'building', rozet: (r.teslimatlar || []).length },
         { kod: 'sozlesme', ad: 'Sözleşme',  ikon: 'file-earmark-check' },
         { kod: 'yorumlar', ad: 'Yorumlar',  ikon: 'chat-left-text', rozet: r.yorum_sayisi }
     ];
@@ -6023,9 +6115,9 @@ function satisProjeAksiyonlariCiz(sekme) {
                 <button class="btn btn-outline-primary btn-sm" onclick="satisProjeDurumKaydet()">Uygula</button>
             </div>`;
         }
-        sag = `<button class="btn btn-success btn-sm px-3 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="TAM" onclick="satisProjeDonustur()">
-                 <i class="bi bi-arrow-right-circle me-1"></i>Sözleşmeye Dönüştür</button>
-               <button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc(window.spdAktifId)">
+        // FAZ 1: "Sözleşmeye Dönüştür" düğmesi kaldırıldı — proje, sözleşme zincirinin
+        // son adımı olan AVANS tahsilatıyla Projeler modülüne OTOMATİK geçer.
+        sag = `<button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc(window.spdAktifId)">
                  <i class="bi bi-pencil-square me-1"></i>Düzenle</button>`;
     } else if (sekme === 'teklifler') {
         sag = `<button class="btn btn-primary btn-sm px-3 fw-bold" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisProjedenTeklifAc(window.spdAktifId)">
@@ -6094,6 +6186,35 @@ function satisProjeSekmeSec(sekme) {
         </table></div>
         <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Teklif üstte açılır; kapattığınızda bu pencereye dönersiniz.</div>`
         : '<div class="text-muted small py-3">Bu projeye bağlı teklif yok. Alttaki <b>Teklif Oluştur</b> düğmesiyle ekleyebilirsiniz.</div>';
+        return;
+    }
+    if (sekme === 'teslimatlar') {
+        const ts = r.teslimatlar || [];
+        // FAZ 1: teklif kabulünde türetilen teslimat taslakları — satışta düzenlenir,
+        // avans tahsilatıyla proje bunlarla birlikte Projeler modülüne geçer.
+        govde.innerHTML = ts.length ? `
+        <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Teslimatlar teklif kabulünde
+            kalemlerden türetildi. Avans tahsil edildiğinde proje bu teslimatlarla Projeler modülüne otomatik geçer.</div>
+        <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
+            <thead class="table-light"><tr><th>Bina Adı</th><th>Tür / Tip</th><th class="text-end">m²</th>
+                <th class="text-end">Adet</th><th>Kat</th><th class="text-end">KDV'siz Tutar</th><th class="text-center">Durum</th><th style="width:56px;"></th></tr></thead>
+            <tbody>${ts.map(t => `
+                <tr>
+                    <td>${esc(t.bina_adi || '-')}</td>
+                    <td>${esc(t.bina_turu || '-')}${t.bina_tipi ? `<br><small class="text-muted">${esc(t.bina_tipi)}</small>` : ''}
+                        ${t.konteyner_ebadi ? `<br><small class="text-muted">${esc(t.konteyner_ebadi)}${t.konteyner_miktari ? ' × ' + formatTR(parseFloat(t.konteyner_miktari)) : ''}</small>` : ''}</td>
+                    <td class="text-end">${t.buyukluk_m2 != null ? formatTR(parseFloat(t.buyukluk_m2)) : '-'}</td>
+                    <td class="text-end">${t.bina_adedi != null ? t.bina_adedi : (t.konteyner_miktari != null ? formatTR(parseFloat(t.konteyner_miktari)) : '-')}</td>
+                    <td>${[t.kat_adedi ? t.kat_adedi + ' kat' : null, t.kat_yuksekligi ? t.kat_yuksekligi + ' mm' : null].filter(Boolean).join(' / ') || '-'}</td>
+                    <td class="text-end">${t.kdvsiz_tutar != null ? formatTR(parseFloat(t.kdvsiz_tutar)) : '-'}</td>
+                    <td class="text-center"><span class="badge bg-light text-dark border">${esc(t.durum || '-')}</span></td>
+                    <td class="text-center"><button class="btn btn-outline-primary btn-sm py-0" title="Düzenle"
+                        data-izin-modul="satis.proje" data-izin-seviye="YAZMA"
+                        onclick='satisTeslimatDuzenle(${JSON.stringify(JSON.stringify(t))})'><i class="bi bi-pencil"></i></button></td>
+                </tr>`).join('')}</tbody>
+        </table></div>`
+        : `<div class="text-muted small py-3">Henüz teslimat taslağı yok. Teslimatlar, bir teklif <b>kabul edildiğinde</b>
+            kalemlerden otomatik türetilir; bina tanımları (tip, kat, ebat) teklif kalemi formunda girilir.</div>`;
         return;
     }
     if (sekme === 'analiz') {
@@ -7185,7 +7306,21 @@ function stfKalemEkle(k) {
             <select class="form-select form-select-sm mt-1 stf-k-tur" onchange="stfTurDegisti(this)"
                     title="Bileşen türü — büyüklük alanının çıkıp çıkmayacağını ve birimini bu belirler">
                 <option value="">Bileşen türü seçiniz...</option>
-            </select></td>
+            </select>
+            <!-- FAZ 1: bina tanımı ilk kez burada girilir; teklif kabulünde teslimata türetilir -->
+            <div class="stf-bina-alanlari d-none mt-1 p-2 border rounded bg-light">
+                <div class="row g-1">
+                    <div class="col-6"><select class="form-select form-select-sm stf-k-bina-tipi" title="Bina Tipi" data-secili="${esc(k.bina_tipi || '')}"></select></div>
+                    <div class="col-3 stf-bina-kat d-none"><select class="form-select form-select-sm stf-k-kat-adedi" title="Kat Adedi">
+                        <option value="">Kat Adedi</option><option value="1" ${k.kat_adedi === '1' ? 'selected' : ''}>1 Kat</option>
+                        <option value="2" ${k.kat_adedi === '2' ? 'selected' : ''}>2 Kat</option><option value="3" ${k.kat_adedi === '3' ? 'selected' : ''}>3 Kat</option></select></div>
+                    <div class="col-3 stf-bina-kat d-none"><select class="form-select form-select-sm stf-k-kat-yuksekligi" title="Kat Yüksekliği (mm)">
+                        <option value="">Kat Yük.</option><option value="2500" ${k.kat_yuksekligi === '2500' ? 'selected' : ''}>2500</option>
+                        <option value="2800" ${k.kat_yuksekligi === '2800' ? 'selected' : ''}>2800</option><option value="3000" ${k.kat_yuksekligi === '3000' ? 'selected' : ''}>3000</option></select></div>
+                    <div class="col-6 stf-bina-ebat d-none"><input type="text" class="form-control form-control-sm stf-k-konteyner-ebadi"
+                        placeholder="Konteyner ebadı (örn. 3x7 m)" value="${esc(k.konteyner_ebadi || '')}"></div>
+                </div>
+            </div></td>
         <td class="stf-buyukluk-hucre">
             <div class="input-group input-group-sm stf-buyukluk-kutu">
                 <input type="number" class="form-control form-control-sm text-end stf-k-ikincil" placeholder="örn. 34,19"
@@ -7241,6 +7376,27 @@ function stfTurDegisti(sec) {
     kutu.classList.toggle('d-none', !birim);
     yok.classList.toggle('d-none', !!birim);
     if (!birim) girdi.value = '';          // tür desteklemiyorsa büyüklük tutulmaz
+    // FAZ 1 — bina tanım alanları: türün KATEGORİSİNE göre (optgroup etiketi).
+    // Prefabrik/Hafif Çelik/Yapısal Çelik → bina tipi + kat bilgileri;
+    // Konteyner → bina tipi + ebat; Diğer (Nakliye, Montaj...) → hiçbiri.
+    const kategori = secenek && secenek.parentElement && secenek.parentElement.tagName === 'OPTGROUP'
+        ? secenek.parentElement.label : '';
+    const binaKutu = tr.querySelector('.stf-bina-alanlari');
+    if (binaKutu) {
+        const binaVar = ['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik'].includes(kategori);
+        binaKutu.classList.toggle('d-none', !binaVar);
+        tr.querySelectorAll('.stf-bina-kat').forEach(el => el.classList.toggle('d-none', kategori === 'Konteyner' || !binaVar));
+        tr.querySelector('.stf-bina-ebat').classList.toggle('d-none', kategori !== 'Konteyner');
+        const tipSec = tr.querySelector('.stf-k-bina-tipi');
+        if (binaVar) {
+            const secili = tipSec.value || tipSec.dataset.secili || '';
+            tipSec.innerHTML = '<option value="">Bina tipi seçiniz...</option>' +
+                (tipSecenekleri[kategori] || []).map(t => `<option value="${esc(t)}" ${t === secili ? 'selected' : ''}>${esc(t)}</option>`).join('');
+            if (secili && !(tipSecenekleri[kategori] || []).includes(secili)) {
+                tipSec.insertAdjacentHTML('beforeend', `<option value="${esc(secili)}" selected>${esc(secili)}</option>`);
+            }
+        } else { tipSec.innerHTML = ''; }
+    }
 }
 // Birim kısaltmaları — eski sistemin unit_type.symbol değerleriyle birebir
 // (sunucudaki BIRIM_SEMBOL ile aynı; ekranda ve PDF'te aynı sembol görünsün diye)
@@ -7412,6 +7568,10 @@ async function satisTeklifKaydet() {
         aciklama: tr.querySelector('.stf-k-aciklama').value,
         bilesen_turu: tr.querySelector('.stf-k-tur').value,
         buyukluk_birimi: (tr.querySelector('.stf-k-tur').options[tr.querySelector('.stf-k-tur').selectedIndex] || {}).dataset?.birim || '',
+        bina_tipi: tr.querySelector('.stf-k-bina-tipi')?.value || '',
+        kat_adedi: tr.querySelector('.stf-k-kat-adedi')?.value || '',
+        kat_yuksekligi: tr.querySelector('.stf-k-kat-yuksekligi')?.value || '',
+        konteyner_ebadi: tr.querySelector('.stf-k-konteyner-ebadi')?.value || '',
         miktar: tr.querySelector('.stf-k-miktar').value,
         birim: 'Adet',
         ikincil_miktar: tr.querySelector('.stf-k-ikincil').value,
