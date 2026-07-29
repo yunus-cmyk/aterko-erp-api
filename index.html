@@ -6929,6 +6929,7 @@ async function satisAnalizFormKaydet() {
 
 // Malzeme dökümü ızgarası — eski "Ürün & Hizmetler" ekranı
 async function satisAnalizDokumAc(kalemId, kalemAd) {
+    if (window.sanKalemId !== kalemId) window.sanKategoriFiltre = null;   // başka kaleme geçince süzgeç sıfırlanır
     window.sanKalemId = kalemId;
     window.sanKalemAd = kalemAd;
     const [kayitli, onizleme] = await Promise.all([
@@ -6978,6 +6979,20 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
             <b>${window.sanOnizleme.kalemler.filter(k => k.miktar != null).length}</b>
             (kayıtlı döküm: <b>${satirlar.length}</b>)</div>` : ''}
         ${satirlar.length ? `
+        ${(() => {
+            // Kategori süzgeci — eski ekrandaki kategori seçicinin karşılığı
+            const kategoriler = [...new Set(satirlar.map(u => u.kategori_ad || 'Diğer'))];
+            return kategoriler.length > 1 ? `
+            <div class="d-flex align-items-center gap-2 mb-2 small">
+                <span class="text-muted">Kategori:</span>
+                <select class="form-select form-select-sm" style="max-width:280px;"
+                        onchange="window.sanKategoriFiltre = this.value || null; satisAnalizDokumAc(window.sanKalemId, window.sanKalemAd)">
+                    <option value="">Tümü (${satirlar.length} satır, ${kategoriler.length} kategori)</option>
+                    ${kategoriler.map(k => `<option value="${esc(k)}" ${window.sanKategoriFiltre === k ? 'selected' : ''}>${esc(k)} (${satirlar.filter(u => (u.kategori_ad || 'Diğer') === k).length})</option>`).join('')}
+                </select>
+                ${window.sanKategoriFiltre ? '<span class="text-muted"><i class="bi bi-info-circle me-1"></i>Alt toplamlar tüm dökümü gösterir.</span>' : ''}
+            </div>` : '';
+        })()}
         <div class="table-responsive"><table class="table table-sm table-hover align-middle" style="font-size:0.8rem;">
             <thead class="table-light"><tr>
                 <th>Malzeme</th><th class="text-end" style="width:105px;">Miktar</th>
@@ -6985,7 +7000,22 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
                 <th class="text-end" style="width:105px;">Satış <i class="bi bi-lock"></i></th>
                 <th class="text-end" style="width:105px;" title="Ürün ağacındaki güncel alış fiyatlarından bugün hesaplanan">Bugünkü Satış</th>
                 <th class="text-end" style="width:105px;">Tutar</th><th style="width:70px;"></th></tr></thead>
-            <tbody>${satirlar.map(u => {
+            <tbody>${(window.sanKategoriFiltre ? satirlar.filter(u => (u.kategori_ad || 'Diğer') === window.sanKategoriFiltre) : satirlar).map((u, i, dizi) => {
+                // Kategori değişiminde ara başlık + kategori satış alt toplamı (eski PDF'teki gruplama)
+                const kat = u.kategori_ad || 'Diğer';
+                let baslik = '';
+                if (i === 0 || (dizi[i - 1].kategori_ad || 'Diğer') !== kat) {
+                    const grup = dizi.filter(x => (x.kategori_ad || 'Diğer') === kat);
+                    const grupSatis = grup.reduce((s, x) => {
+                        const sm = parseFloat(x.miktar) || 0;
+                        const sf = x.kilit_satis != null ? parseFloat(x.kilit_satis) : (x.guncel_satis != null ? parseFloat(x.guncel_satis) : null);
+                        return sf != null ? s + sm * sf : s;
+                    }, 0);
+                    baslik = `<tr class="table-secondary"><td colspan="7" class="py-1">
+                        <span class="fw-bold">${esc(kat)}</span>
+                        <span class="text-muted small ms-2">${grup.length} satır — toplam satış: ${formatTR(grupSatis)}</span></td></tr>`;
+                }
+                return baslik + (u => {
                 const m = parseFloat(u.miktar) || 0;
                 const ks = u.kilit_satis != null ? parseFloat(u.kilit_satis) : null;
                 const gs = u.guncel_satis != null ? parseFloat(u.guncel_satis) : null;
@@ -7003,7 +7033,7 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
                     <td class="text-center text-nowrap">${yazabilir ? `
                         <button class="btn btn-outline-primary btn-sm py-0" title="Miktarı kaydet" onclick="satisAnalizSatirKaydet(${u.id}, this)"><i class="bi bi-check"></i></button>
                         <button class="btn btn-outline-danger btn-sm py-0" title="Satırı sil" onclick="satisAnalizSatirSil(${u.id})"><i class="bi bi-x"></i></button>` : ''}</td>
-                </tr>`; }).join('')}</tbody>
+                </tr>`; })(u); }).join('')}</tbody>
             <tfoot class="table-light">
                 <tr class="fw-bold"><td colspan="3" class="text-end">Toplam satış (analiz günü)</td>
                     <td class="text-end">${formatTR(satis)}</td>

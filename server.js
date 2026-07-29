@@ -7522,14 +7522,18 @@ app.get('/api/satis-analiz-kalem/:kalemId', yetkiKontrol, async (req, res, next)
             LEFT JOIN sat_parametreler pr ON pr.id = d.parametre_id
             WHERE d.kalem_id = $1
             ORDER BY pr.sira, pr.ad`, [kalemId]);
+        // Döküm satırları kategoriye göre gruplanır (eski ekran/PDF gibi):
+        // sıralama önce kategori sırası, kategori içinde eski sıra numarası.
         const urunler = await pool.query(`
             SELECT a.id, a.urun_id, a.miktar, a.notu, a.elle_duzenlendi,
                    a.kilit_maliyet, a.kilit_satis, a.kilit_para_birimi, a.kilit_tarihi,
-                   u.ad AS urun_adi, u.birim, u.kar_orani
+                   u.ad AS urun_adi, u.birim, u.kar_orani,
+                   COALESCE(k.ad, 'Diğer') AS kategori_ad
             FROM sat_analiz_urunler a
             LEFT JOIN sat_urunler u ON u.id = a.urun_id
+            LEFT JOIN sat_urun_kategoriler k ON k.id = u.kategori_id
             WHERE a.kalem_id = $1
-            ORDER BY a.sira, a.id`, [kalemId]);
+            ORDER BY COALESCE(k.sira, 999999), a.sira, a.id`, [kalemId]);
         // Kilitli fiyatın yanında BUGÜNKÜ maliyet/satış (ürün ağacından) da gösterilir
         const guncel = await satisUrunMaliyetleri(pool, urunler.rows.map(x => x.urun_id).filter(Boolean));
         const satirlar = urunler.rows.map(x => {
