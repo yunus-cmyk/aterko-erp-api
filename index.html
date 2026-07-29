@@ -6043,14 +6043,12 @@ function satisTeslimatDuzenle(jsonStr) {
     document.getElementById('sptKatYuk').value = t.kat_yuksekligi || '';
     document.getElementById('sptEbat').value = t.konteyner_ebadi || '';
     document.getElementById('sptKonMiktar').value = t.konteyner_miktari != null ? t.konteyner_miktari : '';
-    // Bina tipi seçenekleri türe göre; kayıtlı değer listede yoksa eklenir
+    // Bina tipi YALNIZ yeni sözlükten (Yunus kuralı): eski serbest değer listeye
+    // EKLENMEZ — düzenleyen yeni tiplerden birini seçmek zorunda kalır.
     const tipSec = document.getElementById('sptTip');
     const liste = tipSecenekleri[t.bina_turu] || [];
     tipSec.innerHTML = '<option value="">Seçiniz...</option>' +
         liste.map(x => `<option value="${esc(x)}" ${x === t.bina_tipi ? 'selected' : ''}>${esc(x)}</option>`).join('');
-    if (t.bina_tipi && !liste.includes(t.bina_tipi)) {
-        tipSec.insertAdjacentHTML('beforeend', `<option value="${esc(t.bina_tipi)}" selected>${esc(t.bina_tipi)}</option>`);
-    }
     const konteyner = t.bina_turu === 'Konteyner';
     const diger = t.bina_turu === 'Diğer';
     document.querySelectorAll('#modalSatisTeslimat .spt-kat').forEach(el => el.classList.toggle('d-none', konteyner || diger));
@@ -6211,7 +6209,9 @@ function satisProjeSekmeSec(sekme) {
         <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
             <thead class="table-light"><tr><th>Bina Adı</th><th>Tür / Tip</th><th class="text-end">m²</th>
                 <th class="text-end">Adet</th><th>Kat</th><th class="text-end">KDV'siz Tutar</th><th class="text-center">Durum</th><th style="width:56px;"></th></tr></thead>
-            <tbody>${ts.map(t => `
+            <tbody>${[...ts.filter(t => t.bina_turu !== 'Diğer'), ...ts.filter(t => t.bina_turu === 'Diğer')].map((t, i, dizi) => `
+                ${t.bina_turu === 'Diğer' && (i === 0 || dizi[i - 1].bina_turu !== 'Diğer')
+                    ? `<tr class="table-secondary"><td colspan="8" class="py-1 fw-bold small"><i class="bi bi-box me-1"></i>Diğer (bina olmayan bileşenler)</td></tr>` : ''}
                 <tr>
                     <td>${esc(t.bina_adi || '-')}</td>
                     <td>${esc(t.bina_turu || '-')}${t.bina_tipi ? `<br><small class="text-muted">${esc(t.bina_tipi)}</small>` : ''}
@@ -16847,7 +16847,14 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
         </thead>
         <tbody>`;
 
-    teslimatlar.forEach(t => {
+    const akBinalar = teslimatlar.filter(t => t.bina_turu !== 'Diğer');
+    const akDigerler = teslimatlar.filter(t => t.bina_turu === 'Diğer');
+    [...akBinalar, ...akDigerler].forEach((t, i) => {
+        const diger = t.bina_turu === 'Diğer';
+        // Diğer bölümü başlığı (bina olmayan bileşenler — şartname/iş emri yok)
+        if (diger && i === akBinalar.length) {
+            html += `<tr class="table-secondary"><td colspan="8" class="py-1 fw-bold small"><i class="bi bi-box me-1"></i>Diğer (bina olmayan bileşenler)</td></tr>`;
+        }
         const tKdvli = (parseFloat(t.kdvsiz_tutar) || 0) * (1 + kdvOran / 100);
         const durumOptions = durumlar.map(d => `<li><a class="dropdown-item ${d === t.durum ? 'fw-bold text-primary' : ''}" href="#" onclick="event.preventDefault(); updateTeslimatDurumuAkordion(${t.id}, '${d}', ${proje.id})">${d === t.durum ? '<i class="bi bi-check-lg me-1"></i>' : ''} ${d}</a></li>`).join('');
 
@@ -16863,9 +16870,9 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
                 : getDurumBadge(t.durum)}</td>
             <td class="text-center">
                 <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-primary py-0" onclick="openTeknikSartname(${t.id})" title="Teknik Şartname"><i class="bi bi-file-earmark-text"></i></button>
+                    ${diger ? '' : `<button class="btn btn-outline-primary py-0" onclick="openTeknikSartname(${t.id})" title="Teknik Şartname"><i class="bi bi-file-earmark-text"></i></button>
                     <button class="btn btn-outline-warning py-0" ${proje.durum === 'TASLAK' ? 'disabled title="İş emri için önce ADMIN proje onayı (Sözleşme) gerekli"' : `onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"`}><i class="bi bi-clipboard2-check"></i></button>
-                    <button class="btn btn-outline-info py-0" onclick="prjDosyaAc(${proje.id}, ${t.id}, 'MIMARI', '${escJs(t.bina_adi || '')} — Mimari Proje')" title="Mimari Proje Dosyaları"><i class="bi bi-bounding-box"></i></button>
+                    <button class="btn btn-outline-info py-0" onclick="prjDosyaAc(${proje.id}, ${t.id}, 'MIMARI', '${escJs(t.bina_adi || '')} — Mimari Proje')" title="Mimari Proje Dosyaları"><i class="bi bi-bounding-box"></i></button>`}
                     <button class="btn btn-outline-dark py-0" ${proje.durum === 'TASLAK' ? 'disabled title="Teslimat durumları proje onaylanınca (SÖZLEŞME) yönetilir"' : `onclick="durumSecAc(${t.id}, '${escJs(t.durum || '')}', ${proje.id}, '${escJs(t.bina_adi || '')}')"`}>Durum</button>
                 </div>
             </td>
@@ -18353,7 +18360,13 @@ function renderProjeDetay(proje, teslimatlar) {
 
     const durumlar = ['BEKLEMEDE','SÖZLEŞME','İŞ EMRİ','PROJE','ÜRETİM','MONTAJ','TESLİM EDİLDİ','İPTAL'];
 
-    teslimatlar.forEach((t, idx) => {
+    // Diğer türü teslimatlar (Nakliye, Montaj, Süpervizörlük...) bina değildir:
+    // ayrı tek "Diğer" sekmesinde toplanır (Yunus kararı 2026-07-29); teknik
+    // şartname / iş emri / mimari proje düğmeleri onlar için anlamsızdır.
+    const binalar = teslimatlar.filter(t => t.bina_turu !== 'Diğer');
+    const digerler = teslimatlar.filter(t => t.bina_turu === 'Diğer');
+
+    binalar.forEach((t, idx) => {
         const tKdvsiz = parseFloat(t.kdvsiz_tutar) || 0;
         const tKdvli = tKdvsiz * (1 + kdvOran / 100);
         const aktif = idx === 0 ? 'active' : '';
@@ -18454,6 +18467,39 @@ function renderProjeDetay(proje, teslimatlar) {
                 </div>
             </div>`;
     });
+
+    // "Diğer" sekmesi — bina olmayan teslimatlar tek listede
+    if (digerler.length) {
+        const aktif = binalar.length === 0 ? 'active' : '';
+        tablar.innerHTML += `
+            <li class="nav-item" role="presentation">
+                <button class="nav-link ${aktif} py-1 px-2" id="pd-tab-diger" data-bs-toggle="tab" data-bs-target="#pd-pane-diger" type="button" role="tab" style="font-size:0.8rem; background:rgba(255,255,255,0.1); color:white; border:1px dashed rgba(255,255,255,0.35);">
+                    <i class="bi bi-box me-1"></i>Diğer <span class="badge bg-light text-dark ms-1">${digerler.length}</span>
+                </button>
+            </li>`;
+        icerikler.innerHTML += `
+            <div class="tab-pane fade show ${aktif}" id="pd-pane-diger" role="tabpanel">
+                <div class="small text-muted mb-2"><i class="bi bi-info-circle me-1"></i>Bina olmayan teklif bileşenleri
+                    (nakliye, montaj, süpervizörlük...). Teknik şartnameleri ve iş emirleri olmaz; tutarları proje toplamına dahildir.</div>
+                <div class="table-responsive"><table class="table table-sm align-middle mb-0" style="font-size:0.82rem;">
+                    <thead class="table-light"><tr><th>Ad</th><th class="text-end">Miktar</th>
+                        <th class="text-end">Tutar (KDV'li)</th><th class="text-center">Durum</th><th class="text-center" style="width:110px;">İşlem</th></tr></thead>
+                    <tbody>${digerler.map(t => {
+                        const dKdvli = (parseFloat(t.kdvsiz_tutar) || 0) * (1 + kdvOran / 100);
+                        const dOpts = durumlar.map(d => `<li><a class="dropdown-item ${d === t.durum ? 'fw-bold text-primary' : ''}" href="#" onclick="event.preventDefault(); updateTeslimatDurumu(${t.id}, '${d}', ${proje.id})">${d}</a></li>`).join('');
+                        return `<tr>
+                            <td class="fw-bold">${esc(t.bina_adi)}</td>
+                            <td class="text-end">${t.bina_adedi != null ? t.bina_adedi : (t.konteyner_miktari != null ? formatTR(parseFloat(t.konteyner_miktari)) : '-')}</td>
+                            <td class="text-end fw-bold">${fiyatHucre(formatTR(dKdvli) + ' ' + esc(proje.para_birimi || 'TL'))}</td>
+                            <td class="text-center">${proje.durum === 'TASLAK' ? '<span class="badge st-taslak">TASLAK</span>' : getDurumBadge(t.durum)}</td>
+                            <td class="text-center"><div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-dark dropdown-toggle py-0" data-bs-toggle="dropdown" ${proje.durum === 'TASLAK' ? 'disabled' : ''} style="font-size:0.75rem;">Durum</button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow" style="font-size:0.85rem;">${dOpts}</ul>
+                            </div></td>
+                        </tr>`; }).join('')}</tbody>
+                </table></div>
+            </div>`;
+    }
 }
 
 // 8. Teslimat Durumunu Manuel Günceller

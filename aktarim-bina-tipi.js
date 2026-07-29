@@ -86,10 +86,11 @@ function cevir(t) {
     }
     if (PANEL[v]) return { bina_tipi: PANEL[v] };
 
-    // 2) ARK ailesi: "ARK - 90 mm", "ARK 90-140 mm", "ARK - 90 mm ve ARK - 140 mm"...
+    // 2) ARK ailesi → Hafif Çelik Bina (Yunus kararı 2026-07-29: ARK ayrı tip değil);
+    // duvar kalınlığı bilgisi dis_duvar_kesiti alanına ayrışır
     if (/^ARK\b/i.test(v)) {
         const kesit = v.replace(/^ARK\s*-?\s*/i, '').trim();
-        return { bina_tipi: 'ARK', dis_duvar_kesiti: kesit || null };
+        return { bina_tipi: 'Hafif Çelik Bina', dis_duvar_kesiti: kesit || null };
     }
 
     // 3) Konteyner tam eşleşme (Birleşimli Monoblok → Monoblok Birleşimli normalize)

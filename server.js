@@ -11382,7 +11382,6 @@ async function semaGuvence() {
             ['bina_tipi', 'K4', 'Demonte Birleşimli Konteyner', 'Konteyner', 140],
             ['bina_tipi', 'H1', 'Hafif Çelik Bina', 'Hafif Çelik', 210],
             ['bina_tipi', 'H2', 'Hafif Çelik Konut', 'Hafif Çelik', 220],
-            ['bina_tipi', 'H3', 'ARK', 'Hafif Çelik', 230],
             ['bina_tipi', 'Y1', 'Yapısal Çelik Hangar', 'Yapısal Çelik', 310],
             ['bina_tipi', 'Y2', 'Yapısal Çelik Diğer', 'Yapısal Çelik', 320]
         ];
