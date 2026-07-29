@@ -7783,13 +7783,17 @@ app.post('/api/satis-sozlesme-olustur', yetkiKontrol, izinGerekli('satis.teklif'
         }
         const teklif = t.rows[0];
         const pk = (await client.query('SELECT proje_kodu FROM projeler WHERE id=$1', [projeId])).rows[0];
-        // Kur: TL değilse güncel TCMB kuru sabitlenir (getCurrencyRate birebir)
+        // Kur: TL değilse güncel TCMB kuru sabitlenir (getCurrencyRate birebir).
+        // Kaynak Mali İşler'in kur deposu (sistem_ayarlari.mali_kurlar, TCMB döviz satış);
+        // eskiden var olmayan bir mali_kurlar TABLOSU sorgulanıyor ve hata yutulunca
+        // kur=1 kalıyordu → dövizli sözleşmede TL karşılıkları yanlış hesaplanırdı.
         let kur = 1;
         if (teklif.para_birimi && teklif.para_birimi !== 'TL' && teklif.para_birimi !== 'TRY') {
-            try {
-                const k = await pool.query(`SELECT kur FROM mali_kurlar WHERE para_birimi=$1 ORDER BY tarih DESC LIMIT 1`, [teklif.para_birimi]);
-                if (k.rowCount) kur = parseFloat(k.rows[0].kur) || 1;
-            } catch (e) { /* kur tablosu yoksa 1 kalır */ }
+            const kurlar = await maliKurlariYenile().catch(() => null);
+            kur = parseFloat(kurlar?.[teklif.para_birimi]) || 0;
+            if (!(kur > 0)) {
+                return res.json({ ok: false, hata: `${teklif.para_birimi} için güncel kur alınamadı; sözleşme oluşturulamadı. Kur kaynağını (TCMB) kontrol edip yeniden deneyin.` });
+            }
         }
         const tutar = parseFloat(teklif.ara_toplam) || 0;
         const kdvOrani = parseFloat(teklif.kdv_orani) || 0;
