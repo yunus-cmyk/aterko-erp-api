@@ -2120,7 +2120,7 @@ app.post('/api/siparis-kaydet', yetkiKontrol, async (req, res, next) => {
             detaylar: [{ label: 'Sipariş No', value: siparis_no }],
             ekler: olusturuldukEkler
         });
-        res.json({ ok: true, mesaj: `Sipariş başarıyla oluşturuldu: ${siparis_no}.${ekMesaj}`, bolunmeler });
+        res.json({ ok: true, mesaj: `Sipariş başarıyla oluşturuldu: ${siparis_no}.${ekMesaj}`, bolunmeler, siparis_id: yeniSiparisId });
     } catch (error) {
         await client.query('ROLLBACK'); // En ufak hatada şantiyeyi ve talepleri eski haline döndür
         next(error);
@@ -3848,7 +3848,9 @@ async function siparisPDFUret(siparisId, user) {
     const tempName = path.basename(tempPath, '.html');
     const pdf = await pdfRender(tempName, degerler);
     try { fs.unlinkSync(tempPath); } catch (e) {}
-    return pdf;
+    // "PDF'e dahil" işaretli ekler formun devamına sayfa olarak eklenir — indirme,
+    // onay maili ve tedarikçi maili hep bu fonksiyondan geçtiği için tek nokta yeter.
+    return await siparisEkleriniPdfeBirlestir(pdf, siparisId);
 }
 
 app.post('/api/siparis-iptal', yetkiKontrol, async (req, res, next) => {
@@ -4457,13 +4459,15 @@ app.post('/api/siparis-dosya-yukle/:siparisId', yetkiKontrol, dosyaUpload.single
         // Public URL al
         const { data: urlData } = supabaseStorage.storage.from(SIPARIS_BUCKET).getPublicUrl(storagePath);
 
-        // DB'ye kaydet
+        // DB'ye kaydet. pdfe_dahil: sipariş formu PDF'inin devamına eklensin mi —
+        // yalnız birleştirilebilir türlerde (PDF/JPG/PNG) kabul edilir.
+        const pdfeDahil = String(req.body.pdfe_dahil) === 'true' && pdfBirlestirilebilirMi(req.file.mimetype);
         const r = await pool.query(`
             INSERT INTO siparis_dosyalari
-            (siparis_id, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
+            (siparis_id, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email, pdfe_dahil)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *
         `, [siparisId, orijinalAd, storagePath, urlData.publicUrl,
-            req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email]);
+            req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email, pdfeDahil]);
 
         res.json({ ok: true, mesaj: 'Dosya yüklendi.', data: r.rows[0] });
     } catch (e) { console.error('Dosya yükleme:', e); next(e); }
@@ -4487,6 +4491,61 @@ app.delete('/api/siparis-dosya-sil/:dosyaId', yetkiKontrol, async (req, res, nex
         res.json({ ok: true, mesaj: 'Dosya silindi.' });
     } catch (e) { next(e); }
 });
+
+// Ekin sipariş formu PDF'ine sayfa olarak eklenip eklenemeyeceği
+function pdfBirlestirilebilirMi(mime) {
+    return ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'].includes((mime || '').toLowerCase());
+}
+
+// "PDF'e dahil" bayrağını aç/kapat — işaretli ekler sipariş formunun devamına eklenir
+app.post('/api/siparis-dosya-pdfe-dahil', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { dosya_id, dahil } = req.body;
+        const r = await pool.query('SELECT mime_type, dosya_adi FROM siparis_dosyalari WHERE id=$1', [dosya_id]);
+        if (r.rowCount === 0) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
+        if (dahil && !pdfBirlestirilebilirMi(r.rows[0].mime_type)) {
+            return res.json({ ok: false, hata: 'Yalnız PDF, JPG ve PNG dosyaları sipariş PDF\'ine eklenebilir.' });
+        }
+        await pool.query('UPDATE siparis_dosyalari SET pdfe_dahil=$1 WHERE id=$2', [!!dahil, dosya_id]);
+        res.json({ ok: true, mesaj: dahil
+            ? `"${r.rows[0].dosya_adi}" sipariş PDF'inin devamına eklenecek.`
+            : `"${r.rows[0].dosya_adi}" sipariş PDF'inden çıkarıldı.` });
+    } catch (e) { next(e); }
+});
+
+// İşaretli ekleri sipariş formu PDF'inin ARKASINA sayfa olarak birleştirir.
+// PDF ekler sayfa sayfa kopyalanır; JPG/PNG ekler A4 sayfaya orantılı yerleştirilir.
+// Herhangi bir ek bozuksa o ek ATLANIR (sipariş formu eksiz de olsa her zaman üretilir).
+async function siparisEkleriniPdfeBirlestir(anaPdfBuffer, siparisId) {
+    const ekler = (await pool.query(
+        `SELECT dosya_adi, storage_path, mime_type FROM siparis_dosyalari
+         WHERE siparis_id=$1 AND pdfe_dahil ORDER BY kayit_tarihi ASC, id ASC`, [siparisId])).rows;
+    if (!ekler.length || !supabaseStorage) return anaPdfBuffer;
+    const { PDFDocument } = require('pdf-lib');
+    const ana = await PDFDocument.load(anaPdfBuffer);
+    for (const ek of ekler) {
+        try {
+            const { data, error } = await supabaseStorage.storage.from(SIPARIS_BUCKET).download(ek.storage_path);
+            if (error) throw new Error(error.message);
+            const buf = Buffer.from(await data.arrayBuffer());
+            const mime = (ek.mime_type || '').toLowerCase();
+            if (mime === 'application/pdf') {
+                const ekDoc = await PDFDocument.load(buf, { ignoreEncryption: true });
+                const sayfalar = await ana.copyPages(ekDoc, ekDoc.getPageIndices());
+                sayfalar.forEach(s => ana.addPage(s));
+            } else {
+                const resim = mime === 'image/png' ? await ana.embedPng(buf) : await ana.embedJpg(buf);
+                // A4 (595×842 pt), 24 pt kenar boşluğu — resim orantılı sığdırılır
+                const sayfa = ana.addPage([595.28, 841.89]);
+                const kutu = { g: 595.28 - 48, y: 841.89 - 48 };
+                const oran = Math.min(kutu.g / resim.width, kutu.y / resim.height, 1);
+                const g = resim.width * oran, y = resim.height * oran;
+                sayfa.drawImage(resim, { x: (595.28 - g) / 2, y: (841.89 - y) / 2, width: g, height: y });
+            }
+        } catch (e) { console.error(`⚠️ Sipariş eki PDF'e eklenemedi (${ek.dosya_adi}):`, e.message); }
+    }
+    return Buffer.from(await ana.save());
+}
 
 // --- TALEP DOSYALARI (sipariş dosya sistemiyle aynı mekanizma) ---
 app.get('/api/talep-dosyalari/:talepId', yetkiKontrol, async (req, res, next) => {
@@ -8380,7 +8439,7 @@ const ENDPOINT_IZIN_KURALLARI = [
 
     // Satınalma — Siparişler
     { pattern: /^\/api\/(siparis-listesi|siparis-detay|siparis-pdf|siparis-dosya|son-alis-fiyatlari)/, method: 'GET', modul: 'satinalma.siparisler', seviye: 'OKUMA' },
-    { pattern: /^\/api\/(siparis-kaydet|siparis-guncelle|siparis-onayla|siparis-gonder|siparis-iptal|siparis-arsivle|siparis-gerial|siparis-dosya-yukle|siparis-dosya-sil)/, modul: 'satinalma.siparisler', seviye: 'TAM' },
+    { pattern: /^\/api\/(siparis-kaydet|siparis-guncelle|siparis-onayla|siparis-gonder|siparis-iptal|siparis-arsivle|siparis-gerial|siparis-dosya-yukle|siparis-dosya-sil|siparis-dosya-pdfe-dahil)/, modul: 'satinalma.siparisler', seviye: 'TAM' },
 
     // Satınalma — Mal Kabul
     { pattern: /^\/api\/mal-kabul-gecmisi/, method: 'GET', modul: 'satinalma.mal_kabul', seviye: 'OKUMA' },
@@ -11359,6 +11418,11 @@ async function semaGuvence() {
         await pool.query(`CREATE TABLE IF NOT EXISTS sat_kod_sirasi (
             proje_id INTEGER NOT NULL, varlik TEXT NOT NULL, deger INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (proje_id, varlik))`).catch(() => {});
+
+        // Sipariş eki PDF'e dahil bayrağı: işaretli PDF/JPG/PNG ekler sipariş formu
+        // PDF'inin devamına sayfa olarak birleştirilir (tedarikçi teklifi, teknik detay).
+        await pool.query(`ALTER TABLE siparis_dosyalari
+            ADD COLUMN IF NOT EXISTS pdfe_dahil BOOLEAN NOT NULL DEFAULT false`).catch(() => {});
 
         // Müşteri satış durumu (customer_status) — AKTIF/PASIF'ten AYRI bir alan:
         // Potansiyel / Görüşme Yapılmış / Teklif Sürecinde / Satış Gerçekleşmiş

@@ -3722,6 +3722,17 @@ STK-002		50	adet
                                 <label class="form-label">Sipariş Notu</label>
                                 <input type="text" id="soNot" class="form-control form-control-sm" placeholder="Faturaya veya irsaliyeye yazılacak not...">
                             </div>
+                            <div class="col-12">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <label class="form-label mb-0"><i class="bi bi-paperclip me-1"></i>Ek Dosyalar
+                                        <small class="text-muted ms-1">(tedarikçi teklif formu, teknik detay… — PDF/JPG/PNG işaretlenirse sipariş PDF'inin devamına eklenir)</small></label>
+                                    <label class="btn btn-sm btn-outline-primary mb-0" for="soDosyaInput">
+                                        <i class="bi bi-upload me-1"></i>Dosya Seç
+                                        <input type="file" id="soDosyaInput" class="d-none" multiple onchange="soDosyaSec(this)">
+                                    </label>
+                                </div>
+                                <div id="soDosyaListe" class="mt-1"></div>
+                            </div>
                         </div>
                     </div>
 
@@ -13800,8 +13811,63 @@ let crossTalepProjeId = null;
 
 // 1. Sipariş Formunu Açar — yeni / düzenleme / doğrudan kalem (Teklif Havuzu'ndan)
 // hazirKalemler verilirse talep detay modalına bağımlı olmadan o kalemlerle açılır.
+// Sipariş formunda seçilen ek dosyalar — sipariş kaydedilince sırayla yüklenir
+// (dosya siparişe ancak sipariş numarası doğduktan sonra bağlanabilir)
+let soSecilenDosyalar = [];
+
+function soDosyaSec(input) {
+    for (const f of input.files) {
+        if (f.size > 25 * 1024 * 1024) { showToast(`"${f.name}" 25MB'tan büyük, eklenmedi.`, 'error'); continue; }
+        const birlesebilir = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'].includes((f.type || '').toLowerCase());
+        soSecilenDosyalar.push({ dosya: f, pdfeDahil: birlesebilir, birlesebilir });
+    }
+    input.value = '';
+    soDosyaListeCiz();
+}
+
+function soDosyaListeCiz() {
+    const kutu = document.getElementById('soDosyaListe');
+    if (!kutu) return;
+    kutu.innerHTML = soSecilenDosyalar.map((d, i) => `
+        <div class="d-flex align-items-center gap-2 border rounded px-2 py-1 mb-1 bg-white small">
+            <i class="bi bi-file-earmark-text text-primary"></i>
+            <span class="flex-grow-1 text-truncate">${esc(d.dosya.name)} <span class="text-muted">(${formatDosyaBoyut(d.dosya.size)})</span></span>
+            ${d.birlesebilir ? `
+            <div class="form-check form-switch mb-0" title="İşaretliyse sipariş formu PDF'inin devamına sayfa olarak eklenir">
+                <input class="form-check-input" type="checkbox" ${d.pdfeDahil ? 'checked' : ''} onchange="soSecilenDosyalar[${i}].pdfeDahil = this.checked">
+                <label class="form-check-label text-muted" style="font-size:0.72rem;">PDF'e dahil</label>
+            </div>` : `<span class="text-muted" style="font-size:0.72rem;" title="Yalnız PDF, JPG ve PNG sipariş PDF'ine eklenebilir">birleştirilemez</span>`}
+            <button type="button" class="btn btn-sm btn-outline-danger py-0" onclick="soSecilenDosyalar.splice(${i},1); soDosyaListeCiz();" title="Kaldır"><i class="bi bi-x"></i></button>
+        </div>`).join('');
+}
+
+// Kaydet sonrası: seçilen dosyaları sırayla yükler (başarısız olan diğerlerini engellemez)
+async function soDosyalariYukle(siparisId) {
+    let hata = 0;
+    for (const d of soSecilenDosyalar) {
+        const fd = new FormData();
+        fd.append('dosya', d.dosya);
+        fd.append('pdfe_dahil', d.pdfeDahil ? 'true' : 'false');
+        try {
+            const token = localStorage.getItem('aterko_token');
+            const r = await fetch(`${API_URL}/siparis-dosya-yukle/${siparisId}`, {
+                method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd
+            });
+            const res = await r.json();
+            if (!res.ok) { hata++; console.error('Sipariş dosyası yüklenemedi:', d.dosya.name, res.hata); }
+        } catch (e) { hata++; console.error('Sipariş dosyası yüklenemedi:', d.dosya.name, e); }
+    }
+    const toplam = soSecilenDosyalar.length;
+    soSecilenDosyalar = [];
+    if (toplam) showToast(hata
+        ? `${toplam - hata}/${toplam} dosya yüklendi — ${hata} dosya yüklenemedi, sipariş detayından tekrar deneyin.`
+        : `${toplam} ek dosya siparişe yüklendi.`, hata ? 'error' : 'success');
+}
+
 function openSiparisOlusturModal(duzenlemeData, hazirKalemler) {
     const isEdit = !!duzenlemeData;
+    soSecilenDosyalar = [];
+    soDosyaListeCiz();
     const dogrudan = !isEdit && Array.isArray(hazirKalemler) && hazirKalemler.length > 0;
     duzenlenenSiparisId = isEdit ? duzenlemeData.siparis.id : null;
     // Madde 5: cross-talep kaynak talep id — doğrudan modda ilk kalemden, yoksa açık talep detayından
@@ -14065,6 +14131,9 @@ function submitPurchaseOrder() {
             showToast(res.mesaj || (isEdit ? 'Sipariş güncellendi.' : 'Sipariş oluşturuldu.'), "success");
             const dId = duzenlenenSiparisId;
             duzenlenenSiparisId = null;
+            // Formda seçilen ek dosyalar artık sipariş numarası doğduğu için yüklenebilir
+            const dosyaHedefId = isEdit ? dId : res.siparis_id;
+            if (soSecilenDosyalar.length && dosyaHedefId) soDosyalariYukle(dosyaHedefId);
             // Revizyon → güncel sipariş detayına dön. Yeni sipariş → detay açma, sadece sekmeyi
             // yenile (Teklif Havuzu'ndan oluşturulduysa kalem düşer; "kalem zaten siparişte" hatası önlenir)
             if (isEdit && dId) satinalmaIslemSonrasi('siparis', dId);
@@ -15188,16 +15257,25 @@ async function openSiparisDetayModal(siparisId, siparisNo) {
             <div class="card-body py-2" id="siparisDosyaList-${siparisId}">
                 ${dosyaListesi.length === 0
                     ? '<div class="text-muted small text-center py-2">Bu siparişe henüz dosya yüklenmemiş.</div>'
-                    : dosyaListesi.map(d => `
+                    : dosyaListesi.map(d => {
+                        // Yalnız PDF/JPG/PNG sipariş formunun devamına sayfa olarak eklenebilir
+                        const birlesebilir = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'].includes((d.mime_type || '').toLowerCase());
+                        return `
                         <div class="d-flex align-items-center justify-content-between border-bottom py-1 px-2 small">
                             <a href="${esc(d.public_url)}" target="_blank" class="text-decoration-none text-dark flex-grow-1">
                                 <i class="bi bi-file-earmark-text me-2 text-primary"></i>
                                 <span class="fw-bold">${esc(d.dosya_adi)}</span>
                                 <span class="text-muted ms-2">${formatDosyaBoyut(d.boyut)} • ${esc(d.yukleyen_adsoyad || '-')} • ${formatTarihTR(d.kayit_tarihi)}</span>
                             </a>
+                            ${birlesebilir ? `
+                            <div class="form-check form-switch me-2 mb-0" title="İşaretliyse bu dosya sipariş formu PDF'inin devamına sayfa olarak eklenir (indirmede ve maillerde)">
+                                <input class="form-check-input" type="checkbox" id="sdPdf${d.id}" ${d.pdfe_dahil ? 'checked' : ''}
+                                       onchange="toggleSiparisDosyaPdf(${d.id}, this.checked, ${siparisId}, '${escJs(siparisNo)}')">
+                                <label class="form-check-label text-muted" for="sdPdf${d.id}" style="font-size:0.72rem;">PDF'e dahil</label>
+                            </div>` : `<span class="text-muted me-2" style="font-size:0.72rem;" title="Yalnız PDF, JPG ve PNG dosyaları sipariş PDF'ine eklenebilir">birleştirilemez</span>`}
                             <button class="btn btn-sm btn-outline-danger py-0" onclick="deleteSiparisDosya(${d.id}, ${siparisId}, '${escJs(siparisNo)}')" title="Sil"><i class="bi bi-trash"></i></button>
-                        </div>
-                    `).join('')
+                        </div>`;
+                    }).join('')
                 }
             </div>
         </div>
@@ -15405,6 +15483,18 @@ async function uploadSiparisDosya(siparisId, inputEl) {
         }
     } catch (e) { hideLoading(); showToast(e.message, 'error'); }
     inputEl.value = ''; // input'u sıfırla
+}
+
+async function toggleSiparisDosyaPdf(dosyaId, dahil, siparisId, siparisNo) {
+    const r = await secureFetch('/siparis-dosya-pdfe-dahil', {
+        method: 'POST', body: JSON.stringify({ dosya_id: dosyaId, dahil })
+    }).catch(() => null);
+    if (r && r.ok) showToast(r.mesaj, 'success');
+    else {
+        showToast(r?.hata || 'İşaret değiştirilemedi.', 'error');
+        const kutu = document.getElementById('sdPdf' + dosyaId);
+        if (kutu) kutu.checked = !dahil;   // başarısızsa anahtarı geri al
+    }
 }
 
 async function deleteSiparisDosya(dosyaId, siparisId, siparisNo) {

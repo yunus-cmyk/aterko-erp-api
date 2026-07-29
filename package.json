@@ -29,6 +29,7 @@
     "node-cron": "^4.5.0",
     "node-fetch": "^2.7.0",
     "nodemailer": "^8.0.8",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.18.0",
     "pg": "^8.21.0",
