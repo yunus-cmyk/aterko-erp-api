@@ -656,7 +656,10 @@
           </div>
           <div class="modal-body p-3">
             <div class="row g-2">
-              <div class="col-md-7"><label class="form-label">Proje Adı <span class="text-danger">*</span></label>
+              <div class="col-md-2 d-none" id="spfKodKutu"><label class="form-label">Proje No</label>
+                <input type="text" id="spfKod" class="form-control form-control-sm bg-light" readonly
+                       title="Proje numarası sistem tarafından verilir; değiştirilemez."></div>
+              <div class="col-md-5"><label class="form-label">Proje Adı <span class="text-danger">*</span></label>
                 <input type="text" id="spfAd" class="form-control form-control-sm"></div>
               <div class="col-md-5 position-relative"><label class="form-label">Müşteri <span class="text-danger">*</span></label>
                 <input type="text" id="spfMusteriAra" class="form-control form-control-sm" placeholder="Müşteri adı yazın..." autocomplete="off"
@@ -5007,22 +5010,22 @@ async function satisMusteriDetayAc(id) {
         <div class="row g-3 mb-2">
             ${detayKutusu('Müşteri Bilgileri', 'person', 'col-lg-6', [
                 detayAlani('Firma Ünvanı', d(m.uzun_ad && m.uzun_ad !== m.ad ? m.uzun_ad : ''), true),
-                detayAlani('Müşteri Türü', d(m.tip)),
-                detayAlani('Alt Tür', d(m.alt_tur)),
-                detayAlani('İşletme Türü', d(m.sektor)),
+                detayAlani('Müşteri Türü', d(m.tip), true),
+                detayAlani('Alt Tür', d(m.alt_tur), true),
+                detayAlani('İşletme Türü', d(m.sektor), true),
                 detayAlani('Durum', m.durum === 'PASIF'
-                    ? '<span class="badge bg-secondary">Pasif</span>' : '<span class="badge bg-success">Aktif</span>'),
+                    ? '<span class="badge bg-secondary">Pasif</span>' : '<span class="badge bg-success">Aktif</span>', true),
                 detayAlani('Satış Durumu', d(m.satis_durumu) +
                     (m.durum_gun != null ? ` <span class="text-muted fw-normal">(${m.durum_gun} gündür)</span>` : ''), true),
-                detayAlani('Satış Noktası', d(m.satis_noktasi)),
-                detayAlani('Temsilci', d(m.temsilci_email)),
-                detayAlani('Bizi Nereden Duydu', d(m.nasil_duydu)),
-                detayAlani('Kayıt', m.kayit_tarihi ? formatTarihTR(m.kayit_tarihi) : '-')
+                detayAlani('Satış Noktası', d(m.satis_noktasi), true),
+                detayAlani('Temsilci', d(m.temsilci_email), true),
+                detayAlani('Bizi Nereden Duydu', d(m.nasil_duydu), true),
+                detayAlani('Kayıt', m.kayit_tarihi ? formatTarihTR(m.kayit_tarihi) : '-', true)
             ])}
             ${detayKutusu('İletişim ve Adres', 'geo-alt', 'col-lg-6', [
                 detayAlani('E-posta', d(m.email), true),
-                detayAlani('Telefon', d(m.telefon)),
-                detayAlani('Şehir / Ülke', d([m.sehir, m.ulke].filter(Boolean).join(' / '))),
+                detayAlani('Telefon', d(m.telefon), true),
+                detayAlani('Şehir / Ülke', d([m.sehir, m.ulke].filter(Boolean).join(' / ')), true),
                 detayAlani('Adres', d(m.adres), true),
                 detayAlani('Fatura Adresi', d(m.fatura_adresi), true)
             ])}
@@ -6162,16 +6165,17 @@ function satisProjeSekmeSec(sekme) {
         govde.innerHTML = `
         <div class="row g-3">
             ${detayKutusu('Fırsat Bilgileri', 'compass', 'col-lg-6', [
+                detayAlani('Proje No', `<span class="fw-bold text-primary">${esc(p.proje_kodu || '-')}</span>`, true),
                 detayAlani('Müşteri', p.sat_musteri_id
                     ? `<span class="text-primary" style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${p.sat_musteri_id})">${esc(p.musteri_adi || '-')}</span>`
                     : d(p.musteri_adi), true),
                 detayAlani('Satış Durumu', satisProjeDurumBadge(p.satis_durumu), true),
-                detayAlani('Satış Türü', d(p.satis_turu)),
-                detayAlani('Temsilci', d(p.satis_temsilcisi)),
-                detayAlani('Oluşturma', p.olusturma_tarihi ? formatTarihTR(p.olusturma_tarihi) : '-')
+                detayAlani('Satış Türü', d(p.satis_turu), true),
+                detayAlani('Temsilci', d(p.satis_temsilcisi), true),
+                detayAlani('Oluşturma', p.olusturma_tarihi ? formatTarihTR(p.olusturma_tarihi) : '-', true)
             ])}
             ${detayKutusu('Yer ve İrtibat', 'geo-alt', 'col-lg-6', [
-                detayAlani('Şehir / Ülke', d([p.sehir, p.ulke].filter(Boolean).join(' / '))),
+                detayAlani('Şehir / Ülke', d([p.sehir, p.ulke].filter(Boolean).join(' / ')), true),
                 detayAlani('Adres', d(p.adres), true),
                 detayAlani('İrtibat', d([p.irtibat_adi, p.irtibat_email, p.irtibat_telefon].filter(Boolean).join(' · ')), true)
             ])}
@@ -6501,8 +6505,10 @@ async function satisProjeFormAc(id, musteriCtx) {
     musteriAlani.oninput = null; musteriAlani.onfocus = null;
     musteriAlani.title = 'Müşteri karttan gelir; buradan değiştirilemez.';
     let kisiMusteriId = null;
+    document.getElementById('spfKodKutu').classList.toggle('d-none', !id);
     if (id && window.spdAktifDetay && window.spdAktifDetay.proje.id === id) {
         const p = window.spdAktifDetay.proje;
+        document.getElementById('spfKod').value = p.proje_kodu || '';
         document.getElementById('spfAd').value = p.proje_adi || '';
         spfMusteriSec(p.sat_musteri_id || '', p.musteri_adi || '');
         kisiMusteriId = p.sat_musteri_id;
@@ -6643,8 +6649,8 @@ async function satisTeklifDetayAc(id, ustte) {
     document.getElementById('stdGovde').innerHTML = `
         <div class="row g-3 mb-3">
             ${detayKutusu('Teklif Bilgileri', 'file-earmark-text', 'col-lg-6', [
-                detayAlani('Tarih', t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-'),
-                detayAlani('Durum', satisTeklifDurumBadge(t.durum)),
+                detayAlani('Tarih', t.teklif_tarihi ? formatTarihTR(t.teklif_tarihi) : '-', true),
+                detayAlani('Durum', satisTeklifDurumBadge(t.durum), true),
                 detayAlani('Müşteri', t.musteri_id
                     ? `<span class="text-primary" style="cursor:pointer;" title="Müşteri kartını aç" onclick="satisMusteriKartinaGit(${t.musteri_id})">${esc(t.musteri_adi || '-')}</span>`
                     : esc(t.musteri_adi || '-'), true),
@@ -7400,6 +7406,12 @@ function stfKalemEkle(k) {
                         placeholder="İç Duvar Kesiti" value="${esc(k.ic_duvar_kesiti || '')}"></div>
                     <div class="col-6"><input type="text" class="form-control form-control-sm stf-k-bina-yeri"
                         placeholder="Kurulum / Bina Yeri" value="${esc(k.bina_yeri || '')}"></div>
+                    <div class="col-6 d-flex align-items-center">
+                        <div class="form-check form-switch mb-0" title="İşaretliyse sahada montaj/uygulama yapılacak; işaretsizse sevkiyat = müşteriye teslim (teslimat formundaki alanla birebir)">
+                            <input class="form-check-input stf-k-montaj" type="checkbox" ${k.montaj_gerekli ? 'checked' : ''}>
+                            <label class="form-check-label small text-muted">Montaj gerekli</label>
+                        </div>
+                    </div>
                 </div>
             </div></td>
         <td class="stf-buyukluk-hucre">
@@ -7649,6 +7661,7 @@ async function satisTeklifKaydet() {
         dis_duvar_kesiti: tr.querySelector('.stf-k-dis-duvar')?.value || '',
         ic_duvar_kesiti: tr.querySelector('.stf-k-ic-duvar')?.value || '',
         bina_yeri: tr.querySelector('.stf-k-bina-yeri')?.value || '',
+        montaj_gerekli: tr.querySelector('.stf-k-montaj')?.checked || false,
         miktar: tr.querySelector('.stf-k-miktar').value,
         birim: tr.querySelector('.stf-k-birim').value || 'Adet',
         ikincil_miktar: tr.querySelector('.stf-k-ikincil').value,
