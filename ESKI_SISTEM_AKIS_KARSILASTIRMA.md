@@ -14,7 +14,7 @@
 | 2 | **Müşteri satış durumu otomatiği** | Potansiyel → Görüşme Yapılmış (proje) → Teklif Sürecinde (teklif) → Satış Gerçekleşmiş (sözleşme) | Birebir aynı tetiklerle çalışıyor | ✔ |
 | 3 | **Proje (fırsat) açılışı** | Proje ekranından, müşteri seçilerek | **Yalnız müşteri kartından**, müşteri salt okunur | ◐ *bizde daha sıkı — senin kararın* |
 | 4 | **Proje numarası** | 5 haneli seri (72xxx) | Aynı serinin devamı | ✔ |
-| 5 | **Proje durum otomatiği** | 16 durum, aksiyonlarla otomatik ilerler | 11 otomatik geçişin tamamı kodda bağlı: teklif ver→Teklif Sürecinde, analiz talep→Analiz Sürecinde, analiz tamam→Analizi Tamamlanan, kabul→Satışı Tamamlanan, ret→Reddedilen, sözleşme→Taslak→Onayda→Onaylandı→İmzalandı→Avans→Tamamlanan | ✔ |
+| 5 | **Proje durum otomatiği** | 16 durum, aksiyonlarla otomatik ilerler | Otomatik geçişler kodda bağlı: teklif ver→Teklif Sürecinde, kabul→Satışı Tamamlanan, ret→Reddedilen, sözleşme→Taslak→Onayda→Onaylandı→İmzalandı→Avans→Tamamlanan. **Analiz Sürecinde / Analizi Tamamlanan geçişleri 29.07 "yaşayan analiz" kararıyla kalktı** (analiz artık durum üretmez; eski kayıtlarda tarihsel durur) | ◐ *senin kararın* |
 | 6 | **Durumu elle değiştirme** | updateProjectStatus (yetkili herkes?) | **Yalnız ADMIN** (uç 403 ile korur) | ◐ *senin kararın* |
 | 7 | **Teklif açılışı** | YALNIZ proje içinden (CreateProposalByProjectId) | Yalnız proje içinden; `{kod}-TEK-NN`; bağımsız düğme yok; uç da id'siz isteği reddeder | ✔ |
 | 8 | **Teklif başlığı** | Müşteri/proje tekliften değişmez; **Şartname Türü zorunlu alan** | Müşteri/proje/tarih salt okunur; **Şartname Türü tamamen kalktı** (şartname teslimat başına) | ◐ *senin kararın* |
@@ -23,7 +23,7 @@
 | 11 | **Teklif durum akışı** | Taslak→Ver→Cevap Beklenen→Kabul/Ret/Revize; kabulde diğerleri revizeye | Birebir (buton görünürlükleri dahil) | ✔ |
 | 12 | **Kabul yetkisi** | Satış Müdürü ayrıcalığı | `satis.teklif_onay` = YONETIM (Mahmut/Yakup/Mehmet + ADMIN) | ✔ |
 | 13 | **Revize** | Yeni teklif kopyalanır, analiz verisi bölüm eşlemesiyle taşınır | Birebir (yeni bina alanları dahil) | ✔ |
-| 14 | **Fiyat analizi akışı** | Öznitelik formu → Analiz Talep → (analizci) Döküm Üret → Fiyatları Tekrar Hesapla → Analizi Tamamla → önerilen fiyat | Birebir + analist iş kuyruğu + "Bugünkü Satış" fark sütunu (eskide yoktu) | ✔ |
+| 14 | **Fiyat analizi akışı** | Öznitelik formu → Analiz Talep → (analizci) Döküm Üret → Fiyatları Tekrar Hesapla → Analizi Tamamla → önerilen fiyat | **YAŞAYAN ANALİZ (29.07 kararın):** satışçı/analizci ayrımı ve talep→tamamla adımları kalktı; analize direk başlanır, önerilen fiyat her döküm işleminde otomatik; tek kilit = teklif ONAYLANAN (revizede açılır). Hesap çekirdeği, kural motoru, fiyat kilidi ve "Bugünkü Satış" farkı korunur | ◐ *senin kararın — süreç iskeleti sadeleşti, çekirdek birebir* |
 | 15 | **Analiz motoru** | Groovy formüller, ürün eşleme, fiyat kilidi | JS'e birebir çevrildi; arşivle %100 ürün / %99,3 miktar doğrulaması | ✔ |
 | 16 | **Analiz çıktıları** | Analiz PDF raporu + Excel dökümü | **Henüz yok** (sırada: E1 PDF, E2 Excel) | ✖ |
 | 17 | **Sözleşme** | Onaylı tekliften; tek onaylı teklif kuralı; kur sabitlenir; Ticari İşler onay zinciri | Birebir; onay = ADMIN; Sözleşme Oluştur artık Sözleşme sekmesinde | ✔ |
@@ -51,8 +51,8 @@
 
 ## 3. Özet sayım
 
-- **Birebir eşleşen:** 13 adım — zincirin omurgası (müşteri, durum otomatikleri, teklif kuralları, analiz akışı+motoru, sözleşme).
-- **Bilinçli fark:** 9 adım — hepsi senin kararınla ve "yeni sistemi koru" ilkesiyle: daha sıkı giriş kapıları (müşteriden fırsat, projeden teklif), bina tanımının kaleme inmesi, şartnamenin teslimata inmesi, teslimatın sözleşmede otomatik doğması, ADMIN durum istisnası.
+- **Birebir eşleşen:** 12 adım — zincirin omurgası (müşteri, durum otomatikleri, teklif kuralları, analiz akışı+motoru, sözleşme).
+- **Bilinçli fark:** 10 adım — hepsi senin kararınla ve "yeni sistemi koru" ilkesiyle: daha sıkı giriş kapıları (müşteriden fırsat, projeden teklif), bina tanımının kaleme inmesi, şartnamenin teslimata inmesi, teslimatın sözleşmede otomatik doğması, ADMIN durum istisnası.
 - **Eksik / bekleyen:** 4 kalem — Analiz PDF + Excel (E1/E2, sırada), dosyalar (S3 aktarımı), müşteri portalı (C5), kontrol listeleri (karar).
 
 **Yorum:** Satış zincirinin işleyen omurgası eski sistemle bire bir; ayrıştığımız her nokta kayıt altına alınmış bilinçli bir karar. Ekibin günlük işini engelleyebilecek tek gerçek boşluk analiz çıktıları (PDF/Excel) — kesme tarihi öncesi kapatılmalı.
