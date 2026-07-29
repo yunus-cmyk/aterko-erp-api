@@ -4825,8 +4825,9 @@ app.post('/api/teknik-sartname-kalem-kaydet', yetkiKontrol, async (req, res, nex
         if (k.rows[0].durum === 'ONAYLANAN')
             return res.json({ ok: false, hata: 'Teklif ONAYLANDIĞI için teknik şartname KİLİTLİDİR. Değişiklik gerekiyorsa önce teklifin revize edilmesi gerekir.' });
         const yeni = { ...(k.rows[0].ek_veriler || {}), ...form_verisi };
-        await pool.query('UPDATE sat_teklif_kalemleri SET ek_veriler=$1 WHERE id=$2',
-            [JSON.stringify(yeni), parseInt(kalem_id)]);
+        await pool.query(`UPDATE sat_teklif_kalemleri
+            SET ek_veriler=$1, sartname_guncelleme=now(), sartname_guncelleyen=$3 WHERE id=$2`,
+            [JSON.stringify(yeni), parseInt(kalem_id), req.user.email]);
         res.json({ ok: true, mesaj: 'Teknik şartname kaydedildi.' });
     } catch (e) { next(e); }
 });
@@ -6661,8 +6662,12 @@ app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
             SELECT k.id, k.ad, k.miktar, k.birim, k.analiz_durumu, k.onerilen_fiyat, k.birim_fiyat,
                    k.analiz_tarihi, k.analiz_eden, k.bilesen_turu,
                    k.bina_turu, k.bina_tipi, k.ikincil_miktar,
+                   k.sartname_guncelleme, k.sartname_guncelleyen,
                    t.id AS teklif_id, t.teklif_no, t.durum AS teklif_durumu, t.para_birimi,
                    ts.id AS teslimat_id,
+                   (SELECT COUNT(*)::int FROM form_tanimlari ft WHERE ft.bina_turu = k.bina_turu) AS sartname_soru,
+                   (SELECT COUNT(*)::int FROM form_tanimlari ft WHERE ft.bina_turu = k.bina_turu
+                        AND k.ek_veriler ? ft.soru) AS sartname_cevap,
                    (SELECT COUNT(*)::int FROM sat_analiz_urunler a WHERE a.kalem_id = k.id) AS dokum_satiri
             FROM sat_teklif_kalemleri k
             JOIN sat_teklifler t ON t.id = k.teklif_id
@@ -7342,6 +7347,73 @@ async function satisAnalizKalemiAl(sorgulayici, kalemId) {
 }
 const SATIS_ANALIZ_KILIT_MESAJ = 'Teklif ONAYLANDIĞI için analiz kilitlidir. Değişiklik gerekiyorsa önce teklifin revize edilmesi gerekir.';
 
+// KATMAN A+B — KALEMDEN OTOMATİK ÖN DOLUM (Yunus 2026-07-30):
+// Analiz formundaki kalem karşılığı olan sorular teklif bileşeninden otomatik dolar ve
+// ekranda kilitlenir (şartnamedeki kaynak_kolon deseninin analizdeki karşılığı). Değerler
+// sat_analiz_degerler'e YAZILIR ki form hiç açılmasa da hesap motoru ve 30 gizleme kuralı
+// aynı kaynaktan beslensin. Teklif ONAYLANAN ise yazılmaz (kilit), yalnız harita dönülür.
+// Montaj Gerekli işaretli değilse Montaj bölümü kapsam dışına alınır (Katman B).
+async function satisAnalizOnDolum(kalemId) {
+    const k = (await pool.query(`
+        SELECT k.*, t.durum AS teklif_durumu FROM sat_teklif_kalemleri k
+        JOIN sat_teklifler t ON t.id=k.teklif_id WHERE k.id=$1`, [parseInt(kalemId)])).rows[0];
+    if (!k) return { otomatik: {}, montaj_gizli: false };
+    const hedefler = {};
+    if (k.bina_turu) hedefler['Bina Türü'] = k.bina_turu;
+    if (k.kat_adedi) hedefler['Kat Adedi'] = String(k.kat_adedi).trim();
+    if (k.kat_yuksekligi) hedefler['Kat Yüksekliği'] = `${String(k.kat_yuksekligi).trim()} mm`;
+    if (k.ikincil_miktar != null) hedefler['Bina Alanı (m²)'] = String(parseFloat(k.ikincil_miktar));
+    if (k.dis_duvar_kesiti) hedefler['Duvar Kesiti'] = String(k.dis_duvar_kesiti).trim();
+    if (k.bina_turu === 'Konteyner') {
+        if (k.bina_tipi) hedefler['Konteyner Tipi'] = /demonte/i.test(k.bina_tipi) ? 'Demonte' : 'Monoblok';
+        const eb = String(k.konteyner_ebadi || '').match(/(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)/i);
+        if (eb) {
+            hedefler['Konteyner Eni (m)'] = eb[1].replace(',', '.');
+            hedefler['Konteyner Boyu (m)'] = eb[2].replace(',', '.');
+        }
+    }
+    const montajGizli = k.montaj_gerekli === false;
+    const otomatik = {};   // paramAd → ekranda gösterilecek metin (yalnız gerçekten dolabilenler)
+    const kilitli = k.teklif_durumu === 'ONAYLANAN';
+    for (const [paramAd, metin] of Object.entries(hedefler)) {
+        const p = (await pool.query(
+            'SELECT id, eski_id, alan_tipi, kategori_id FROM sat_parametreler WHERE ad=$1 AND formda_goster=true',
+            [paramAd])).rows[0];
+        if (!p) continue;
+        let deger = metin;
+        if (p.alan_tipi !== 2) {   // seçenekli alan: değer SEÇENEĞİN eski_id'si olarak saklanır
+            const sec = (await pool.query(
+                'SELECT eski_id FROM sat_parametre_secenekler WHERE parametre_eski_id=$1 AND TRIM(deger)=$2',
+                [p.eski_id, metin])).rows[0];
+            if (!sec) continue;   // kalem değeri analiz seçeneklerinde yoksa dokunma (elle girilir)
+            deger = String(sec.eski_id);
+        }
+        // Kalemin bu kategorideki bölümü (Genel vb.) — form henüz oluşmadıysa atla
+        const b = (await pool.query(
+            'SELECT eski_id FROM sat_analiz_bolumler WHERE kalem_id=$1 AND urun_kategori_eski_id=$2 ORDER BY sira LIMIT 1',
+            [parseInt(kalemId), p.kategori_id])).rows[0];
+        if (!b) continue;
+        otomatik[paramAd] = metin;
+        if (kilitli) continue;
+        const mevcut = await pool.query(
+            'SELECT id, deger FROM sat_analiz_degerler WHERE kalem_id=$1 AND bolum_eski_id=$2 AND parametre_id=$3',
+            [parseInt(kalemId), b.eski_id, p.id]);
+        if (mevcut.rowCount) {
+            if (mevcut.rows[0].deger !== deger)
+                await pool.query('UPDATE sat_analiz_degerler SET deger=$1 WHERE id=$2', [deger, mevcut.rows[0].id]);
+        } else {
+            await pool.query(`INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
+                VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4)`, [parseInt(kalemId), b.eski_id, p.id, deger]);
+        }
+    }
+    if (montajGizli && !kilitli) {
+        await pool.query(`UPDATE sat_analiz_bolumler SET kapsamda=false
+            WHERE kalem_id=$1 AND urun_kategori_eski_id IN (SELECT eski_id FROM sat_urun_kategoriler WHERE ad='Montaj')`,
+            [parseInt(kalemId)]);
+    }
+    return { otomatik, montaj_gizli: montajGizli };
+}
+
 // Önerilen fiyat artık "Analizi Tamamla" ile değil, dökümü değiştiren HER işlemde
 // otomatik güncellenir (üret / fiyat tazele / satır ekle-düzelt-sil). Döküm tamamen
 // boşalırsa önerilen fiyat da temizlenir.
@@ -7366,6 +7438,8 @@ app.get('/api/satis-analiz-form/:kalemId', yetkiKontrol, async (req, res, next) 
             SELECT k.*, t.teklif_no, t.proje_id, t.durum AS teklif_durumu FROM sat_teklif_kalemleri k
             JOIN sat_teklifler t ON t.id=k.teklif_id WHERE k.id=$1`, [kalemId])).rows[0];
         if (!kalem) return res.json({ ok: false, hata: 'Teklif kalemi bulunamadı.' });
+        // Katman A+B: kalem verisi analiz formuna her açılışta taze yansır (kilitliyken yazmaz)
+        const onDolum = await satisAnalizOnDolum(kalemId);
         // SIRALAMA: bölümün sırası ÜRÜN KATEGORİSİNDEN gelir (product_category.order_no:
         // 100, 200, 300...). sat_analiz_bolumler.sira ise TEKRAR NUMARASIDIR (Duvar 1,
         // Duvar 2) — eski attribute_category.order_no. Önce kategori sırası, sonra tekrar no.
@@ -7389,7 +7463,8 @@ app.get('/api/satis-analiz-form/:kalemId', yetkiKontrol, async (req, res, next) 
         // Gizleme kuralları (eski MANAGE_ATTRIBUTE_RULES)
         const kurallar = (await pool.query(
             'SELECT * FROM sat_form_kurallari WHERE aktif ORDER BY sira, id')).rows;
-        res.json({ ok: true, kalem, bolumler, parametreler, secenekler, degerler, kurallar });
+        res.json({ ok: true, kalem, bolumler, parametreler, secenekler, degerler, kurallar,
+            otomatik: onDolum.otomatik, montaj_gizli: onDolum.montaj_gizli });
     } catch (e) { next(e); }
 });
 
@@ -7578,6 +7653,7 @@ app.post('/api/satis-analiz-form-kaydet', yetkiKontrol, izinGerekliHerhangi([['s
 // Analiz önizleme (kaydetmeden)
 app.get('/api/satis-analiz-onizle/:kalemId', yetkiKontrol, async (req, res, next) => {
     try {
+        await satisAnalizOnDolum(parseInt(req.params.kalemId));   // önizleme de taze kalem verisiyle
         const r = await satisKalemAnaliziHesapla(parseInt(req.params.kalemId));
         const kalemler = r.kalemler.map(u => ({
             urun_id: u.id, ad: u.ad, uzun_kod: u.uzun_kod, birim: u.birim, formul: u.formul,
@@ -7600,6 +7676,7 @@ app.post('/api/satis-analiz-uret', yetkiKontrol, izinGerekli('satis.urun', 'YAZM
         const kilitK = await satisAnalizKalemiAl(client, kalemId);
         if (!kilitK) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
         if (kilitK.teklif_durumu === 'ONAYLANAN') return res.json({ ok: false, hata: SATIS_ANALIZ_KILIT_MESAJ });
+        await satisAnalizOnDolum(kalemId);   // form hiç açılmamış olsa da kalem verisi hesaba girsin
         const r = await satisKalemAnaliziHesapla(kalemId);
         const bugun = new Date().toISOString().slice(0, 10);
         await client.query('BEGIN');
@@ -11762,7 +11839,9 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS ic_duvar_kesiti TEXT,
             ADD COLUMN IF NOT EXISTS bina_yeri TEXT,
             ADD COLUMN IF NOT EXISTS montaj_gerekli BOOLEAN,
-            ADD COLUMN IF NOT EXISTS ek_veriler JSONB`).catch(() => {});
+            ADD COLUMN IF NOT EXISTS ek_veriler JSONB,
+            ADD COLUMN IF NOT EXISTS sartname_guncelleme TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS sartname_guncelleyen TEXT`).catch(() => {});
         await pool.query(`ALTER TABLE proje_teslimatlari
             ADD COLUMN IF NOT EXISTS teklif_kalem_id INTEGER`).catch(() => {});
 
