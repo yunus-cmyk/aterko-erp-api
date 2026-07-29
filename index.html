@@ -927,7 +927,7 @@
                 <thead class="table-light">
                   <tr>
                     <th width="34" class="text-center" title="Satırı tutup sürükleyerek sırayı değiştirebilirsiniz"><i class="bi bi-arrows-move text-muted"></i></th>
-                    <th>Kalem / Açıklama / Bileşen Türü</th>
+                    <th>Bina — Ad / Tür / Tip <small class="text-muted fw-normal">(teslimat tanımının birebir karşılığı)</small></th>
                     <th width="150" title="Bileşenin (binanın) tek birimdeki büyüklüğü — teklif büyüklüğü büyüklük × miktar olarak hesaplanır">Büyüklük</th>
                     <th width="150" title="Bu bileşenden kaç adet — tutar miktar × birim fiyat">Miktar</th>
                     <th width="130">Birim Fiyat</th>
@@ -6052,8 +6052,11 @@ function satisTeslimatDuzenle(jsonStr) {
         tipSec.insertAdjacentHTML('beforeend', `<option value="${esc(t.bina_tipi)}" selected>${esc(t.bina_tipi)}</option>`);
     }
     const konteyner = t.bina_turu === 'Konteyner';
-    document.querySelectorAll('#modalSatisTeslimat .spt-kat').forEach(el => el.classList.toggle('d-none', konteyner));
+    const diger = t.bina_turu === 'Diğer';
+    document.querySelectorAll('#modalSatisTeslimat .spt-kat').forEach(el => el.classList.toggle('d-none', konteyner || diger));
     document.querySelectorAll('#modalSatisTeslimat .spt-ebat').forEach(el => el.classList.toggle('d-none', !konteyner));
+    document.getElementById('sptTip').parentElement.classList.toggle('d-none', diger);
+    document.getElementById('sptM2').parentElement.classList.toggle('d-none', diger);
     maliModalUstteAc ? maliModalUstteAc('modalSatisTeslimat')
         : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisTeslimat')).show();
 }
@@ -6608,7 +6611,8 @@ async function satisTeklifDetayAc(id, ustte) {
                 <tr class="${k.opsiyonel ? 'text-muted fst-italic' : ''}">
                     <td>${i + 1}</td>
                     <td><b>${esc(k.ad)}</b>${k.opsiyonel ? ' <small>(Opsiyonel)</small>' : ''}
-                        ${k.bilesen_turu ? `<span class="badge bg-light text-dark border ms-1">${esc(k.bilesen_turu)}</span>` : ''}
+                        ${k.bina_turu ? `<span class="badge bg-light text-dark border ms-1">${esc(k.bina_turu)}${k.bina_tipi ? ' — ' + esc(k.bina_tipi) : ''}</span>`
+                            : (k.bilesen_turu ? `<span class="badge bg-light text-dark border ms-1">${esc(k.bilesen_turu)}</span>` : '')}
                         ${k.aciklama ? `<br><small class="text-muted">${esc(k.aciklama)}</small>` : ''}
                         ${k.onerilen_fiyat != null ? `<br><small class="text-success"><i class="bi bi-calculator me-1"></i>Analizden önerilen: <b>${formatTR(parseFloat(k.onerilen_fiyat))} ${pb}</b>${k.analiz_tarihi ? ' (' + formatTarihTR(k.analiz_tarihi) + ')' : ''}</small>` : ''}</td>
                     <td class="text-end">${k.ikincil_miktar != null
@@ -7300,6 +7304,14 @@ function stfMusteriSec(id, ad) {
 
 function stfKalemEkle(k) {
     k = k || {};
+    // Eski kalemde bina türü yoksa arşivdeki bileşen türünün kategorisinden ÖN-DOLDURULUR
+    // (veri olduğu gibi kalır; kullanıcı düzenlerken yeni seçeneklerden seçmek zorundadır).
+    let binaTuru = k.bina_turu || '';
+    if (!binaTuru && k.bilesen_turu) {
+        const ref = ((satisReferanslar || {}).bilesen_turu || []).find(t => t.ad === k.bilesen_turu);
+        const kat = ref ? ref.ust_kod : null;
+        binaTuru = ['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik'].includes(kat) ? kat : (k.bilesen_turu ? 'Diğer' : '');
+    }
     const tr = document.createElement('tr');
     tr.className = 'stf-kalem';
     tr.dataset.kalemId = k.id || '';      // mevcut kalem kimliği — analiz verisi kopmasın
@@ -7310,40 +7322,54 @@ function stfKalemEkle(k) {
                 <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 mb-1" title="Yukarı taşı" onclick="stfKalemTasi(this,-1)"><i class="bi bi-chevron-up" style="font-size:0.65rem;"></i></button>
                 <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Aşağı taşı" onclick="stfKalemTasi(this,1)"><i class="bi bi-chevron-down" style="font-size:0.65rem;"></i></button>
             </div></td>
-        <td><input type="text" class="form-control form-control-sm stf-k-ad" placeholder="Kalem adı" value="${esc(k.ad || '')}">
-            <input type="text" class="form-control form-control-sm mt-1 stf-k-aciklama" placeholder="Açıklama (opsiyonel)" value="${esc(k.aciklama || '')}">
-            <select class="form-select form-select-sm mt-1 stf-k-tur" onchange="stfTurDegisti(this)"
-                    title="Bileşen türü — büyüklük alanının çıkıp çıkmayacağını ve birimini bu belirler">
-                <option value="">Bileşen türü seçiniz...</option>
-            </select>
-            <!-- FAZ 1: bina tanımı ilk kez burada girilir; teklif kabulünde teslimata türetilir -->
-            <div class="stf-bina-alanlari d-none mt-1 p-2 border rounded bg-light">
+        <td><input type="text" class="form-control form-control-sm stf-k-ad" placeholder="Bina Adı" value="${esc(k.ad || '')}">
+            <!-- YENİ DÜZEN (2026-07-29): alanlar Projeler'deki teslimat formunun birebir karşılığı.
+                 Bileşen türü ve Açıklama kaldırıldı (arşiv verisi korunur, ekranda sorulmaz). -->
+            <div class="d-flex gap-1 mt-1">
+                <select class="form-select form-select-sm stf-k-bina-turu" style="max-width:44%;" onchange="stfBinaTuruDegisti(this)" title="Bina Türü">
+                    <option value="">Bina Türü...</option>
+                    ${['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik', 'Diğer'].map(t =>
+                        `<option value="${t}" ${t === binaTuru ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+                <select class="form-select form-select-sm stf-k-bina-tipi" title="Bina Tipi" data-secili="${esc(k.bina_tipi || '')}"></select>
+            </div>
+            <div class="stf-bina-alanlari d-none mt-1">
                 <div class="row g-1">
-                    <div class="col-6"><select class="form-select form-select-sm stf-k-bina-tipi" title="Bina Tipi" data-secili="${esc(k.bina_tipi || '')}"></select></div>
-                    <div class="col-3 stf-bina-kat d-none"><select class="form-select form-select-sm stf-k-kat-adedi" title="Kat Adedi">
-                        <option value="">Kat Adedi</option><option value="1" ${k.kat_adedi === '1' ? 'selected' : ''}>1 Kat</option>
-                        <option value="2" ${k.kat_adedi === '2' ? 'selected' : ''}>2 Kat</option><option value="3" ${k.kat_adedi === '3' ? 'selected' : ''}>3 Kat</option></select></div>
-                    <div class="col-3 stf-bina-kat d-none"><select class="form-select form-select-sm stf-k-kat-yuksekligi" title="Kat Yüksekliği (mm)">
-                        <option value="">Kat Yük.</option><option value="2500" ${k.kat_yuksekligi === '2500' ? 'selected' : ''}>2500</option>
-                        <option value="2800" ${k.kat_yuksekligi === '2800' ? 'selected' : ''}>2800</option><option value="3000" ${k.kat_yuksekligi === '3000' ? 'selected' : ''}>3000</option></select></div>
-                    <div class="col-6 stf-bina-ebat d-none"><input type="text" class="form-control form-control-sm stf-k-konteyner-ebadi"
-                        placeholder="Konteyner ebadı (örn. 3x7 m)" value="${esc(k.konteyner_ebadi || '')}"></div>
+                    <div class="col-3 stf-kosul-prefabrik d-none"><select class="form-select form-select-sm stf-k-kat-yuksekligi" title="Kat Yüksekliği (mm)">
+                        <option value="">Kat Yük.</option>
+                        ${['2500', '2800', '3000'].map(y => `<option value="${y}" ${String(k.kat_yuksekligi) === y ? 'selected' : ''}>${y} mm</option>`).join('')}
+                    </select></div>
+                    <div class="col-3 stf-kosul-prefabrik d-none"><select class="form-select form-select-sm stf-k-kat-adedi" title="Kat Adedi">
+                        <option value="">Kat Adedi</option>
+                        ${[1, 2, 3, 4].map(n => `<option value="${n}" ${String(k.kat_adedi) === String(n) ? 'selected' : ''}>${n} Kat</option>`).join('')}
+                    </select></div>
+                    <div class="col-6 stf-kosul-konteyner d-none"><input type="text" class="form-control form-control-sm stf-k-konteyner-ebadi"
+                        placeholder="Konteyner Ebadı (örn. 3x7 m)" value="${esc(k.konteyner_ebadi || '')}"></div>
+                    <div class="col-3 stf-kosul-hafif d-none"><input type="text" class="form-control form-control-sm stf-k-dis-duvar"
+                        placeholder="Dış Duvar Kesiti" value="${esc(k.dis_duvar_kesiti || '')}"></div>
+                    <div class="col-3 stf-kosul-hafif d-none"><input type="text" class="form-control form-control-sm stf-k-ic-duvar"
+                        placeholder="İç Duvar Kesiti" value="${esc(k.ic_duvar_kesiti || '')}"></div>
+                    <div class="col-6"><input type="text" class="form-control form-control-sm stf-k-bina-yeri"
+                        placeholder="Kurulum / Bina Yeri" value="${esc(k.bina_yeri || '')}"></div>
                 </div>
             </div></td>
         <td class="stf-buyukluk-hucre">
             <div class="input-group input-group-sm stf-buyukluk-kutu">
                 <input type="number" class="form-control form-control-sm text-end stf-k-ikincil" placeholder="örn. 34,19"
                        value="${k.ikincil_miktar != null ? k.ikincil_miktar : ''}" step="0.01"
-                       title="Bileşenin tek birimdeki büyüklüğü">
-                <span class="input-group-text stf-k-buyukluk-birim px-2" style="font-size:0.75rem;">-</span>
+                       title="Binanın tek adetteki büyüklüğü (m²)">
+                <span class="input-group-text px-2" style="font-size:0.75rem;">m²</span>
             </div>
-            <small class="text-muted stf-buyukluk-yok d-none">Bu tür için büyüklük girilmez</small></td>
+            <small class="text-muted stf-buyukluk-yok d-none">Diğer için büyüklük girilmez</small></td>
         <td><div class="input-group input-group-sm">
                 <input type="number" class="form-control form-control-sm text-end stf-k-miktar" value="${k.miktar != null ? k.miktar : 1}" step="1" min="1"
-                       oninput="stfToplamGuncelle()" title="Bu bileşenden kaç adet">
-                <span class="input-group-text px-2" style="font-size:0.75rem;">Adet</span>
+                       oninput="stfToplamGuncelle()" title="Bina Adedi / Konteyner Miktarı">
+                <span class="input-group-text stf-k-birim-rozet px-2" style="font-size:0.75rem;">Adet</span>
             </div>
-            <input type="hidden" class="stf-k-birim" value="Adet"></td>
+            <select class="form-select form-select-sm mt-1 stf-k-birim d-none" title="Birim (yalnız Diğer)">
+                ${['Adet', 'Metrekare', 'Metre', 'Metreküp', 'Kilogram', 'Ton', 'Gün', 'Paket', 'Kilometre'].map(b =>
+                    `<option value="${b}" ${(k.birim || 'Adet') === b ? 'selected' : ''}>${b}</option>`).join('')}
+            </select></td>
         <td><input type="number" class="form-control form-control-sm text-end stf-k-fiyat" value="${k.birim_fiyat != null ? k.birim_fiyat : ''}" step="0.01" oninput="stfToplamGuncelle()"></td>
         <td class="text-end fw-semibold stf-k-toplam">0,00</td>
         <td class="text-center"><input type="checkbox" class="form-check-input stf-k-ops" ${k.opsiyonel ? 'checked' : ''} onchange="stfToplamGuncelle()"></td>
@@ -7352,61 +7378,45 @@ function stfKalemEkle(k) {
             <button type="button" class="btn btn-outline-danger btn-sm py-0" title="Kaldır" onclick="this.closest('tr').remove(); stfToplamGuncelle();"><i class="bi bi-x"></i></button>
         </td>`;
     document.getElementById('stfKalemler').appendChild(tr);
-    // Kapalı listeler (bileşen türü / birim) referans tablosundan doldurulur
-    // Bileşen türü listesi kategorilere göre gruplanır (39 türü düz liste hâlinde taramak zor)
-    const turler = (satisReferanslar || {}).bilesen_turu || [];
-    const gruplar = {};
-    turler.forEach(t => (gruplar[t.ust_kod || 'Diğer'] = gruplar[t.ust_kod || 'Diğer'] || []).push(t));
-    const turSec = tr.querySelector('.stf-k-tur');
-    turSec.innerHTML = '<option value="">Bileşen türü seçiniz...</option>' +
-        Object.entries(gruplar).map(([kat, liste]) => `<optgroup label="${esc(kat)}">` +
-            liste.map(t => `<option value="${esc(t.ad)}" data-birim="${esc(t.ek_bilgi || '')}" ${t.ad === k.bilesen_turu ? 'selected' : ''}>${esc(t.ad)}</option>`).join('') +
-            '</optgroup>').join('');
-    // Listede olmayan eski bir tür varsa kaybolmasın
-    if (k.bilesen_turu && !turler.some(t => t.ad === k.bilesen_turu)) {
-        turSec.insertAdjacentHTML('beforeend', `<option value="${esc(k.bilesen_turu)}" data-birim="${esc(k.ikincil_birim || '')}" selected>${esc(k.bilesen_turu)}</option>`);
-    }
-    stfTurDegisti(turSec);
+    stfBinaTuruDegisti(tr.querySelector('.stf-k-bina-turu'));
     stfSuruklemeKur();
     stfToplamGuncelle();
 }
 
-// Bileşen türü değişince BÜYÜKLÜK alanı ayarlanır: eski sistemde component_type
-// satırındaki secondary_unit_type doluysa alan görünür ve birimi oradan gelir
-// (kullanıcı seçmez); boşsa (Nakliye, Diğer) alan hiç gösterilmez ve değer tutulmaz.
-function stfTurDegisti(sec) {
+// Bina Türü değişince: bina tipi listesi (yalnız YENİ sözlük — sat_referanslar),
+// türe özgü koşullu alanlar (Projeler teslimat formuyla birebir) ve büyüklük/birim
+// davranışı ayarlanır. Diğer: yalnız Ad + Miktar + Birim + Fiyat (Yunus kararı).
+function stfBinaTuruDegisti(sec) {
     const tr = sec.closest('.stf-kalem'); if (!tr) return;
-    const secenek = sec.options[sec.selectedIndex];
-    const birim = secenek ? (secenek.dataset.birim || '') : '';
-    const kutu = tr.querySelector('.stf-buyukluk-kutu');
-    const yok = tr.querySelector('.stf-buyukluk-yok');
-    const girdi = tr.querySelector('.stf-k-ikincil');
-    tr.querySelector('.stf-k-buyukluk-birim').innerText = birim ? (BIRIM_SEMBOL[birim] || birim) : '-';
-    kutu.classList.toggle('d-none', !birim);
-    yok.classList.toggle('d-none', !!birim);
-    if (!birim) girdi.value = '';          // tür desteklemiyorsa büyüklük tutulmaz
-    // FAZ 1 — bina tanım alanları: türün KATEGORİSİNE göre (optgroup etiketi).
-    // Prefabrik/Hafif Çelik/Yapısal Çelik → bina tipi + kat bilgileri;
-    // Konteyner → bina tipi + ebat; Diğer (Nakliye, Montaj...) → hiçbiri.
-    const kategori = secenek && secenek.parentElement && secenek.parentElement.tagName === 'OPTGROUP'
-        ? secenek.parentElement.label : '';
-    const binaKutu = tr.querySelector('.stf-bina-alanlari');
-    if (binaKutu) {
-        const binaVar = ['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik'].includes(kategori);
-        binaKutu.classList.toggle('d-none', !binaVar);
-        tr.querySelectorAll('.stf-bina-kat').forEach(el => el.classList.toggle('d-none', kategori === 'Konteyner' || !binaVar));
-        tr.querySelector('.stf-bina-ebat').classList.toggle('d-none', kategori !== 'Konteyner');
-        const tipSec = tr.querySelector('.stf-k-bina-tipi');
-        if (binaVar) {
-            const secili = tipSec.value || tipSec.dataset.secili || '';
-            tipSec.innerHTML = '<option value="">Bina tipi seçiniz...</option>' +
-                (tipSecenekleri[kategori] || []).map(t => `<option value="${esc(t)}" ${t === secili ? 'selected' : ''}>${esc(t)}</option>`).join('');
-            if (secili && !(tipSecenekleri[kategori] || []).includes(secili)) {
-                tipSec.insertAdjacentHTML('beforeend', `<option value="${esc(secili)}" selected>${esc(secili)}</option>`);
-            }
-        } else { tipSec.innerHTML = ''; }
-    }
+    const tur = sec.value;
+    const bina = ['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik'].includes(tur);
+    // Bina tipi: yalnız yeni sözlükten — eski serbest değer varsa da listeye EKLENMEZ,
+    // kullanıcı yeni tiplerden birini seçmek zorunda kalır (Yunus kararı 2026-07-29).
+    const tipSec = tr.querySelector('.stf-k-bina-tipi');
+    if (bina) {
+        const secili = tipSec.value || tipSec.dataset.secili || '';
+        const liste = tipSecenekleri[tur] || [];
+        tipSec.innerHTML = '<option value="">Bina Tipi...</option>' +
+            liste.map(t => `<option value="${esc(t)}" ${t === secili ? 'selected' : ''}>${esc(t)}</option>`).join('');
+        tipSec.classList.remove('d-none');
+    } else { tipSec.innerHTML = ''; tipSec.classList.add('d-none'); }
+    // Koşullu alanlar (teslimat formundaki kosul-* sınıflarının karşılığı)
+    tr.querySelector('.stf-bina-alanlari').classList.toggle('d-none', !bina);
+    tr.querySelectorAll('.stf-kosul-prefabrik').forEach(el => el.classList.toggle('d-none', tur !== 'Prefabrik'));
+    tr.querySelectorAll('.stf-kosul-konteyner').forEach(el => el.classList.toggle('d-none', tur !== 'Konteyner'));
+    tr.querySelectorAll('.stf-kosul-hafif').forEach(el => el.classList.toggle('d-none', tur !== 'Hafif Çelik'));
+    // Büyüklük: binalarda zorunlu m²; Diğer'de alan yok
+    tr.querySelector('.stf-buyukluk-kutu').classList.toggle('d-none', !bina);
+    tr.querySelector('.stf-buyukluk-yok').classList.toggle('d-none', bina || !tur);
+    if (!bina) tr.querySelector('.stf-k-ikincil').value = '';
+    // Birim: binalarda sabit Adet; Diğer'de seçilebilir liste
+    tr.querySelector('.stf-k-birim').classList.toggle('d-none', tur !== 'Diğer');
+    tr.querySelector('.stf-k-birim-rozet').innerText = tur === 'Diğer'
+        ? (BIRIM_SEMBOL[tr.querySelector('.stf-k-birim').value] || 'birim') : 'Adet';
+    const birimSec = tr.querySelector('.stf-k-birim');
+    birimSec.onchange = () => { tr.querySelector('.stf-k-birim-rozet').innerText = BIRIM_SEMBOL[birimSec.value] || birimSec.value; };
 }
+
 // Birim kısaltmaları — eski sistemin unit_type.symbol değerleriyle birebir
 // (sunucudaki BIRIM_SEMBOL ile aynı; ekranda ve PDF'te aynı sembol görünsün diye)
 const BIRIM_SEMBOL = {
@@ -7571,15 +7581,16 @@ async function satisTeklifKaydet() {
     const kalemler = [...document.querySelectorAll('.stf-kalem')].map(tr => ({
         id: tr.dataset.kalemId || undefined,
         ad: tr.querySelector('.stf-k-ad').value,
-        aciklama: tr.querySelector('.stf-k-aciklama').value,
-        bilesen_turu: tr.querySelector('.stf-k-tur').value,
-        buyukluk_birimi: (tr.querySelector('.stf-k-tur').options[tr.querySelector('.stf-k-tur').selectedIndex] || {}).dataset?.birim || '',
+        bina_turu: tr.querySelector('.stf-k-bina-turu').value,
         bina_tipi: tr.querySelector('.stf-k-bina-tipi')?.value || '',
         kat_adedi: tr.querySelector('.stf-k-kat-adedi')?.value || '',
         kat_yuksekligi: tr.querySelector('.stf-k-kat-yuksekligi')?.value || '',
         konteyner_ebadi: tr.querySelector('.stf-k-konteyner-ebadi')?.value || '',
+        dis_duvar_kesiti: tr.querySelector('.stf-k-dis-duvar')?.value || '',
+        ic_duvar_kesiti: tr.querySelector('.stf-k-ic-duvar')?.value || '',
+        bina_yeri: tr.querySelector('.stf-k-bina-yeri')?.value || '',
         miktar: tr.querySelector('.stf-k-miktar').value,
-        birim: 'Adet',
+        birim: tr.querySelector('.stf-k-birim').value || 'Adet',
         ikincil_miktar: tr.querySelector('.stf-k-ikincil').value,
         birim_fiyat: tr.querySelector('.stf-k-fiyat').value,
         opsiyonel: tr.querySelector('.stf-k-ops').checked
@@ -7590,11 +7601,12 @@ async function satisTeklifKaydet() {
     for (const k of kalemler) {
         const ad = (k.ad || '').trim();
         if (ad.length < 3) { showToast(`Kalem adı en az 3 karakter olmalıdır: "${ad}"`, 'error'); return; }
-        if (!(k.bilesen_turu || '').trim()) { showToast(`Bileşen türü zorunludur: "${ad}"`, 'error'); return; }
+        if (!(k.bina_turu || '').trim()) { showToast(`Bina türü zorunludur: "${ad}"`, 'error'); return; }
+        if (k.bina_turu !== 'Diğer' && !(k.bina_tipi || '').trim()) { showToast(`"${ad}" için bina tipi yeni listeden seçilmelidir.`, 'error'); return; }
         if (!(parseFloat(k.miktar) >= 1)) { showToast(`Miktar en az 1 olmalıdır: "${ad}"`, 'error'); return; }
         if (parseFloat(k.birim_fiyat || 0) < 0) { showToast(`Birim fiyat negatif olamaz: "${ad}"`, 'error'); return; }
-        if (k.buyukluk_birimi && !(parseFloat(k.ikincil_miktar) >= 1)) {
-            showToast(`"${ad}" için büyüklük (${k.buyukluk_birimi}) zorunludur ve en az 1 olmalıdır.`, 'error'); return;
+        if (k.bina_turu !== 'Diğer' && !(parseFloat(k.ikincil_miktar) >= 1)) {
+            showToast(`"${ad}" için büyüklük (m²) zorunludur ve en az 1 olmalıdır.`, 'error'); return;
         }
     }
     const btn = document.getElementById('stfKaydetBtn');

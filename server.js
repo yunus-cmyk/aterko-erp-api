@@ -6098,43 +6098,49 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             return res.json({ ok: false, hata: 'En az bir teklif kalemi girilmelidir.' });
         }
         const kdv = isNaN(parseFloat(kdv_orani)) ? 20 : parseFloat(kdv_orani);
-        // BİLEŞEN TÜRÜ SÖZLÜĞÜ: birincil birim eski sistemde her türde sabit "Adet";
-        // BÜYÜKLÜK birimi türün kendi tanımından gelir (kullanıcı seçmez), tanımsızsa
-        // (Nakliye, Diğer) o kalemde büyüklük hiç tutulmaz.
-        const turRef = (await pool.query(
-            `SELECT ad, ek_bilgi FROM sat_referanslar WHERE tur='bilesen_turu' AND aktif`)).rows;
-        const turBuyuklukBirimi = {};
-        turRef.forEach(t => { turBuyuklukBirimi[t.ad] = t.ek_bilgi || null; });
+        // YENİ DÜZEN (Yunus 2026-07-29): kalem = teslimat tanımının birebir karşılığı.
+        // Bina Türü + Bina Tipi esas; eski bileşen türü yalnız arşiv (formdan gelmez).
+        const BINA_TURLERI = ['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik', 'Diğer'];
+        const binaTipleri = {};
+        (await pool.query(`SELECT ad, ust_kod FROM sat_referanslar WHERE tur='bina_tipi' AND aktif`)).rows
+            .forEach(r => (binaTipleri[r.ust_kod] = binaTipleri[r.ust_kod] || []).push(r.ad));
 
         const temiz = kalemler.filter(k => (k.ad || '').trim()).map((k, i) => {
-            const tur = (k.bilesen_turu || '').trim() || null;
-            const buyuklukBirimi = tur ? turBuyuklukBirimi[tur] : null;
+            const binaTuru = (k.bina_turu || '').trim() || null;
+            // Bina türlerinde büyüklük her zaman m²; Diğer'de büyüklük alanı yok
+            const buyuklukBirimi = binaTuru && binaTuru !== 'Diğer' ? 'Metrekare' : null;
             return {
                 id: k.id ? parseInt(k.id) : null,    // mevcut kalem — KİMLİĞİ KORUNUR (analiz verisi kopmasın)
                 ad: k.ad.trim(), aciklama: (k.aciklama || '').trim() || null,
-                miktar: parseFloat(k.miktar) || 1, birim: 'Adet',   // eski primaryUnitType sabiti
+                miktar: parseFloat(k.miktar) || 1,
+                // Bina türlerinde birim sabit Adet; Diğer'de kullanıcı seçer (varsayılan Adet)
+                birim: binaTuru === 'Diğer' ? ((k.birim || '').trim() || 'Adet') : 'Adet',
                 // Büyüklük yalnız türü destekliyorsa saklanır; birim türden gelir
                 ikincil_miktar: buyuklukBirimi && k.ikincil_miktar ? parseFloat(k.ikincil_miktar) : null,
                 ikincil_birim: buyuklukBirimi || null,
                 opsiyonel: !!k.opsiyonel, sira: i,
-                bilesen_turu: tur,
-                // FAZ 1: bina tanımı ilk kez teklif bileşeninde girilir (teslimata türetilir)
+                bina_turu: binaTuru,
                 bina_tipi: (k.bina_tipi || '').trim() || null,
                 kat_adedi: (k.kat_adedi || '').trim() || null,
                 kat_yuksekligi: (k.kat_yuksekligi || '').trim() || null,
                 konteyner_ebadi: (k.konteyner_ebadi || '').trim() || null,
+                dis_duvar_kesiti: (k.dis_duvar_kesiti || '').trim() || null,
+                ic_duvar_kesiti: (k.ic_duvar_kesiti || '').trim() || null,
+                bina_yeri: (k.bina_yeri || '').trim() || null,
                 birim_fiyat: parseFloat(k.birim_fiyat) || 0
             };
         });
         // Eski proposalComponent doğrulamaları birebir
         for (const k of temiz) {
             if (k.ad.length < 3) return res.json({ ok: false, hata: `Kalem adı en az 3 karakter olmalıdır: "${k.ad}"` });
-            if (!k.bilesen_turu) return res.json({ ok: false, hata: `Bileşen türü zorunludur: "${k.ad}"` });
+            if (!k.bina_turu || !BINA_TURLERI.includes(k.bina_turu)) return res.json({ ok: false, hata: `Bina türü zorunludur: "${k.ad}"` });
+            if (k.bina_turu !== 'Diğer' && (!k.bina_tipi || !(binaTipleri[k.bina_turu] || []).includes(k.bina_tipi))) {
+                return res.json({ ok: false, hata: `"${k.ad}" için bina tipi yeni listeden seçilmelidir.` });
+            }
             if (!(k.miktar >= 1)) return res.json({ ok: false, hata: `Miktar en az 1 olmalıdır: "${k.ad}"` });
             if (k.birim_fiyat < 0) return res.json({ ok: false, hata: `Birim fiyat negatif olamaz: "${k.ad}"` });
-            const bb = turBuyuklukBirimi[k.bilesen_turu];
-            if (bb && !(k.ikincil_miktar >= 1)) {
-                return res.json({ ok: false, hata: `"${k.ad}" için büyüklük (${bb}) zorunludur ve en az 1 olmalıdır.` });
+            if (k.bina_turu !== 'Diğer' && !(k.ikincil_miktar >= 1)) {
+                return res.json({ ok: false, hata: `"${k.ad}" için büyüklük (m²) zorunludur ve en az 1 olmalıdır.` });
             }
         }
         // Opsiyonel kalemler toplama dahil edilmez (eski sistemle aynı mantık)
@@ -6198,25 +6204,28 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
             const sembol = BIRIM_SEMBOL[k.ikincil_birim] || k.ikincil_birim || null;
             if (k.id) {
                 const g = await client.query(`
-                    UPDATE sat_teklif_kalemleri SET ad=$1, aciklama=$2, miktar=$3, birim=$4,
+                    UPDATE sat_teklif_kalemleri SET ad=$1, aciklama=COALESCE($2, aciklama), miktar=$3, birim=$4,
                         ikincil_miktar=$5, ikincil_birim=$6, ikincil_birim_sembol=$7,
                         opsiyonel=$8, sira=$9, birim_fiyat=$10, toplam=$11,
-                        bilesen_turu=COALESCE($14, bilesen_turu),
-                        bina_tipi=$15, kat_adedi=$16, kat_yuksekligi=$17, konteyner_ebadi=$18
+                        bina_turu=$14, bina_tipi=$15, kat_adedi=$16, kat_yuksekligi=$17,
+                        konteyner_ebadi=$18, dis_duvar_kesiti=$19, ic_duvar_kesiti=$20, bina_yeri=$21
                     WHERE id=$12 AND teklif_id=$13`,
                     [k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar, k.ikincil_birim, sembol,
-                     k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.id, teklifId, k.bilesen_turu,
-                     k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi]);
+                     k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.id, teklifId, k.bina_turu,
+                     k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi,
+                     k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri]);
                 if (g.rowCount) continue;   // güncellendi; değilse (başka teklife ait id) yeni ekle
             }
             await client.query(`
                 INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim,
                     ikincil_miktar, ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam,
-                    bilesen_turu, analiz_durumu, bina_tipi, kat_adedi, kat_yuksekligi, konteyner_ebadi)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS',$14,$15,$16,$17)`,
+                    analiz_durumu, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
+                    konteyner_ebadi, dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'BELIRTILMEMIS',$13,$14,$15,$16,$17,$18,$19,$20)`,
                 [teklifId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar,
-                 k.ikincil_birim, sembol, k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.bilesen_turu,
-                 k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi]);
+                 k.ikincil_birim, sembol, k.opsiyonel, k.sira, k.birim_fiyat, tutar,
+                 k.bina_turu, k.bina_tipi, k.kat_adedi, k.kat_yuksekligi,
+                 k.konteyner_ebadi, k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri]);
         }
         // Toplamlar kalemlerden yeniden hesaplanır (eski calculateAndSaveProposalTotals birebir)
         await satisTeklifToplamlariHesapla(client, teklifId);
@@ -7809,25 +7818,38 @@ app.post('/api/satis-teklif-ver', yetkiKontrol, izinGerekli('satis.teklif', 'YAZ
 // adet kadar ayrı teslimat yerine TEK satır + bina_adedi.
 // İdempotent: teklif_kalem_id bağıyla — mevcut teslimatın İŞ EMRİ varsa DOKUNULMAZ.
 async function satisTeslimatlariTuret(client, projeId, teklifId, req) {
+    // Bina türü esas kaynak kalemin KENDİ alanı (yeni düzen); eski kalemlerde
+    // arşivdeki bileşen türünün kategorisinden türetilir. 'Diğer' kalemler de
+    // teslimat olur (Yunus kararı): yalnız ad+miktar+birim+tutar taşınır,
+    // teknik şartname/iş emri akışına girmezler.
     const kalemler = (await client.query(`
-        SELECT k.id, k.ad, k.aciklama, k.miktar, k.ikincil_miktar, k.toplam,
+        SELECT k.id, k.ad, k.miktar, k.birim, k.ikincil_miktar, k.toplam,
                k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi,
-               r.ust_kod AS kategori
+               k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri,
+               COALESCE(k.bina_turu,
+                   CASE WHEN r.ust_kod IN ('Prefabrik','Konteyner','Hafif Çelik','Yapısal Çelik')
+                        THEN r.ust_kod ELSE 'Diğer' END) AS bina_turu
         FROM sat_teklif_kalemleri k
         LEFT JOIN sat_referanslar r ON r.tur='bilesen_turu' AND r.ad=k.bilesen_turu
         WHERE k.teklif_id=$1 AND COALESCE(k.opsiyonel,false)=false
         ORDER BY k.sira, k.id`, [teklifId])).rows;
-    const BINA_KATEGORILERI = ['Prefabrik', 'Konteyner', 'Hafif Çelik', 'Yapısal Çelik'];
     let olusan = 0, guncellenen = 0, korunan = 0, atlanan = 0;
     for (const k of kalemler) {
-        if (!BINA_KATEGORILERI.includes(k.kategori)) { atlanan++; continue; }
+        const diger = k.bina_turu === 'Diğer';
+        const konteyner = k.bina_turu === 'Konteyner';
         const alanlar = {
-            bina_adi: k.ad, bina_turu: k.kategori, bina_tipi: k.bina_tipi || null,
-            kat_adedi: k.kat_adedi || null, kat_yuksekligi: k.kat_yuksekligi || null,
-            konteyner_ebadi: k.kategori === 'Konteyner' ? (k.konteyner_ebadi || null) : null,
-            konteyner_miktari: k.kategori === 'Konteyner' ? k.miktar : null,
-            buyukluk_m2: k.ikincil_miktar || null,
-            bina_adedi: k.kategori === 'Konteyner' ? null : (parseInt(k.miktar) || 1),
+            bina_adi: k.ad, bina_turu: k.bina_turu,
+            // proje_teslimatlari.bina_tipi NOT NULL — boşlar tabloda '' geleneğiyle tutuluyor
+            bina_tipi: diger ? '' : (k.bina_tipi || ''),
+            kat_adedi: diger ? null : (k.kat_adedi || null),
+            kat_yuksekligi: diger ? null : (k.kat_yuksekligi || null),
+            konteyner_ebadi: konteyner ? (k.konteyner_ebadi || null) : null,
+            konteyner_miktari: konteyner ? k.miktar : null,
+            dis_duvar_kesiti: diger ? null : (k.dis_duvar_kesiti || null),
+            ic_duvar_kesiti: diger ? null : (k.ic_duvar_kesiti || null),
+            bina_yeri: k.bina_yeri || null,
+            buyukluk_m2: diger ? null : (k.ikincil_miktar || null),
+            bina_adedi: konteyner ? null : (parseInt(k.miktar) || 1),
             kdvsiz_tutar: k.toplam || null
         };
         const mevcut = await client.query(
@@ -7838,20 +7860,24 @@ async function satisTeslimatlariTuret(client, projeId, teklifId, req) {
             if (ise.rowCount) { korunan++; continue; }   // iş emri açılmış teslimata dokunulmaz
             await client.query(`UPDATE proje_teslimatlari SET
                 bina_adi=$1, bina_turu=$2, bina_tipi=$3, kat_adedi=$4, kat_yuksekligi=$5,
-                konteyner_ebadi=$6, konteyner_miktari=$7, buyukluk_m2=$8, bina_adedi=$9, kdvsiz_tutar=$10
+                konteyner_ebadi=$6, konteyner_miktari=$7, buyukluk_m2=$8, bina_adedi=$9, kdvsiz_tutar=$10,
+                dis_duvar_kesiti=$12, ic_duvar_kesiti=$13, bina_yeri=COALESCE($14, bina_yeri)
                 WHERE id=$11`,
                 [alanlar.bina_adi, alanlar.bina_turu, alanlar.bina_tipi, alanlar.kat_adedi,
                  alanlar.kat_yuksekligi, alanlar.konteyner_ebadi, alanlar.konteyner_miktari,
-                 alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar, teslimatId]);
+                 alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar, teslimatId,
+                 alanlar.dis_duvar_kesiti, alanlar.ic_duvar_kesiti, alanlar.bina_yeri]);
             guncellenen++;
         } else {
             await client.query(`INSERT INTO proje_teslimatlari
                 (proje_id, teklif_kalem_id, bina_adi, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
-                 konteyner_ebadi, konteyner_miktari, buyukluk_m2, bina_adedi, kdvsiz_tutar, durum)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'PROJE')`,
+                 konteyner_ebadi, konteyner_miktari, buyukluk_m2, bina_adedi, kdvsiz_tutar,
+                 dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri, durum)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'PROJE')`,
                 [projeId, k.id, alanlar.bina_adi, alanlar.bina_turu, alanlar.bina_tipi,
                  alanlar.kat_adedi, alanlar.kat_yuksekligi, alanlar.konteyner_ebadi,
-                 alanlar.konteyner_miktari, alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar]);
+                 alanlar.konteyner_miktari, alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar,
+                 alanlar.dis_duvar_kesiti, alanlar.ic_duvar_kesiti, alanlar.bina_yeri]);
             olusan++;
         }
     }
@@ -7946,10 +7972,13 @@ app.post('/api/satis-teklif-revize', yetkiKontrol, izinGerekli('satis.teklif', '
             const yk = await client.query(`
                 INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim, ikincil_miktar,
                     ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam,
-                    bilesen_turu, analiz_durumu)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS') RETURNING id`,
+                    bilesen_turu, analiz_durumu, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
+                    konteyner_ebadi, dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS',$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id`,
                 [yeniId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar, k.ikincil_birim,
-                 k.ikincil_birim_sembol, k.opsiyonel, k.sira, k.birim_fiyat, k.toplam, k.bilesen_turu]);
+                 k.ikincil_birim_sembol, k.opsiyonel, k.sira, k.birim_fiyat, k.toplam, k.bilesen_turu,
+                 k.bina_turu, k.bina_tipi, k.kat_adedi, k.kat_yuksekligi,
+                 k.konteyner_ebadi, k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri]);
             const yeniKalemId = yk.rows[0].id;
             // 1) Bölümler kopyalanır, eski→yeni bölüm eşlemesi tutulur (üst bölüm bağı için)
             const bolumler = (await client.query('SELECT * FROM sat_analiz_bolumler WHERE kalem_id=$1 ORDER BY sira, eski_id', [k.id])).rows;
@@ -11632,10 +11661,14 @@ async function semaGuvence() {
         // teslimat taslakları bu alanlardan türetilir. teklif_kalem_id türetme bağı
         // (hangi teslimat hangi kalemden doğdu — eskideki copied_from karşılığı).
         await pool.query(`ALTER TABLE sat_teklif_kalemleri
+            ADD COLUMN IF NOT EXISTS bina_turu TEXT,
             ADD COLUMN IF NOT EXISTS bina_tipi TEXT,
             ADD COLUMN IF NOT EXISTS kat_adedi TEXT,
             ADD COLUMN IF NOT EXISTS kat_yuksekligi TEXT,
-            ADD COLUMN IF NOT EXISTS konteyner_ebadi TEXT`).catch(() => {});
+            ADD COLUMN IF NOT EXISTS konteyner_ebadi TEXT,
+            ADD COLUMN IF NOT EXISTS dis_duvar_kesiti TEXT,
+            ADD COLUMN IF NOT EXISTS ic_duvar_kesiti TEXT,
+            ADD COLUMN IF NOT EXISTS bina_yeri TEXT`).catch(() => {});
         await pool.query(`ALTER TABLE proje_teslimatlari
             ADD COLUMN IF NOT EXISTS teklif_kalem_id INTEGER`).catch(() => {});
 
