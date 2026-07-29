@@ -6202,9 +6202,9 @@ function satisProjeSekmeSec(sekme) {
         return;
     }
     if (sekme === 'sartnameler') {
-        // TEKNİK ŞARTNAMELER (Yunus 2026-07-29): teslimat/bileşen listesi — şartname
-        // teslimat bazlıdır; teslimat Sözleşme Oluştur ile doğduğundan öncesinde pasiftir.
-        const k = (r.kalemler || []).filter(x => x.bina_turu !== 'Diğer' || x.bina_tipi);
+        // TEKNİK ŞARTNAMELER (Yunus 2026-07-29): şartname teklif sürecinde bileşen (kalem)
+        // üzerinde doldurulur, teklif ONAYLANINCA kilitlenir; sözleşmede teslimata miras geçer.
+        const k = (r.kalemler || []).filter(x => x.bina_turu && x.bina_turu !== 'Diğer');
         govde.innerHTML = k.length ? `
         <div class="table-responsive"><table class="table table-sm table-hover mb-0" style="font-size:0.8rem;">
             <thead class="table-light"><tr><th>Teklif</th><th>Bileşen (Bina)</th><th>Tür / Tip</th>
@@ -6215,13 +6215,11 @@ function satisProjeSekmeSec(sekme) {
                     <td>${esc(x.ad || '-')}</td>
                     <td>${x.bina_turu ? `${esc(x.bina_turu)}${x.bina_tipi ? ' — ' + esc(x.bina_tipi) : ''}` : (x.bilesen_turu ? esc(x.bilesen_turu) : '-')}</td>
                     <td class="text-end">${x.ikincil_miktar != null ? formatTR(parseFloat(x.ikincil_miktar)) : '-'}</td>
-                    <td class="text-center">${x.teslimat_id
-                        ? `<button class="btn btn-outline-primary btn-sm py-0" onclick="openTeknikSartname(${x.teslimat_id})"><i class="bi bi-file-earmark-text me-1"></i>Şartname</button>`
-                        : '<span class="text-muted small" title="Teslimatlar Sözleşme Oluştur ile doğar; şartname ondan sonra düzenlenir.">Sözleşme sonrası</span>'}</td>
+                    <td class="text-center"><button class="btn btn-outline-primary btn-sm py-0" onclick="openTeknikSartname(${x.id}, 'kalem')"><i class="bi bi-file-earmark-text me-1"></i>Şartname</button></td>
                 </tr>`).join('')}</tbody>
         </table></div>
-        <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Teknik şartname teslimat başınadır;
-            bileşen bilgileri teklif içinden revize edilir ve buraya otomatik yansır.</div>`
+        <div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Teknik şartname teklif sürecinde doldurulur,
+            teklif <b>onaylanınca kilitlenir</b>; sözleşmede teslimata otomatik aktarılır. Bileşen bilgileri teklif içinden revize edilir ve buraya otomatik yansır.</div>`
         : '<div class="text-muted small py-3">Teklif bileşeni yok — şartname, teklif kalemleri girildikten sonra oluşur.</div>';
         return;
     }
@@ -16995,6 +16993,7 @@ async function updateTeslimatDurumuAkordion(teslimatId, yeniDurum, projeId) {
 // TEKNİK ŞARTNAME — Dinamik Form
 // =================================================================
 let tsAktifTeslimat = null;
+let tsAktifMod = 'teslimat';   // 'teslimat' (Projeler) | 'kalem' (Satış: teklif bileşeni, sanal teslimat)
 let tsAktifFormTanimlari = [];
 
 // ===== İŞ EMRİ (teknik şartname bazlı, teslimat düzeyi) =====
@@ -17171,8 +17170,9 @@ async function tiePdf(id, emirNo) {
     finally { hideLoading(); }
 }
 
-async function openTeknikSartname(teslimatId) {
+async function openTeknikSartname(teslimatId, mod = 'teslimat') {
     tsAktifTeslimat = teslimatId;
+    tsAktifMod = mod;
     document.getElementById("tsModalBody").innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><div class="mt-2 text-muted">Form yükleniyor...</div></div>';
 
     // Proje detay modal'ı açıksa kapat — üst üste durmasın.
@@ -17187,8 +17187,10 @@ async function openTeknikSartname(teslimatId) {
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById("modalTeknikSartname"));
     modal.show();
 
-    // 1) Teslimat verisini al
-    const teslimatRes = await secureFetch(`/teknik-sartname/${teslimatId}`);
+    // 1) Teslimat verisini al (kalem modunda: teklif bileşeninden türetilen sanal teslimat)
+    const teslimatRes = await secureFetch(mod === 'kalem'
+        ? `/teknik-sartname-kalem/${teslimatId}`
+        : `/teknik-sartname/${teslimatId}`);
     if (!teslimatRes.ok) {
         document.getElementById("tsModalBody").innerHTML = `<div class="alert alert-danger">${esc(teslimatRes.hata)}</div>`;
         return;
@@ -17236,11 +17238,18 @@ async function openTeknikSartname(teslimatId) {
             document.getElementById('tsModalBody').insertAdjacentHTML('afterbegin',
                 `<div class="alert alert-warning py-2 small mb-3"><i class="bi bi-lock-fill me-1"></i>${mesajHtml}</div>`);
         };
-        const ieR = await secureFetch(`/is-emri/${teslimatId}`);
-        if (ieR && ieR.ok && ieR.is_emri) {
-            formKilitle(`Bu teknik şartname <b>${esc(ieR.is_emri.emir_no)}</b> numaralı iş emrine bağlı ve <b>KİLİTLİ</b> (${esc(ieR.is_emri.durum)}). Değişiklik için iş emrinin silinmesi (taslaksa) veya ADMIN tarafından iptali gerekir.`);
-        } else if (teslimat.proje_durum === 'SÖZLEŞME') {
-            formKilitle(`Proje ADMIN onayıyla <b>SÖZLEŞME</b> durumunda — teknik şartname <b>KİLİTLİ</b>. Değişiklik için ADMIN'in proje onayını geri alması gerekir.`);
+        if (mod === 'kalem') {
+            // Satış tarafı: kopyalama teslimat bazlı çalışır, kalem modunda gizle;
+            // kilit bilgisi sunucudan gelir (teklif ONAYLANAN → kilitli)
+            document.getElementById('tsKopyaBtn')?.classList.add('d-none');
+            if (teslimatRes.kilitli) formKilitle(teslimatRes.kilit_mesaji || 'Teknik şartname kilitli.');
+        } else {
+            const ieR = await secureFetch(`/is-emri/${teslimatId}`);
+            if (ieR && ieR.ok && ieR.is_emri) {
+                formKilitle(`Bu teknik şartname <b>${esc(ieR.is_emri.emir_no)}</b> numaralı iş emrine bağlı ve <b>KİLİTLİ</b> (${esc(ieR.is_emri.durum)}). Değişiklik için iş emrinin silinmesi (taslaksa) veya ADMIN tarafından iptali gerekir.`);
+            } else if (teslimat.proje_durum === 'SÖZLEŞME') {
+                formKilitle(`Proje ADMIN onayıyla <b>SÖZLEŞME</b> durumunda — teknik şartname <b>KİLİTLİ</b>. Değişiklik için ADMIN'in proje onayını geri alması gerekir.`);
+            }
         }
     } catch (e) {}
 }
@@ -17523,7 +17532,9 @@ async function downloadTeknikSartnamePdf() {
     try {
         const token = localStorage.getItem('aterko_token');
         if (!token) throw new Error('Oturum bulunamadı');
-        const url = `${API_URL}/teknik-sartname-pdf/${tsAktifTeslimat}`;
+        const url = tsAktifMod === 'kalem'
+            ? `${API_URL}/teknik-sartname-kalem-pdf/${tsAktifTeslimat}`
+            : `${API_URL}/teknik-sartname-pdf/${tsAktifTeslimat}`;
         console.log('[PDF] İstek atılıyor:', url);
         const response = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
         console.log('[PDF] Yanıt geldi:', response.status, response.statusText);
@@ -17585,9 +17596,11 @@ async function saveTeknikSartname() {
     }
 
     showLoading();
-    const res = await secureFetch('/teknik-sartname-kaydet', {
+    const res = await secureFetch(tsAktifMod === 'kalem' ? '/teknik-sartname-kalem-kaydet' : '/teknik-sartname-kaydet', {
         method: 'POST',
-        body: JSON.stringify({ teslimat_id: tsAktifTeslimat, form_verisi: formVerisi })
+        body: JSON.stringify(tsAktifMod === 'kalem'
+            ? { kalem_id: tsAktifTeslimat, form_verisi: formVerisi }
+            : { teslimat_id: tsAktifTeslimat, form_verisi: formVerisi })
     });
     hideLoading();
     if (res.ok) {

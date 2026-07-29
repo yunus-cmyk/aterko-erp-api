@@ -4707,6 +4707,12 @@ async function teslimatSartnamePDF(teslimatId, kullaniciAd) {
     if (r.rowCount === 0) throw new Error('Teslimat bulunamadı.');
     const t = r.rows[0];
     await sartnameKoduAta(t);   // {proje_kodu}-TŞ-NN — ilk üretimde atanır, sabit kalır
+    return await sartnamePDFVeriyle(t, kullaniciAd);
+}
+
+// Şartname PDF'ini HAZIR veri nesnesiyle üretir — teslimat (kod atanır) ya da
+// SATIŞ AŞAMASINDAKİ KALEM (sanal teslimat, kod 'TASLAK') aynı yoldan geçer.
+async function sartnamePDFVeriyle(t, kullaniciAd) {
 
         // Bina türünün özel (zengin, EĞER/HESAP/HARİCİ'li) şablonu varsa onu kullan — birebir doküman.
         const SABLON_HARITASI = { 'Prefabrik': 'prefabrik' };
@@ -4768,6 +4774,74 @@ async function teslimatSartnamePDF(teslimatId, kullaniciAd) {
         }
     return { pdfBuffer, t };
 }
+
+// ===== SATIŞ AŞAMASI TEKNİK ŞARTNAMESİ (Yunus 2026-07-29): şartname artık KALEMDE =====
+// başlar (teslimat doğmadan, teklif sürecinde doldurulur); teklif ONAYLANINCA kilitlenir
+// ve Sözleşme Oluştur'da cevaplar teslimata miras geçer.
+
+// Kalemden 'sanal teslimat' nesnesi: şartname formu/PDF'i teslimatla aynı alanları bekler
+async function sartnameKalemVerisi(kalemId) {
+    const r = await pool.query(`
+        SELECT k.id, k.ad AS bina_adi, k.bina_turu, k.bina_tipi, k.kat_adedi, k.kat_yuksekligi,
+               k.konteyner_ebadi, k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri,
+               k.montaj_gerekli, k.ikincil_miktar AS buyukluk_m2, k.miktar,
+               k.ek_veriler, t.durum AS teklif_durumu, t.teklif_no,
+               p.id AS proje_id, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye,
+               p.satis_temsilcisi, p.durum AS proje_durum
+        FROM sat_teklif_kalemleri k
+        JOIN sat_teklifler t ON t.id = k.teklif_id
+        LEFT JOIN projeler p ON p.id = t.proje_id
+        WHERE k.id = $1`, [kalemId]);
+    if (!r.rowCount) return null;
+    const t = r.rows[0];
+    t.bina_adedi = t.bina_turu === 'Konteyner' ? null : t.miktar;
+    t.konteyner_miktari = t.bina_turu === 'Konteyner' ? t.miktar : null;
+    t.sartname_kodu = `${t.proje_kodu || ''}-TŞ-TASLAK`;   // gerçek kod teslimatta atanır
+    return t;
+}
+
+app.get('/api/teknik-sartname-kalem/:kalemId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const t = await sartnameKalemVerisi(req.params.kalemId);
+        if (!t) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        if (!t.bina_turu || t.bina_turu === 'Diğer')
+            return res.json({ ok: false, hata: 'Bu bileşen bina değil; teknik şartnamesi olmaz.' });
+        const otomatikDegerler = await otomatikAlanDegerleri(t);
+        res.json({ ok: true, teslimat: t, ek_veriler: t.ek_veriler || {},
+            otomatik_degerler: otomatikDegerler,
+            kilitli: t.teklif_durumu === 'ONAYLANAN',
+            kilit_mesaji: t.teklif_durumu === 'ONAYLANAN'
+                ? 'Teklif <b>ONAYLANDIĞI</b> için teknik şartname <b>KİLİTLİ</b>. Değişiklik gerekiyorsa önce teklifin revize edilmesi gerekir.' : null });
+    } catch (e) { next(e); }
+});
+
+app.post('/api/teknik-sartname-kalem-kaydet', yetkiKontrol, async (req, res, next) => {
+    try {
+        const { kalem_id, form_verisi } = req.body;
+        if (!kalem_id) return res.json({ ok: false, hata: 'Kalem ID gerekli.' });
+        const k = await pool.query(`SELECT k.ek_veriler, t.durum FROM sat_teklif_kalemleri k
+            JOIN sat_teklifler t ON t.id=k.teklif_id WHERE k.id=$1`, [parseInt(kalem_id)]);
+        if (!k.rowCount) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        if (k.rows[0].durum === 'ONAYLANAN')
+            return res.json({ ok: false, hata: 'Teklif ONAYLANDIĞI için teknik şartname KİLİTLİDİR. Değişiklik gerekiyorsa önce teklifin revize edilmesi gerekir.' });
+        const yeni = { ...(k.rows[0].ek_veriler || {}), ...form_verisi };
+        await pool.query('UPDATE sat_teklif_kalemleri SET ek_veriler=$1 WHERE id=$2',
+            [JSON.stringify(yeni), parseInt(kalem_id)]);
+        res.json({ ok: true, mesaj: 'Teknik şartname kaydedildi.' });
+    } catch (e) { next(e); }
+});
+
+app.get('/api/teknik-sartname-kalem-pdf/:kalemId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const t = await sartnameKalemVerisi(req.params.kalemId);
+        if (!t) return res.status(404).json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        const { pdfBuffer } = await sartnamePDFVeriyle(t, req.user.adSoyad);
+        const dosyaAdi = dosyaAdiTemizle(`${t.sartname_kodu} __ ${t.proje_kodu || ''} _ ${t.musteri_adi || ''} - ${t.proje_adi || ''} [ ${t.bina_adi} ]`) + '.pdf';
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', cdHeader(dosyaAdi));
+        res.send(pdfBuffer);
+    } catch (e) { next(e); }
+});
 
 app.get('/api/teknik-sartname-pdf/:teslimatId', yetkiKontrol, async (req, res, next) => {
     try {
@@ -7875,6 +7949,7 @@ async function satisTeslimatlariTuret(client, projeId, teklifId, req) {
         SELECT k.id, k.ad, k.miktar, k.birim, k.ikincil_miktar, k.toplam,
                k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi,
                k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri, k.montaj_gerekli,
+               k.ek_veriler,
                COALESCE(k.bina_turu,
                    CASE WHEN r.ust_kod IN ('Prefabrik','Konteyner','Hafif Çelik','Yapısal Çelik')
                         THEN r.ust_kod ELSE 'Diğer' END) AS bina_turu
@@ -7922,25 +7997,26 @@ async function satisTeslimatlariTuret(client, projeId, teklifId, req) {
                 bina_adi=$1, bina_turu=$2, bina_tipi=$3, kat_adedi=$4, kat_yuksekligi=$5,
                 konteyner_ebadi=$6, konteyner_miktari=$7, buyukluk_m2=$8, bina_adedi=$9, kdvsiz_tutar=$10,
                 dis_duvar_kesiti=$12, ic_duvar_kesiti=$13, bina_yeri=COALESCE($14, bina_yeri),
-                montaj_gerekli=$15
+                montaj_gerekli=$15,
+                ek_veriler = COALESCE(ek_veriler,'{}'::jsonb) || COALESCE($16::jsonb,'{}'::jsonb)
                 WHERE id=$11`,
                 [alanlar.bina_adi, alanlar.bina_turu, alanlar.bina_tipi, alanlar.kat_adedi,
                  alanlar.kat_yuksekligi, alanlar.konteyner_ebadi, alanlar.konteyner_miktari,
                  alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar, teslimatId,
                  alanlar.dis_duvar_kesiti, alanlar.ic_duvar_kesiti, alanlar.bina_yeri,
-                 alanlar.montaj_gerekli]);
+                 alanlar.montaj_gerekli, k.ek_veriler ? JSON.stringify(k.ek_veriler) : null]);
             guncellenen++;
         } else {
             await client.query(`INSERT INTO proje_teslimatlari
                 (proje_id, teklif_kalem_id, bina_adi, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
                  konteyner_ebadi, konteyner_miktari, buyukluk_m2, bina_adedi, kdvsiz_tutar,
-                 dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri, montaj_gerekli, durum)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'PROJE')`,
+                 dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri, montaj_gerekli, ek_veriler, durum)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'PROJE')`,
                 [projeId, k.id, alanlar.bina_adi, alanlar.bina_turu, alanlar.bina_tipi,
                  alanlar.kat_adedi, alanlar.kat_yuksekligi, alanlar.konteyner_ebadi,
                  alanlar.konteyner_miktari, alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar,
                  alanlar.dis_duvar_kesiti, alanlar.ic_duvar_kesiti, alanlar.bina_yeri,
-                 alanlar.montaj_gerekli]);
+                 alanlar.montaj_gerekli, k.ek_veriler ? JSON.stringify(k.ek_veriler) : null]);
             olusan++;
         }
     }
@@ -8749,6 +8825,8 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/ozet/, modul: 'rapor.ozet', seviye: 'OKUMA' },
 
     // Teknik şartname / form
+    { pattern: /^\/api\/teknik-sartname-kalem/, method: 'GET', modul: 'satis.teklif', seviye: 'OKUMA' },
+    { pattern: /^\/api\/teknik-sartname-kalem/, modul: 'satis.teklif', seviye: 'YAZMA' },
     { pattern: /^\/api\/teknik-sartname/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/is-emri/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
     { pattern: /^\/api\/is-emri-(olustur|guncelle|yayinla|sil|iptal|not)/, modul: 'projeler', seviye: 'YAZMA' },
@@ -11730,7 +11808,8 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS dis_duvar_kesiti TEXT,
             ADD COLUMN IF NOT EXISTS ic_duvar_kesiti TEXT,
             ADD COLUMN IF NOT EXISTS bina_yeri TEXT,
-            ADD COLUMN IF NOT EXISTS montaj_gerekli BOOLEAN`).catch(() => {});
+            ADD COLUMN IF NOT EXISTS montaj_gerekli BOOLEAN,
+            ADD COLUMN IF NOT EXISTS ek_veriler JSONB`).catch(() => {});
         await pool.query(`ALTER TABLE proje_teslimatlari
             ADD COLUMN IF NOT EXISTS teklif_kalem_id INTEGER`).catch(() => {});
 
