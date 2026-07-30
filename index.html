@@ -707,7 +707,8 @@
     </div>
 
     <!-- Satış — fiyat analizi: arşiv görüntüleme + yeni hesaplama aracı -->
-    <div class="modal fade" id="modalSatisAnaliz" tabindex="-1">
+    <!-- Dışarı tıklama/ESC ile KAPANMAZ (Yunus 2026-07-30): uzun form, kazara veri kaybı olmasın -->
+    <div class="modal fade" id="modalSatisAnaliz" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
       <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
           <div class="modal-header py-3 bg-dark text-white">
@@ -7159,25 +7160,8 @@ async function satisAnalizKopyalaAc() {
     satisAnalizFormAc(window.sanKalemId, document.getElementById('sanBaslik').innerText.replace('Öznitelikler — ', ''));
 }
 
-async function satisAnalizBolumEkle(kategoriEskiId) {
-    showLoading();
-    const r = await secureFetch('/satis-analiz-bolum-ekle', { method: 'POST',
-        body: JSON.stringify({ kalem_id: window.sanKalemId, urun_kategori_eski_id: kategoriEskiId }) }).catch(() => null);
-    hideLoading();
-    if (!r || !r.ok) { showToast(r?.hata || 'Bölüm eklenemedi.', 'error'); return; }
-    satisAnalizFormAc(window.sanKalemId, document.getElementById('sanBaslik').innerText.replace('Öznitelikler — ', ''));
-}
-
-async function satisAnalizBolumSil(id) {
-    if (!confirm('Bu bölüm ve içindeki değerler silinecek. Emin misiniz?')) return;
-    showLoading();
-    const r = await secureFetch('/satis-analiz-bolum-sil/' + id, { method: 'DELETE' }).catch(() => null);
-    hideLoading();
-    if (!r || !r.ok) { showToast(r?.hata || 'Bölüm silinemedi.', 'error'); return; }
-    satisAnalizFormAc(window.sanKalemId, document.getElementById('sanBaslik').innerText.replace('Öznitelikler — ', ''));
-}
-
-async function satisAnalizFormKaydet() {
+// Formdaki mevcut kapsam işaretleri ve değerleri topla (Kaydet + sessiz kaydet ortak)
+function sanFormVerileriTopla() {
     const kapsam = {};
     document.querySelectorAll('.san-kapsam').forEach(i => kapsam[i.dataset.bolum] = i.checked);
     const degerler = [];
@@ -7194,6 +7178,43 @@ async function satisAnalizFormKaydet() {
         const secili = [...k.querySelectorAll('.san-cok:checked')].map(c => c.value);
         degerler.push({ bolum_eski_id: k.dataset.bolum, parametre_eski_id: k.dataset.parametre, deger: secili.join(',') });
     });
+    return { kapsam, degerler };
+}
+
+// Sessiz kaydet: bölüm ekle/sil formu yeniden çizmeden önce SEÇİMLER KAYBOLMASIN
+// diye mevcut hâli veritabanına yazar (modal kapanmaz, bildirim çıkmaz).
+async function sanFormSessizKaydet() {
+    if (window.sanFormKilitli) return true;   // kilitli formda yazılacak bir şey yok
+    const { kapsam, degerler } = sanFormVerileriTopla();
+    const r = await secureFetch('/satis-analiz-form-kaydet', { method: 'POST',
+        body: JSON.stringify({ kalem_id: window.sanKalemId, kapsam, degerler }) }).catch(() => null);
+    return !!(r && r.ok);
+}
+
+async function satisAnalizBolumEkle(kategoriEskiId) {
+    showLoading();
+    // Önce mevcut seçimleri koru (yeniden çizim veritabanından okur)
+    if (!await sanFormSessizKaydet()) { hideLoading(); showToast('Mevcut seçimler kaydedilemedi; bölüm eklenmedi (verileriniz ekranda duruyor).', 'error'); return; }
+    const r = await secureFetch('/satis-analiz-bolum-ekle', { method: 'POST',
+        body: JSON.stringify({ kalem_id: window.sanKalemId, urun_kategori_eski_id: kategoriEskiId }) }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Bölüm eklenemedi.', 'error'); return; }
+    satisAnalizFormAc(window.sanKalemId, document.getElementById('sanBaslik').innerText.replace('Öznitelikler — ', ''));
+}
+
+async function satisAnalizBolumSil(id) {
+    if (!confirm('Bu bölüm ve içindeki değerler silinecek. Emin misiniz?')) return;
+    showLoading();
+    // Diğer bölümlerdeki kaydedilmemiş seçimler kaybolmasın
+    if (!await sanFormSessizKaydet()) { hideLoading(); showToast('Mevcut seçimler kaydedilemedi; bölüm silinmedi (verileriniz ekranda duruyor).', 'error'); return; }
+    const r = await secureFetch('/satis-analiz-bolum-sil/' + id, { method: 'DELETE' }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) { showToast(r?.hata || 'Bölüm silinemedi.', 'error'); return; }
+    satisAnalizFormAc(window.sanKalemId, document.getElementById('sanBaslik').innerText.replace('Öznitelikler — ', ''));
+}
+
+async function satisAnalizFormKaydet() {
+    const { kapsam, degerler } = sanFormVerileriTopla();   // çok seçimler dahil — toplayıcı tek yer
     showLoading();
     const r = await secureFetch('/satis-analiz-form-kaydet', { method: 'POST',
         body: JSON.stringify({ kalem_id: window.sanKalemId, kapsam, degerler }) }).catch(() => null);
