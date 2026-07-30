@@ -74,6 +74,13 @@ const pool = new Pool({
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
 });
+// KRİTİK (2026-07-30): Havuzdaki BOŞTA bekleyen bir bağlantı ağ kopmasında hata
+// fırlatırsa (uyku/IP değişimi → EADDRNOTAVAIL, ECONNRESET) 'error' olayı dinleyicisiz
+// kalınca Node TÜM SÜRECİ öldürüyordu — yereldeki "kesinti"lerin kaynağı buydu.
+// Dinleyici hatayı loglar; havuz bozuk bağlantıyı atar, sonraki sorgu yenisini açar.
+pool.on('error', (err) => {
+    console.error('⚠️ Havuz boşta-bağlantı hatası (süreç ayakta, bağlantı atıldı):', err.code || err.message);
+});
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "147823112806-t1er1p9uka98t04i26riqp5mtpp2ejri.apps.googleusercontent.com";
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
