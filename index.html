@@ -7003,7 +7003,8 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">${formKilitli ? 'Kapat' : 'Vazgeç'}</button>
         ${formKilitli ? '' : `
         <button class="btn btn-outline-secondary btn-sm px-3" onclick="satisAnalizKopyalaAc()"><i class="bi bi-files me-1"></i>Öznitelikleri Kopyala</button>
-        <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisAnalizFormKaydet()"><i class="bi bi-check-lg me-1"></i>Kaydet</button>`}`;
+        <button class="btn btn-outline-primary btn-sm px-3" title="Kaydeder; döküm daha sonra Fiyat Analizi ekranından güncellenir" onclick="satisAnalizFormKaydet()"><i class="bi bi-check-lg me-1"></i>Kaydet</button>
+        <button class="btn btn-primary btn-sm px-4 fw-bold" title="Tanımları kaydeder, malzeme dökümünü hemen hesaplar ve sonucu gösterir" onclick="satisAnalizKaydetVeUret()"><i class="bi bi-calculator me-1"></i>Kaydet ve Dökümü Üret</button>`}`;
     satisFormKurallariUygula();   // seçimlere göre ilgisiz bölüm/alan/seçenekleri gizle
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
 }
@@ -7220,8 +7221,30 @@ async function satisAnalizFormKaydet() {
         body: JSON.stringify({ kalem_id: window.sanKalemId, kapsam, degerler }) }).catch(() => null);
     hideLoading();
     if (!r || !r.ok) { showToast(r?.hata || 'Form kaydedilemedi.', 'error'); return; }
-    showToast('Analiz formu kaydedildi.', 'success');
+    // Döküm zaten üretilmişse yol göster: yalnız kaydetmek dökümü GÜNCELLEMEZ
+    if ((window.sanForm?.kalem?.dokum_satiri || 0) > 0) {
+        showToast('Kaydedildi — mevcut döküm henüz güncellenmedi. Güncel sonuç için Fiyat Analizi ekranından "Dökümü Güncelle"ye basın (ya da "Kaydet ve Dökümü Üret"i kullanın).', 'success');
+    } else {
+        showToast('Analiz formu kaydedildi.', 'success');
+    }
     bootstrap.Modal.getInstance(document.getElementById('modalSatisAnaliz'))?.hide();
+}
+
+// KAYDET ve DÖKÜMÜ ÜRET (Yunus 2026-07-30): tek tıkla kaydet + hesapla + sonucu göster —
+// "tanımla → sonuç" akışı iki ekran arasında kaybolmasın diye birincil eylem budur.
+async function satisAnalizKaydetVeUret() {
+    const { kapsam, degerler } = sanFormVerileriTopla();
+    showLoading();
+    const r = await secureFetch('/satis-analiz-form-kaydet', { method: 'POST',
+        body: JSON.stringify({ kalem_id: window.sanKalemId, kapsam, degerler }) }).catch(() => null);
+    if (!r || !r.ok) { hideLoading(); showToast(r?.hata || 'Form kaydedilemedi — döküm üretilmedi (verileriniz ekranda duruyor).', 'error'); return; }
+    const u = await secureFetch('/satis-analiz-uret', { method: 'POST',
+        body: JSON.stringify({ kalem_id: window.sanKalemId }) }).catch(() => null);
+    hideLoading();
+    if (!u || !u.ok) { showToast(u?.hata || 'Kaydedildi ama döküm üretilemedi — Fiyat Analizi ekranından tekrar deneyin.', 'error'); return; }
+    showToast(`Kaydedildi ve döküm güncellendi: ${u.adet} malzeme.${u.onerilen_fiyat != null ? ` Önerilen fiyat: ${formatTR(u.onerilen_fiyat)}` : ''}`, 'success');
+    const kalemAd = document.getElementById('sanBaslik').innerText.replace('Öznitelikler — ', '');
+    satisAnalizDokumAc(window.sanKalemId, kalemAd);   // aynı pencerede sonuca geç
 }
 
 // Malzeme dökümü ızgarası — eski "Ürün & Hizmetler" ekranı
@@ -7254,10 +7277,18 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
     // ONAYLANAN (şartnameyle aynı kural — değişiklik için revize gerekir).
     const kilitli = (kalem.teklif_durumu === 'ONAYLANAN');
     const yazabilir = izinVarMi('satis.urun', 'YAZMA') && !kilitli;
+    // BAYAT DÖKÜM (Yunus 2026-07-30): öznitelikler son üretimden SONRA değiştiyse bu döküm
+    // eski tanımlarla hesaplanmış demektir — kullanıcı uyarılır, Dökümü Güncelle vurgulanır.
+    const bayat = satirlar.length > 0 && kalem.oznitelik_guncelleme &&
+        (!kalem.dokum_uretim || new Date(kalem.oznitelik_guncelleme) > new Date(kalem.dokum_uretim));
+    window.sanDokumBayat = !!bayat;
     document.getElementById('sanBaslik').innerText = 'Fiyat Analizi — ' + kalemAd;
     document.getElementById('sanGovde').innerHTML = `
         ${kilitli ? `<div class="alert alert-warning py-2 small mb-2"><i class="bi bi-lock-fill me-1"></i>
             Teklif <b>ONAYLANDIĞI</b> için analiz <b>KİLİTLİ</b>. Değişiklik gerekiyorsa önce teklifin revize edilmesi gerekir.</div>` : ''}
+        ${bayat && !kilitli ? `<div class="alert alert-warning py-2 small mb-2"><i class="bi bi-exclamation-triangle-fill me-1"></i>
+            <b>Öznitelikler bu dökümden sonra değiştirildi</b> — aşağıdaki döküm eski tanımlarla hesaplanmış.
+            Güncel sonuç için <b>Dökümü Güncelle</b>'ye basın. ("Fiyatları Tekrar Hesapla" yalnız birim fiyatları tazeler, bu durumu çözmez.)</div>` : ''}
         ${!satirlar.length ? `<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle me-1"></i>
             Bu kalem için henüz malzeme dökümü üretilmemiş. Önce <b>Öznitelikler</b>'i doldurun,
             ardından aşağıdan <b>Dökümü Üret</b> deyin.</div>` : ''}
@@ -7267,9 +7298,13 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
             ${kayitli.yorumlar.slice(0, 5).map(y => `<div class="small border-start border-3 ps-2 mb-1">
                 ${esc(y.yorum)}<span class="text-muted"> — ${esc((y.yazan || '').split('@')[0] || '-')}${y.tarih ? ', ' + formatTarihTR(y.tarih) : ''}</span></div>`).join('')}
         </div>` : ''}
-        ${window.sanOnizleme ? `<div class="small text-muted mb-2">Mevcut özniteliklerle motorun bulduğu malzeme sayısı:
-            <b>${window.sanOnizleme.kalemler.filter(k => k.miktar != null).length}</b>
-            (kayıtlı döküm: <b>${satirlar.length}</b>)</div>` : ''}
+        ${window.sanOnizleme ? (() => {
+            const motorSay = window.sanOnizleme.kalemler.filter(k => k.miktar != null).length;
+            const farkli = satirlar.length > 0 && motorSay !== satirlar.length;
+            return `<div class="small mb-2 ${farkli ? 'text-warning-emphasis fw-semibold' : 'text-muted'}">
+                ${farkli ? '<i class="bi bi-exclamation-triangle me-1"></i>' : ''}Mevcut özniteliklerle motorun bulduğu malzeme sayısı:
+                <b>${motorSay}</b> (kayıtlı döküm: <b>${satirlar.length}</b>)${farkli ? ' — sayılar uyuşmuyor, döküm güncel değil olabilir' : ''}</div>`;
+        })() : ''}
         ${satirlar.length ? `
         ${(() => {
             // Kategori süzgeci — eski ekrandaki kategori seçicinin karşılığı
@@ -7349,15 +7384,18 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
     // tazeleme teklif sonuçlanana kadar her zaman açık.
     document.getElementById('sanAltButonlar').innerHTML = `
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
-        ${yazabilir ? `<button class="btn btn-outline-primary btn-sm px-3" onclick="satisAnalizUret()"><i class="bi bi-arrow-repeat me-1"></i>Dökümü Üret</button>` : ''}
-        ${yazabilir && satirlar.length ? `<button class="btn btn-outline-primary btn-sm px-3" title="Satırlara ve miktarlara dokunmadan yalnız fiyat kilitlerini bugünkü fiyatlarla tazeler" onclick="satisAnalizFiyatTazele()"><i class="bi bi-calculator me-1"></i>Fiyatları Tekrar Hesapla</button>` : ''}`;
+        ${yazabilir && satirlar.length ? `<button class="btn btn-outline-secondary btn-sm px-3" title="Satırlara ve miktarlara DOKUNMAZ — yalnız birim fiyat kilitlerini bugünkü fiyatlarla tazeler" onclick="satisAnalizFiyatTazele()"><i class="bi bi-currency-exchange me-1"></i>Fiyatları Tekrar Hesapla</button>` : ''}
+        ${yazabilir ? `<button class="btn ${bayat ? 'btn-warning fw-bold' : (satirlar.length ? 'btn-outline-primary' : 'btn-primary fw-bold')} btn-sm px-3" title="Öznitelik tanımlarından malzeme dökümünü yeniden hesaplar (elle düzenlenen satırlar korunur)" onclick="satisAnalizUret()"><i class="bi bi-arrow-repeat me-1"></i>${bayat ? 'Dökümü Güncelle' : 'Dökümü Üret'}</button>` : ''}`;
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
 }
 
 // Eski "Fiyatları tekrar hesapla" (calculate-and-save-prices) birebir:
 // satırlar ve miktarlar aynen kalır, yalnız fiyat kilitleri bugünle tazelenir.
 async function satisAnalizFiyatTazele() {
-    if (!confirm('Döküm satırları ve miktarlar korunacak; yalnız maliyet ve satış fiyatı kilitleri BUGÜNKÜ ürün ağacı fiyatlarıyla yeniden hesaplanacak. Devam edilsin mi?')) return;
+    // Yanlış refleks koruması: öznitelikler değişmişken bu düğme çözüm DEĞİL (Yunus 2026-07-30)
+    if (window.sanDokumBayat) {
+        if (!confirm('DİKKAT: Öznitelikler bu dökümden sonra değiştirildi. Bu düğme yalnız birim fiyat kilitlerini bugünle tazeler; miktarlar ve satırlar ESKİ tanımlarla kalır. Değişikliklerinizin hesaba girmesi için "Dökümü Güncelle" kullanılmalıdır.\n\nYine de yalnız fiyatları tazelemek istiyor musunuz?')) return;
+    } else if (!confirm('Döküm satırları ve miktarlar korunacak; yalnız maliyet ve satış fiyatı kilitleri BUGÜNKÜ ürün ağacı fiyatlarıyla yeniden hesaplanacak. Devam edilsin mi?')) return;
     showLoading();
     const r = await secureFetch('/satis-analiz-fiyat-tazele', { method: 'POST', body: JSON.stringify({ kalem_id: window.sanKalemId }) }).catch(() => null);
     hideLoading();

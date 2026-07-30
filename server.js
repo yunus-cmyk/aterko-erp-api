@@ -7445,6 +7445,8 @@ async function satisAnalizOnDolum(kalemId) {
         INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
         SELECT 'TEKLIF_KALEMI', $1, t.b, t.p, t.dg FROM unnest($2::bigint[], $3::int[], $4::text[]) AS t(b, p, dg)`,
         [parseInt(kalemId), ekleBolum, ekleParam, ekleDeger]);
+    if (guncelleId.length || ekleBolum.length)   // kalem revizesi analize yansıdı → döküm bayatladı
+        await pool.query('UPDATE sat_teklif_kalemleri SET oznitelik_guncelleme=now() WHERE id=$1', [parseInt(kalemId)]);
     if (kapsamaAlinacak.size) {
         await pool.query(`UPDATE sat_analiz_bolumler SET kapsamda=true
             WHERE kalem_id=$1 AND eski_id = ANY($2::bigint[]) AND kapsamda=false`,
@@ -7479,7 +7481,9 @@ app.get('/api/satis-analiz-form/:kalemId', yetkiKontrol, async (req, res, next) 
     try {
         const kalemId = parseInt(req.params.kalemId);
         const kalem = (await pool.query(`
-            SELECT k.*, t.teklif_no, t.proje_id, t.durum AS teklif_durumu FROM sat_teklif_kalemleri k
+            SELECT k.*, t.teklif_no, t.proje_id, t.durum AS teklif_durumu,
+                   (SELECT COUNT(*)::int FROM sat_analiz_urunler a WHERE a.kalem_id=k.id) AS dokum_satiri
+            FROM sat_teklif_kalemleri k
             JOIN sat_teklifler t ON t.id=k.teklif_id WHERE k.id=$1`, [kalemId])).rows[0];
         if (!kalem) return res.json({ ok: false, hata: 'Teklif kalemi bulunamadı.' });
         // Katman A+B: kalem verisi analiz formuna her açılışta taze yansır (kilitliyken yazmaz)
@@ -7565,6 +7569,7 @@ app.post('/api/satis-analiz-bolum-ekle', yetkiKontrol, izinGerekliHerhangi([['sa
             VALUES ('TEKLIF_KALEMI',$1,$2,$3,true,$4) RETURNING id`,
             [parseInt(kalem_id), `${k.ad} ${yeniSira}`, yeniSira, k.eski_id]);
         await client.query('UPDATE sat_analiz_bolumler SET eski_id = 100000000 + id WHERE id=$1', [ins.rows[0].id]);
+        await client.query('UPDATE sat_teklif_kalemleri SET oznitelik_guncelleme=now() WHERE id=$1', [parseInt(kalem_id)]);
         await client.query('COMMIT');
         res.json({ ok: true, id: ins.rows[0].id });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
@@ -7585,6 +7590,7 @@ app.delete('/api/satis-analiz-bolum-sil/:id', yetkiKontrol, izinGerekliHerhangi(
         await pool.query('DELETE FROM sat_analiz_degerler WHERE bolum_eski_id = ANY($1::int[])', [silinecekBolumler]);
         await pool.query('DELETE FROM sat_analiz_bolumler WHERE eski_id = ANY($1::int[]) AND kalem_id=$2',
             [silinecekBolumler, b.kalem_id]);
+        await pool.query('UPDATE sat_teklif_kalemleri SET oznitelik_guncelleme=now() WHERE id=$1', [b.kalem_id]);
         await auditLogla(req, { eylem: 'DELETE', tablo: 'sat_analiz_bolumler', kayit_id: b.id,
             ozet: `Analiz bölümü silindi: ${b.ad}`, eski_veri: b });
         res.json({ ok: true });
@@ -7649,6 +7655,7 @@ app.post('/api/satis-analiz-kopyala', yetkiKontrol, izinGerekliHerhangi([['satis
                 VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4)`,
                 [hedefId, esleme[d.bolum_eski_id]?.eski_id || null, d.parametre_id, d.deger]);
         }
+        await client.query('UPDATE sat_teklif_kalemleri SET oznitelik_guncelleme=now() WHERE id=$1', [hedefId]);
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_analiz_degerler', kayit_id: hedefId,
             ozet: `Öznitelikler kopyalandı: kalem #${kaynakId} → #${hedefId} (${kaynakBolumler.length} bölüm, ${degerler.length} değer)` });
@@ -7712,6 +7719,10 @@ app.post('/api/satis-analiz-form-kaydet', yetkiKontrol, izinGerekliHerhangi([['s
             INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
             SELECT 'TEKLIF_KALEMI', $1, t.b, t.p, t.dg FROM unnest($2::bigint[], $3::int[], $4::text[]) AS t(b, p, dg)`,
             [kalemId, ekleBolum, ekleParam, ekleDeger]);
+        // Bayat döküm tespiti (Yunus 2026-07-30): gerçek bir değişiklik olduysa damgala —
+        // döküm ekranı bu damgayı son üretimle karşılaştırıp "döküm eski" uyarısı gösterir.
+        const degisti = sil.length + guncelleId.length + ekleBolum.length + kapsamaAl.length + kapsamdanCikar.length > 0;
+        if (degisti) await client.query('UPDATE sat_teklif_kalemleri SET oznitelik_guncelleme=now() WHERE id=$1', [kalemId]);
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_analiz_degerler', kayit_id: kalemId,
             ozet: `Analiz formu kaydedildi (kalem #${kalemId}): ${ekleBolum.length} yeni, ${guncelleId.length} güncellenen, ${sil.length} silinen değer` });
@@ -7769,6 +7780,8 @@ app.post('/api/satis-analiz-uret', yetkiKontrol, izinGerekli('satis.urun', 'YAZM
             n++;
         }
         const onerilen = await satisAnalizOnerilenGuncelle(client, kalemId, req.user.email);
+        // Üretim damgası: döküm ekranı bunu oznitelik_guncelleme ile karşılaştırıp bayatlığı anlar
+        await client.query('UPDATE sat_teklif_kalemleri SET dokum_uretim=now() WHERE id=$1', [kalemId]);
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_analiz_urunler', kayit_id: kalemId,
             ozet: `Fiyat analizi üretildi: ${n} malzeme (kalem #${kalemId}); fiyatlar ${bugun} tarihiyle kilitlendi; önerilen fiyat ${onerilen != null ? formatParaLog(onerilen) : '-'}` });
@@ -11911,7 +11924,9 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS montaj_gerekli BOOLEAN,
             ADD COLUMN IF NOT EXISTS ek_veriler JSONB,
             ADD COLUMN IF NOT EXISTS sartname_guncelleme TIMESTAMPTZ,
-            ADD COLUMN IF NOT EXISTS sartname_guncelleyen TEXT`).catch(() => {});
+            ADD COLUMN IF NOT EXISTS sartname_guncelleyen TEXT,
+            ADD COLUMN IF NOT EXISTS oznitelik_guncelleme TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS dokum_uretim TIMESTAMPTZ`).catch(() => {});
         await pool.query(`ALTER TABLE proje_teslimatlari
             ADD COLUMN IF NOT EXISTS teklif_kalem_id INTEGER`).catch(() => {});
 
