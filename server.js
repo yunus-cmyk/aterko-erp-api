@@ -7387,44 +7387,59 @@ async function satisAnalizOnDolum(kalemId) {
     const otomatik = {};   // paramAd → ekranda gösterilecek metin (yalnız gerçekten dolabilenler)
     const kilitli = k.teklif_durumu === 'ONAYLANAN';
     const kapsamaAlinacak = new Set();   // otomatik değer yazılan bölümler kapsama alınır (Genel vb.)
-    for (const [paramAd, metin] of Object.entries(hedefler)) {
-        const p = (await pool.query(
-            'SELECT id, eski_id, alan_tipi, kategori_id FROM sat_parametreler WHERE ad=$1 AND formda_goster=true',
-            [paramAd])).rows[0];
-        if (!p) continue;
+    // TOPLU OKUMA (2026-07-30): hedef başına 3-4 ayrı sorgu her form açılışında ~25 uzak
+    // gidiş-dönüş yapıyordu; artık 4 okumada tüm gerekli veri çekilir, yazımlar toplu.
+    const adlar = Object.keys(hedefler);
+    const paramlar = adlar.length ? (await pool.query(
+        'SELECT id, eski_id, alan_tipi, kategori_id, ad FROM sat_parametreler WHERE ad = ANY($1) AND formda_goster=true',
+        [adlar])).rows : [];
+    const secMap = {};   // parametre_eski_id → { TRIM(deger) → eski_id }
+    if (paramlar.length) (await pool.query(
+        'SELECT parametre_eski_id, eski_id, TRIM(deger) AS deger FROM sat_parametre_secenekler WHERE parametre_eski_id = ANY($1::int[])',
+        [paramlar.map(x => x.eski_id)])).rows.forEach(s =>
+            ((secMap[s.parametre_eski_id] = secMap[s.parametre_eski_id] || {})[s.deger] = s.eski_id));
+    const bolumByKategori = {};   // kategori eski_id → en küçük sıralı bölüm eski_id
+    (await pool.query(
+        'SELECT eski_id, urun_kategori_eski_id, sira FROM sat_analiz_bolumler WHERE kalem_id=$1 ORDER BY sira, eski_id',
+        [parseInt(kalemId)])).rows.forEach(b => {
+            if (!(b.urun_kategori_eski_id in bolumByKategori)) bolumByKategori[b.urun_kategori_eski_id] = b.eski_id;
+        });
+    const mevcutByParam = {};   // parametre_id → [{id, deger}]
+    if (paramlar.length) (await pool.query(
+        'SELECT id, parametre_id, deger FROM sat_analiz_degerler WHERE kalem_id=$1 AND parametre_id = ANY($2::int[]) ORDER BY id',
+        [parseInt(kalemId), paramlar.map(x => x.id)])).rows.forEach(m =>
+            (mevcutByParam[m.parametre_id] = mevcutByParam[m.parametre_id] || []).push(m));
+    const guncelleId = [], guncelleDeger = [], ekleBolum = [], ekleParam = [], ekleDeger = [];
+    for (const p of paramlar) {
+        const metin = hedefler[p.ad];
         let deger = metin;
         if (p.alan_tipi !== 2) {   // seçenekli alan: değer SEÇENEĞİN eski_id'si olarak saklanır
-            const sec = (await pool.query(
-                'SELECT eski_id FROM sat_parametre_secenekler WHERE parametre_eski_id=$1 AND TRIM(deger)=$2',
-                [p.eski_id, metin])).rows[0];
-            if (!sec) continue;   // kalem değeri analiz seçeneklerinde yoksa dokunma (elle girilir)
-            deger = String(sec.eski_id);
+            const sec = (secMap[p.eski_id] || {})[metin];
+            if (!sec) continue;    // kalem değeri analiz seçeneklerinde yoksa dokunma (elle girilir)
+            deger = String(sec);
         }
-        // Kalemin bu kategorideki bölümü (Genel vb.) — form henüz oluşmadıysa atla
-        const b = (await pool.query(
-            'SELECT eski_id FROM sat_analiz_bolumler WHERE kalem_id=$1 AND urun_kategori_eski_id=$2 ORDER BY sira LIMIT 1',
-            [parseInt(kalemId), p.kategori_id])).rows[0];
-        if (!b) continue;
-        otomatik[paramAd] = metin;
+        const b = bolumByKategori[p.kategori_id];   // form henüz oluşmadıysa atla
+        if (b == null) continue;
+        otomatik[p.ad] = metin;
         if (kilitli) continue;
-        kapsamaAlinacak.add(b.eski_id);
-        // ÖNEMLİ: mevcut satır BÖLÜMDEN BAĞIMSIZ aranır — aktarılan kalemlerde değer,
-        // eski sistemin bölüm kimliğine bağlıdır; bölüme göre arayınca bulunamayıp
-        // MÜKERRER satır ekleniyordu (17291'de yaşandı). Parametre başına satır güncellenir,
-        // hiç yoksa kalemin kendi bölümüne eklenir.
-        const mevcut = await pool.query(
-            'SELECT id, deger FROM sat_analiz_degerler WHERE kalem_id=$1 AND parametre_id=$2 ORDER BY id',
-            [parseInt(kalemId), p.id]);
-        if (mevcut.rowCount) {
-            for (const m of mevcut.rows) {
-                if (m.deger !== deger)
-                    await pool.query('UPDATE sat_analiz_degerler SET deger=$1 WHERE id=$2', [deger, m.id]);
+        kapsamaAlinacak.add(b);
+        // Mevcut satır BÖLÜMDEN BAĞIMSIZ aranır (aktarılan kalemlerde bölüm kimliği eski
+        // sistemden gelir; bölüme göre arama mükerrer satır üretiyordu — 17291'de yaşandı)
+        const mevcut = mevcutByParam[p.id] || [];
+        if (mevcut.length) {
+            for (const m of mevcut) {
+                if (String(m.deger) !== deger) { guncelleId.push(m.id); guncelleDeger.push(deger); }
             }
-        } else {
-            await pool.query(`INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
-                VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4)`, [parseInt(kalemId), b.eski_id, p.id, deger]);
-        }
+        } else { ekleBolum.push(b); ekleParam.push(p.id); ekleDeger.push(deger); }
     }
+    if (guncelleId.length) await pool.query(`
+        UPDATE sat_analiz_degerler d SET deger = v.deger
+        FROM (SELECT unnest($1::int[]) AS id, unnest($2::text[]) AS deger) v WHERE d.id = v.id`,
+        [guncelleId, guncelleDeger]);
+    if (ekleBolum.length) await pool.query(`
+        INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
+        SELECT 'TEKLIF_KALEMI', $1, t.b, t.p, t.dg FROM unnest($2::bigint[], $3::int[], $4::text[]) AS t(b, p, dg)`,
+        [parseInt(kalemId), ekleBolum, ekleParam, ekleDeger]);
     if (kapsamaAlinacak.size) {
         await pool.query(`UPDATE sat_analiz_bolumler SET kapsamda=true
             WHERE kalem_id=$1 AND eski_id = ANY($2::bigint[]) AND kapsamda=false`,
@@ -7467,26 +7482,28 @@ app.get('/api/satis-analiz-form/:kalemId', yetkiKontrol, async (req, res, next) 
         // SIRALAMA: bölümün sırası ÜRÜN KATEGORİSİNDEN gelir (product_category.order_no:
         // 100, 200, 300...). sat_analiz_bolumler.sira ise TEKRAR NUMARASIDIR (Duvar 1,
         // Duvar 2) — eski attribute_category.order_no. Önce kategori sırası, sonra tekrar no.
-        const bolumler = (await pool.query(`
-            SELECT b.*, k.ad AS kategori_adi, k.max_adet, k.parametreler_ortak,
-                   k.sira AS kategori_sira, k.ust_id AS kategori_ust_id
-            FROM sat_analiz_bolumler b
-            LEFT JOIN sat_urun_kategoriler k ON k.eski_id = b.urun_kategori_eski_id
-            WHERE b.kalem_id=$1
-            ORDER BY COALESCE(k.sira, 999999), COALESCE(b.sira, 1), b.eski_id`, [kalemId])).rows;
-        // Alanlar attribute_type.order_no'ya göre (950, 1000, 1050... global dizi),
-        // seçenekler attribute_choice.order_no'ya göre sıralanır.
-        const parametreler = (await pool.query(
-            'SELECT * FROM sat_parametreler WHERE formda_goster=true ORDER BY COALESCE(sira, 999999), ad')).rows;
-        const secenekler = (await pool.query(
-            'SELECT * FROM sat_parametre_secenekler ORDER BY COALESCE(sira, 999999), id')).rows;
-        const degerler = (await pool.query(`
-            SELECT d.id, d.bolum_eski_id, d.deger, p.eski_id AS parametre_eski_id
-            FROM sat_analiz_degerler d LEFT JOIN sat_parametreler p ON p.id=d.parametre_id
-            WHERE d.kalem_id=$1`, [kalemId])).rows;
-        // Gizleme kuralları (eski MANAGE_ATTRIBUTE_RULES)
-        const kurallar = (await pool.query(
-            'SELECT * FROM sat_form_kurallari WHERE aktif ORDER BY sira, id')).rows;
+        // Beş sorgu birbirinden bağımsız → PARALEL (uzak veritabanında ~1,5 sn kazanç).
+        const [bolumlerR, parametrelerR, seceneklerR, degerlerR, kurallarR] = await Promise.all([
+            pool.query(`
+                SELECT b.*, k.ad AS kategori_adi, k.max_adet, k.parametreler_ortak,
+                       k.sira AS kategori_sira, k.ust_id AS kategori_ust_id
+                FROM sat_analiz_bolumler b
+                LEFT JOIN sat_urun_kategoriler k ON k.eski_id = b.urun_kategori_eski_id
+                WHERE b.kalem_id=$1
+                ORDER BY COALESCE(k.sira, 999999), COALESCE(b.sira, 1), b.eski_id`, [kalemId]),
+            // Alanlar attribute_type.order_no'ya göre (950, 1000, 1050... global dizi),
+            // seçenekler attribute_choice.order_no'ya göre sıralanır.
+            pool.query('SELECT * FROM sat_parametreler WHERE formda_goster=true ORDER BY COALESCE(sira, 999999), ad'),
+            pool.query('SELECT * FROM sat_parametre_secenekler ORDER BY COALESCE(sira, 999999), id'),
+            pool.query(`
+                SELECT d.id, d.bolum_eski_id, d.deger, p.eski_id AS parametre_eski_id
+                FROM sat_analiz_degerler d LEFT JOIN sat_parametreler p ON p.id=d.parametre_id
+                WHERE d.kalem_id=$1`, [kalemId]),
+            // Gizleme kuralları (eski MANAGE_ATTRIBUTE_RULES)
+            pool.query('SELECT * FROM sat_form_kurallari WHERE aktif ORDER BY sira, id')
+        ]);
+        const bolumler = bolumlerR.rows, parametreler = parametrelerR.rows,
+              secenekler = seceneklerR.rows, degerler = degerlerR.rows, kurallar = kurallarR.rows;
         res.json({ ok: true, kalem, bolumler, parametreler, secenekler, degerler, kurallar,
             otomatik: onDolum.otomatik, montaj_gizli: onDolum.montaj_gizli });
     } catch (e) { next(e); }
@@ -7497,8 +7514,6 @@ app.post('/api/satis-analiz-form-olustur', yetkiKontrol, izinGerekli('satis.tekl
     const client = await pool.connect();
     try {
         const kalemId = parseInt(req.body.kalem_id);
-        const kategoriler = (await client.query(
-            'SELECT * FROM sat_urun_kategoriler ORDER BY sira, ad')).rows;
         await client.query('BEGIN');
         // YARIŞ KİLİDİ (2026-07-30): form otomatik oluşturulduğundan çift tıklamada iki istek
         // aynı anda "form yok" görüp İKİ KEZ kurabiliyordu (kalem 17442'de yaşandı, 140 bölüm).
@@ -7506,17 +7521,15 @@ app.post('/api/satis-analiz-form-olustur', yetkiKontrol, izinGerekli('satis.tekl
         await client.query('SELECT pg_advisory_xact_lock($1, $2)', [421, kalemId]);
         const varMi = await client.query('SELECT COUNT(*)::int c FROM sat_analiz_bolumler WHERE kalem_id=$1', [kalemId]);
         if (varMi.rows[0].c > 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Bu kalemin analiz formu zaten var.' }); }
-        let n = 0;
-        for (const k of kategoriler) {
-            const tekrarli = (k.max_adet || 0) > 1;
-            // sira = TEKRAR NUMARASI (ilk örnek = 1). Görüntüleme sırası kategoriden gelir.
-            const ins = await client.query(`
-                INSERT INTO sat_analiz_bolumler (kaynak, kalem_id, ad, sira, kapsamda, urun_kategori_eski_id)
-                VALUES ('TEKLIF_KALEMI',$1,$2,1,false,$3) RETURNING id`,
-                [kalemId, tekrarli ? `${k.ad} 1` : k.ad, k.eski_id]);
-            await client.query('UPDATE sat_analiz_bolumler SET eski_id = 100000000 + id WHERE id=$1', [ins.rows[0].id]);
-            n++;
-        }
+        // TOPLU KURULUM (2026-07-30): kategori başına INSERT+UPDATE (140 sorgu, uzak DB'de
+        // 10-15 sn) yerine 2 toplu sorgu. sira = TEKRAR NUMARASI (ilk örnek = 1).
+        const ins = await client.query(`
+            INSERT INTO sat_analiz_bolumler (kaynak, kalem_id, ad, sira, kapsamda, urun_kategori_eski_id)
+            SELECT 'TEKLIF_KALEMI', $1, CASE WHEN COALESCE(k.max_adet,0) > 1 THEN k.ad || ' 1' ELSE k.ad END,
+                   1, false, k.eski_id
+            FROM sat_urun_kategoriler k`, [kalemId]);
+        await client.query('UPDATE sat_analiz_bolumler SET eski_id = 100000000 + id WHERE kalem_id=$1 AND eski_id IS NULL', [kalemId]);
+        const n = ins.rowCount;
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'CREATE', tablo: 'sat_analiz_bolumler', kayit_id: kalemId,
             ozet: `Analiz formu oluşturuldu: ${n} bölüm (kalem #${kalemId})` });
@@ -7882,7 +7895,7 @@ app.get('/api/satis-analiz-kalem/:kalemId', yetkiKontrol, async (req, res, next)
                    COALESCE(k.ad, 'Diğer') AS kategori_ad
             FROM sat_analiz_urunler a
             LEFT JOIN sat_urunler u ON u.id = a.urun_id
-            LEFT JOIN sat_urun_kategoriler k ON k.id = u.kategori_id
+            LEFT JOIN sat_urun_kategoriler k ON k.eski_id = u.kategori_id
             WHERE a.kalem_id = $1
             ORDER BY COALESCE(k.sira, 999999), a.sira, a.id`, [kalemId]);
         // Kilitli fiyatın yanında BUGÜNKÜ maliyet/satış (ürün ağacından) da gösterilir
