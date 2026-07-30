@@ -302,31 +302,47 @@
         </div>
       </div>
 
+      <!-- Görev Takip (çekirdek ekip) — modül değil kişisel araç: üst şeritten buraya taşındı (Yunus 2026-07-30) -->
+      <button class="btn btn-sm btn-outline-light d-none" id="nav-gorevler-wrap" onclick="setTab('gorevler')" title="Görev Takip">
+        <i class="bi bi-check2-square"></i><span class="d-none d-md-inline ms-1">Görevler</span>
+      </button>
       <button class="btn btn-sm btn-outline-light" onclick="cikisYap()" title="Çıkış Yap">
         <i class="bi bi-box-arrow-right"></i><span class="d-none d-md-inline ms-1">Çıkış Yap</span>
       </button>
     </div>
   </div>
 
+  <!-- ÜST ŞERİT (Yunus 2026-07-30): iş akışı sırasıyla 7 başlık — Kazan (Satış) →
+       Üret/Teslim Et (Operasyon: Projeler+Üretim+Sevkiyat+Montaj+Bina Listeleri) →
+       Tedarik (Satınalma; Stok, depo devri gerçekleşene dek AYRI) → Mali → Rapor.
+       Görevler üst sağda simge. -->
   <div class="tabs-box py-2 px-1 yatay-kaydir">
     <ul class="nav nav-pills">
       <li class="nav-item"><a class="nav-link" id="nav-anasayfa" onclick="setTab('anasayfa')"><i class="bi bi-house-door-fill me-2"></i>Ana Sayfa</a></li>
-      <li class="nav-item"><a class="nav-link active" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-2"></i>Projeler</a></li>
+      <li class="nav-item d-none"><a class="nav-link text-mod-satis" id="nav-satis" onclick="setTab('satis')"><i class="bi bi-briefcase me-2"></i>Satış</a></li>
+      <li class="nav-item d-none" id="nav-operasyon-wrap"><a class="nav-link active" id="nav-operasyon" onclick="setTab('operasyon')"><i class="bi bi-buildings me-2"></i>Operasyon</a></li>
       <li class="nav-item"><a class="nav-link text-mod-satinalma" id="nav-satinalma" onclick="setTab('satinalma')"><i class="bi bi-cart-check me-2"></i>Satınalma</a></li>
       <li class="nav-item"><a class="nav-link" id="nav-stok" onclick="setTab('stok')"><i class="bi bi-box-seam me-2"></i>Stok</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-2"></i>Bina Listeleri</a></li>
-      <li class="nav-item"><a class="nav-link text-mod-uretim" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-2"></i>Üretim</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-2"></i>Sevkiyat</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-montaj" onclick="setTab('montaj')" class="text-mod-montaj"><i class="bi bi-wrench-adjustable me-2"></i>Montaj</a></li>
-      <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Rapor</a></li>
-      <li class="nav-item d-none"><a class="nav-link text-mod-satis" id="nav-satis" onclick="setTab('satis')"><i class="bi bi-briefcase me-2"></i>Satış</a></li>
       <li class="nav-item d-none"><a class="nav-link" id="nav-mali" onclick="setTab('mali')" class="text-mod-mali"><i class="bi bi-cash-stack me-2"></i>Mali İşler</a></li>
-      <li class="nav-item d-none" id="nav-gorevler-wrap"><a class="nav-link" id="nav-gorevler" onclick="setTab('gorevler')" style="color:#0d6efd;"><i class="bi bi-check2-square me-2"></i>Görevler</a></li>
+      <li class="nav-item"><a class="nav-link" id="nav-ozet" onclick="setTab('ozet')"><i class="bi bi-graph-up me-2"></i>Rapor</a></li>
       <!-- Tedarikçi sekmesi Satınalma alt sekmesine taşındı, doğrudan link kaldırıldı -->
       <li class="nav-item d-none"><a id="nav-tedarikci" onclick="setTab('tedarikci')"></a></li>
       <!-- Audit ve Form Tanımları "Yönetim" dropdown'ına taşındı -->
       <li class="nav-item d-none" id="nav-audit-wrap"><a id="nav-audit" onclick="setTab('audit')"></a></li>
       <li class="nav-item d-none" id="nav-formtanim-wrap"><a id="nav-formtanim" onclick="setTab('formtanim')"></a></li>
+    </ul>
+  </div>
+
+  <!-- OPERASYON ALT SEKMELERİ: sözleşme sonrası zincirin tamamı tek çatı altında.
+       Kimlikler (nav-projeler vb.) BİLEREK korunur: izin görünürlüğü ve aktif işaretleme
+       aynı kimliklerle çalışmaya devam eder. -->
+  <div class="tabs-box py-1 px-2 yatay-kaydir d-none" id="operasyonSekmeleri" style="background:#f1f3f5; border-bottom:1px solid #e0e3e7;">
+    <ul class="nav nav-pills nav-sm">
+      <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-1"></i>Projeler</a></li>
+      <li class="nav-item"><a class="nav-link py-1 px-3 text-mod-uretim" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-1"></i>Üretim</a></li>
+      <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-1"></i>Sevkiyat</a></li>
+      <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-montaj" onclick="setTab('montaj')"><i class="bi bi-wrench-adjustable me-1"></i>Montaj</a></li>
+      <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-1"></i>Bina Listeleri</a></li>
     </ul>
   </div>
 
@@ -4868,6 +4884,10 @@ function izinleriUygula() {
             li.classList.add('d-none');
         }
     }
+    // Operasyon üst başlığı: çatıdaki BEŞ modülden herhangi birine izni olan görür
+    const opWrap = document.getElementById('nav-operasyon-wrap');
+    if (opWrap) opWrap.classList.toggle('d-none',
+        !['projeler', 'bina_listeleri', 'uretim', 'sevkiyat', 'montaj'].some(m => sekmeGorunur(m)));
 
     // Yönetim dropdown — sadece ADMIN
     const adminMenu = document.getElementById('adminMenuWrap');
@@ -11211,10 +11231,23 @@ window.addEventListener('hashchange', () => {
 });
 
 function setTab(tab) {
+    // OPERASYON ÇATISI (Yunus 2026-07-30): Projeler+Üretim+Sevkiyat+Montaj+Bina Listeleri
+    // tek üst başlık; 'operasyon' tıklanınca son kullanılan (yoksa izinli ilk) alt sekme açılır.
+    const OPERASYON_SEKMELERI = ['projeler', 'uretim', 'sevkiyat', 'montaj', 'urun-listesi'];
+    if (tab === 'operasyon') {
+        const adaylar = [window._opSonSekme, ...OPERASYON_SEKMELERI].filter(Boolean);
+        tab = adaylar.find(t => typeof sekmeGuard !== 'function' || sekmeGuard(t)) || 'anasayfa';
+    }
+
     // 0. İzin kontrolü — yoksa anasayfa'ya yönlendir
     if (typeof sekmeGuard === 'function' && !sekmeGuard(tab)) {
         tab = 'anasayfa';
     }
+
+    // Operasyon alt şeridi: yalnız çatıdaki bir sekmedeyken görünür; üst başlık aktif işaretlenir
+    const operasyonda = OPERASYON_SEKMELERI.includes(tab);
+    document.getElementById('operasyonSekmeleri')?.classList.toggle('d-none', !operasyonda);
+    if (operasyonda) window._opSonSekme = tab;
 
     // 0a. Önceki sekmede kalan yetki-kilidi yerleşimlerini temizle + detaya-dönüş işaretini sıfırla
     document.querySelectorAll('.yetki-kilit-note').forEach(n => n.remove());
@@ -11231,11 +11264,12 @@ function setTab(tab) {
         document.body.style.removeProperty('padding-right');
     }
 
-    // 1. Menüdeki aktif sekme rengini ayarla
+    // 1. Menüdeki aktif sekme rengini ayarla (Operasyon çatısında hem üst başlık hem alt sekme)
     document.querySelectorAll(".nav-pills .nav-link").forEach(el => el.classList.remove("active"));
     if(document.getElementById(`nav-${tab}`)) {
         document.getElementById(`nav-${tab}`).classList.add("active");
     }
+    if (operasyonda) document.getElementById('nav-operasyon')?.classList.add('active');
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
     ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea','gorevlerArea','maliArea','satisArea'].forEach(id => {
