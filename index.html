@@ -6900,10 +6900,20 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
     };
     // Bölümler HİYERARŞİK: kök bölümler ve altlarında alt bölümler (eski sistemdeki
     // attribute_category parent_id ağacı). Üst bölümler çoğu zaman yalnız başlıktır.
+    // ÜST BAĞI TÜRETME (Yunus 2026-07-30): aktarılan bölümlerde bağ ust_bolum_eski_id'de;
+    // WS'te oluşan formlarda o bağ YAZILMAZ — hiyerarşi KATEGORİ ağacından türetilir
+    // (Konteyner Duvarı → Dış/İç Duvar, Elektrik → Priz/Anahtar/... gibi). Aksi hâlde
+    // üst başlıklar boş görünüyor, alt bölümler kök karta dağılıyordu.
+    const bolumByKategori = {};
+    r.bolumler.forEach(b => (bolumByKategori[b.urun_kategori_eski_id] = bolumByKategori[b.urun_kategori_eski_id] || []).push(b));
+    const ustBul = (b) => {
+        if (b.ust_bolum_eski_id && r.bolumler.some(x => x.eski_id === b.ust_bolum_eski_id)) return b.ust_bolum_eski_id;
+        if (b.kategori_ust_id && (bolumByKategori[b.kategori_ust_id] || []).length) return bolumByKategori[b.kategori_ust_id][0].eski_id;
+        return null;
+    };
     const cocukMap = {};
-    r.bolumler.forEach(b => { if (b.ust_bolum_eski_id) (cocukMap[b.ust_bolum_eski_id] = cocukMap[b.ust_bolum_eski_id] || []).push(b); });
-    const kokler = r.bolumler.filter(b => !b.ust_bolum_eski_id ||
-        !r.bolumler.some(x => x.eski_id === b.ust_bolum_eski_id));
+    r.bolumler.forEach(b => { const u = ustBul(b); if (u) (cocukMap[u] = cocukMap[u] || []).push(b); });
+    const kokler = r.bolumler.filter(b => !ustBul(b));
     // Etiket = şartname biçimi: soru üstte, kalın; kilit ikonları başlıkta
     const etiket = (p) => `${esc(p.ad)}${p.zorunlu ? ' <span class="text-danger">*</span>' : ''}` +
         (otomatik[p.ad] !== undefined ? ' <i class="bi bi-lock-fill text-secondary ms-1" title="Bu alan teklif bileşeninden otomatik gelir, buradan değiştirilemez"></i>'
@@ -6934,7 +6944,8 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
             ${/\s\d+$/.test(b.ad) && !formKilitli ? `<button class="btn btn-outline-danger btn-sm py-0" title="Bu bölümü kaldır" onclick="satisAnalizBolumSil(${b.id})"><i class="bi bi-x"></i></button>` : ''}
           </div>
           ${alanlariCiz(b, params)}
-          ${(cocukMap[b.eski_id] || []).map(altBolumCiz).join('')}
+          ${(cocukMap[b.eski_id] || []).length ? `<div class="san-alt-bolumler ${b.kapsamda ? '' : 'd-none'}" data-ust="${b.eski_id}">
+              ${(cocukMap[b.eski_id] || []).map(altBolumCiz).join('')}</div>` : ''}
         </div>`;
     };
     document.getElementById('sanGovde').innerHTML = `
@@ -6978,7 +6989,8 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
               </div>
               <div class="card-body">
                 ${alanlariCiz(b, params)}
-                ${cocuklar.map(altBolumCiz).join('')}
+                ${cocuklar.length ? `<div class="san-alt-bolumler ${b.kapsamda ? '' : 'd-none'}" data-ust="${b.eski_id}">
+                    ${cocuklar.map(altBolumCiz).join('')}</div>` : ''}
                 ${!params.length && !cocuklar.length ? '<span class="text-muted small">Bu bölümün girilecek alanı yok.</span>' : ''}
               </div>
             </div>`;
@@ -6996,10 +7008,21 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
 }
 
 // Kapsam işareti değişince bölümün alanları açılır/kapanır (eski sistem davranışı:
-// includedInScope değilse attributesByCategory hiç çizilmez). Süzgeç rozetini de tazeler.
-function sanKapsamDegisti(el) {
+// includedInScope değilse attributesByCategory hiç çizilmez). Üst başlığın tiki
+// alt bölümleri de birlikte taşır (eski toggleParentAttributeCategoryIncludedScope):
+// Konteyner Duvarı kapatılınca Dış/İç Duvar tümüyle kaybolur ve kapsam dışına düşer.
+function sanKapsamDegisti(el, zincirde) {
     const alanlar = document.querySelector(`#sanBolumler .san-bolum-alanlar[data-bolum="${el.dataset.bolum}"]`);
     if (alanlar) alanlar.classList.toggle('d-none', !el.checked);
+    const altlar = document.querySelector(`#sanBolumler .san-alt-bolumler[data-ust="${el.dataset.bolum}"]`);
+    if (altlar) {
+        altlar.classList.toggle('d-none', !el.checked);
+        // Alt bölümlerin kapsam kutuları üstle aynı duruma çekilir (kayıtta da böyle gider)
+        altlar.querySelectorAll('.san-kapsam').forEach(c => {
+            if (c.checked !== el.checked) { c.checked = el.checked; sanKapsamDegisti(c, true); }
+        });
+    }
+    if (zincirde) return;   // kural motoru ve rozet yalnız zincirin başında bir kez çalışır
     // Kök kutunun "kapsamda" veri işareti (arama/sadece kapsamdakiler süzgeci için)
     const kutu = el.closest('.san-bolum-kutu');
     if (kutu) kutu.dataset.kapsam = [...kutu.querySelectorAll('.san-kapsam')].some(c => c.checked) ? '1' : '0';
