@@ -7648,32 +7648,56 @@ app.post('/api/satis-analiz-form-kaydet', yetkiKontrol, izinGerekliHerhangi([['s
         const kalem = await satisAnalizKalemiAl(client, kalemId);
         if (!kalem) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
         if (kalem.teklif_durumu === 'ONAYLANAN') return res.json({ ok: false, hata: SATIS_ANALIZ_KILIT_MESAJ });
-        await client.query('BEGIN');
-        for (const [bolumEskiId, kapsamda] of Object.entries(kapsam || {})) {
-            await client.query('UPDATE sat_analiz_bolumler SET kapsamda=$1 WHERE kalem_id=$2 AND eski_id=$3',
-                [!!kapsamda, kalemId, parseInt(bolumEskiId)]);
-        }
-        // Değerler: bölüm+parametre başına tek satır (varsa güncelle, yoksa ekle, boşsa sil)
+        // TOPLU YAZIM (2026-07-30): eskiden değer başına 2-3 sorgu atılıyordu — 200+ alanlı
+        // formda uzak veritabanına 400+ gidiş-dönüş ≈ 30-60 sn sürüyor, uzayan pencerede
+        // ağ kopmaları kaydı düşürüyordu. Artık okumalar 3, yazımlar en fazla 5 toplu sorgu;
+        // değişmeyen değerlere hiç dokunulmaz.
+        const pMap = {};
+        (await client.query('SELECT id, eski_id FROM sat_parametreler WHERE eski_id IS NOT NULL')).rows
+            .forEach(x => pMap[String(x.eski_id)] = x.id);
+        const mevcutMap = {};
+        (await client.query('SELECT id, bolum_eski_id, parametre_id, deger FROM sat_analiz_degerler WHERE kalem_id=$1', [kalemId])).rows
+            .forEach(x => mevcutMap[`${x.bolum_eski_id}_${x.parametre_id}`] = x);
+        const sil = [], guncelleId = [], guncelleDeger = [], ekleBolum = [], ekleParam = [], ekleDeger = [];
         for (const d of (degerler || [])) {
-            const pr = await client.query('SELECT id FROM sat_parametreler WHERE eski_id=$1', [parseInt(d.parametre_eski_id)]);
-            if (!pr.rowCount) continue;
+            const pid = pMap[String(parseInt(d.parametre_eski_id))];
+            if (!pid) continue;
+            const bolumId = parseInt(d.bolum_eski_id);
+            const m = mevcutMap[`${bolumId}_${pid}`];
             const bos = d.deger == null || String(d.deger).trim() === '';
-            const mevcut = await client.query(
-                'SELECT id FROM sat_analiz_degerler WHERE kalem_id=$1 AND bolum_eski_id=$2 AND parametre_id=$3',
-                [kalemId, parseInt(d.bolum_eski_id), pr.rows[0].id]);
-            if (bos) {
-                if (mevcut.rowCount) await client.query('DELETE FROM sat_analiz_degerler WHERE id=$1', [mevcut.rows[0].id]);
-            } else if (mevcut.rowCount) {
-                await client.query('UPDATE sat_analiz_degerler SET deger=$1 WHERE id=$2', [String(d.deger), mevcut.rows[0].id]);
-            } else {
-                await client.query(`INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
-                    VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4)`, [kalemId, parseInt(d.bolum_eski_id), pr.rows[0].id, String(d.deger)]);
-            }
+            if (bos) { if (m) sil.push(m.id); continue; }
+            const yeni = String(d.deger);
+            if (m) { if (String(m.deger) !== yeni) { guncelleId.push(m.id); guncelleDeger.push(yeni); } }
+            else { ekleBolum.push(bolumId); ekleParam.push(pid); ekleDeger.push(yeni); }
         }
+        // Kapsam: yalnız DEĞİŞEN bölümler yazılır (eskiden 70 bölümün hepsine ayrı UPDATE gidiyordu)
+        const bolumKapsam = {};
+        (await client.query('SELECT eski_id, kapsamda FROM sat_analiz_bolumler WHERE kalem_id=$1', [kalemId])).rows
+            .forEach(x => bolumKapsam[String(x.eski_id)] = x.kapsamda);
+        const kapsamaAl = [], kapsamdanCikar = [];
+        for (const [bolumEskiId, kapsamda] of Object.entries(kapsam || {})) {
+            const anahtar = String(parseInt(bolumEskiId));
+            if (!(anahtar in bolumKapsam)) continue;
+            if (!!kapsamda !== !!bolumKapsam[anahtar]) (kapsamda ? kapsamaAl : kapsamdanCikar).push(parseInt(bolumEskiId));
+        }
+        await client.query('BEGIN');
+        if (kapsamaAl.length) await client.query(
+            'UPDATE sat_analiz_bolumler SET kapsamda=true WHERE kalem_id=$1 AND eski_id=ANY($2::bigint[])', [kalemId, kapsamaAl]);
+        if (kapsamdanCikar.length) await client.query(
+            'UPDATE sat_analiz_bolumler SET kapsamda=false WHERE kalem_id=$1 AND eski_id=ANY($2::bigint[])', [kalemId, kapsamdanCikar]);
+        if (sil.length) await client.query('DELETE FROM sat_analiz_degerler WHERE id=ANY($1::int[])', [sil]);
+        if (guncelleId.length) await client.query(`
+            UPDATE sat_analiz_degerler d SET deger = v.deger
+            FROM (SELECT unnest($1::int[]) AS id, unnest($2::text[]) AS deger) v WHERE d.id = v.id`,
+            [guncelleId, guncelleDeger]);
+        if (ekleBolum.length) await client.query(`
+            INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
+            SELECT 'TEKLIF_KALEMI', $1, t.b, t.p, t.dg FROM unnest($2::bigint[], $3::int[], $4::text[]) AS t(b, p, dg)`,
+            [kalemId, ekleBolum, ekleParam, ekleDeger]);
         await client.query('COMMIT');
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'sat_analiz_degerler', kayit_id: kalemId,
-            ozet: `Analiz formu kaydedildi (kalem #${kalemId}): ${(degerler || []).length} değer` });
-        res.json({ ok: true });
+            ozet: `Analiz formu kaydedildi (kalem #${kalemId}): ${ekleBolum.length} yeni, ${guncelleId.length} güncellenen, ${sil.length} silinen değer` });
+        res.json({ ok: true, eklenen: ekleBolum.length, guncellenen: guncelleId.length, silinen: sil.length });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
 });
