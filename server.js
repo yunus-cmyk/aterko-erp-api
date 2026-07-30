@@ -7402,12 +7402,18 @@ async function satisAnalizOnDolum(kalemId) {
         if (!b) continue;
         otomatik[paramAd] = metin;
         if (kilitli) continue;
+        // ÖNEMLİ: mevcut satır BÖLÜMDEN BAĞIMSIZ aranır — aktarılan kalemlerde değer,
+        // eski sistemin bölüm kimliğine bağlıdır; bölüme göre arayınca bulunamayıp
+        // MÜKERRER satır ekleniyordu (17291'de yaşandı). Parametre başına satır güncellenir,
+        // hiç yoksa kalemin kendi bölümüne eklenir.
         const mevcut = await pool.query(
-            'SELECT id, deger FROM sat_analiz_degerler WHERE kalem_id=$1 AND bolum_eski_id=$2 AND parametre_id=$3',
-            [parseInt(kalemId), b.eski_id, p.id]);
+            'SELECT id, deger FROM sat_analiz_degerler WHERE kalem_id=$1 AND parametre_id=$2 ORDER BY id',
+            [parseInt(kalemId), p.id]);
         if (mevcut.rowCount) {
-            if (mevcut.rows[0].deger !== deger)
-                await pool.query('UPDATE sat_analiz_degerler SET deger=$1 WHERE id=$2', [deger, mevcut.rows[0].id]);
+            for (const m of mevcut.rows) {
+                if (m.deger !== deger)
+                    await pool.query('UPDATE sat_analiz_degerler SET deger=$1 WHERE id=$2', [deger, m.id]);
+            }
         } else {
             await pool.query(`INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
                 VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4)`, [parseInt(kalemId), b.eski_id, p.id, deger]);
@@ -7480,11 +7486,15 @@ app.post('/api/satis-analiz-form-olustur', yetkiKontrol, izinGerekli('satis.tekl
     const client = await pool.connect();
     try {
         const kalemId = parseInt(req.body.kalem_id);
-        const varMi = await client.query('SELECT COUNT(*)::int c FROM sat_analiz_bolumler WHERE kalem_id=$1', [kalemId]);
-        if (varMi.rows[0].c > 0) return res.json({ ok: false, hata: 'Bu kalemin analiz formu zaten var.' });
         const kategoriler = (await client.query(
             'SELECT * FROM sat_urun_kategoriler ORDER BY sira, ad')).rows;
         await client.query('BEGIN');
+        // YARIŞ KİLİDİ (2026-07-30): form otomatik oluşturulduğundan çift tıklamada iki istek
+        // aynı anda "form yok" görüp İKİ KEZ kurabiliyordu (kalem 17442'de yaşandı, 140 bölüm).
+        // Danışma kilidi + işlem İÇİNDE tekrar sayım: ikinci istek ilkinin bitmesini bekler ve vazgeçer.
+        await client.query('SELECT pg_advisory_xact_lock($1, $2)', [421, kalemId]);
+        const varMi = await client.query('SELECT COUNT(*)::int c FROM sat_analiz_bolumler WHERE kalem_id=$1', [kalemId]);
+        if (varMi.rows[0].c > 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Bu kalemin analiz formu zaten var.' }); }
         let n = 0;
         for (const k of kategoriler) {
             const tekrarli = (k.max_adet || 0) > 1;
