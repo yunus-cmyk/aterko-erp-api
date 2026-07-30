@@ -8148,6 +8148,20 @@ app.post('/api/satis-teklif-kabul', yetkiKontrol, izinGerekli('satis.teklif_onay
         if (ops.rows[0].c > 0) {
             return res.json({ ok: false, hata: 'Bu teklifte opsiyonel kalemler bulunuyor. Teklifin onaylanabilmesi için bunların silinmesi ya da zorunlu kalemlere dönüştürülmesi gerekiyor.' });
         }
+        // TEKNİK ŞARTNAME KAPISI (Yunus 2026-07-30): teklif ancak TÜM bina bileşenlerinin
+        // teknik şartnamesi doldurulmuşsa onaylanabilir — onayla birlikte şartnameler
+        // kilitlenir, sözleşmeye ve iş emri sürecine eksiksiz gidilir. Ölçüt: bileşenin
+        // bina türüne ait şartname sorularından EN AZ BİRİ cevaplanmış olmalı (Diğer hariç).
+        const sartnamesiz = await client.query(`
+            SELECT k.ad FROM sat_teklif_kalemleri k
+            WHERE k.teklif_id=$1 AND k.bina_turu IS NOT NULL AND k.bina_turu <> 'Diğer'
+              AND (SELECT COUNT(*) FROM form_tanimlari ft
+                   WHERE ft.bina_turu = k.bina_turu AND k.ek_veriler ? ft.soru) = 0
+            ORDER BY k.sira, k.id`, [id]);
+        if (sartnamesiz.rowCount > 0) {
+            const adlar = sartnamesiz.rows.map(x => x.ad).join(', ');
+            return res.json({ ok: false, hata: `Teklif onaylanamaz: şu bileşenlerin teknik şartnamesi henüz doldurulmamış — ${adlar}. Şartnameler proje detayındaki "Teknik Şartnameler" sekmesinden doldurulur; onayla birlikte kilitleneceklerdir.` });
+        }
         await client.query('BEGIN');
         if (t.rows[0].proje_id) {
             await client.query(`
