@@ -6593,7 +6593,12 @@ app.get('/api/satis-projeler', yetkiKontrol, async (req, res, next) => {
         // 3.790 satış projesinin 2.156'sı kapanmış, açık kalan 1.634'ün de yalnız 187'si
         // son bir yılda hareket görmüş — günlük çalışılan küme bu.
         const acikKosul = `COALESCE(p.satis_durumu,'TASLAK') <> ALL('{${SATIS_KAPALI_DURUMLAR.join(',')}}')`;
-        const sonHareket = `(SELECT MAX(t2.teklif_tarihi) FROM sat_teklifler t2 WHERE t2.proje_id = p.id)`;
+        // Son hareket = en yeni teklif tarihi; teklif tarihi hiç yoksa PROJENİN AÇILIŞ TARİHİ
+        // (Yunus 2026-07-30, 72737 vakası: tarihsiz taslak teklifli 158 açık proje ve teklifsiz
+        // yeni fırsatlar 'güncel' süzgecinde kayboluyordu — yeni fırsat teklifsiz de günceldir).
+        const sonHareket = `GREATEST(
+            COALESCE((SELECT MAX(t2.teklif_tarihi) FROM sat_teklifler t2 WHERE t2.proje_id = p.id), '1900-01-01'::date),
+            COALESCE(p.olusturma_tarihi::date, '1900-01-01'::date))`;
         if (durum && SATIS_DURUMLARI.includes(durum)) { deger.push(durum); kosullar.push(`p.satis_durumu=$${deger.length}`); }
         else if (kapsam === 'kapali') kosullar.push(`p.satis_durumu = ANY('{${SATIS_KAPALI_DURUMLAR.join(',')}}')`);
         else if (kapsam === 'acik') kosullar.push(acikKosul);
