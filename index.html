@@ -6857,8 +6857,18 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
     const alan = (b, p) => {
         const anahtar = `${b.eski_id}_${p.eski_id}`;
         const deger = dMap[anahtar] || '';
-        // Katman A: kalemden otomatik dolan alan — şartnamedeki SALT_OKUNUR görünümüyle
+        const secenekler = secMap[p.eski_id] || [];
+        // Katman A: kalemden otomatik dolan alan — seçenekliyse SEÇİLİ ve KİLİTLİ çipler,
+        // sayısal/serbest ise salt okunur kutu (şartnamedeki SALT_OKUNUR karşılığı)
         if (otomatik[p.ad] !== undefined) {
+            if (p.alan_tipi !== 2 && secenekler.length) {
+                const grupId = `san_o_${b.eski_id}_${p.eski_id}`;
+                // san-radyo: kural motoru seçili değeri okuyabilsin; san-oto: kaydette atlanır
+                return `<div class="d-flex flex-wrap gap-2 san-alan san-radyo san-oto" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}">
+                    ${secenekler.map(s => `<span class="san-secenek-kutu" data-secenek-deger="${esc(s.deger)}">
+                        <input type="radio" class="btn-check ts-secim" name="${grupId}" value="${s.eski_id}" id="${grupId}_${s.eski_id}" ${String(s.deger).trim() === otomatik[p.ad] ? 'checked' : ''} disabled autocomplete="off">
+                        <label class="ts-secim-lbl" for="${grupId}_${s.eski_id}">${esc(s.deger)}</label></span>`).join('')}</div>`;
+            }
             return `<input type="text" class="form-control form-control-sm san-alan san-oto bg-light text-muted"
                 data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}"
                 value="${esc(otomatik[p.ad])}" readonly>`;
@@ -6867,20 +6877,20 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
         const ek = `${kilit ? ' disabled' : ''}${p.zorunlu ? ' required' : ''}`;
         const ortak = `class="form-control form-control-sm san-alan" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}" onchange="satisFormKurallariUygula()"${ek}`;
         if (p.alan_tipi === 2) return `<input type="number" step="0.01" ${ortak} value="${esc(deger)}">`;
-        const secenekler = secMap[p.eski_id] || [];
         const grupId = `san_r_${b.eski_id}_${p.eski_id}`;
         if (p.alan_tipi === 3) {
             const secili = String(deger).split(',').filter(Boolean);
             return `<div class="d-flex flex-wrap gap-2 san-cokseçim" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}">
                 ${secenekler.map(s => `<span class="san-secenek-kutu" data-secenek-deger="${esc(s.deger)}">
-                    <input type="checkbox" class="btn-check san-cok" value="${s.eski_id}" id="${grupId}_${s.eski_id}" ${secili.includes(String(s.eski_id)) ? 'checked' : ''} onchange="satisFormKurallariUygula()"${kilit ? ' disabled' : ''} autocomplete="off">
+                    <input type="checkbox" class="btn-check ts-secim san-cok" value="${s.eski_id}" id="${grupId}_${s.eski_id}" ${secili.includes(String(s.eski_id)) ? 'checked' : ''} onchange="satisFormKurallariUygula()"${kilit ? ' disabled' : ''} autocomplete="off">
                     <label class="ts-secim-lbl" for="${grupId}_${s.eski_id}">${esc(s.deger)}</label></span>`).join('') || '<span class="text-muted small">seçenek yok</span>'}</div>`;
         }
         if (secenekler.length && secenekler.length <= 6) {
             // Belirgin seçim kartları (radio) — şartnamedeki gibi, seçili olan turuncu
+            // (ts-secim sınıfı ŞART: seçili görünüm .ts-secim:checked + .ts-secim-lbl kuralından gelir)
             return `<div class="d-flex flex-wrap gap-2 san-alan san-radyo" data-bolum="${b.eski_id}" data-parametre="${p.eski_id}" data-parametre-ad="${esc(p.ad)}">
                 ${secenekler.map(s => `<span class="san-secenek-kutu" data-secenek-deger="${esc(s.deger)}">
-                    <input type="radio" class="btn-check" name="${grupId}" value="${s.eski_id}" id="${grupId}_${s.eski_id}" ${String(deger) === String(s.eski_id) ? 'checked' : ''} onchange="satisFormKurallariUygula()"${kilit ? ' disabled' : ''} autocomplete="off">
+                    <input type="radio" class="btn-check ts-secim" name="${grupId}" value="${s.eski_id}" id="${grupId}_${s.eski_id}" ${String(deger) === String(s.eski_id) ? 'checked' : ''} onchange="satisFormKurallariUygula()"${kilit ? ' disabled' : ''} autocomplete="off">
                     <label class="ts-secim-lbl" for="${grupId}_${s.eski_id}">${esc(s.deger)}</label></span>`).join('')}</div>`;
         }
         return `<select ${ortak.replace('form-control', 'form-select')}>
@@ -6898,10 +6908,14 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
     const etiket = (p) => `${esc(p.ad)}${p.zorunlu ? ' <span class="text-danger">*</span>' : ''}` +
         (otomatik[p.ad] !== undefined ? ' <i class="bi bi-lock-fill text-secondary ms-1" title="Bu alan teklif bileşeninden otomatik gelir, buradan değiştirilemez"></i>'
             : (p.duzenlenebilir === false ? ' <i class="bi bi-lock-fill text-muted ms-1" title="Bu alan sistem tarafından belirlenir, elle değiştirilemez."></i>' : ''));
+    // ESKİ SİSTEM DAVRANIŞI (main.bundle: includedInScope && attributesByCategory):
+    // kapsam işareti YOKSA bölümün alanları gösterilmez — başlık ve kapsam kutusu kalır,
+    // işaretlenince alanlar açılır (sanKapsamDegisti).
     const alanlariCiz = (b, params) => params.length
-        ? `<div class="row g-3">${params.map(p => `
+        ? `<div class="san-bolum-alanlar ${b.kapsamda ? '' : 'd-none'}" data-bolum="${b.eski_id}">
+           <div class="row g-3">${params.map(p => `
             <div class="col-12 san-alan-kutu pb-1 border-bottom border-light" data-bolum="${b.eski_id}" data-parametre-ad="${esc(p.ad)}">
-                <label class="small fw-bold text-dark mb-1 d-block" title="${esc(p.kod || '')}">${etiket(p)}</label>${alan(b, p)}</div>`).join('')}</div>`
+                <label class="small fw-bold text-dark mb-1 d-block" title="${esc(p.kod || '')}">${etiket(p)}</label>${alan(b, p)}</div>`).join('')}</div></div>`
         : '';
     // Alt bölüm gövdesi (iç içe kutu — şartname tipografisiyle)
     const altBolumCiz = (b) => {
@@ -6912,7 +6926,7 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
              style="border-left-width:3px !important; border-color:var(--mod-satis) !important;">
           <div class="d-flex align-items-center mb-2">
             <div class="form-check mb-0 me-2">
-              <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} id="sanK${b.id}"${formKilitli ? ' disabled' : ''}>
+              <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} id="sanK${b.id}" onchange="sanKapsamDegisti(this)" title="Kapsama dahil — işaretlenince alanlar açılır"${formKilitli ? ' disabled' : ''}>
               <label class="form-check-label fw-bold small text-secondary" for="sanK${b.id}">${esc(b.ad)}</label>
             </div>
             <span class="badge bg-light text-dark border me-2">${params.length} alan</span>
@@ -6953,7 +6967,7 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
                  data-ara="${esc((b.ad + ' ' + cocuklar.map(c => c.ad).join(' ') + ' ' + params.map(p => p.ad).join(' ')).toLocaleLowerCase('tr'))}" data-kapsam="${b.kapsamda || cocuklar.some(c => c.kapsamda) ? '1' : '0'}">
               <div class="card-header bg-white border-bottom pt-3 pb-2 d-flex align-items-center">
                 <div class="form-check mb-0 me-2">
-                  <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} title="Kapsama dahil"${formKilitli ? ' disabled' : ''}>
+                  <input class="form-check-input san-kapsam" type="checkbox" data-bolum="${b.eski_id}" ${b.kapsamda ? 'checked' : ''} title="Kapsama dahil — işaretlenince alanlar açılır" onchange="sanKapsamDegisti(this)"${formKilitli ? ' disabled' : ''}>
                 </div>
                 <h6 class="fw-bold text-secondary mb-0"><i class="bi bi-collection me-2"></i>${esc(b.ad)}</h6>
                 <span class="badge bg-light text-dark border ms-2">${toplamAlan} alan</span>
@@ -6979,6 +6993,17 @@ async function satisAnalizFormAc(kalemId, kalemAd) {
         <button class="btn btn-primary btn-sm px-4 fw-bold" onclick="satisAnalizFormKaydet()"><i class="bi bi-check-lg me-1"></i>Kaydet</button>`}`;
     satisFormKurallariUygula();   // seçimlere göre ilgisiz bölüm/alan/seçenekleri gizle
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
+}
+
+// Kapsam işareti değişince bölümün alanları açılır/kapanır (eski sistem davranışı:
+// includedInScope değilse attributesByCategory hiç çizilmez). Süzgeç rozetini de tazeler.
+function sanKapsamDegisti(el) {
+    const alanlar = document.querySelector(`#sanBolumler .san-bolum-alanlar[data-bolum="${el.dataset.bolum}"]`);
+    if (alanlar) alanlar.classList.toggle('d-none', !el.checked);
+    // Kök kutunun "kapsamda" veri işareti (arama/sadece kapsamdakiler süzgeci için)
+    const kutu = el.closest('.san-bolum-kutu');
+    if (kutu) kutu.dataset.kapsam = [...kutu.querySelectorAll('.san-kapsam')].some(c => c.checked) ? '1' : '0';
+    satisFormKurallariUygula();
 }
 
 // ---- FORM KURAL MOTORU (eski configg / MANAGE_ATTRIBUTE_RULES birebir) ----

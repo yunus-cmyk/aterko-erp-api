@@ -7379,9 +7379,14 @@ async function satisAnalizOnDolum(kalemId) {
             hedefler['Konteyner Boyu (m)'] = eb[2].replace(',', '.');
         }
     }
+    // Montaj Gerekli işareti 'Uygulama' (Var/Yok) sorusunun cevabıdır — kullanıcıya sorulmaz.
+    // Uygulama=Yok yazılınca eski kural motoru Altyapı/uygulama alanlarını kendiliğinden gizler.
+    if (k.montaj_gerekli === true) hedefler['Uygulama'] = 'Var';
+    if (k.montaj_gerekli === false) hedefler['Uygulama'] = 'Yok';
     const montajGizli = k.montaj_gerekli === false;
     const otomatik = {};   // paramAd → ekranda gösterilecek metin (yalnız gerçekten dolabilenler)
     const kilitli = k.teklif_durumu === 'ONAYLANAN';
+    const kapsamaAlinacak = new Set();   // otomatik değer yazılan bölümler kapsama alınır (Genel vb.)
     for (const [paramAd, metin] of Object.entries(hedefler)) {
         const p = (await pool.query(
             'SELECT id, eski_id, alan_tipi, kategori_id FROM sat_parametreler WHERE ad=$1 AND formda_goster=true',
@@ -7402,6 +7407,7 @@ async function satisAnalizOnDolum(kalemId) {
         if (!b) continue;
         otomatik[paramAd] = metin;
         if (kilitli) continue;
+        kapsamaAlinacak.add(b.eski_id);
         // ÖNEMLİ: mevcut satır BÖLÜMDEN BAĞIMSIZ aranır — aktarılan kalemlerde değer,
         // eski sistemin bölüm kimliğine bağlıdır; bölüme göre arayınca bulunamayıp
         // MÜKERRER satır ekleniyordu (17291'de yaşandı). Parametre başına satır güncellenir,
@@ -7418,6 +7424,11 @@ async function satisAnalizOnDolum(kalemId) {
             await pool.query(`INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
                 VALUES ('TEKLIF_KALEMI',$1,$2,$3,$4)`, [parseInt(kalemId), b.eski_id, p.id, deger]);
         }
+    }
+    if (kapsamaAlinacak.size) {
+        await pool.query(`UPDATE sat_analiz_bolumler SET kapsamda=true
+            WHERE kalem_id=$1 AND eski_id = ANY($2::bigint[]) AND kapsamda=false`,
+            [parseInt(kalemId), [...kapsamaAlinacak]]);
     }
     if (montajGizli && !kilitli) {
         await pool.query(`UPDATE sat_analiz_bolumler SET kapsamda=false
