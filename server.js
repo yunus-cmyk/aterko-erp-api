@@ -8369,17 +8369,16 @@ app.get('/api/satis-sozlesme/:projeId', yetkiKontrol, async (req, res, next) => 
 });
 
 // Sözleşme onay zinciri (ProjectStateServiceImpl birebir)
-// TİCARİ İŞLER ONAYI: eski sistemde "Sözleşmeyi Onayla" ve "Revize Talep Et" düğmeleri
-// ROLE_COMM_AFFAIRS_MANAGER (Ticari İşler Müdürü) yetkisindeydi. O rolün sahibi yeni
-// sisteme aktarılmadığı için Yunus kararı (2026-07-28): yalnız ADMIN onaylar.
-// SADELEŞTİRİLMİŞ SÖZLEŞME ZİNCİRİ (Yunus 2026-07-30): Oluştur → Onay Talep → Onayla.
-// Onay YÖNETİM yetkisindedir (satis.teklif_onay TAM; teklif kabulüyle aynı kapı) ve
-// ONAY ANINDA proje Operasyon fazına geçer (durum SÖZLEŞME) — iş emri süreci başlar.
-// İmza / avans / ödeme adımları KALDIRILDI: tahsilat takibi Mali İşler'in işi,
-// projenin fazını belirlemez. Eski kayıtlardaki bu durumlar tarihsel olarak korunur.
+// SADELEŞTİRİLMİŞ SÖZLEŞME ZİNCİRİ (Yunus 2026-07-30): Oluştur → Onaya Gönder → Onayla.
+// Onay YÖNETİM yetkisindedir (satis.teklif_onay TAM; teklif kabulüyle aynı kapı — eski
+// Ticari İşler Müdürü rolünün karşılığı) ve ONAY ANINDA proje Operasyon fazına geçer
+// (durum SÖZLEŞME) — iş emri süreci başlar. İmza / avans / ödeme adımları KALDIRILDI:
+// tahsilat takibi Mali İşler'in işi, projenin fazını belirlemez. Eski kayıtlardaki bu
+// durumlar tarihsel olarak korunur. "Onaya Gönder" adımı korunur: satışçı sözleşmeyi
+// hazırlayıp kontrol ettikten sonra bilinçle yönetimin önüne koyar.
 const SOZLESME_ONAY_AKSIYONLARI = ['onayla', 'revize-talep'];
 const SOZLESME_AKSIYONLARI = {
-    'onay-talep':      { durum: PRJ.SOZLESME_HAZIR,        ad: 'Ticari işler onayı talep edildi' },
+    'onay-talep':      { durum: PRJ.SOZLESME_HAZIR,        ad: 'Sözleşme onaya gönderildi' },
     'onayla':          { durum: PRJ.SOZLESME_ONAYLANDI,    ad: 'Sözleşme onaylandı' },
     'revize-talep':    { durum: PRJ.SOZLESME_TASLAK,       ad: 'Sözleşme revize talebi' }
 };

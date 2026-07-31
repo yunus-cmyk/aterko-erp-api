@@ -6413,11 +6413,11 @@ async function satisSozlesmePaneliCiz(proje) {
         </div>`;
         return;
     }
-    // SADELEŞTİRİLMİŞ ZİNCİR (Yunus 2026-07-30): Oluştur → Onay Talep → Onayla.
+    // SADELEŞTİRİLMİŞ ZİNCİR (Yunus 2026-07-30): Oluştur → Onaya Gönder → Onayla.
     // Onayla adımı projeyi OPERASYON fazına geçirir (durum SÖZLEŞME); imza/avans/ödeme
     // adımları kaldırıldı (tahsilat takibi Mali İşler'in işi).
     const zincir = [
-        { durum: 'SOZLESMESI_TASLAK',     aksiyon: 'onay-talep',      ad: 'Ticari İşler Onayı Talep Et', renk: 'outline-primary' },
+        { durum: 'SOZLESMESI_TASLAK',     aksiyon: 'onay-talep',      ad: 'Onaya Gönder', renk: 'outline-primary' },
         { durum: 'SOZLESMESI_ONAYDA',     aksiyon: 'onayla',          ad: 'Sözleşmeyi Onayla ve Operasyona Aktar', renk: 'success' }
     ];
     const sonraki = zincir.find(z => z.durum === proje.satis_durumu);
@@ -6441,7 +6441,7 @@ async function satisSozlesmePaneliCiz(proje) {
         ${yazabilir ? `<div class="d-flex gap-2 flex-wrap">
             ${sonrakiGoster ? `<button class="btn btn-${sonraki.renk} btn-sm" onclick="satisSozlesmeAksiyon(${proje.id}, '${sonraki.aksiyon}', '${escJsAttr(sonraki.ad)}')">
                 <i class="bi bi-arrow-right-circle me-1"></i>${sonraki.ad}</button>`
-                : (sonraki ? '<span class="small text-muted"><i class="bi bi-lock me-1"></i>Ticari işler onayı bekleniyor (YÖNETİM yetkisi gerekir).</span>'
+                : (sonraki ? '<span class="small text-muted"><i class="bi bi-lock me-1"></i>Sözleşme onayı bekleniyor (YÖNETİM yetkisi gerekir).</span>'
                            : '<span class="small text-muted"><i class="bi bi-check2-circle me-1"></i>Sözleşme onaylandı — proje Operasyon fazında yürüyor.</span>')}
             ${proje.satis_durumu === 'SOZLESMESI_ONAYDA' && onaylayabilir ? `<button class="btn btn-outline-danger btn-sm"
                 onclick="satisSozlesmeAksiyon(${proje.id}, 'revize-talep', 'Sözleşme revize talebi')">
