@@ -6661,8 +6661,11 @@ app.get('/api/satis-analiz-kuyrugu', yetkiKontrol, async (req, res, next) => {
 app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
-        const p = await pool.query(`SELECT * FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
-        if (p.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı.' });
+        // KÖPRÜ (Yunus 2026-07-30, Aşama 2): faz şartı OKUMADA kaldırıldı — teslimat
+        // fazındaki projenin satış geçmişi (teklifler/analiz/sözleşme) salt okunur açılır.
+        // Yazma uçları faz korumalarını ayrıca sürdürür.
+        const p = await pool.query(`SELECT * FROM projeler WHERE id=$1`, [id]);
+        if (p.rowCount === 0) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
         const teklifler = await pool.query(`
             SELECT t.id, t.teklif_no, t.teklif_tarihi, t.durum, t.para_birimi, t.genel_toplam,
                    m.ad AS musteri_adi
@@ -8209,6 +8212,12 @@ app.post('/api/satis-teklif-revize', yetkiKontrol, izinGerekli('satis.teklif', '
         const t = await client.query('SELECT * FROM sat_teklifler WHERE id=$1', [id]);
         if (!t.rowCount) return res.json({ ok: false, hata: 'Teklif bulunamadı.' });
         const e = t.rows[0];
+        // KÖPRÜ (Aşama 2): satışı kapanmış (teslimat fazındaki) projede revize başlatılamaz —
+        // satış geçmişi salt okunur arşivdir
+        if (e.proje_id) {
+            const pf = (await client.query(`SELECT COALESCE(faz,'TESLIMAT') AS faz FROM projeler WHERE id=$1`, [e.proje_id])).rows[0];
+            if (pf && pf.faz !== 'SATIS') return res.json({ ok: false, hata: 'Bu projenin satış süreci tamamlandı — arşivdeki teklif revize edilemez.' });
+        }
         await client.query('BEGIN');
         await client.query(`UPDATE sat_teklifler SET durum='REVIZE', guncelleme=now() WHERE id=$1`, [id]);
         let yeniNo = null;
@@ -8517,8 +8526,10 @@ app.post('/api/satis-proje-teklif-olustur', yetkiKontrol, izinGerekli('satis.tek
     const client = await pool.connect();
     try {
         const projeId = parseInt(req.body.proje_id);
-        const p = (await client.query('SELECT proje_kodu, proje_adi, sat_musteri_id FROM projeler WHERE id=$1', [projeId])).rows[0];
+        const p = (await client.query(`SELECT proje_kodu, proje_adi, sat_musteri_id, COALESCE(faz,'TESLIMAT') AS faz FROM projeler WHERE id=$1`, [projeId])).rows[0];
         if (!p) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
+        // KÖPRÜ (Aşama 2): satışı kapanmış (teslimat fazındaki) projede yeni teklif açılamaz
+        if (p.faz !== 'SATIS') return res.json({ ok: false, hata: 'Bu projenin satış süreci tamamlandı — arşivde yeni teklif açılamaz.' });
         if (!p.sat_musteri_id) return res.json({ ok: false, hata: 'Projenin müşterisi tanımlı değil; önce müşteriyi bağlayın.' });
         await client.query('BEGIN');
         const sira = await satisKodSirasiAl(client, projeId, 'teklif');

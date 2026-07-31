@@ -337,13 +337,17 @@
        Kimlikler (nav-projeler vb.) BİLEREK korunur: izin görünürlüğü ve aktif işaretleme
        aynı kimliklerle çalışmaya devam eder. -->
   <div class="tabs-box py-1 px-2 yatay-kaydir d-none" id="operasyonSekmeleri" style="background:#f1f3f5; border-bottom:1px solid #e0e3e7;">
-    <ul class="nav nav-pills nav-sm">
-      <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-1"></i>Projeler</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3 text-mod-uretim" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-1"></i>Üretim</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-1"></i>Sevkiyat</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-montaj" onclick="setTab('montaj')"><i class="bi bi-wrench-adjustable me-1"></i>Montaj</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-1"></i>Bina Listeleri</a></li>
-    </ul>
+    <div class="d-flex align-items-center gap-3">
+      <ul class="nav nav-pills nav-sm">
+        <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-1"></i>Projeler</a></li>
+        <li class="nav-item"><a class="nav-link py-1 px-3 text-mod-uretim" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-1"></i>Üretim</a></li>
+        <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-1"></i>Sevkiyat</a></li>
+        <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-montaj" onclick="setTab('montaj')"><i class="bi bi-wrench-adjustable me-1"></i>Montaj</a></li>
+        <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-1"></i>Bina Listeleri</a></li>
+      </ul>
+      <!-- AÇIK PROJE SEKMELERİ (Satış deseni): listeden tıklanan proje burada sekme olur -->
+      <ul class="nav nav-pills nav-sm" id="opProjeSekmeleri"></ul>
+    </div>
   </div>
 
   <div class="content-area">
@@ -560,6 +564,8 @@
           <button class="btn btn-outline-secondary btn-sm" onclick="satisProjeSekmesiKapat(window.spdAktifId)">
             <i class="bi bi-x-lg me-1"></i>Sekmeyi Kapat</button>
         </div>
+        <!-- Operasyon köprüsü (Aşama 2): satışı tamamlanmış projede sayfa SALT OKUNUR arşivdir -->
+        <div id="spdArsivBantS" class="alert alert-secondary py-2 small d-none mb-2"></div>
         <ul class="nav nav-pills nav-sm gap-1 mb-2" id="spdSekmelerS" style="--bs-nav-pills-link-active-bg: var(--mod-satis);"></ul>
         <div id="spdGovdeS"></div>
         <div class="d-flex justify-content-end flex-wrap gap-2 mt-3 pt-3 border-top" id="spdAltButonlarS"></div>
@@ -4581,22 +4587,28 @@ STK-002		50	adet
         </div>
     </div>
 
-    <div class="modal fade" id="modalProjeDetay" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header py-3 bg-light border-bottom">
-                    <h5 class="modal-title fw-bold text-dark me-3" id="pdBaslik">
+    <!-- OPERASYON > PROJE DETAYI (Yunus 2026-07-30 — Aşama 2): eskiden modal pencereydi,
+         artık Satış'taki açık-sekme deseniyle SAYFA İÇİ paneldir. Kimlikler (pd*) korunur;
+         şartname/iş emri pencereleri artık bu sayfanın ÜSTÜNE açılır, kapat-geri dön dansı yok. -->
+    <div class="d-none p-3" id="modalProjeDetay">
+        <div>
+            <div class="card border-0 shadow-lg">
+                <div class="card-header py-3 bg-light border-bottom d-flex align-items-center">
+                    <h5 class="mb-0 fw-bold text-dark me-3" id="pdBaslik">
                         <i class="bi bi-folder2-open me-2 text-primary"></i>Proje Detayı
                     </h5>
                     <div class="ms-auto d-flex gap-2 align-items-center">
                         <span id="pdOnayAlan"></span>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="pdSatisGecmisiBtn" title="Bu projenin satış sürecini (teklifler, analiz, sözleşme) salt okunur aç" onclick="if(pdAktifProjeId) satisGecmisineGit(pdAktifProjeId)">
+                            <i class="bi bi-briefcase me-1"></i> Satış Geçmişi
+                        </button>
                         <button type="button" class="btn btn-primary btn-sm fw-bold" id="pdDuzenleBtn" onclick="if(pdAktifProjeId) openProjeDuzenle(pdAktifProjeId)">
                             <i class="bi bi-pencil-square me-1"></i> Düzenle
                         </button>
-                        <button type="button" class="btn-close btn-close" data-bs-dismiss="modal" aria-label="Kapat"></button>
+                        <button type="button" class="btn-close" aria-label="Sekmeyi kapat" title="Sekmeyi kapat" onclick="if(pdAktifProjeId) opProjeSekmesiKapat(pdAktifProjeId)"></button>
                     </div>
                 </div>
-                <div class="modal-body p-4" style="background-color: #f8f9fa;">
+                <div class="p-4" style="background-color: #f8f9fa;">
 
                     <div class="row g-3 mb-4" id="pdAnaBilgiler">
                         </div>
@@ -6033,6 +6045,16 @@ function satisProjeSayfasiniCiz(projeId) {
     window.spdSekme = k.icSekme || 'genel';
     const p = k.veri.proje;
     spdEl('spdBaslik').innerText = `[${p.proje_kodu}] ${p.proje_adi || ''}`;
+    // KÖPRÜ (Aşama 2): satışı tamamlanmış (faz=TESLIMAT) proje burada SALT OKUNUR
+    // satış arşividir — bant gösterilir, iş Operasyon'da sürer.
+    window.spdArsiv = (p.faz || 'SATIS') !== 'SATIS';
+    const bant = spdEl('spdArsivBant');
+    if (bant) {
+        bant.classList.toggle('d-none', !window.spdArsiv);
+        if (window.spdArsiv) bant.innerHTML = `<i class="bi bi-archive me-1"></i>
+            Bu projenin <b>satış süreci tamamlandı</b> — burası salt okunur satış arşividir; proje artık <b>Operasyon</b>'da yönetiliyor.
+            <button class="btn btn-outline-primary btn-sm py-0 ms-2" onclick="openProjeDetay(${p.id})"><i class="bi bi-buildings me-1"></i>Operasyon'da Aç</button>`;
+    }
     satisProjeIcSekmeleriCiz(k.veri);
     satisProjeSekmeSec(window.spdSekme);
 }
@@ -6144,10 +6166,11 @@ function satisProjeAksiyonlariCiz(sekme) {
         }
         // FAZ 1: "Sözleşmeye Dönüştür" düğmesi kaldırıldı — proje, sözleşme zincirinin
         // son adımı olan AVANS tahsilatıyla Projeler modülüne OTOMATİK geçer.
-        sag = `<button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc(window.spdAktifId)">
+        // KÖPRÜ (Aşama 2): satış arşivinde (faz=TESLIMAT) yazma düğmeleri üretilmez.
+        sag = window.spdArsiv ? '' : `<button class="btn btn-primary btn-sm px-4 fw-bold" data-izin-modul="satis.proje" data-izin-seviye="YAZMA" onclick="satisProjeFormAc(window.spdAktifId)">
                  <i class="bi bi-pencil-square me-1"></i>Düzenle</button>`;
     } else if (sekme === 'teklifler') {
-        sag = `<button class="btn btn-primary btn-sm px-3 fw-bold" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisProjedenTeklifAc(window.spdAktifId)">
+        sag = window.spdArsiv ? '' : `<button class="btn btn-primary btn-sm px-3 fw-bold" data-izin-modul="satis.teklif" data-izin-seviye="YAZMA" onclick="satisProjedenTeklifAc(window.spdAktifId)">
                  <i class="bi bi-file-earmark-plus me-1"></i>Teklif Oluştur</button>`;
     } else if (sekme === 'analiz') {
         sol = `<span class="small text-muted me-auto"><i class="bi bi-info-circle me-1"></i>Analiz işlemleri satırlardaki düğmelerden yapılır.</span>`;
@@ -11272,7 +11295,7 @@ function setTab(tab) {
     if (operasyonda) document.getElementById('nav-operasyon')?.classList.add('active');
     
     // 2. Sahnede açık olan tüm ekranları temizle (Gizle)
-    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea','gorevlerArea','maliArea','satisArea'].forEach(id => {
+    ['mainContent','stokArea','urunListesiArea','satinalmaArea','projeArea','modalProjeDetay','sevkiyatArea','uretimArea','montajArea','ozetArea','tedarikciArea','anasayfaArea','auditArea','formtanimArea','tssablonArea','kullanicilarArea','rollerArea','bildirimAyarArea','gorevlerArea','maliArea','satisArea'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.classList.add("d-none");
     });
@@ -11311,6 +11334,10 @@ function setTab(tab) {
         maliSekmeInit();
     } else if (tab === 'projeler') {
         document.getElementById("projeArea").classList.remove("d-none");
+        // Açık sekme deseni: Projeler alt sekmesine basmak LİSTEYE döner; açık proje
+        // sekmeleri durur (openProjeDetay bu çağrıdan SONRA aktif sekmeyi yeniden kurar)
+        if (typeof _opAktifProje !== 'undefined') { _opAktifProje = null; opProjeSekmeleriCiz(); }
+        rotaYaz('projeler');
         fetchProjeler();
     } else if (tab === 'sevkiyat') {
         document.getElementById("sevkiyatArea").classList.remove("d-none");
@@ -18257,19 +18284,88 @@ async function pdOnayGeriAl(projeId) {
     else showToast((r && r.hata) || 'Geri alınamadı.', 'error');
 }
 
-// 6. Proje Detayını Supabase'den Çeker ve Modalı Açar
+// 6. Proje Detayı — AÇIK SEKME DESENİ (Yunus 2026-07-30, Aşama 2, Satış'takiyle aynı):
+// listeden tıklanan proje Operasyon şeridinde kendi sekmesinde SAYFA İÇİ açılır.
+let opAcikProjeler = [];      // {id, kod, ad}
+let _opAktifProje = null;     // null = liste görünümü
+const OP_MAX_PROJE_SEKME = 4;
+
+function opProjeSekmeleriCiz() {
+    const serit = document.getElementById('opProjeSekmeleri');
+    if (!serit) return;
+    serit.innerHTML = opAcikProjeler.map(k => `
+        <li class="nav-item">
+            <a class="nav-link py-1 ps-3 pe-2 d-flex align-items-center gap-2 ${_opAktifProje === k.id ? 'active' : ''}"
+               onclick="opProjeSekmesineGec(${k.id})" title="${esc(k.ad || '')}">
+                <span>${esc(k.kod || k.id)}</span>
+                <i class="bi bi-x-lg" style="font-size:0.7rem;" title="Sekmeyi kapat"
+                   onclick="event.stopPropagation(); opProjeSekmesiKapat(${k.id});"></i>
+            </a>
+        </li>`).join('');
+}
+
+// Liste ↔ detay görünümü: detaydayken proje listesi gizlenir, panel görünür
+function opDetayGorunumUygula() {
+    const panel = document.getElementById('modalProjeDetay');
+    const liste = document.getElementById('projeArea');
+    const detayda = !!_opAktifProje;
+    if (panel) panel.classList.toggle('d-none', !detayda);
+    if (liste && detayda) liste.classList.add('d-none');
+    opProjeSekmeleriCiz();
+}
+
+function opProjeSekmesineGec(projeId) { openProjeDetay(projeId); }
+
+function opProjeSekmesiKapat(projeId) {
+    opAcikProjeler = opAcikProjeler.filter(x => x.id !== projeId);
+    if (_opAktifProje === projeId) {
+        _opAktifProje = null;
+        pdAktifProjeId = null;
+        setTab('projeler');   // listeye dön (rota dahil)
+    } else {
+        opProjeSekmeleriCiz();
+    }
+}
+
+// Operasyon → Satış köprüsü: projenin satış sürecini (teklifler/analiz/sözleşme) aç
+function satisGecmisineGit(projeId) {
+    setTab('satis');
+    satisProjeSekmesiAc(projeId);
+}
+
 function openProjeDetay(projeId) {
+    projeId = parseInt(projeId);
+    // Operasyon > Projeler bağlamını garanti et (başka modüldeyken çağrılabilir: rota, görevler, satış yönlendirmesi)
+    setTab('projeler');
     pdAktifProjeId = projeId;
+    _opAktifProje = projeId;
     rotaYaz('proje/' + projeId);   // paylaşılabilir detay linki
+    // Panel bir modal DEĞİL artık — içerik alanında dursun (ilk çağrıda taşınır, idempotent)
+    const panel = document.getElementById('modalProjeDetay');
+    const alan = document.querySelector('.content-area');
+    if (panel && alan && panel.parentElement !== alan) alan.appendChild(panel);
     showLoading();
     secureFetch(`/proje-detay/${projeId}`).then(res => {
         hideLoading();
         if(res.ok) {
             window.projeFiyatGizli = !!res.fiyat_gizli;
+            // Sekme kaydı (kod/ad başlık için)
+            let kayit = opAcikProjeler.find(x => x.id === projeId);
+            if (!kayit) {
+                kayit = { id: projeId, kod: res.proje.proje_kodu, ad: res.proje.proje_adi };
+                opAcikProjeler.push(kayit);
+                if (opAcikProjeler.length > OP_MAX_PROJE_SEKME) {
+                    const dusen = opAcikProjeler.shift();
+                    showToast(`En fazla ${OP_MAX_PROJE_SEKME} proje sekmesi açık kalır; ${dusen.kod} kapatıldı.`, 'info');
+                }
+            } else { kayit.kod = res.proje.proje_kodu; kayit.ad = res.proje.proje_adi; }
             renderProjeDetay(res.proje, res.teslimatlar);
-            const myModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalProjeDetay'));
-            myModal.show();
-        } else { showToast(res.hata, "error"); }
+            opDetayGorunumUygula();
+        } else {
+            showToast(res.hata, "error");
+            _opAktifProje = null;
+            opDetayGorunumUygula();
+        }
     });
 }
 
