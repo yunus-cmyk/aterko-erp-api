@@ -18984,9 +18984,28 @@ function addTeslimatRow(data) {
                 <label class="form-label"><i class="bi bi-calendar-week me-1"></i>Sevkiyat Tarihleri</label>
                 <div class="t-sevkiyat-tarihleri border rounded p-2 bg-light"></div>
             </div>
+
+            <!-- TAKİP HEDEF TARİHLERİ (Yunus 2026-07-30): montaj başlangıcı ilk sevkiyatın
+                 ertesi günü otomatik hesaplanır; bitiş elle girilir (sahada teslim hedefi).
+                 Gecikme uyarıları ileride bu tarihlerden okunacak. -->
+            <div class="col-md-6 t-montaj-tarih-kutu ${d.montaj_gerekli ? '' : 'd-none'}">
+                <label class="form-label"><i class="bi bi-calendar-check me-1"></i>Montaj Başlangıcı
+                    <span class="text-muted small">(ilk sevkiyat + 1 gün)</span></label>
+                <input type="date" class="form-control t-montaj-baslangici bg-light" value="${d.montaj_baslangici ? String(d.montaj_baslangici).slice(0,10) : ''}" readonly>
+            </div>
+            <div class="col-md-6 t-montaj-tarih-kutu ${d.montaj_gerekli ? '' : 'd-none'}">
+                <label class="form-label"><i class="bi bi-flag me-1"></i>Montaj Bitiş (hedef)</label>
+                <input type="date" class="form-control t-montaj-bitis" value="${d.montaj_bitis ? String(d.montaj_bitis).slice(0,10) : ''}">
+            </div>
         </div>
     `;
     container.appendChild(div);
+
+    // Montaj hedef tarihleri yalnız montaj gerekliyse görünür (işaret değişince anında)
+    const mgChk = div.querySelector('.t-montaj-gerekli');
+    if (mgChk) mgChk.addEventListener('change', () => {
+        div.querySelectorAll('.t-montaj-tarih-kutu').forEach(k => k.classList.toggle('d-none', !mgChk.checked));
+    });
 
     // Tür seçiliyse koşulları uygula ve tip seçeneklerini doldur
     const turSelect = div.querySelector('.t-tur');
@@ -19140,6 +19159,8 @@ function saveProjeGelis() {
             sevkiyat_baslangici: ilkTarih,
             bina_yeri: row.querySelector(".t-yer").value.trim(),
             montaj_gerekli: row.querySelector(".t-montaj-gerekli")?.checked || false,
+            // Montaj başlangıcı sunucuda ilk sevkiyat + 1 gün olarak türetilir; bitiş elle
+            montaj_bitis: row.querySelector(".t-montaj-bitis")?.value || null,
             kdvsiz_tutar: parseFloat(row.querySelector(".t-tutar").value) || 0,
             sevkiyatlar: sevkiyatlar
         };

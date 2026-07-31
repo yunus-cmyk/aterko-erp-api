@@ -5,7 +5,13 @@ const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+// DATE (saat içermeyen tarih) alanlarını METİN olarak oku (Yunus 2026-07-30 bulgusu):
+// pg sürücüsü DATE'i yerel saatte Date nesnesine çeviriyor, res.json() de UTC'ye
+// serileştiriyordu → '2026-08-20' alanı istemciye '2026-08-19T21:00:00Z' olarak
+// iniyor, formda bir GÜN GERİ görünüyordu (her kaydetmede bir gün daha kayma riski).
+// Takvim tarihinin saat dilimi olmaz; olduğu gibi taşınır. (1082 = DATE)
+types.setTypeParser(1082, v => v);
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const { OAuth2Client } = require('google-auth-library');
@@ -457,16 +463,25 @@ app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
 
         if (teslimatlar && teslimatlar.length > 0) {
             for (const t of teslimatlar) {
+                // Sevkiyat/montaj hedefleri proje-guncelle ile AYNI kuralla türetilir
+                // (Yunus 2026-07-30): montaj, ilk sevkiyatın ertesi günü başlar.
+                const sevkBas = (Array.isArray(t.sevkiyatlar) && t.sevkiyatlar.length > 0)
+                    ? t.sevkiyatlar[0].tarih || null : (t.sevkiyat_baslangici || null);
+                const montajBas = (t.montaj_gerekli && sevkBas)
+                    ? new Date(new Date(sevkBas).getTime() + 86400000).toISOString().slice(0, 10) : null;
                 await client.query(`
-                    INSERT INTO proje_teslimatlari 
-                    (proje_id, bina_adi, bina_turu, bina_tipi, kat_yuksekligi, kat_adedi, bina_adedi, 
-                     konteyner_ebadi, konteyner_miktari, dis_duvar_kesiti, ic_duvar_kesiti, 
-                     buyukluk_m2, sevkiyat_baslangici, bina_yeri, kdvsiz_tutar)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    INSERT INTO proje_teslimatlari
+                    (proje_id, bina_adi, bina_turu, bina_tipi, kat_yuksekligi, kat_adedi, bina_adedi,
+                     konteyner_ebadi, konteyner_miktari, dis_duvar_kesiti, ic_duvar_kesiti,
+                     buyukluk_m2, sevkiyat_baslangici, bina_yeri, kdvsiz_tutar,
+                     montaj_gerekli, montaj_baslangici, montaj_bitis, ek_veriler)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                 `, [
                     yeniProjeId, t.bina_adi, t.bina_turu, t.bina_tipi, t.kat_yuksekligi, t.kat_adedi, t.bina_adedi,
                     t.konteyner_ebadi, t.konteyner_miktari, t.dis_duvar_kesiti, t.ic_duvar_kesiti,
-                    parseFloat(t.buyukluk_m2 || 0), t.sevkiyat_baslangici || null, t.bina_yeri, parseFloat(t.kdvsiz_tutar || 0)
+                    parseFloat(t.buyukluk_m2 || 0), sevkBas, t.bina_yeri, parseFloat(t.kdvsiz_tutar || 0),
+                    !!t.montaj_gerekli, montajBas, (t.montaj_gerekli ? (t.montaj_bitis || null) : null),
+                    JSON.stringify(Array.isArray(t.sevkiyatlar) && t.sevkiyatlar.length ? { sevkiyatlar: t.sevkiyatlar } : {})
                 ]);
             }
         }
@@ -671,6 +686,13 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
             const sevkiyatBaslangici = (Array.isArray(t.sevkiyatlar) && t.sevkiyatlar.length > 0)
                 ? t.sevkiyatlar[0].tarih || null
                 : (t.sevkiyat_baslangici || null);
+            // TAKİP HEDEFLERİ (Yunus 2026-07-30): sevkiyat başlangıcı = üretimin ilk
+            // ürünleri bitirdiği gün; montaj onun ERTESİ GÜNÜ başlar (otomatik türetilir).
+            // Montaj bitiş elle girilir. Montaj gerekmiyorsa ikisi de boş kalır.
+            const montajBaslangici = (t.montaj_gerekli && sevkiyatBaslangici)
+                ? new Date(new Date(sevkiyatBaslangici).getTime() + 86400000).toISOString().slice(0, 10)
+                : null;
+            const montajBitis = t.montaj_gerekli ? (t.montaj_bitis || null) : null;
 
             if (t.id && mevcutIds.has(t.id)) {
                 // İŞ EMRİ KİLİDİ: aktif iş emri varken şartnameye giren alanlar değiştirilemez —
@@ -696,7 +718,7 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                         dis_duvar_kesiti=$9, ic_duvar_kesiti=$10,
                         buyukluk_m2=$11, sevkiyat_baslangici=$12,
                         bina_yeri=$13, kdvsiz_tutar=$14, ek_veriler=$15,
-                        montaj_gerekli=$16
+                        montaj_gerekli=$16, montaj_baslangici=$18, montaj_bitis=$19
                     WHERE id=$17
                 `, [
                     t.bina_adi, t.bina_turu, t.bina_tipi,
@@ -705,7 +727,8 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                     t.dis_duvar_kesiti || null, t.ic_duvar_kesiti || null,
                     parseFloat(t.buyukluk_m2) || null, sevkiyatBaslangici,
                     t.bina_yeri || null, parseFloat(t.kdvsiz_tutar) || 0,
-                    JSON.stringify(birlesik), !!t.montaj_gerekli, t.id
+                    JSON.stringify(birlesik), !!t.montaj_gerekli, t.id,
+                    montajBaslangici, montajBitis
                 ]);
                 gonderilenIds.add(t.id);
             } else {
@@ -714,8 +737,9 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                     INSERT INTO proje_teslimatlari
                     (proje_id, bina_adi, bina_turu, bina_tipi, kat_yuksekligi, kat_adedi, bina_adedi,
                      konteyner_ebadi, konteyner_miktari, dis_duvar_kesiti, ic_duvar_kesiti,
-                     buyukluk_m2, sevkiyat_baslangici, bina_yeri, kdvsiz_tutar, ek_veriler, montaj_gerekli)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                     buyukluk_m2, sevkiyat_baslangici, bina_yeri, kdvsiz_tutar, ek_veriler, montaj_gerekli,
+                     montaj_baslangici, montaj_bitis)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
                 `, [
                     proje.id, t.bina_adi, t.bina_turu, t.bina_tipi,
                     t.kat_yuksekligi || null, t.kat_adedi || null, parseInt(t.bina_adedi) || null,
@@ -723,7 +747,8 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
                     t.dis_duvar_kesiti || null, t.ic_duvar_kesiti || null,
                     parseFloat(t.buyukluk_m2) || null, sevkiyatBaslangici,
                     t.bina_yeri || null, parseFloat(t.kdvsiz_tutar) || 0,
-                    JSON.stringify(ekVeriler), !!t.montaj_gerekli
+                    JSON.stringify(ekVeriler), !!t.montaj_gerekli,
+                    montajBaslangici, montajBitis
                 ]);
             }
         }
@@ -759,6 +784,22 @@ app.post('/api/proje-guncelle', yetkiKontrol, async (req, res, next) => {
     }
 });
 
+// TAKİP EKRANI VERİ İZİ (Yunus 2026-07-30): teslimat bir aşamaya İLK KEZ girdiğinde
+// tarih + kim damgalanır. İdempotent: aynı aşamaya geri dönülürse ilk giriş korunur
+// (yolculuğun başlangıç anları aranır, son değişiklik değil). Bu izler olmadan
+// ilerleme/gecikme geçmişe dönük hesaplanamaz.
+async function teslimatAsamaDamgala(sorgulayici, teslimatId, yeniDurum, email) {
+    if (!teslimatId || !yeniDurum) return;
+    try {
+        await sorgulayici.query(`
+            UPDATE proje_teslimatlari
+            SET asama_damgalari = COALESCE(asama_damgalari, '{}'::jsonb) ||
+                jsonb_build_object($2::text, jsonb_build_object('tarih', now()::text, 'kim', $3::text))
+            WHERE id = $1 AND NOT (COALESCE(asama_damgalari, '{}'::jsonb) ? $2::text)`,
+            [parseInt(teslimatId), yeniDurum, email || null]);
+    } catch (e) { /* damga yan üründür — asıl işlemi asla düşürmez */ }
+}
+
 // YENİ: Teslimat (Bina) Durumunu Manuel Güncelleme (İPTAL, BEKLEMEDE vb. için)
 app.post('/api/teslimat-durum-guncelle', yetkiKontrol, async (req, res, next) => {
     try {
@@ -769,6 +810,7 @@ app.post('/api/teslimat-durum-guncelle', yetkiKontrol, async (req, res, next) =>
         if (p.rows[0]?.durum === 'TASLAK')
             return res.json({ ok: false, hata: 'Proje TASLAK aşamasında — teslimat durumları proje ADMIN onayı alıp SÖZLEŞME olduktan sonra yönetilir.' });
         await pool.query("UPDATE proje_teslimatlari SET durum = $1 WHERE id = $2", [yeni_durum, teslimat_id]);
+        await teslimatAsamaDamgala(pool, teslimat_id, yeni_durum, req.user.email);
         res.json({ ok: true, mesaj: "Bina statüsü başarıyla güncellendi." });
     } catch (error) { next(error); }
 });
@@ -5090,6 +5132,7 @@ app.post('/api/is-emri-olustur', yetkiKontrol, async (req, res, next) => {
              JSON.stringify(snapshot), pdfBuffer, req.user.email, req.user.adSoyad]);
         // Erken aşamadaki teslimatı 'İŞ EMRİ' aşamasına çek (ileri aşamayı geriletme)
         await pool.query("UPDATE proje_teslimatlari SET durum='İŞ EMRİ' WHERE id=$1 AND durum IN ('BEKLEMEDE','SÖZLEŞME')", [teslimat_id]);
+        await teslimatAsamaDamgala(pool, teslimat_id, 'İŞ EMRİ', req.user.email);
         await auditLogla(req, { eylem: 'CREATE', tablo: 'is_emirleri', kayit_id: ins.rows[0].id, kayit_no: emir_no, ozet: `İş emri hazırlandı (${t.bina_adi}) — şartname kilitlendi` });
         // ADMIN'e "onay bekleyen iş emri" bildirimi (yayınlama yetkisi yalnız ADMIN'de)
         await bildirimGonder('IS_EMRI_ONAY_BEKLIYOR', {
@@ -5141,6 +5184,7 @@ app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
         const s = ie.form_snapshot || {};
         // İş emri yayınlandı → projelendirme başlar
         await pool.query("UPDATE proje_teslimatlari SET durum='PROJE' WHERE id=$1 AND durum IN ('BEKLEMEDE','SÖZLEŞME','İŞ EMRİ')", [ie.teslimat_id]);
+        await teslimatAsamaDamgala(pool, ie.teslimat_id, 'PROJE', req.user.email);
         await auditLogla(req, { eylem: 'APPROVE', tablo: 'is_emirleri', kayit_id: ie.id, kayit_no: ie.emir_no, ozet: 'İş emri YAYINLANDI — teslimat PROJE aşamasına geçti' });
         await bildirimGonder('IS_EMRI_YAYINLANDI', {
             konu: `Aterko Workspace - İş Emri yayınlandı (${ie.emir_no})`,
@@ -11961,6 +12005,14 @@ async function semaGuvence() {
             ADD COLUMN IF NOT EXISTS dokum_uretim TIMESTAMPTZ`).catch(() => {});
         await pool.query(`ALTER TABLE proje_teslimatlari
             ADD COLUMN IF NOT EXISTS teklif_kalem_id INTEGER`).catch(() => {});
+        // TAKİP EKRANI VERİ İZLERİ (Yunus 2026-07-30): ilerleme geçmişe dönük
+        // hesaplanamaz — aşamaya ilk giriş anları ve montaj hedef tarihleri BUGÜNDEN
+        // biriktirilir ki takip ekranı yazıldığında ilk açılışta dolu gelsin.
+        // asama_damgalari: {"ÜRETİM": {"tarih": "...", "kim": "..."}, ...}
+        await pool.query(`ALTER TABLE proje_teslimatlari
+            ADD COLUMN IF NOT EXISTS asama_damgalari JSONB,
+            ADD COLUMN IF NOT EXISTS montaj_baslangici DATE,
+            ADD COLUMN IF NOT EXISTS montaj_bitis DATE`).catch(() => {});
 
         // Müşteri satış durumu (customer_status) — AKTIF/PASIF'ten AYRI bir alan:
         // Potansiyel / Görüşme Yapılmış / Teklif Sürecinde / Satış Gerçekleşmiş
