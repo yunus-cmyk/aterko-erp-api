@@ -6413,21 +6413,19 @@ async function satisSozlesmePaneliCiz(proje) {
         </div>`;
         return;
     }
-    // Zincirdeki bir sonraki adım (eski durum sırası birebir)
+    // SADELEŞTİRİLMİŞ ZİNCİR (Yunus 2026-07-30): Oluştur → Onay Talep → Onayla.
+    // Onayla adımı projeyi OPERASYON fazına geçirir (durum SÖZLEŞME); imza/avans/ödeme
+    // adımları kaldırıldı (tahsilat takibi Mali İşler'in işi).
     const zincir = [
         { durum: 'SOZLESMESI_TASLAK',     aksiyon: 'onay-talep',      ad: 'Ticari İşler Onayı Talep Et', renk: 'outline-primary' },
-        { durum: 'SOZLESMESI_ONAYDA',     aksiyon: 'onayla',          ad: 'Sözleşmeyi Onayla',           renk: 'success' },
-        { durum: 'SOZLESMESI_ONAYLANAN',  aksiyon: 'imzalandi',       ad: 'Müşteri İmzaladı',            renk: 'success' },
-        { durum: 'SOZLESMESI_IMZALANAN',  aksiyon: 'avans-alindi',    ad: 'Avans Tahsil Edildi',         renk: 'success' },
-        { durum: 'AVANS_ODEMESI_ALINAN',  aksiyon: 'odemeler-alindi', ad: 'Tüm Ödemeler Tahsil Edildi',  renk: 'outline-success' }
+        { durum: 'SOZLESMESI_ONAYDA',     aksiyon: 'onayla',          ad: 'Sözleşmeyi Onayla ve Operasyona Aktar', renk: 'success' }
     ];
     const sonraki = zincir.find(z => z.durum === proje.satis_durumu);
     const yazabilir = izinVarMi('satis.proje', 'YAZMA');
-    // TİCARİ İŞLER ONAYI (eski Ticari İşler Müdürü yetkisi): "Sözleşmeyi Onayla" ve
-    // "Revize Talep Et" yalnız ADMIN'de — o rolün sahibi yeni sisteme aktarılmadı.
-    const ticariOnayAdimi = ['onayla', 'revize-talep'];
-    const adminMiKullanici = adminRolMu();
-    const sonrakiGoster = sonraki && (!ticariOnayAdimi.includes(sonraki.aksiyon) || adminMiKullanici);
+    // ONAY YETKİSİ: YÖNETİM (teklif kabulüyle aynı kapı) — ADMIN de kapsanır
+    const onayAdimi = ['onayla', 'revize-talep'];
+    const onaylayabilir = izinVarMi('satis.teklif_onay', 'TAM') || adminRolMu();
+    const sonrakiGoster = sonraki && (!onayAdimi.includes(sonraki.aksiyon) || onaylayabilir);
     alan.innerHTML = `
         <div class="row g-3 mb-3">
             ${detayKutusu('Sözleşme', 'file-earmark-check', 'col-12', [
@@ -6443,9 +6441,9 @@ async function satisSozlesmePaneliCiz(proje) {
         ${yazabilir ? `<div class="d-flex gap-2 flex-wrap">
             ${sonrakiGoster ? `<button class="btn btn-${sonraki.renk} btn-sm" onclick="satisSozlesmeAksiyon(${proje.id}, '${sonraki.aksiyon}', '${escJsAttr(sonraki.ad)}')">
                 <i class="bi bi-arrow-right-circle me-1"></i>${sonraki.ad}</button>`
-                : (sonraki ? '<span class="small text-muted"><i class="bi bi-lock me-1"></i>Ticari işler onayı bekleniyor (ADMIN yetkisi gerekir).</span>'
-                           : '<span class="small text-muted">Sözleşme zinciri tamamlandı.</span>')}
-            ${proje.satis_durumu === 'SOZLESMESI_ONAYDA' && adminMiKullanici ? `<button class="btn btn-outline-danger btn-sm"
+                : (sonraki ? '<span class="small text-muted"><i class="bi bi-lock me-1"></i>Ticari işler onayı bekleniyor (YÖNETİM yetkisi gerekir).</span>'
+                           : '<span class="small text-muted"><i class="bi bi-check2-circle me-1"></i>Sözleşme onaylandı — proje Operasyon fazında yürüyor.</span>')}
+            ${proje.satis_durumu === 'SOZLESMESI_ONAYDA' && onaylayabilir ? `<button class="btn btn-outline-danger btn-sm"
                 onclick="satisSozlesmeAksiyon(${proje.id}, 'revize-talep', 'Sözleşme revize talebi')">
                 <i class="bi bi-arrow-counterclockwise me-1"></i>Revize Talep Et</button>` : ''}
             ${izinVarMi('satis.teklif', 'TAM') ? `

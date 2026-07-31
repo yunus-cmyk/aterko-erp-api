@@ -6818,14 +6818,15 @@ app.post('/api/satis-teslimat-guncelle', yetkiKontrol, izinGerekli('satis.proje'
 app.post('/api/satis-proje-donustur', yetkiKontrol, async (req, res, next) => {
     try {
         if (!adminMi(req)) return res.status(403).json({ ok: false, izin_hatasi: true,
-            hata: 'Projeler modülüne geçiş otomatiktir (avans tahsilatıyla). Elle geçiş yalnız ADMIN yedeğidir.' });
+            hata: 'Operasyon fazına geçiş otomatiktir (sözleşme onayıyla). Elle geçiş yalnız ADMIN yedeğidir.' });
         const { id } = req.body;
         const eskiR = await pool.query(`SELECT proje_kodu, proje_adi, satis_durumu FROM projeler WHERE id=$1 AND COALESCE(faz,'TESLIMAT')='SATIS'`, [id]);
         if (eskiR.rowCount === 0) return res.json({ ok: false, hata: 'Satış projesi bulunamadı.' });
-        await pool.query(`UPDATE projeler SET faz='TESLIMAT', durum='TASLAK' WHERE id=$1`, [id]);
+        // Normal akışla AYNI durumla düşer (2026-07-30): Operasyon'a gelen proje SÖZLEŞME'dir
+        await pool.query(`UPDATE projeler SET faz='TESLIMAT', durum='SÖZLEŞME' WHERE id=$1`, [id]);
         await auditLogla(req, { eylem: 'UPDATE', tablo: 'projeler', kayit_id: id,
-            ozet: `Sözleşmeye dönüşüm: ${eskiR.rows[0].proje_kodu} ${eskiR.rows[0].proje_adi} — satış fazından Projeler'e (TASLAK) alındı` });
-        res.json({ ok: true, mesaj: `${eskiR.rows[0].proje_kodu} artık Projeler sekmesinde (TASLAK). Teslimatlar girilip onaylanınca SÖZLEŞME olur.` });
+            ozet: `ADMIN elle faz geçişi: ${eskiR.rows[0].proje_kodu} ${eskiR.rows[0].proje_adi} — satıştan Operasyon'a (SÖZLEŞME) alındı` });
+        res.json({ ok: true, mesaj: `${eskiR.rows[0].proje_kodu} artık Operasyon > Projeler'de (SÖZLEŞME) — iş emri açılabilir.` });
     } catch (e) { next(e); }
 });
 
@@ -8371,14 +8372,16 @@ app.get('/api/satis-sozlesme/:projeId', yetkiKontrol, async (req, res, next) => 
 // TİCARİ İŞLER ONAYI: eski sistemde "Sözleşmeyi Onayla" ve "Revize Talep Et" düğmeleri
 // ROLE_COMM_AFFAIRS_MANAGER (Ticari İşler Müdürü) yetkisindeydi. O rolün sahibi yeni
 // sisteme aktarılmadığı için Yunus kararı (2026-07-28): yalnız ADMIN onaylar.
-const SOZLESME_ADMIN_AKSIYONLARI = ['onayla', 'revize-talep'];
+// SADELEŞTİRİLMİŞ SÖZLEŞME ZİNCİRİ (Yunus 2026-07-30): Oluştur → Onay Talep → Onayla.
+// Onay YÖNETİM yetkisindedir (satis.teklif_onay TAM; teklif kabulüyle aynı kapı) ve
+// ONAY ANINDA proje Operasyon fazına geçer (durum SÖZLEŞME) — iş emri süreci başlar.
+// İmza / avans / ödeme adımları KALDIRILDI: tahsilat takibi Mali İşler'in işi,
+// projenin fazını belirlemez. Eski kayıtlardaki bu durumlar tarihsel olarak korunur.
+const SOZLESME_ONAY_AKSIYONLARI = ['onayla', 'revize-talep'];
 const SOZLESME_AKSIYONLARI = {
     'onay-talep':      { durum: PRJ.SOZLESME_HAZIR,        ad: 'Ticari işler onayı talep edildi' },
     'onayla':          { durum: PRJ.SOZLESME_ONAYLANDI,    ad: 'Sözleşme onaylandı' },
-    'revize-talep':    { durum: PRJ.SOZLESME_TASLAK,       ad: 'Sözleşme revize talebi' },
-    'imzalandi':       { durum: PRJ.SOZLESME_IMZALANDI,    ad: 'Müşteri sözleşmeyi imzaladı' },
-    'avans-alindi':    { durum: PRJ.AVANS_ODEMESI_ALINAN,  ad: 'Avans tahsil edildi' },
-    'odemeler-alindi': { durum: PRJ.TAMAMLANAN,            ad: 'Tüm ödemeler tahsil edildi' }
+    'revize-talep':    { durum: PRJ.SOZLESME_TASLAK,       ad: 'Sözleşme revize talebi' }
 };
 
 app.post('/api/satis-sozlesme-aksiyon', yetkiKontrol, izinGerekli('satis.proje', 'YAZMA'), async (req, res, next) => {
@@ -8387,9 +8390,13 @@ app.post('/api/satis-sozlesme-aksiyon', yetkiKontrol, izinGerekli('satis.proje',
         const { proje_id, aksiyon } = req.body;
         const a = SOZLESME_AKSIYONLARI[aksiyon];
         if (!a) return res.json({ ok: false, hata: 'Geçersiz sözleşme aksiyonu.' });
-        if (SOZLESME_ADMIN_AKSIYONLARI.includes(aksiyon) && !adminMi(req)) {
-            return res.json({ ok: false, izin_hatasi: true,
-                hata: 'Sözleşmeyi onaylamak veya revize talebi açmak ticari işler onayıdır; bu yetki yalnız ADMIN kullanıcılarındadır.' });
+        // Onay kapısı: YÖNETİM yetkisi (teklif kabulüyle aynı izin) — ADMIN de kapsanır
+        if (SOZLESME_ONAY_AKSIYONLARI.includes(aksiyon) && !adminMi(req)) {
+            const izinler = await getKullaniciIzinleri(etkinRoller(req));
+            if ((izinler['satis.teklif_onay'] || 'YOK') !== 'TAM') {
+                return res.json({ ok: false, izin_hatasi: true,
+                    hata: 'Sözleşmeyi onaylamak veya revize talebi açmak YÖNETİM yetkisi gerektirir.' });
+            }
         }
         const p = await client.query(`SELECT proje_kodu, satis_durumu, COALESCE(faz,'TESLIMAT') faz FROM projeler WHERE id=$1`, [parseInt(proje_id)]);
         if (!p.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
@@ -8398,15 +8405,16 @@ app.post('/api/satis-sozlesme-aksiyon', yetkiKontrol, izinGerekli('satis.proje',
         if (!soz.rowCount) return res.json({ ok: false, hata: 'Bu projede sözleşme yok. Önce tekliften sözleşme oluşturun.' });
         await client.query('BEGIN');
         await projeDurumGuncelle(client, parseInt(proje_id), a.durum, req, a.ad);
-        // FAZ 1 (Yunus kararı): zincirin son mali adımı olan AVANS ile proje otomatik
-        // Projeler modülüne geçer — düğmeye gerek yok. Teslimat taslakları kabulde
-        // türetildiği için proje Projeler'e eksiksiz ve SÖZLEŞME durumuyla düşer.
+        // FAZ GEÇİŞİ (Yunus 2026-07-30): sözleşme ONAYLANINCA proje Operasyon'a geçer
+        // (durum SÖZLEŞME) — teknik şartname zaten teklif onayında kilitlendiği ve
+        // teslimatlar sözleşme oluşturmada türetildiği için proje eksiksiz düşer,
+        // doğrudan iş emri açılabilir. Avans/imza adımı beklenmez (tahsilat = Mali İşler).
         let fazMesaj = '';
-        if (aksiyon === 'avans-alindi') {
+        if (aksiyon === 'onayla') {
             await client.query(`UPDATE projeler SET faz='TESLIMAT', durum='SÖZLEŞME' WHERE id=$1`, [parseInt(proje_id)]);
-            fazMesaj = ` ${p.rows[0].proje_kodu} Projeler modülüne alındı (SÖZLEŞME).`;
+            fazMesaj = ` ${p.rows[0].proje_kodu} Operasyon modülüne alındı (SÖZLEŞME) — iş emri açılabilir.`;
             await auditLogla(req, { eylem: 'UPDATE', tablo: 'projeler', kayit_id: parseInt(proje_id),
-                ozet: `Avans tahsilatıyla otomatik faz geçişi: ${p.rows[0].proje_kodu} satıştan Projeler'e (SÖZLEŞME)` });
+                ozet: `Sözleşme onayıyla otomatik faz geçişi: ${p.rows[0].proje_kodu} satıştan Operasyon'a (SÖZLEŞME)` });
         }
         await client.query('COMMIT');
         res.json({ ok: true, mesaj: a.ad + '.' + fazMesaj, durum: a.durum });
