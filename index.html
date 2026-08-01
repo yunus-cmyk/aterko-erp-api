@@ -1206,6 +1206,13 @@
         <div id="stokHareketDiv" class="d-none">
             <div class="card border-0 shadow-sm rounded-3 mb-3">
                 <div class="card-body py-2 px-3 d-flex align-items-center gap-2 flex-wrap">
+                    <!-- Yazarken süzen arama (ekip isteği, 2026-08-01): sunucu taraflı sayfalama
+                         olduğu için sorgu sunucuya gider — tüm geçmişte arar, yalnız açık sayfada değil -->
+                    <div class="input-group input-group-sm" style="max-width:260px;">
+                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" id="hareketArama" class="form-control border-start-0 shadow-none"
+                               placeholder="Stok, proje, depo, açıklama ara..." oninput="hareketAramaGecikmeli()">
+                    </div>
                     <select id="hareketTipFiltre" class="form-select form-select-sm" style="width:120px;" onchange="fetchStokHareketleri()">
                         <option value="">Tüm Tipler</option>
                         <option value="Giriş">Giriş</option>
@@ -16605,12 +16612,22 @@ function deleteStokHareket() {
 let hareketSayfa = 0;
 const HAREKET_LIMIT = 50;
 
+// Yazarken arama: her tuşta sunucuya gitmemek için 350 ms bekletilir; yeni aramada
+// sayfa başa döner (aksi hâlde 3. sayfadayken arama boş sonuç verir gibi görünürdü).
+let hareketAramaZamanlayici = null;
+function hareketAramaGecikmeli() {
+    clearTimeout(hareketAramaZamanlayici);
+    hareketAramaZamanlayici = setTimeout(() => { hareketSayfa = 0; fetchStokHareketleri(); }, 350);
+}
+
 function fetchStokHareketleri() {
     const tip = document.getElementById("hareketTipFiltre")?.value || '';
     const depo = document.getElementById("hareketDepoFiltre")?.value || '';
+    const ara = document.getElementById("hareketArama")?.value.trim() || '';
     const params = new URLSearchParams({ limit: HAREKET_LIMIT, offset: hareketSayfa * HAREKET_LIMIT });
     if (tip) params.append('tip', tip);
     if (depo) params.append('depo_id', depo);
+    if (ara) params.append('q', ara);
 
     showLoading();
     secureFetch('/stok-hareketleri?' + params.toString()).then(res => {
@@ -16628,6 +16645,8 @@ function fetchStokHareketleri() {
 function resetHareketFiltre() {
     document.getElementById("hareketTipFiltre").value = '';
     document.getElementById("hareketDepoFiltre").value = '';
+    const ara = document.getElementById("hareketArama");
+    if (ara) ara.value = '';
     hareketSayfa = 0;
     fetchStokHareketleri();
 }

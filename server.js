@@ -249,13 +249,29 @@ app.post('/api/depo-kaydet', yetkiKontrol, async (req, res, next) => {
 app.get('/api/stok-hareketleri', yetkiKontrol, async (req, res, next) => {
     try {
         const { tip, stok_kart_id, depo_id, proje_id, limit, offset } = req.query;
+        const arama = req.query.q;   // 'q' adı aşağıda SQL metni için kullanıldığından ayrı isim
         const params = [];
         const where = [];
         if (tip)            { params.push(tip); where.push(`h.tip = $${params.length}`); }
         if (stok_kart_id)   { params.push(parseInt(stok_kart_id)); where.push(`h.stok_kart_id = $${params.length}`); }
         if (depo_id)        { params.push(parseInt(depo_id)); where.push(`h.depo_id = $${params.length}`); }
         if (proje_id)       { params.push(parseInt(proje_id)); where.push(`h.proje_id = $${params.length}`); }
+        // ARAMA (Yunus 2026-08-01, ekip isteği): hareket geçmişi SUNUCU tarafında sayfalı
+        // olduğu için arama da burada yapılır — yoksa yalnız görünen sayfa süzülürdü.
+        // Kapsam: stok kodu/adı, proje kodu/adı/müşteri, depo, açıklama, kullanıcı.
+        if (arama && arama.trim()) {
+            params.push('%' + arama.trim() + '%');
+            const i = params.length;
+            where.push(`(sk.stok_kodu ILIKE $${i} OR sk.stok_adi ILIKE $${i}
+                      OR p.proje_kodu ILIKE $${i} OR p.proje_adi ILIKE $${i} OR p.musteri_adi ILIKE $${i}
+                      OR d.ad ILIKE $${i} OR h.aciklama ILIKE $${i}
+                      OR h.kullanici_email ILIKE $${i} OR h.kullanici_adsoyad ILIKE $${i})`);
+        }
         const whereSQL = where.length ? 'WHERE ' + where.join(' AND ') : '';
+        // Sayım sorgusu da aynı birleştirmelere ihtiyaç duyar (arama bu alanlara bakıyor)
+        const sayimJoin = `LEFT JOIN stok_kartlari sk ON h.stok_kart_id = sk.id
+                           LEFT JOIN projeler p ON h.proje_id = p.id
+                           LEFT JOIN depolar d ON h.depo_id = d.id`;
 
         const limitN = Math.min(parseInt(limit) || 100, 500);
         const offsetN = parseInt(offset) || 0;
@@ -276,7 +292,7 @@ app.get('/api/stok-hareketleri', yetkiKontrol, async (req, res, next) => {
         const r = await pool.query(q, params);
 
         // Toplam sayım (sayfalama için)
-        const sayim = await pool.query(`SELECT COUNT(*) FROM stok_hareketleri h ${whereSQL}`, params);
+        const sayim = await pool.query(`SELECT COUNT(*) FROM stok_hareketleri h ${sayimJoin} ${whereSQL}`, params);
 
         res.json({ ok: true, data: r.rows, toplam: parseInt(sayim.rows[0].count), limit: limitN, offset: offsetN });
     } catch (e) { next(e); }
