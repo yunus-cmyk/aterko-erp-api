@@ -6640,8 +6640,13 @@ app.get('/api/satis-projeler', yetkiKontrol, async (req, res, next) => {
         // Son hareket = en yeni teklif tarihi; teklif tarihi hiç yoksa PROJENİN AÇILIŞ TARİHİ
         // (Yunus 2026-07-30, 72737 vakası: tarihsiz taslak teklifli 158 açık proje ve teklifsiz
         // yeni fırsatlar 'güncel' süzgecinde kayboluyordu — yeni fırsat teklifsiz de günceldir).
+        // Satır başına alt sorgu yerine TEK SEFERDE hesaplanan özet (2026-08-01): eskiden
+        // her proje için teklif tablosu ayrı taranıyordu; artık tüm projelerin son teklif
+        // tarihi bir kerede çıkarılıp birleştiriliyor (ix_sat_teklifler_proje ile birlikte).
+        const teklifOzet = `(SELECT proje_id, COUNT(*)::int AS c, MAX(teklif_tarihi) AS son_teklif
+                             FROM sat_teklifler WHERE proje_id IS NOT NULL GROUP BY proje_id)`;
         const sonHareket = `GREATEST(
-            COALESCE((SELECT MAX(t2.teklif_tarihi) FROM sat_teklifler t2 WHERE t2.proje_id = p.id), '1900-01-01'::date),
+            COALESCE(t.son_teklif, '1900-01-01'::date),
             COALESCE(p.olusturma_tarihi::date, '1900-01-01'::date))`;
         if (durum && SATIS_DURUMLARI.includes(durum)) { deger.push(durum); kosullar.push(`p.satis_durumu=$${deger.length}`); }
         else if (kapsam === 'kapali') kosullar.push(`p.satis_durumu = ANY('{${SATIS_KAPALI_DURUMLAR.join(',')}}')`);
@@ -6657,7 +6662,7 @@ app.get('/api/satis-projeler', yetkiKontrol, async (req, res, next) => {
                    p.olusturma_tarihi,
                    COALESCE(t.c, 0) AS teklif_sayisi
             FROM projeler p
-            LEFT JOIN (SELECT proje_id, COUNT(*)::int c FROM sat_teklifler WHERE proje_id IS NOT NULL GROUP BY 1) t ON t.proje_id = p.id
+            LEFT JOIN ${teklifOzet} t ON t.proje_id = p.id
             WHERE ${kosullar.join(' AND ')}
             ORDER BY p.proje_kodu DESC
             LIMIT 500
@@ -6670,6 +6675,7 @@ app.get('/api/satis-projeler', yetkiKontrol, async (req, res, next) => {
             : `${acikKosul} AND ${sonHareket} >= CURRENT_DATE - 365`;
         const sayilar = await pool.query(`
             SELECT p.satis_durumu AS durum, COUNT(*)::int adet FROM projeler p
+            LEFT JOIN ${teklifOzet} t ON t.proje_id = p.id
             WHERE COALESCE(p.faz,'TESLIMAT')='SATIS' AND ${kapsamKosul} GROUP BY p.satis_durumu`);
         res.json({ ok: true, projeler: r.rows, durum_sayilari: sayilar.rows, kapsam: kapsam || 'guncel' });
     } catch (e) { next(e); }
@@ -12050,7 +12056,28 @@ async function semaGuvence() {
                 END LOOP;
             END $$;
         `);
-        console.log('✅ Şema güvencesi tamam (talep bölme alanları + sequence + RLS).');
+        // PERFORMANS İNDEKSLERİ (Yunus 2026-08-01, Frankfurt taşıması sonrası bulgu):
+        // Yabancı anahtar kolonlarında indeks YOKTU — PostgreSQL bunları kendiliğinden
+        // oluşturmaz. Ağ gecikmesi 285 ms'den 44 ms'ye inince asıl darboğaz görünür oldu:
+        // Satış > Projeler listesi her proje için 5.611 satırlık teklif tablosunu baştan
+        // tarıyordu (~2 sn). IF NOT EXISTS ile idempotent; mevcut kurulumda da oluşur.
+        const perfIndeksleri = [
+            ['ix_sat_teklifler_proje',        'sat_teklifler(proje_id)'],
+            ['ix_projeler_sat_musteri',       'projeler(sat_musteri_id)'],
+            ['ix_stok_hareketleri_depo',      'stok_hareketleri(depo_id)'],
+            ['ix_stok_hareketleri_proje',     'stok_hareketleri(proje_id)'],
+            ['ix_sat_urun_bom_urun',          'sat_urun_bom(urun_id)'],
+            ['ix_sat_urun_bom_bilesen',       'sat_urun_bom(bilesen_urun_id)'],
+            ['ix_sat_musteri_kisiler_must',   'sat_musteri_kisiler(musteri_id)'],
+            ['ix_sat_sozlesmeler_proje',      'sat_sozlesmeler(proje_id)'],
+            ['ix_sat_sozlesmeler_teklif',     'sat_sozlesmeler(teklif_id)'],
+            ['ix_talep_urunleri_stok',        'talep_urunleri(stok_kart_id)'],
+            ['ix_audit_log_tarih',            'audit_log(tarih DESC)']
+        ];
+        for (const [ad, tanim] of perfIndeksleri) {
+            await pool.query(`CREATE INDEX IF NOT EXISTS ${ad} ON ${tanim}`).catch(() => {});
+        }
+        console.log('✅ Şema güvencesi tamam (talep bölme alanları + sequence + RLS + performans indeksleri).');
     } catch (e) {
         console.error('⚠️ Şema güvencesi hatası:', e.message);
     }
