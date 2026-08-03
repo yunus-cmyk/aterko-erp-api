@@ -81,7 +81,7 @@ doldurulmuş olmalı.** Kabul anında şartnameler ve analiz **kilitlenir** (de�
 
 | Adım | Kim | Ne olur |
 |---|---|---|
-| **Sözleşme Oluştur** | `satis.teklif` TAM | Onaylı tekliften sözleşme (`{proje}-SOZ-01`); döviz kuru sabitlenir; **teslimatlar (binalar) burada doğar** |
+| **Sözleşme Oluştur** | `satis.teklif` TAM | Onaylı tekliften sözleşme (`{proje}-SOZ-01`); döviz kuru sabitlenir; **teslimatlar (binalar) burada doğar — durumları SÖZLEŞME** |
 | **Onaya Gönder** | satış yetkisi | durum → "Sözleşmesi Onayda" |
 | **Sözleşmeyi Onayla** | **YÖNETİM** | Sözleşme onaylanır **ve proje aynı anda Operasyon fazına geçer** |
 | *(Revize Talep Et)* | YÖNETİM | Sözleşme taslağa döner, düzeltilip yeniden onaylanır |
@@ -92,6 +92,13 @@ doldurulmuş olmalı.** Kabul anında şartnameler ve analiz **kilitlenir** (de�
 ---
 
 ## B. OPERASYON FAZI
+
+### Teslimat (bina) durum zinciri
+
+Her bina kendi yolculuğunu bu durumlarla yapar:
+
+**SÖZLEŞME** (sözleşmeyle doğar) → **İŞ EMRİ** (iş emri oluşturulunca) → **PROJE** (iş emri
+yayınlanınca; üretim/tedarik aşaması) → **ÜRETİM** → **MONTAJ** → **TESLİM EDİLDİ**
 
 ### 9. Bina listesi (ürün listesi)
 **Nerede:** Operasyon > Projeler > proje > teslimat · **Kim:** `projeler` yazma

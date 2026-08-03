@@ -8195,7 +8195,11 @@ async function satisTeslimatlariTuret(client, projeId, teklifId, req) {
                 (proje_id, teklif_kalem_id, bina_adi, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
                  konteyner_ebadi, konteyner_miktari, buyukluk_m2, bina_adedi, kdvsiz_tutar,
                  dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri, montaj_gerekli, ek_veriler, durum)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'PROJE')`,
+                -- TESLİMAT YAŞAM DÖNGÜSÜ (Yunus 2026-08-01): sözleşmeden doğan teslimat
+                -- SÖZLEŞME durumunda başlar → iş emri açılınca İŞ EMRİ → yayınlanınca PROJE.
+                -- Eskiden doğrudan 'PROJE' yazılıyordu; iş emri açılmadan üretim aşamasında
+                -- görünüyor, iş emri/yayın adımları durumu ilerletmiyordu.
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'SÖZLEŞME')`,
                 [projeId, k.id, alanlar.bina_adi, alanlar.bina_turu, alanlar.bina_tipi,
                  alanlar.kat_adedi, alanlar.kat_yuksekligi, alanlar.konteyner_ebadi,
                  alanlar.konteyner_miktari, alanlar.buyukluk_m2, alanlar.bina_adedi, alanlar.kdvsiz_tutar,
