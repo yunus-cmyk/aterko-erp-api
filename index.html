@@ -1710,8 +1710,6 @@
                         <th class="text-center">Sözleşme Tarihi</th>
                         <th class="text-center">Nakliye</th>
                         <th class="text-center">Teslimat</th>
-                        <th class="text-center">ASET</th>
-                        <th class="text-center">Dosyalar</th>
                         <th class="text-end">Proje Bedeli</th>
                         <th class="text-center">İşlem</th>
                     </tr>
@@ -4235,14 +4233,6 @@ STK-002		50	adet
                             <label class="form-label"><i class="bi bi-person-badge me-1"></i>Satış Temsilcisi</label>
                             <input type="text" id="pjSatisTemsilcisi" class="form-control form-control-sm" placeholder="örn. Ayşe Bilgin">
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label"><i class="bi bi-link-45deg me-1"></i>ASET (link)</label>
-                            <input type="url" id="pjAsetLink" class="form-control form-control-sm" placeholder="https://aset.aterko.com/entity/project/...">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label"><i class="bi bi-google me-1"></i>DRIVE (link)</label>
-                            <input type="url" id="pjDriveLink" class="form-control form-control-sm" placeholder="https://drive.google.com/open?id=...">
-                        </div>
                         <div class="col-md-2">
                             <label class="form-label"><i class="bi bi-geo-alt me-1"></i>Şehir</label>
                             <input type="text" id="pjSehir" class="form-control form-control-sm">
@@ -4343,7 +4333,7 @@ STK-002		50	adet
     </div>
 
     <!-- Teslimat durum seçimi (akordiyon satırındaki dropdown yerine — ekran ortasında, kesin görünür) -->
-    <!-- Proje dosyaları: Sözleşme (proje bazlı) / Mimari Proje (teslimat bazlı) — PDF/DWG/JPG/PNG/ZIP -->
+    <!-- Proje dosyaları (proje bazlı, çoklu): Sözleşme / Mimari Projeler / Diğer — PDF/DWG/JPG/PNG/ZIP -->
     <div class="modal fade" id="modalProjeDosya" tabindex="-1">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -4353,10 +4343,12 @@ STK-002		50	adet
           </div>
           <div class="modal-body">
             <div class="row g-2 align-items-end mb-3 d-none" id="prjDosyaForm">
-              <div class="col-md-8"><label class="form-label">Dosya (PDF, DWG, JPG, PNG, ZIP)</label>
-                <input id="prjDosyaInput" type="file" accept=".pdf,.dwg,.jpg,.jpeg,.png,.zip" class="form-control form-control-sm"></div>
+              <div class="col-md-8"><label class="form-label">Dosya (PDF, DWG, JPG, PNG, ZIP) — birden fazla seçebilirsiniz</label>
+                <input id="prjDosyaInput" type="file" multiple accept=".pdf,.dwg,.jpg,.jpeg,.png,.zip" class="form-control form-control-sm"></div>
               <div class="col-md-4"><button class="btn btn-sm btn-primary w-100" onclick="prjDosyaYukle()"><i class="bi bi-upload me-1"></i>Yükle</button></div>
             </div>
+            <div id="prjDosyaUyari"></div>
+            <div id="prjDosyaSozAktar"></div>
             <div id="prjDosyaListe"><div class="text-center text-muted py-4">Yükleniyor...</div></div>
           </div>
         </div>
@@ -17041,15 +17033,13 @@ function renderProjeTable() {
     if(label) label.textContent = `${filtered.length} / ${projelerGlobal.length} proje${toplamSayfa > 1 ? ` — sayfa ${window.projeAktifSayfa + 1}/${toplamSayfa}` : ''}`;
 
     if(filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4">Eşleşen proje bulunamadı.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Eşleşen proje bulunamadı.</td></tr>';
         renderProjeSayfalama(0);
         return;
     }
 
     let html = '';
     gosterilen.forEach(p => {
-        const asetLink = p.aset_link ? `<a href="${esc(p.aset_link)}" target="_blank" onclick="event.stopPropagation();" class="text-decoration-none"><i class="bi bi-link-45deg fs-5 text-primary"></i></a>` : '<span class="text-muted">-</span>';
-        const dosyaLink = (p.drive_link || p.dokumanlar_link) ? `<a href="${esc(p.drive_link || p.dokumanlar_link)}" target="_blank" onclick="event.stopPropagation();" title="DRIVE klasörü" class="text-decoration-none"><i class="bi bi-folder2-open fs-5 text-warning"></i></a>` : '<span class="text-muted">-</span>';
         const bedel = parseFloat(p.kdvli_toplam || p.kdvsiz_toplam || 0);
         html += `<tr class="proje-ana-satir" data-proje-id="${p.id}" onclick="toggleProjeAccordion(${p.id})" style="cursor:pointer;">
             <td class="text-center">${getDurumBadge(p.durum)}</td>
@@ -17060,15 +17050,13 @@ function renderProjeTable() {
             <td class="text-center">${formatTarihTR(p.sozlesme_tarihi) || '-'}</td>
             <td class="text-center text-muted small">${esc(p.nakliye || '-')}</td>
             <td class="text-center"><span class="badge bg-secondary-subtle text-secondary-emphasis border">${parseInt(p.teslimat_sayisi) || 0}</span></td>
-            <td class="text-center">${asetLink}</td>
-            <td class="text-center">${dosyaLink}</td>
             <td class="text-end fw-bold">${fiyatHucre(bedel > 0 ? formatTR(bedel) + ' ' + esc(p.para_birimi || 'TL') : '-')}</td>
             <td class="text-center">
                 <button class="btn btn-sm btn-outline-dark py-0" onclick="event.stopPropagation(); openProjeDetay(${p.id})" title="Detaylı görünüm"><i class="bi bi-arrows-fullscreen"></i></button>
             </td>
         </tr>
         <tr class="proje-accordion-satir d-none" id="proje-accordion-${p.id}">
-            <td colspan="12" class="p-0 bg-light">
+            <td colspan="10" class="p-0 bg-light">
                 <div id="proje-accordion-icerik-${p.id}" class="px-4 py-3"></div>
             </td>
         </tr>`;
@@ -17198,8 +17186,7 @@ function renderAccordionTeslimatlar(container, proje, teslimatlar) {
             <td class="text-center">
                 <div class="btn-group btn-group-sm">
                     ${diger ? '' : `<button class="btn btn-outline-primary py-0" onclick="openTeknikSartname(${t.id})" title="Teknik Şartname"><i class="bi bi-file-earmark-text"></i></button>
-                    <button class="btn btn-outline-warning py-0" ${proje.durum === 'TASLAK' ? 'disabled title="İş emri için önce ADMIN proje onayı (Sözleşme) gerekli"' : `onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"`}><i class="bi bi-clipboard2-check"></i></button>
-                    <button class="btn btn-outline-info py-0" onclick="prjDosyaAc(${proje.id}, ${t.id}, 'MIMARI', '${escJs(t.bina_adi || '')} — Mimari Proje')" title="Mimari Proje Dosyaları"><i class="bi bi-bounding-box"></i></button>`}
+                    <button class="btn btn-outline-warning py-0" ${proje.durum === 'TASLAK' ? 'disabled title="İş emri için önce ADMIN proje onayı (Sözleşme) gerekli"' : `onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')" title="İş Emri"`}><i class="bi bi-clipboard2-check"></i></button>`}
                     <button class="btn btn-outline-dark py-0" ${proje.durum === 'TASLAK' ? 'disabled title="Teslimat durumları proje onaylanınca (SÖZLEŞME) yönetilir"' : `onclick="durumSecAc(${t.id}, '${escJs(t.durum || '')}', ${proje.id}, '${escJs(t.bina_adi || '')}')"`}>Durum</button>
                 </div>
             </td>
@@ -18217,7 +18204,6 @@ function openYeniProjeModal(duzenlemeData) {
     if(document.getElementById("pjPara")) document.getElementById("pjPara").value = p.para_birimi || "TL";
     if(document.getElementById("pjKdv")) document.getElementById("pjKdv").value = p.kdv_orani || "20";
     if(document.getElementById("pjSatisTemsilcisi")) document.getElementById("pjSatisTemsilcisi").value = p.satis_temsilcisi || "";
-    if(document.getElementById("pjAsetLink")) document.getElementById("pjAsetLink").value = p.aset_link || "";
     document.getElementById("pjSehir").value = p.sehir || "";
     document.getElementById("pjUlke").value = p.ulke || "";
     document.getElementById("pjAdres").value = p.adres || "";
@@ -18225,7 +18211,6 @@ function openYeniProjeModal(duzenlemeData) {
     document.getElementById("pjIrtibatEmail").value = p.irtibat_email || "";
     document.getElementById("pjIrtibatTelefon").value = p.irtibat_telefon || "";
     document.getElementById("pjAciklama").value = p.aciklama || "";
-    if(document.getElementById("pjDriveLink")) document.getElementById("pjDriveLink").value = p.drive_link || "";
 
     // Teslimatları yükle
     const container = document.getElementById("teslimatListContainer");
@@ -18263,13 +18248,26 @@ async function openProjeDuzenle(projeId) {
 let pdAktifProjeId = null;
 
 // ===== PROJE ONAY AKIŞI (TASLAK → SÖZLEŞME) — yalnız ADMIN =====
-// ---- Proje dosyaları: Sözleşme (proje) / Mimari Proje (teslimat) — PDF/DWG/JPG/PNG/ZIP ----
-window._prjDosyaCtx = null;   // { projeId, teslimatId, tur }
-async function prjDosyaAc(projeId, teslimatId, tur, baslik) {
-    window._prjDosyaCtx = { projeId, teslimatId, tur };
+// ---- Proje dosyaları (Yunus 2026-08-03): üç alan da PROJE BAZLI ve çoklu —
+// Sözleşme Dosyaları / Mimari Projeler / Diğer Dosyalar. Yükleme yalnız Operasyon
+// fazında açıktır (sunucu da aynı kapıyı uygular). Mimari proje eskiden bina bazlıydı;
+// eski kayıtlar listede bina rozetiyle görünmeye devam eder.
+const PRJ_DOSYA_TUR = {
+    SOZLESME: { ad: 'Sözleşme Dosyaları', ikon: 'file-earmark-text', renk: 'primary' },
+    MIMARI:   { ad: 'Mimari Projeler',    ikon: 'bounding-box',      renk: 'info' },
+    DIGER:    { ad: 'Diğer Dosyalar',     ikon: 'paperclip',         renk: 'secondary' }
+};
+window._prjDosyaCtx = null;   // { projeId, tur, operasyonda }
+async function prjDosyaAc(projeId, tur, baslik, operasyonda = true) {
+    const t = PRJ_DOSYA_TUR[tur] || PRJ_DOSYA_TUR.DIGER;
+    window._prjDosyaCtx = { projeId, tur, operasyonda };
     document.getElementById('prjDosyaBaslik').innerHTML =
-        `<i class="bi bi-file-earmark-pdf me-2"></i>${tur === 'SOZLESME' ? 'Sözleşme' : 'Mimari Proje'} — ${esc(baslik || '')}`;
-    document.getElementById('prjDosyaForm').classList.toggle('d-none', !izinVarMi('projeler', 'YAZMA'));
+        `<i class="bi bi-${t.ikon} me-2"></i>${esc(t.ad)}${baslik ? ' — ' + esc(baslik) : ''}`;
+    const yazabilir = izinVarMi('projeler', 'YAZMA') && operasyonda;
+    document.getElementById('prjDosyaForm').classList.toggle('d-none', !yazabilir);
+    document.getElementById('prjDosyaUyari').innerHTML = operasyonda ? '' :
+        '<div class="alert alert-warning py-2 small mb-3"><i class="bi bi-info-circle me-1"></i>' +
+        'Proje dosyaları yalnız Operasyon fazında yüklenebilir. Sözleşme onaylandığında bu alan açılır.</div>';
     document.getElementById('prjDosyaInput').value = '';
     document.getElementById('prjDosyaListe').innerHTML = '<div class="text-center text-muted py-4">Yükleniyor...</div>';
     // Proje Detay modalının üstünde açılır
@@ -18278,46 +18276,81 @@ async function prjDosyaAc(projeId, teslimatId, tur, baslik) {
     prjDosyaListele();
 }
 
+function prjDosyaIkonu(ad) {
+    if (/\.pdf$/i.test(ad)) return 'bi-file-earmark-pdf text-danger';
+    if (/\.(jpe?g|png)$/i.test(ad)) return 'bi-file-earmark-image text-primary';
+    if (/\.zip$/i.test(ad)) return 'bi-file-earmark-zip text-warning';
+    return 'bi-file-earmark-ruled text-secondary';
+}
+
 async function prjDosyaListele() {
     const c = window._prjDosyaCtx;
     if (!c) return;
     const r = await secureFetch('/proje-dosyalari/' + c.projeId);
     if (!r.ok) return showToast(r.hata || 'Dosyalar yüklenemedi.', 'error');
-    const liste = (r.data || []).filter(d => d.tur === c.tur && (c.tur === 'SOZLESME' || d.teslimat_id === c.teslimatId));
+    const liste = (r.data || []).filter(d => d.tur === c.tur);
     const silYetki = izinVarMi('projeler', 'YAZMA');
+    // Sözleşme onayı bu özellikten önce yapılmış projelerde sistem sözleşmesi dosyalarda
+    // olmaz; tek tıkla üretip aktarmak için düğme (yeni onaylarda otomatik düşer).
+    const sozAktarim = document.getElementById('prjDosyaSozAktar');
+    if (sozAktarim) sozAktarim.innerHTML = (c.tur === 'SOZLESME' && c.operasyonda && silYetki)
+        ? `<button class="btn btn-sm btn-outline-dark w-100 mb-3" onclick="prjSozlesmeAktar()">
+             <i class="bi bi-file-earmark-arrow-down me-1"></i>Sistem sözleşmesini PDF olarak aktar</button>` : '';
     document.getElementById('prjDosyaListe').innerHTML = !liste.length
         ? '<div class="text-center text-muted py-4">Henüz dosya yüklenmemiş.</div>'
         : `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
-            <thead class="table-light"><tr><th>Dosya</th><th>Boyut</th><th>Yükleyen</th><th>Tarih</th><th style="width:60px;"></th></tr></thead>
+            <thead class="table-light"><tr><th>Dosya</th><th>Boyut</th><th>Yükleyen</th><th>Tarih</th><th style="width:90px;"></th></tr></thead>
             <tbody>${liste.map(d => `<tr>
-                <td><a href="${esc(d.public_url)}" target="_blank" rel="noopener" class="text-decoration-none"><i class="bi ${/\.pdf$/i.test(d.dosya_adi) ? 'bi-file-earmark-pdf text-danger' : /\.(jpe?g|png)$/i.test(d.dosya_adi) ? 'bi-file-earmark-image text-primary' : /\.zip$/i.test(d.dosya_adi) ? 'bi-file-earmark-zip text-warning' : 'bi-file-earmark-ruled text-secondary'} me-1"></i>${esc(d.dosya_adi)}</a></td>
+                <td><a href="${esc(d.public_url)}" target="_blank" rel="noopener" class="text-decoration-none"><i class="bi ${prjDosyaIkonu(d.dosya_adi)} me-1"></i>${esc(d.dosya_adi)}</a>${d.bina_adi ? ` <span class="badge bg-light text-dark border ms-1" title="Bu dosya bina bazlı yüklenmişti">${esc(d.bina_adi)}</span>` : ''}</td>
                 <td class="small">${d.boyut ? (d.boyut / 1048576).toFixed(2) + ' MB' : '-'}</td>
                 <td class="small">${esc(d.yukleyen_adsoyad || '-')}</td>
                 <td class="small">${formatTarihTR(d.kayit_tarihi)}</td>
-                <td class="text-center">${silYetki ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="prjDosyaSil(${d.id})" title="Sil"><i class="bi bi-trash"></i></button>` : ''}</td>
+                <td class="text-center text-nowrap">
+                  <a class="btn btn-sm btn-outline-secondary py-0" href="${esc(d.public_url)}" download="${esc(d.dosya_adi)}" title="İndir"><i class="bi bi-download"></i></a>
+                  ${silYetki ? `<button class="btn btn-sm btn-outline-danger py-0 ms-1" onclick="prjDosyaSil(${d.id})" title="Sil"><i class="bi bi-trash"></i></button>` : ''}</td>
             </tr>`).join('')}</tbody></table></div>`;
 }
 
 async function prjDosyaYukle() {
     const c = window._prjDosyaCtx;
     const input = document.getElementById('prjDosyaInput');
-    if (!c || !input.files.length) return showToast('Önce bir PDF dosyası seçin.', 'error');
-    const fd = new FormData();
-    fd.append('dosya', input.files[0]);
-    fd.append('proje_id', c.projeId);
-    if (c.teslimatId) fd.append('teslimat_id', c.teslimatId);
-    fd.append('tur', c.tur);
+    if (!c || !input.files.length) return showToast('Önce dosya seçin.', 'error');
+    const dosyalar = Array.from(input.files);
     showLoading();
-    try {
-        const token = localStorage.getItem('aterko_token');
-        const yanit = await fetch(`${API_URL}/proje-dosya-yukle`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd });
-        const r = await yanit.json().catch(() => ({ ok: false, hata: 'Cevap okunamadı.' }));
-        hideLoading();
-        if (!r.ok) return showToast(r.hata || 'Yüklenemedi.', 'error');
-        showToast('Dosya yüklendi.', 'success');
-        input.value = '';
-        prjDosyaListele();
-    } catch (e) { hideLoading(); showToast('Yükleme hatası — bağlantıyı kontrol edin.', 'error'); }
+    const token = localStorage.getItem('aterko_token');
+    let basarili = 0; const hatalar = [];
+    // Dosyalar tek tek yüklenir; biri hata verse diğerleri devam eder.
+    for (const dosya of dosyalar) {
+        const fd = new FormData();
+        fd.append('dosya', dosya);
+        fd.append('proje_id', c.projeId);
+        fd.append('tur', c.tur);
+        try {
+            const yanit = await fetch(`${API_URL}/proje-dosya-yukle`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: fd });
+            const r = await yanit.json().catch(() => ({ ok: false, hata: 'Cevap okunamadı.' }));
+            if (r.ok) basarili++; else hatalar.push(`${dosya.name}: ${r.hata || 'yüklenemedi'}`);
+        } catch (e) { hatalar.push(`${dosya.name}: bağlantı hatası`); }
+    }
+    hideLoading();
+    if (basarili) showToast(`${basarili} dosya yüklendi.`, 'success');
+    if (hatalar.length) showToast(hatalar.join('\n'), 'error');
+    input.value = '';
+    prjDosyaListele();
+    if (typeof prjDosyaSayilariTazele === 'function') prjDosyaSayilariTazele(c.projeId);
+}
+
+async function prjSozlesmeAktar() {
+    const c = window._prjDosyaCtx;
+    if (!c) return;
+    showLoading();
+    const r = await secureFetch('/proje-sozlesme-dosyala', {
+        method: 'POST', body: JSON.stringify({ proje_id: c.projeId })
+    }).catch(() => null);
+    hideLoading();
+    if (!r || !r.ok) return showToast((r && r.hata) || 'Sözleşme aktarılamadı.', 'error');
+    showToast(r.mesaj, 'success');
+    prjDosyaListele();
+    prjDosyaSayilariTazele(c.projeId);
 }
 
 async function prjDosyaSil(id) {
@@ -18328,6 +18361,22 @@ async function prjDosyaSil(id) {
     if (!r.ok) return showToast(r.hata || 'Silinemedi.', 'error');
     showToast('Dosya silindi.', 'success');
     prjDosyaListele();
+    if (window._prjDosyaCtx) prjDosyaSayilariTazele(window._prjDosyaCtx.projeId);
+}
+
+// Proje Detay'daki üç dosya düğmesinin üzerindeki adet rozetlerini tazeler
+async function prjDosyaSayilariTazele(projeId) {
+    const kutu = document.getElementById('pdDosyaAlani');
+    if (!kutu || String(kutu.dataset.projeId) !== String(projeId)) return;
+    const r = await secureFetch('/proje-dosyalari/' + projeId).catch(() => null);
+    if (!r || !r.ok) return;
+    Object.keys(PRJ_DOSYA_TUR).forEach(tur => {
+        const rozet = document.getElementById('pdDosyaSayi_' + tur);
+        if (!rozet) return;
+        const n = (r.data || []).filter(d => d.tur === tur).length;
+        rozet.textContent = n || '';
+        rozet.classList.toggle('d-none', !n);
+    });
 }
 
 function pdOnayAlaniDoldur(proje) {
@@ -18698,6 +18747,31 @@ function detayKutusu(baslik, ikon, sinif, alanlar) {
     </div>`;
 }
 
+// PROJE DOSYALARI KUTUSU (Yunus 2026-08-03): üç alan da proje bazlı ve çoklu.
+// Eski "Bağlantılar" kutusunun (ASET / Drive) yerini alır — dosyalar artık sistemin
+// kendi içinde tutulduğu için dış klasör linklerine gerek kalmadı.
+// Yükleme Operasyon fazına bağlıdır; satış fazındaki projede düğmeler görüntüleme
+// amaçlı açık kalır, panelde uyarı çıkar ve yükleme formu gizlenir.
+function pdDosyaKutusu(proje) {
+    const operasyonda = (proje.faz || 'TESLIMAT') === 'TESLIMAT';
+    const dugme = (tur) => {
+        const t = PRJ_DOSYA_TUR[tur];
+        return `<div class="col-12">
+            <button class="btn btn-outline-${t.renk} btn-sm w-100 d-flex align-items-center gap-2 text-start"
+                    onclick="prjDosyaAc(${proje.id}, '${tur}', '${escJs(proje.proje_kodu || '')}', ${operasyonda})">
+                <i class="bi bi-${t.ikon}"></i><span class="flex-grow-1">${t.ad}</span>
+                <span id="pdDosyaSayi_${tur}" class="badge bg-${t.renk} d-none"></span>
+            </button></div>`;
+    };
+    return `<div class="col-lg-6" id="pdDosyaAlani" data-proje-id="${proje.id}">
+        <div class="p-3 bg-white border rounded shadow-sm h-100">
+            <div class="fw-bold text-uppercase text-muted mb-2 pb-1 border-bottom" style="font-size:0.7rem; letter-spacing:0.4px;">
+                <i class="bi bi-folder2-open me-1"></i>Proje Dosyaları</div>
+            <div class="row g-2">${dugme('SOZLESME')}${dugme('MIMARI')}${dugme('DIGER')}</div>
+            ${operasyonda ? '' : '<div class="small text-muted mt-2"><i class="bi bi-info-circle me-1"></i>Dosya yükleme, proje Operasyon fazına geçtikten sonra açılır.</div>'}
+        </div></div>`;
+}
+
 function renderProjeDetay(proje, teslimatlar) {
     pdOnayAlaniDoldur(proje);   // ADMIN'e Onayla / Onayı Geri Al butonu (TASLAK↔SÖZLEŞME)
     document.getElementById("pdBaslik").innerHTML = `<i class="bi bi-folder2-open me-2 text-primary"></i>[${esc(proje.proje_kodu)}] ${esc(proje.musteri_adi)} - ${esc(proje.proje_adi)}`;
@@ -18726,9 +18800,7 @@ function renderProjeDetay(proje, teslimatlar) {
             detayAlani('Satış Temsilcisi', esc(proje.satis_temsilcisi || '-')),
             detayAlani('Para Birimi', esc(proje.para_birimi || 'TL')),
             detayAlani('KDV Oranı', '%' + esc(proje.kdv_orani)),
-            detayAlani('Nakliye', esc(proje.nakliye || '-')),
-            detayAlani('Sözleşme Dosyaları',
-                `<button class="btn btn-sm btn-outline-primary py-0" onclick="prjDosyaAc(${proje.id}, null, 'SOZLESME', '${escJs(proje.proje_kodu || '')} Sözleşme Dosyaları')"><i class="bi bi-folder2-open me-1"></i>Görüntüle / Yükle</button>`, true)
+            detayAlani('Nakliye', esc(proje.nakliye || '-'))
         ])}
         ${detayKutusu('Yer ve İrtibat', 'geo-alt', 'col-lg-6', [
             detayAlani('Şehir / Ülke', esc([proje.sehir, proje.ulke].filter(Boolean).join(' / ') || '-')),
@@ -18737,14 +18809,7 @@ function renderProjeDetay(proje, teslimatlar) {
                 esc(proje.irtibat_adi || '-') + (proje.irtibat_email ? ' · ' + esc(proje.irtibat_email) : '') +
                 (proje.irtibat_telefon ? ' · ' + esc(proje.irtibat_telefon) : ''), true)
         ])}
-        ${detayKutusu('Bağlantılar', 'link-45deg', 'col-lg-6', [
-            detayAlani('ASET', proje.aset_link
-                ? `<a class="text-decoration-none text-break" target="_blank" rel="noopener" href="${esc(proje.aset_link)}">${esc(proje.aset_link)}</a>`
-                : '<span class="text-muted">-</span>', true),
-            detayAlani('Drive', proje.drive_link
-                ? `<a class="text-decoration-none text-break" target="_blank" rel="noopener" href="${esc(proje.drive_link)}">${esc(proje.drive_link)}</a>`
-                : '<span class="text-muted">-</span>', true)
-        ])}
+        ${pdDosyaKutusu(proje)}
         ${proje.aciklama ? detayKutusu('Açıklama', 'chat-left-text', 'col-12', [
             `<div class="col-12"><span class="text-dark small" style="white-space:pre-wrap;">${esc(proje.aciklama)}</span></div>`
         ]) : ''}
@@ -18762,6 +18827,7 @@ function renderProjeDetay(proje, teslimatlar) {
         </div>
 
     `;
+    prjDosyaSayilariTazele(proje.id);   // üç dosya düğmesinin adet rozetleri
 
     // SEKMELİ TESLİMAT GÖRÜNÜMÜ
     const tablar = document.getElementById("pdTeslimatTablar");
@@ -18870,9 +18936,6 @@ function renderProjeDetay(proje, teslimatlar) {
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-warning" ${proje.durum === 'TASLAK' ? 'disabled title="İş emri için önce ADMIN proje onayı (Sözleşme) gerekli"' : `onclick="tieAc(${t.id}, '${escJs(t.bina_adi || '')}')"`}>
                         <i class="bi bi-clipboard2-check me-1"></i>İş Emri
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-info" onclick="prjDosyaAc(${proje.id}, ${t.id}, 'MIMARI', '${escJs(t.bina_adi || '')} — Mimari Proje')">
-                        <i class="bi bi-bounding-box me-1"></i>Mimari Proje
                     </button>
                     <div class="btn-group btn-group-sm">
                         <button type="button" class="btn btn-outline-dark dropdown-toggle" data-bs-toggle="dropdown">
@@ -19194,8 +19257,6 @@ function saveProjeGelis() {
         para_birimi: document.getElementById("pjPara").value,
         kdv_orani: document.getElementById("pjKdv").value,
         satis_temsilcisi: document.getElementById("pjSatisTemsilcisi")?.value.trim() || '',
-        aset_link: document.getElementById("pjAsetLink")?.value.trim() || '',
-        drive_link: document.getElementById("pjDriveLink")?.value.trim() || '',
         sehir: document.getElementById("pjSehir").value.trim(),
         ulke: document.getElementById("pjUlke").value.trim(),
         adres: document.getElementById("pjAdres").value.trim(),

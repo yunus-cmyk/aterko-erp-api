@@ -4648,10 +4648,44 @@ app.get('/api/talep-dosyalari/:talepId', yetkiKontrol, async (req, res, next) =>
     } catch (e) { next(e); }
 });
 
-// ---- PROJE DOSYALARI: Sözleşme (proje bazlı) + Mimari Proje (teslimat bazlı), yalnız PDF ----
+// ---- PROJE DOSYALARI (Yunus 2026-08-03): üçü de PROJE BAZLI, hepsi çoklu yüklenebilir.
+//   SOZLESME → Sözleşme Dosyaları (onayda sistem PDF'i otomatik düşer, üstüne ek yüklenebilir)
+//   MIMARI   → Mimari Projeler (eskiden teslimat/bina bazlıydı, proje geneline alındı;
+//              eski kayıtların teslimat_id'si tarihsel bilgi olarak korunur)
+//   DIGER    → Diğer Dosyalar
+// Yükleme yalnız proje OPERASYON fazındayken (faz=TESLIMAT) yapılabilir.
+const PROJE_DOSYA_TURLERI = {
+    SOZLESME: 'Sözleşme dosyası',
+    MIMARI:   'Mimari proje',
+    DIGER:    'Diğer dosya'
+};
+
+// Storage'a yükleyip proje_dosyalari'na kaydeder. Hem kullanıcı yüklemesi hem de
+// sözleşme onayındaki otomatik aktarım bu tek yolu kullanır.
+async function projeDosyasiEkle({ projeId, projeKodu, teslimatId = null, tur, dosyaAdi, buffer, mimeType, yukleyenAd, yukleyenEmail }) {
+    const safeName = String(dosyaAdi).replace(/[^A-Za-z0-9._\-]/g, '_');
+    const storagePath = `proje/${projeKodu}/${tur.toLowerCase()}/${Date.now()}-${safeName}`;
+    const { error: upErr } = await supabaseStorage.storage
+        .from(SIPARIS_BUCKET).upload(storagePath, buffer, { contentType: mimeType, upsert: false });
+    if (upErr) throw new Error('Yükleme hatası: ' + upErr.message);
+    const { data: urlData } = supabaseStorage.storage.from(SIPARIS_BUCKET).getPublicUrl(storagePath);
+    const r = await pool.query(`
+        INSERT INTO proje_dosyalari
+        (proje_id, teslimat_id, tur, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
+    `, [projeId, teslimatId, tur, dosyaAdi, storagePath, urlData.publicUrl,
+        mimeType, buffer.length, yukleyenAd, yukleyenEmail]);
+    return r.rows[0];
+}
+
 app.get('/api/proje-dosyalari/:projeId', yetkiKontrol, async (req, res, next) => {
     try {
-        const r = await pool.query('SELECT * FROM proje_dosyalari WHERE proje_id=$1 ORDER BY kayit_tarihi DESC', [req.params.projeId]);
+        // Eski (bina bazlı) mimari kayıtların hangi binaya ait olduğu listede görünsün
+        const r = await pool.query(`
+            SELECT d.*, t.bina_adi
+            FROM proje_dosyalari d
+            LEFT JOIN proje_teslimatlari t ON t.id = d.teslimat_id
+            WHERE d.proje_id=$1 ORDER BY d.kayit_tarihi DESC`, [req.params.projeId]);
         res.json({ ok: true, data: r.rows });
     } catch (e) { next(e); }
 });
@@ -4660,31 +4694,52 @@ app.post('/api/proje-dosya-yukle', yetkiKontrol, dosyaUpload.single('dosya'), as
     if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
     try {
         const { proje_id, teslimat_id } = req.body;
-        const tur = ['SOZLESME', 'MIMARI'].includes(String(req.body.tur || '').toUpperCase()) ? String(req.body.tur).toUpperCase() : null;
-        if (!tur || !proje_id) return res.json({ ok: false, hata: 'Proje ve dosya türü gerekli.' });
-        if (tur === 'MIMARI' && !teslimat_id) return res.json({ ok: false, hata: 'Mimari proje teslimat (bina) bazlıdır — teslimat seçilmedi.' });
+        const tur = String(req.body.tur || '').toUpperCase();
+        if (!PROJE_DOSYA_TURLERI[tur] || !proje_id) return res.json({ ok: false, hata: 'Proje ve dosya türü gerekli.' });
         if (!req.file) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
         // İzinli biçimler: PDF, DWG (AutoCAD), JPG/JPEG, PNG, ZIP
         if (!/\.(pdf|dwg|jpe?g|png|zip)$/i.test(req.file.originalname))
             return res.json({ ok: false, hata: 'İzinli dosya biçimleri: PDF, DWG, JPG, PNG, ZIP.' });
-        const pR = await pool.query('SELECT proje_kodu FROM projeler WHERE id=$1', [proje_id]);
+        const pR = await pool.query(`SELECT proje_kodu, COALESCE(faz,'TESLIMAT') faz FROM projeler WHERE id=$1`, [proje_id]);
         if (!pR.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
+        // Dosya alanları operasyon fazının işidir; satış fazında yükleme yapılamaz.
+        if (pR.rows[0].faz !== 'TESLIMAT')
+            return res.json({ ok: false, hata: 'Proje dosyaları yalnız Operasyon fazında yüklenebilir. Önce sözleşme onaylanmalı.' });
         const orijinalAd = dosyaAdiUTF8(req.file.originalname);
-        const safeName = orijinalAd.replace(/[^A-Za-z0-9._\-]/g, '_');
-        const storagePath = `proje/${pR.rows[0].proje_kodu}/${tur.toLowerCase()}/${Date.now()}-${safeName}`;
-        const { error: upErr } = await supabaseStorage.storage
-            .from(SIPARIS_BUCKET).upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
-        if (upErr) return res.json({ ok: false, hata: 'Yükleme hatası: ' + upErr.message });
-        const { data: urlData } = supabaseStorage.storage.from(SIPARIS_BUCKET).getPublicUrl(storagePath);
-        const r = await pool.query(`
-            INSERT INTO proje_dosyalari
-            (proje_id, teslimat_id, tur, dosya_adi, storage_path, public_url, mime_type, boyut, yukleyen_adsoyad, yukleyen_email)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
-        `, [proje_id, teslimat_id || null, tur, orijinalAd, storagePath, urlData.publicUrl,
-            req.file.mimetype, req.file.size, req.user.adSoyad, req.user.email]);
-        await auditLogla(req, { eylem: 'CREATE', tablo: 'proje_dosyalari', kayit_id: r.rows[0].id, ozet: `${tur === 'SOZLESME' ? 'Sözleşme' : 'Mimari proje'} yüklendi: ${orijinalAd}` });
-        res.json({ ok: true, mesaj: 'Dosya yüklendi.', data: r.rows[0] });
+        const kayit = await projeDosyasiEkle({
+            projeId: parseInt(proje_id), projeKodu: pR.rows[0].proje_kodu,
+            teslimatId: teslimat_id || null, tur, dosyaAdi: orijinalAd,
+            buffer: req.file.buffer, mimeType: req.file.mimetype,
+            yukleyenAd: req.user.adSoyad, yukleyenEmail: req.user.email
+        });
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'proje_dosyalari', kayit_id: kayit.id, ozet: `${PROJE_DOSYA_TURLERI[tur]} yüklendi: ${orijinalAd}` });
+        res.json({ ok: true, mesaj: 'Dosya yüklendi.', data: kayit });
     } catch (e) { console.error('Proje dosya yükleme:', e); next(e); }
+});
+
+// SİSTEM SÖZLEŞMESİNİ DOSYALARA AKTAR (Yunus 2026-08-03): sözleşme onayındaki otomatik
+// aktarımın elle karşılığı. Onay bu özellikten ÖNCE yapılmış projelerde (ve otomatik
+// aktarımın başarısız olduğu durumlarda) Sözleşme Dosyaları panelinden çağrılır.
+app.post('/api/proje-sozlesme-dosyala', yetkiKontrol, izinGerekli('projeler', 'YAZMA'), async (req, res, next) => {
+    if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
+    try {
+        const projeId = parseInt(req.body.proje_id);
+        if (!projeId) return res.json({ ok: false, hata: 'Proje gerekli.' });
+        const pR = await pool.query(`SELECT proje_kodu, COALESCE(faz,'TESLIMAT') faz FROM projeler WHERE id=$1`, [projeId]);
+        if (!pR.rowCount) return res.json({ ok: false, hata: 'Proje bulunamadı.' });
+        if (pR.rows[0].faz !== 'TESLIMAT')
+            return res.json({ ok: false, hata: 'Proje dosyaları yalnız Operasyon fazında yüklenebilir.' });
+        const uretim = await sozlesmePDFUret(projeId, req.user.adSoyad);
+        if (!uretim) return res.json({ ok: false, hata: 'Bu projede sözleşme kaydı yok; PDF üretilemedi.' });
+        const kayit = await projeDosyasiEkle({
+            projeId, projeKodu: pR.rows[0].proje_kodu, tur: 'SOZLESME',
+            dosyaAdi: uretim.dosyaAdi, buffer: uretim.buffer, mimeType: 'application/pdf',
+            yukleyenAd: `Sistem (${req.user.adSoyad} aktardı)`, yukleyenEmail: req.user.email
+        });
+        await auditLogla(req, { eylem: 'CREATE', tablo: 'proje_dosyalari', kayit_id: kayit.id,
+            ozet: `Sözleşme PDF'i dosyalara elle aktarıldı: ${uretim.dosyaAdi}` });
+        res.json({ ok: true, mesaj: 'Sözleşme PDF\'i dosyalara aktarıldı.', data: kayit });
+    } catch (e) { console.error('Sözleşme dosyalama:', e); next(e); }
 });
 
 app.delete('/api/proje-dosya-sil/:dosyaId', yetkiKontrol, async (req, res, next) => {
@@ -8839,10 +8894,10 @@ app.get('/api/satis-sozlesme/:projeId', yetkiKontrol, async (req, res, next) => 
 // [01] Müşteri ve proje bilgileri, [02] onaylanan teklif detayları, sonra 17 maddelik
 // asıl sözleşme metni (lib/sozlesme-metni.js), en sonda bileşenlerin teknik şartnameleri.
 // Görsel dil teklif/şartname PDF'leriyle ortak.
-app.get('/api/satis-sozlesme-pdf/:projeId', yetkiKontrol, async (req, res, next) => {
-    try {
-        const projeId = parseInt(req.params.projeId);
-        const sr = await pool.query(`
+// Tek kaynak: hem indirme ucu hem de sözleşme onayındaki otomatik dosya aktarımı
+// bu üreticiyi kullanır. Dönen: { buffer, dosyaAdi, kod } — sözleşme yoksa null.
+async function sozlesmePDFUret(projeId, kullaniciAd) {
+    const sr = await pool.query(`
             SELECT s.*, t.teklif_no, t.teklif_tarihi, t.toplam_buyukluk,
                    t.notlar AS teklif_notlar, t.odeme_kosullari AS teklif_odeme,
                    t.teslimat_kosullari AS teklif_teslimat,
@@ -8857,26 +8912,32 @@ app.get('/api/satis-sozlesme-pdf/:projeId', yetkiKontrol, async (req, res, next)
             LEFT JOIN projeler p ON p.id = s.proje_id
             LEFT JOIN sat_musteriler m ON m.id = p.sat_musteri_id
             WHERE s.proje_id=$1 ORDER BY s.id DESC LIMIT 1`, [projeId]);
-        if (!sr.rowCount) return res.status(404).json({ ok: false, hata: 'Bu projede sözleşme bulunamadı.' });
-        const s = sr.rows[0];
-        const kalemler = s.teklif_id
-            ? (await pool.query('SELECT * FROM sat_teklif_kalemleri WHERE teklif_id=$1 ORDER BY sira, id', [s.teklif_id])).rows
-            : [];
-        const sartnameler = s.teklif_id ? await teklifSartnameGovdeleri(s.teklif_id, req.user.adSoyad) : [];
-        const { htmlToPDF } = require('./lib/pdf-generator');
-        const fesc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const pdfBuffer = await htmlToPDF(satisSozlesmeHTML(s, kalemler, sartnameler), {
-            margin: { top: '18mm', bottom: '20mm', left: '20mm', right: '20mm' },
-            displayHeaderFooter: true,
-            headerTemplate: '<div></div>',
-            footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
-                `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
-                `<span>${fesc(s.proje_adi || '')} // ${fesc(s.kod || '')}</span></div>`
-        });
-        const dosyaAdi = dosyaAdiTemizle(`Sözleşme ${s.kod || ''} - ${s.musteri_adi || ''}`) + '.pdf';
+    if (!sr.rowCount) return null;
+    const s = sr.rows[0];
+    const kalemler = s.teklif_id
+        ? (await pool.query('SELECT * FROM sat_teklif_kalemleri WHERE teklif_id=$1 ORDER BY sira, id', [s.teklif_id])).rows
+        : [];
+    const sartnameler = s.teklif_id ? await teklifSartnameGovdeleri(s.teklif_id, kullaniciAd) : [];
+    const { htmlToPDF } = require('./lib/pdf-generator');
+    const fesc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const buffer = await htmlToPDF(satisSozlesmeHTML(s, kalemler, sartnameler), {
+        margin: { top: '18mm', bottom: '20mm', left: '20mm', right: '20mm' },
+        displayHeaderFooter: true,
+        headerTemplate: '<div></div>',
+        footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
+            `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
+            `<span>${fesc(s.proje_adi || '')} // ${fesc(s.kod || '')}</span></div>`
+    });
+    return { buffer, kod: s.kod || '', dosyaAdi: dosyaAdiTemizle(`Sözleşme ${s.kod || ''} - ${s.musteri_adi || ''}`) + '.pdf' };
+}
+
+app.get('/api/satis-sozlesme-pdf/:projeId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const uretim = await sozlesmePDFUret(parseInt(req.params.projeId), req.user.adSoyad);
+        if (!uretim) return res.status(404).json({ ok: false, hata: 'Bu projede sözleşme bulunamadı.' });
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', cdHeader(dosyaAdi));
-        res.send(pdfBuffer);
+        res.setHeader('Content-Disposition', cdHeader(uretim.dosyaAdi));
+        res.send(uretim.buffer);
     } catch (e) { next(e); }
 });
 
@@ -8928,7 +8989,30 @@ app.post('/api/satis-sozlesme-aksiyon', yetkiKontrol, izinGerekli('satis.proje',
                 ozet: `Sözleşme onayıyla otomatik faz geçişi: ${p.rows[0].proje_kodu} satıştan Operasyon'a (SÖZLEŞME)` });
         }
         await client.query('COMMIT');
-        res.json({ ok: true, mesaj: a.ad + '.' + fazMesaj, durum: a.durum });
+        // OTOMATİK SÖZLEŞME DOSYASI (Yunus 2026-08-03): proje operasyona geçerken sistemin
+        // ürettiği sözleşme PDF'i Sözleşme Dosyaları alanına düşer; ekip ıslak imzalı nüshayı
+        // ayrıca yükleyebilir. İşlem DIŞINDA yapılır (PDF üretimi saniyeler sürer) ve
+        // başarısızlığı onayı BOZMAZ — yalnız mesaja not düşülür.
+        let dosyaMesaj = '';
+        if (aksiyon === 'onayla') {
+            try {
+                if (!supabaseStorage) throw new Error('Storage yapılandırılmamış.');
+                const uretim = await sozlesmePDFUret(parseInt(proje_id), req.user.adSoyad);
+                if (!uretim) throw new Error('Sözleşme bulunamadı.');
+                const kayit = await projeDosyasiEkle({
+                    projeId: parseInt(proje_id), projeKodu: p.rows[0].proje_kodu, tur: 'SOZLESME',
+                    dosyaAdi: uretim.dosyaAdi, buffer: uretim.buffer, mimeType: 'application/pdf',
+                    yukleyenAd: 'Sistem (sözleşme onayı)', yukleyenEmail: req.user.email
+                });
+                await auditLogla(req, { eylem: 'CREATE', tablo: 'proje_dosyalari', kayit_id: kayit.id,
+                    ozet: `Sözleşme PDF'i onayla birlikte otomatik aktarıldı: ${uretim.dosyaAdi}` });
+                dosyaMesaj = ' Sözleşme PDF\'i proje dosyalarına aktarıldı.';
+            } catch (dosyaHata) {
+                console.error('Sözleşme PDF otomatik aktarımı:', dosyaHata.message);
+                dosyaMesaj = ' (Sözleşme PDF\'i dosyalara aktarılamadı — Sözleşme Dosyaları alanından elle yükleyebilirsiniz.)';
+            }
+        }
+        res.json({ ok: true, mesaj: a.ad + '.' + fazMesaj + dosyaMesaj, durum: a.durum });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { client.release(); }
 });
@@ -9420,7 +9504,7 @@ const ENDPOINT_IZIN_KURALLARI = [
 
     // Projeler
     { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat|proje-dosyalari)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
-    { pattern: /^\/api\/(proje-kaydet|proje-sil|proje-onay|proje-dosya|teslimat-durum)/, modul: 'projeler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/(proje-kaydet|proje-sil|proje-onay|proje-dosya|proje-sozlesme-dosyala|teslimat-durum)/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/proje-karlilik/, modul: 'rapor.karlilik', seviye: 'OKUMA' },
 
     // Bina Listeleri (Ürün Listesi)
