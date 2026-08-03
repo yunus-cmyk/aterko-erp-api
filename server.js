@@ -6542,7 +6542,8 @@ app.get('/api/satis-teklif-pdf/:id', yetkiKontrol, async (req, res, next) => {
         const t = await pool.query(`
             SELECT t.*, m.ad AS musteri_adi, m.uzun_ad AS musteri_uzun_ad, m.adres AS musteri_adres,
                    COALESCE(p.proje_kodu::text, t.eski_proje_id::text) AS proje_kodu,
-                   COALESCE(p.proje_adi, t.eski_proje_adi) AS proje_adi_goster
+                   COALESCE(p.proje_adi, t.eski_proje_adi) AS proje_adi_goster,
+                   p.sehir, p.ulke, p.irtibat_adi, p.irtibat_email, p.irtibat_telefon, p.satis_temsilcisi
             FROM sat_teklifler t
             LEFT JOIN sat_musteriler m ON m.id=t.musteri_id
             LEFT JOIN projeler p ON p.id=t.proje_id
@@ -6550,8 +6551,21 @@ app.get('/api/satis-teklif-pdf/:id', yetkiKontrol, async (req, res, next) => {
         if (t.rowCount === 0) return res.status(404).json({ ok: false, hata: 'Teklif bulunamadı.' });
         const kalemler = (await pool.query('SELECT * FROM sat_teklif_kalemleri WHERE teklif_id=$1 ORDER BY sira, id', [id])).rows;
         const { htmlToPDF } = require('./lib/pdf-generator');
-        const pdfBuffer = await htmlToPDF(satisTeklifHTML(t.rows[0], kalemler),
-            { margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' } });
+        const tk = t.rows[0];
+        // Altbilgi (teknik şartname PDF'iyle aynı dil): sol sayfa no, sağ künye,
+        // ortada eski sistemden devralınan fidan notu.
+        const fesc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        // Teklifteki her bina bileşeninin teknik şartnamesi belgenin sonuna eklenir
+        const sartnameler = await teklifSartnameGovdeleri(id, req.user.adSoyad);
+        const pdfBuffer = await htmlToPDF(satisTeklifHTML(tk, kalemler, sartnameler), {
+            margin: { top: '18mm', bottom: '20mm', left: '20mm', right: '20mm' },
+            displayHeaderFooter: true,
+            headerTemplate: '<div></div>',
+            footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
+                `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
+                `<span>${fesc(tk.proje_adi_goster || '')} // ${fesc(tk.teklif_no || '')}</span>` +
+                `</div>`
+        });
         const dosyaAdi = dosyaAdiTemizle(`Teklif ${t.rows[0].teklif_no} - ${t.rows[0].musteri_adi || ''}`) + '.pdf';
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', cdHeader(dosyaAdi));
@@ -6559,77 +6573,197 @@ app.get('/api/satis-teklif-pdf/:id', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
-function satisTeklifHTML(t, kalemler) {
+// TEKLİF PDF GÖVDESİ (Yunus 2026-08-03): içerik eski sistemin teklif çıktısıyla aynı
+// (kapak sayfası ve tekrar eden üst bilgi hariç), GÖRSEL DİL teknik şartname PDF'i:
+// Rubik 8pt, turuncu [NN] bölüm numaraları, #ffad94 kenarlıklı tablolar, ince altbilgi.
+//   [01] TEKLİF DETAYLARI   → proje bilgileri + bileşen tablosu + toplamlar
+//   [02] TEKLİF KOŞULLARI   → açıklamalar / ödeme / teslimat
+//   [03] DAHİLLER VE HARİÇLER → kapsamda olan / olmayan hizmetler
+function satisTeklifHTML(t, kalemler, sartnameGovdeleri = []) {
     const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const fmt = n => (parseFloat(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const trh = d => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
     const pb = t.para_birimi || 'TL';
-    let logoData = '';
-    try {
-        logoData = 'data:image/png;base64,' + require('fs').readFileSync(__dirname + '/assets/aterko-logo-dark.png').toString('base64');
-    } catch (e) { /* logo yoksa başlık metinle kalır */ }
-    const kosulBolum = (baslik, icerik) => icerik ? `
-        <div class="kosul"><div class="kosul-baslik">${esc(baslik)}</div>
-        <div class="kosul-metin">${esc(icerik).replace(/\n/g, '<br>')}</div></div>` : '';
-    return `<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"><style>
-        * { box-sizing: border-box; font-family: 'DejaVu Sans', Arial, sans-serif; }
-        body { font-size: 9.5pt; color: #212529; margin: 0; }
-        .ust { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #e34400; padding-bottom: 8px; margin-bottom: 14px; }
-        .ust img { height: 34px; }
-        .ust .no { text-align: right; font-size: 8.5pt; color: #495057; }
-        .ust .no b { font-size: 12pt; color: #212529; }
-        h1 { font-size: 13pt; margin: 0 0 10px; }
-        .bilgi { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 9pt; }
-        .bilgi td { padding: 3px 8px; border: 1px solid #dee2e6; }
-        .bilgi td.e { background: #f8f9fa; font-weight: bold; width: 110px; }
-        table.kalem { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
-        table.kalem th { background: #212529; color: #fff; padding: 5px 7px; font-size: 8.5pt; text-align: left; }
-        table.kalem td { padding: 5px 7px; border-bottom: 1px solid #dee2e6; font-size: 9pt; vertical-align: top; }
-        table.kalem .s { text-align: right; white-space: nowrap; }
-        .ops { color: #6c757d; font-style: italic; }
-        .toplamlar { width: 260px; margin-left: auto; margin-top: 8px; border-collapse: collapse; }
-        .toplamlar td { padding: 3px 8px; font-size: 9.5pt; }
-        .toplamlar td:last-child { text-align: right; white-space: nowrap; }
-        .toplamlar tr.g td { border-top: 2px solid #212529; font-weight: bold; font-size: 11pt; }
-        .kosul { margin-top: 12px; page-break-inside: avoid; }
-        .kosul-baslik { font-weight: bold; font-size: 10pt; border-bottom: 1px solid #adb5bd; margin-bottom: 4px; padding-bottom: 2px; }
-        .kosul-metin { font-size: 8.5pt; color: #343a40; line-height: 1.45; }
+
+    // Serbest metin alanları madde listesine çevrilir (eski çıktıdaki • düzeni).
+    // Zaten "-" veya "•" ile başlayan satırların işareti tekrarlanmaz.
+    const maddeler = (metin) => {
+        const satirlar = String(metin || '').split('\n').map(x => x.replace(/^\s*[-•*]\s*/, '').trim()).filter(Boolean);
+        if (!satirlar.length) return '';
+        return `<ul class="md">${satirlar.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`;
+    };
+    const altBolum = (baslik, metin) => metin && String(metin).trim()
+        ? `<div class="alt-bas">${esc(baslik)}</div>${maddeler(metin)}` : '';
+
+    // Kalemin künyesi: bina tipi + ölçü bilgileri (eski çıktıda ikinci satır olarak yer alıyordu)
+    const kalemKunye = (k) => {
+        const p = [];
+        if (k.bina_tipi) p.push(k.bina_tipi);
+        if (k.konteyner_ebadi) p.push(k.konteyner_ebadi);
+        if (k.kat_yuksekligi) p.push(k.kat_yuksekligi + ' mm');
+        if (k.kat_adedi) p.push(k.kat_adedi + ' Kat');
+        if (k.dis_duvar_kesiti) p.push('Dış duvar ' + k.dis_duvar_kesiti);
+        if (k.ic_duvar_kesiti) p.push('İç duvar ' + k.ic_duvar_kesiti);
+        const kunye = p.join(' - ');
+        // Eski kayıtlardaki 'aciklama' alanı çoğunlukla künyenin aynısıdır (yeni sistemde
+        // bu alan kaldırıldı). Künye varsa açıklama tekrarlanmaz; yoksa (Diğer kalemleri)
+        // tek bilgi kaynağı olduğu için gösterilir.
+        const metin = kunye || (k.aciklama || '').trim();
+        return metin ? `<div class="alt">${esc(metin)}</div>` : '';
+    };
+
+    const projeYeri = [t.ulke, t.sehir].filter(Boolean).join(', ');
+    const hitap = (t.irtibat_adi || '').trim();
+    const temsilci = (t.satis_temsilcisi || '').trim();
+
+    return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><style>
+      @import url('https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400;0,500;0,700;1,400;1,700&display=swap');
+      @page { margin: 20mm; size: A4; }
+      * { box-sizing: border-box; }
+      body { font-family:'Rubik','Arial',sans-serif; font-size:8pt; color:#1a1a1a; margin:0; }
+      .header { margin-bottom:14px; }
+      .header img { width:100%; height:auto; }
+      .baslik { color:#1a1a1a; font-weight:700; font-size:12pt; margin-bottom:10px; }
+      /* Kapak üstü iki satırlık künye tablosu (eski çıktıdaki düzen): solda muhatap
+         ve iletişimi, sağda tarih ve teklif numarası. Çerçevesiz, ince ayraçlı. */
+      table.ustbilgi { width:100%; border-collapse:collapse; margin-bottom:16px; }
+      table.ustbilgi td { padding:3px 0; font-size:8.5pt; border:none; border-bottom:1px solid #ffd9cc; }
+      table.ustbilgi td.sag { text-align:right; white-space:nowrap; font-weight:700; }
+      .mektup { font-size:8.5pt; line-height:1.6; margin:0 0 6px; }
+      .mektup .selam { font-weight:700; margin-bottom:4px; }
+      /* Bölümler ve şartnameler yeni sayfadan başlar */
+      .yeni-sayfa { page-break-before: always; }
+      .imza { margin-top:10px; font-size:8.5pt; line-height:1.5; }
+      .imza .ad { font-weight:700; }
+      .bolum-bas { margin:16px 0 6px; page-break-inside:avoid; page-break-after:avoid; }
+      .bolum-bas .ana { color:#1a1a1a; font-weight:700; font-size:12pt; }
+      .bolum-bas .ana .bno { color:#ff4c00; }
+      .alt-bas { font-weight:700; font-size:9.5pt; margin:10px 0 4px; page-break-after:avoid; }
+      table.ts { width:100%; border-collapse:collapse; margin-bottom:10px; page-break-inside:auto; }
+      table.ts td, table.ts th { border:1px solid #ffad94; padding:5px 9px; vertical-align:top; font-size:8pt; line-height:1.4; }
+      table.ts th { background:#fff3ef; font-weight:700; text-align:left; }
+      table.ts tr { page-break-inside:avoid; }
+      table.ts td.e { font-weight:700; width:34%; }
+      table.ts td.s, table.ts th.s { text-align:right; white-space:nowrap; }
+      table.ts td.no { width:26px; text-align:center; }
+      table.ts td .alt { font-weight:400; font-size:7.5pt; color:#666; font-style:italic; }
+      table.ts tr.ops td { color:#888; font-style:italic; }
+      table.ts tr.toplam td { font-weight:700; background:#fff8f6; }
+      table.ts tr.genel td { font-weight:700; font-size:9.5pt; background:#fff3ef; border-top:2px solid #ff4c00; }
+      ul.md { margin:0 0 8px; padding-left:16px; }
+      ul.md li { font-size:8pt; line-height:1.5; margin-bottom:2px; }
+      /* Sona eklenen teknik şartname gövdelerinin kendi sınıfları (şartname PDF'iyle aynı) */
+      .bolum-ana { display:flex; flex-direction:column; }
+      .bolum-ana .turuncu { color:#ff4c00; font-weight:700; font-size:11pt; line-height:1.3; }
+      .bolum-aciklama { font-weight:700; font-size:8.5pt; margin:0 0 6px; }
+      table.ts td.soru { font-weight:700; width:34%; }
+      table.ts td.soru .alt { font-weight:400; font-size:7.5pt; color:#666; font-style:italic; }
+      table.ts td.cevap .not { color:#666; font-style:italic; }
+      table.ts ul.ml { margin:0; padding-left:16px; }
+      .gizli-not { color:#888; font-style:italic; font-size:8pt; margin-top:12px; line-height:1.5; }
     </style></head><body>
-        <div class="ust">
-            ${logoData ? `<img src="${logoData}" alt="Aterko">` : '<b style="font-size:16pt;">ATERKO</b>'}
-            <div class="no"><b>TEKLİF</b><br>No: ${esc(t.teklif_no || '-')}<br>Tarih: ${trh(t.teklif_tarihi)}</div>
-        </div>
-        <table class="bilgi">
-            <tr><td class="e">Müşteri</td><td>${esc(t.musteri_uzun_ad || t.musteri_adi || '-')}</td></tr>
-            ${t.proje_adi_goster ? `<tr><td class="e">Proje</td><td>${esc((t.proje_kodu ? t.proje_kodu + ' — ' : '') + t.proje_adi_goster)}</td></tr>` : ''}
-            ${t.musteri_adres ? `<tr><td class="e">Adres</td><td>${esc(t.musteri_adres)}</td></tr>` : ''}
-        </table>
-        <table class="kalem">
-            <thead><tr><th style="width:26px;">#</th><th>Açıklama</th><th class="s">Büyüklük</th><th class="s">Miktar</th><th class="s">Birim Fiyat</th><th class="s">Tutar</th></tr></thead>
-            <tbody>
-            ${kalemler.map((k, i) => `
-                <tr class="${k.opsiyonel ? 'ops' : ''}">
-                    <td>${i + 1}</td>
-                    <td><b>${esc(k.ad)}</b>${k.opsiyonel ? ' <small>(Opsiyonel — toplama dahil değildir)</small>' : ''}${k.aciklama ? `<br><small>${esc(k.aciklama)}</small>` : ''}</td>
-                    <td class="s">${k.ikincil_miktar != null ? fmt(k.ikincil_miktar) + ' ' + esc(k.ikincil_birim_sembol || k.ikincil_birim || '') : '-'}</td>
-                    <td class="s">${fmt(k.miktar)} ${esc(k.birim || '')}</td>
-                    <td class="s">${fmt(k.birim_fiyat)} ${pb}</td>
-                    <td class="s">${fmt(k.toplam)} ${pb}</td>
-                </tr>`).join('')}
-            </tbody>
-        </table>
-        <table class="toplamlar">
-            <tr><td>Ara Toplam (KDV Hariç)</td><td>${fmt(t.ara_toplam)} ${pb}</td></tr>
-            <tr><td>KDV (%${parseFloat(t.kdv_orani) || 0})</td><td>${fmt(t.kdv_tutar)} ${pb}</td></tr>
-            <tr class="g"><td>Genel Toplam</td><td>${fmt(t.genel_toplam)} ${pb}</td></tr>
-            ${t.iskontolu_toplam ? `<tr><td>İskontolu Toplam</td><td>${fmt(t.iskontolu_toplam)} ${pb}</td></tr>` : ''}
-        </table>
-        ${kosulBolum('Teklif Notları', t.notlar)}
-        ${kosulBolum('Dahil İşler', t.dahil_isler)}
-        ${kosulBolum('Hariç İşler', t.haric_isler)}
-        ${kosulBolum('Ödeme Koşulları', t.odeme_kosullari)}
-        ${kosulBolum('Teslimat Koşulları', t.teslimat_kosullari)}
+      <div class="header"><img src="images/siparis_logo.png" alt="ATERKO"></div>
+
+      <div class="baslik">FİYAT TEKLİFİ</div>
+      <table class="ustbilgi">
+        <tr>
+          <td>${esc(hitap || t.musteri_adi || '')}</td>
+          <td class="sag">${trh(t.teklif_tarihi)}</td>
+        </tr>
+        <tr>
+          <td>${esc([t.irtibat_email, t.irtibat_telefon].filter(Boolean).join(' // '))}</td>
+          <td class="sag">${esc(t.teklif_no || '')}</td>
+        </tr>
+      </table>
+
+      <div class="mektup">
+        ${hitap ? `<div class="selam">Sayın ${esc(hitap)},</div>` : ''}
+        ${projeYeri ? `${esc(projeYeri)} bölgesinde yapılması planlanan ` : ''}<b>${esc(t.proje_adi_goster || '')}</b>
+        ile ilgili fiyat teklifimiz aşağıda bilgilerinize sunulmuştur.
+        Teklifimizin olumlu karşılanacağı ümidiyle değerlendirmelerinize sunarız.
+        <div class="imza">Saygılarımla,<br><span class="ad">${esc(temsilci)}</span></div>
+      </div>
+
+      <div class="bolum-bas yeni-sayfa"><span class="ana"><span class="bno">[01]</span> TEKLİF DETAYLARI</span></div>
+      <div class="alt-bas">PROJE BİLGİLERİ</div>
+      <table class="ts">
+        <tr><td class="e">Teklif No / Tarih</td><td>${esc(t.teklif_no || '-')} &nbsp;·&nbsp; ${trh(t.teklif_tarihi)}</td></tr>
+        <tr><td class="e">Proje Adı</td><td>${esc(t.proje_adi_goster || '-')}</td></tr>
+        ${projeYeri ? `<tr><td class="e">Proje Yeri</td><td>${esc(projeYeri)}</td></tr>` : ''}
+        ${t.toplam_buyukluk ? `<tr><td class="e">Proje Büyüklüğü</td><td>${esc(t.toplam_buyukluk)}</td></tr>` : ''}
+      </table>
+
+      <div class="alt-bas">TEKLİF BİLEŞENLERİ</div>
+      <table class="ts">
+        <thead><tr>
+          <th class="no">NO</th><th>AÇIKLAMA</th>
+          <th class="s">MİKTAR</th><th class="s">BİRİM</th>
+          <th class="s">BİRİM FİYAT<br>[${esc(pb)}]</th><th class="s">TOPLAM FİYAT<br>[${esc(pb)}]</th>
+        </tr></thead>
+        <tbody>
+        ${kalemler.map((k, i) => `
+          <tr class="${k.opsiyonel ? 'ops' : ''}">
+            <td class="no">${i + 1}</td>
+            <td><b>${esc(k.ad)}</b>${k.ikincil_miktar != null ? ` [${fmt(k.ikincil_miktar)} ${esc(k.ikincil_birim_sembol || 'm²')}]` : ''}
+                ${k.opsiyonel ? '<div class="alt">Opsiyonel — toplama dahil değildir</div>' : ''}
+                ${kalemKunye(k)}</td>
+            <td class="s">${fmt(k.miktar)}</td>
+            <td class="s">${esc(k.birim || 'adet')}</td>
+            <td class="s">${fmt(k.birim_fiyat)}</td>
+            <td class="s">${fmt(k.toplam)}</td>
+          </tr>`).join('')}
+          <tr class="toplam"><td colspan="5" class="s">ARA TOPLAM</td><td class="s">${fmt(t.ara_toplam)}</td></tr>
+          <tr class="toplam"><td colspan="5" class="s">KDV (%${parseFloat(t.kdv_orani) || 0})</td><td class="s">${fmt(t.kdv_tutar)}</td></tr>
+          <tr class="genel"><td colspan="5" class="s">TOPLAM</td><td class="s">${fmt(t.genel_toplam)}</td></tr>
+          ${t.iskontolu_toplam ? `<tr class="toplam"><td colspan="5" class="s">İSKONTOLU TOPLAM</td><td class="s">${fmt(t.iskontolu_toplam)}</td></tr>` : ''}
+        </tbody>
+      </table>
+
+      ${(t.notlar || t.odeme_kosullari || t.teslimat_kosullari) ? `
+      <div class="bolum-bas yeni-sayfa"><span class="ana"><span class="bno">[02]</span> TEKLİF KOŞULLARI</span></div>
+      ${altBolum('AÇIKLAMALAR', t.notlar)}
+      ${altBolum('ÖDEME KOŞULLARI', t.odeme_kosullari)}
+      ${altBolum('TESLİMAT KOŞULLARI', t.teslimat_kosullari)}` : ''}
+
+      ${(t.dahil_isler || t.haric_isler) ? `
+      <div class="bolum-bas"><span class="ana"><span class="bno">[03]</span> DAHİLLER VE HARİÇLER</span></div>
+      ${altBolum('TEKLİF KAPSAMINDA OLAN HİZMETLER', t.dahil_isler)}
+      ${altBolum('TEKLİF KAPSAMINA DAHİL OLMAYAN HİZMETLER', t.haric_isler)}` : ''}
+
+      ${sartnameGovdeleri.map(g => `<div class="yeni-sayfa">${g}</div>`).join('')}
     </body></html>`;
+}
+
+// Teklif PDF'inin sonuna eklenecek TEKNİK ŞARTNAME gövdeleri (Yunus 2026-08-03):
+// teklifteki her bina bileşeni için ayrı şartname, her biri yeni sayfada. Şartname
+// PDF'iyle AYNI üreticiden (teknikSartnameHTML) gelir; tek Puppeteer çağrısında
+// basılabilmesi için <body> içeriği ayıklanır. Görsel dil zaten ortak (Rubik/turuncu),
+// eksik olabilecek şartname sınıfları teklif stiline eklenmiştir.
+async function teklifSartnameGovdeleri(teklifId, kullaniciAd) {
+    const kalemler = (await pool.query(`
+        SELECT id FROM sat_teklif_kalemleri
+        WHERE teklif_id=$1 AND bina_turu IS NOT NULL AND bina_turu <> 'Diğer'
+        ORDER BY sira, id`, [teklifId])).rows;
+    const govdeler = [];
+    for (const k of kalemler) {
+        try {
+            const t = await sartnameKalemVerisi(k.id);
+            if (!t) continue;
+            const sab = await pool.query(
+                "SELECT bolum_no,bolum_adi,bolum_gizle,bolum_aciklama,soru,cevap_sablonu,yeni_tablo,baslik_gizle FROM teknik_sartname_sablonu WHERE bina_turu=$1 ORDER BY bolum_no,satir_sira",
+                [t.bina_turu]);
+            if (!sab.rowCount) continue;   // şablonsuz bina türü (Yapısal Çelik vb.) atlanır
+            const ft = sab.rows.map(x => ({
+                bolum_adi: x.bolum_adi, bolum_sirasi: x.bolum_no, soru: x.soru, cevap_sablonu: x.cevap_sablonu,
+                bolum_aciklama: x.bolum_aciklama, yeni_tablo: x.yeni_tablo, baslik_gizle: x.baslik_gizle,
+                bolum_gizle: x.bolum_gizle || null
+            }));
+            const html = teknikSartnameHTML(t, ft, kullaniciAd);
+            const m = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+            if (m) govdeler.push(m[1]);
+        } catch (e) { /* bir bina şartnamesi üretilemezse teklif PDF'i yine de çıkar */ }
+    }
+    return govdeler;
 }
 
 // ==================== SATIŞ MODÜLÜ — PROJELER / FIRSATLAR (Faz C2b) ====================
