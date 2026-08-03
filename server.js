@@ -154,6 +154,23 @@ const yetkiKontrol = async (req, res, next) => {
     } catch (err) { next(err); }
 };
 
+// SÜRÜM UCU (Yunus 2026-08-03): dağıtım doğrulaması için. Bilerek KİMLİKSİZ —
+// deploy sonrası canlıda hangi commit'in çalıştığı dışarıdan görülebilsin diye
+// (sunucu tarafı değişikliklerinde index.html'de grep'lenecek bir iz olmuyor).
+// Yalnız commit/dal/başlangıç bilgisi döner; ortam değişkeni veya veri sızdırmaz.
+const SUNUCU_BASLANGIC = new Date();
+app.get('/api/surum', (req, res) => {
+    const commit = process.env.RENDER_GIT_COMMIT || '';
+    res.json({
+        ok: true,
+        commit: commit ? commit.slice(0, 7) : 'yerel',
+        commit_tam: commit || null,
+        dal: process.env.RENDER_GIT_BRANCH || null,
+        baslangic: SUNUCU_BASLANGIC.toISOString(),
+        calisma_saniye: Math.round((Date.now() - SUNUCU_BASLANGIC.getTime()) / 1000)
+    });
+});
+
 app.post('/api/auth/google', async (req, res, next) => {
     try {
         const { credential } = req.body;
