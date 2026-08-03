@@ -6614,6 +6614,8 @@ function satisSozlesmeHTML(s, kalemler, sartnameGovdeleri = []) {
         dahil_isler: s.teklif_dahil || s.dahil_isler || '', haric_isler: s.teklif_haric || s.haric_isler || ''
     };
     const doldur = metin => String(metin || '').replace(/\{\{(\w+)\}\}/g, (t, k) => veri[k] != null ? veri[k] : '');
+    // Satıcı unvanı şablonun giriş bölümünden alınır (tek kaynak; kapak sayfasında da kullanılır)
+    const SATICI_UNVAN = SM.giris.find(p => /Aterko Yapı/.test(p)) || 'Aterko Yapı Danışmanlık Sanayi ve Ticaret Anonim Şirketi';
 
     // Serbest metin → madde listesi (teklif PDF'iyle aynı davranış)
     const maddeler = metin => {
@@ -6701,6 +6703,15 @@ function satisSozlesmeHTML(s, kalemler, sartnameGovdeleri = []) {
       table.ts tr.toplam td { font-weight:700; background:#fff8f6; }
       table.ts tr.genel td { font-weight:700; font-size:9.5pt; background:#fff3ef; border-top:2px solid #ff4c00; }
       table.imza .imza-alan { height:48px; }
+      /* Sözleşme bölümünün kendi kapak sayfası (eski şablonun 3. sayfası) */
+      .sz-kapak { text-align:center; page-break-after:always; }
+      .sz-kapak .szk-baslik { color:#ff4c00; font-weight:700; font-size:30pt; letter-spacing:1px; margin-top:42mm; line-height:1.2; }
+      .sz-kapak .szk-proje { font-weight:700; font-size:14pt; line-height:1.35; margin-top:38mm; }
+      .sz-kapak .szk-kod { font-weight:700; font-size:11pt; margin-top:2px; }
+      .sz-kapak .szk-tarih { font-size:11pt; line-height:1.6; margin-top:34mm; }
+      .sz-kapak .szk-tarih .szk-et { font-weight:700; }
+      .sz-kapak .szk-taraf { font-weight:700; font-size:11pt; line-height:1.4; margin-top:28mm; }
+      .sz-kapak .szk-taraf + .szk-taraf { margin-top:10mm; }
       ul.md { margin:0 0 8px; padding-left:16px; }
       ul.md li { font-size:8pt; line-height:1.5; margin-bottom:2px; }
       .yeni-sayfa { page-break-before: always; }
@@ -6767,9 +6778,20 @@ function satisSozlesmeHTML(s, kalemler, sartnameGovdeleri = []) {
       ${altBolum('ONAYLANAN TEKLİF KAPSAMINDA OLAN HİZMETLER', veri.dahil_isler)}
       ${altBolum('ONAYLANAN TEKLİF KAPSAMINA DAHİL OLMAYAN HİZMETLER', veri.haric_isler)}
 
-      <div class="yeni-sayfa">
-        <div class="kapak-ana">SÖZLEŞME</div>
-        <div class="baslik">${esc(veri.proje_adi)} (${esc(veri.sozlesme_kodu)})</div>
+      <div class="yeni-sayfa sz-kapak">
+        <div class="szk-baslik">SÖZLEŞME</div>
+        <div class="szk-proje">${esc(veri.proje_adi)}
+          <div class="szk-kod">(${esc(veri.sozlesme_kodu)})</div>
+        </div>
+        <div class="szk-tarih">
+          <div class="szk-et">SÖZLEŞME TARİHİ</div>
+          <div>${esc(veri.sozlesme_tarihi)}</div>
+        </div>
+        <div class="szk-taraf">${esc(veri.musteri_uzun_ad)}</div>
+        <div class="szk-taraf">${esc(SATICI_UNVAN)}</div>
+      </div>
+
+      <div>
         <table class="ts">
           ${SM.kunye.map(k => bilgiSatiri(doldur(k.etiket), doldur(k.deger))).join('')}
         </table>
