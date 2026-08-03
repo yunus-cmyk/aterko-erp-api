@@ -572,7 +572,11 @@ app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
                     WHEN 'İPTAL'          THEN 8
                     ELSE 9
                 END ASC,
-                p.sozlesme_tarihi DESC NULLS LAST,
+                -- Durum grubu içinde PROJE NUMARASI büyükten küçüğe (Yunus 2026-08-03):
+                -- en yeni proje üstte. Kodlar 5 haneli sayı (72xxx) olduğundan sayısal
+                -- sıralanır; sayı olmayan/eski biçimli kodlar en sona düşer.
+                CASE WHEN p.proje_kodu ~ '^[0-9]+$' THEN p.proje_kodu::bigint ELSE NULL END DESC NULLS LAST,
+                p.proje_kodu DESC NULLS LAST,
                 p.id DESC
         `;
         const result = await pool.query(query);
