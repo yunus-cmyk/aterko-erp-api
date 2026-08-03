@@ -6577,6 +6577,212 @@ app.get('/api/satis-teklif-pdf/:id', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// SÖZLEŞME PDF gövdesi (Yunus 2026-08-03): eski 'Sözleşme Şablonu.docx' birebir.
+// Yapı: kapak → [01] Müşteri ve Proje Bilgileri → [02] Onaylanan Teklif Detayları →
+// SÖZLEŞME (künye + taraflar + 17 madde + imza) → bileşenlerin teknik şartnameleri.
+// Görsel dil teklif/şartname PDF'leriyle ortak (Rubik 8pt, turuncu [NN], #ffad94 tablo).
+function satisSozlesmeHTML(s, kalemler, sartnameGovdeleri = []) {
+    const SM = require('./lib/sozlesme-metni');
+    const esc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const fmt = n => (parseFloat(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const trh = d => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
+    const pb = s.para_birimi || 'TL';
+    const kdvOran = parseFloat(s.kdv_orani) || 0;
+    const araToplam = parseFloat(s.tutar) || 0;
+    const kdvTutar = araToplam * kdvOran / 100;
+    const genelToplam = araToplam + kdvTutar;
+
+    // Şablondaki {{alan}} yer tutucularının karşılıkları
+    const veri = {
+        proje_adi: s.proje_adi || '', proje_kodu: s.proje_kodu || '',
+        sozlesme_kodu: s.kod || '', sozlesme_tarihi: trh(s.tarih),
+        musteri_adi: s.musteri_adi || '', musteri_uzun_ad: s.musteri_uzun_ad || s.musteri_adi || '',
+        musteri_tip: s.musteri_tip || '-', musteri_alt_tur: s.musteri_alt_tur || '-',
+        satis_noktasi: s.satis_noktasi || '-', musteri_email: s.musteri_email || '-',
+        musteri_telefon: s.musteri_telefon || '-', isletme_turu: s.musteri_tip || '-',
+        fatura_adresi: s.fatura_adresi || '-', vergi_dairesi: s.vergi_dairesi || '-',
+        vergi_no: s.vergi_no || '-',
+        satis_temsilcisi: s.satis_temsilcisi || '-', irtibat_adi: s.irtibat_adi || '-',
+        irtibat_email: s.irtibat_email || '-', irtibat_telefon: s.irtibat_telefon || '-',
+        satis_turu: s.satis_turu || '-', proje_turu: s.proje_turu || '-',
+        ulke: s.ulke || '', sehir: s.sehir || '', adres: s.adres || '',
+        teklif_no: s.teklif_no || '-', teklif_tarihi: trh(s.teklif_tarihi),
+        para_birimi: pb, kdv_orani: String(kdvOran),
+        ara_toplam: fmt(araToplam), kdv_tutar: fmt(kdvTutar), genel_toplam: fmt(genelToplam),
+        notlar: s.teklif_notlar || s.notlar || '', odeme_kosullari: s.teklif_odeme || s.odeme_kosullari || '',
+        teslimat_kosullari: s.teklif_teslimat || s.teslimat_kosullari || '',
+        dahil_isler: s.teklif_dahil || s.dahil_isler || '', haric_isler: s.teklif_haric || s.haric_isler || ''
+    };
+    const doldur = metin => String(metin || '').replace(/\{\{(\w+)\}\}/g, (t, k) => veri[k] != null ? veri[k] : '');
+
+    // Serbest metin → madde listesi (teklif PDF'iyle aynı davranış)
+    const maddeler = metin => {
+        const satirlar = String(metin || '').split('\n').map(x => x.replace(/^\s*[-•*●]\s*/, '').trim()).filter(Boolean);
+        return satirlar.length ? `<ul class="md">${satirlar.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+    };
+    const altBolum = (baslik, metin) => metin && String(metin).trim()
+        ? `<div class="alt-bas">${esc(baslik)}</div>${maddeler(metin)}` : '';
+    const bilgiSatiri = (etiket, deger) => `<tr><td class="e">${esc(etiket)}</td><td>${esc(deger || '-')}</td></tr>`;
+
+    const kalemKunye = k => {
+        const p = [k.bina_tipi, k.konteyner_ebadi,
+            k.kat_yuksekligi ? k.kat_yuksekligi + ' mm' : null,
+            k.kat_adedi ? k.kat_adedi + ' Kat' : null].filter(Boolean);
+        const metin = p.join(' - ') || (k.aciklama || '').trim();
+        return metin ? `<div class="alt">${esc(metin)}</div>` : '';
+    };
+    // Keşif özeti / teklif bileşenleri tablosu (iki yerde aynı biçimde kullanılır)
+    const kalemTablosu = () => `
+      <table class="ts">
+        <thead><tr>
+          <th class="no">NO</th><th>AÇIKLAMA</th><th class="s">MİKTAR</th><th class="s">BİRİM</th>
+          <th class="s">BİRİM FİYAT<br>[${esc(pb)}]</th><th class="s">TOPLAM FİYAT<br>[${esc(pb)}]</th>
+        </tr></thead>
+        <tbody>
+        ${kalemler.map((k, i) => `
+          <tr>
+            <td class="no">${i + 1}</td>
+            <td><b>${esc(k.ad)}</b>${k.ikincil_miktar != null ? ` [${fmt(k.ikincil_miktar)} ${esc(k.ikincil_birim_sembol || 'm²')}]` : ''}${kalemKunye(k)}</td>
+            <td class="s">${fmt(k.miktar)}</td><td class="s">${esc(k.birim || 'adet')}</td>
+            <td class="s">${fmt(k.birim_fiyat)}</td><td class="s">${fmt(k.toplam)}</td>
+          </tr>`).join('')}
+          <tr class="toplam"><td colspan="5" class="s">ARA TOPLAM</td><td class="s">${fmt(araToplam)}</td></tr>
+          <tr class="toplam"><td colspan="5" class="s">KDV (%${kdvOran})</td><td class="s">${fmt(kdvTutar)}</td></tr>
+          <tr class="genel"><td colspan="5" class="s">TOPLAM</td><td class="s">${fmt(genelToplam)}</td></tr>
+        </tbody>
+      </table>`;
+
+    // 17 madde. 2. madde (keşif özeti) gerçek kalem tablosuyla, 17. madde imza bloğuyla basılır.
+    const maddeGovde = (m, no) => {
+        if (no === 2) return kalemTablosu();
+        if (no === 17) return `
+            <p class="pr">${esc(doldur(m.govde[0] || ''))}</p>
+            <table class="ts imza"><tr>
+              <td class="e" style="width:50%;">SATICI</td><td class="e">ALICI</td></tr>
+              <tr><td>${esc(doldur(m.govde[3] || ''))}<div class="imza-alan"></div></td>
+                  <td>${esc(doldur(m.govde[4] || ''))}<div class="imza-alan"></div></td></tr>
+            </table>`;
+        return m.govde.map(p => {
+            const d = doldur(p);
+            if (/^[●•]/.test(p.trim())) return `<div class="mdd">${esc(d.replace(/^[●•]\s*/, ''))}</div>`;
+            // Kısa büyük harfli satırlar (ALICI/SATICI gibi) ara başlık sayılır
+            if (/^[A-ZÇĞİÖŞÜ0-9 .\-]{3,28}$/.test(p.trim()) && p.trim().length < 30) return `<div class="alt-bas">${esc(d)}</div>`;
+            return `<p class="pr">${esc(d)}</p>`;
+        }).join('');
+    };
+
+    return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><style>
+      @import url('https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400;0,500;0,700;1,400;1,700&display=swap');
+      @page { margin: 20mm; size: A4; }
+      * { box-sizing: border-box; }
+      body { font-family:'Rubik','Arial',sans-serif; font-size:8pt; color:#1a1a1a; margin:0; }
+      .header { margin-bottom:14px; } .header img { width:100%; height:auto; }
+      .baslik { color:#1a1a1a; font-weight:700; font-size:12pt; margin-bottom:10px; }
+      .kapak-ana { color:#ff4c00; font-weight:700; font-size:14pt; line-height:1.3; margin-bottom:4px; }
+      table.ustbilgi { width:100%; border-collapse:collapse; margin-bottom:16px; }
+      table.ustbilgi td { padding:3px 0; font-size:8.5pt; border:none; border-bottom:1px solid #ffd9cc; }
+      table.ustbilgi td.sag { text-align:right; white-space:nowrap; font-weight:700; }
+      .bolum-bas { margin:16px 0 6px; page-break-inside:avoid; page-break-after:avoid; }
+      .bolum-bas .ana { color:#1a1a1a; font-weight:700; font-size:12pt; }
+      .bolum-bas .ana .bno { color:#ff4c00; }
+      .alt-bas { font-weight:700; font-size:9.5pt; margin:10px 0 4px; page-break-after:avoid; }
+      .madde-bas { font-weight:700; font-size:10pt; margin:14px 0 5px; page-break-after:avoid; color:#1a1a1a; }
+      .madde-bas .mno { color:#ff4c00; }
+      p.pr { margin:0 0 5px; font-size:8pt; line-height:1.55; text-align:justify; }
+      .mdd { font-size:8pt; line-height:1.5; margin:0 0 3px; padding-left:12px; }
+      table.ts { width:100%; border-collapse:collapse; margin-bottom:10px; page-break-inside:auto; }
+      table.ts td, table.ts th { border:1px solid #ffad94; padding:5px 9px; vertical-align:top; font-size:8pt; line-height:1.4; }
+      table.ts th { background:#fff3ef; font-weight:700; text-align:left; }
+      table.ts tr { page-break-inside:avoid; }
+      table.ts td.e { font-weight:700; width:34%; }
+      table.ts td.s, table.ts th.s { text-align:right; white-space:nowrap; }
+      table.ts td.no { width:26px; text-align:center; }
+      table.ts td .alt { font-weight:400; font-size:7.5pt; color:#666; font-style:italic; }
+      table.ts tr.toplam td { font-weight:700; background:#fff8f6; }
+      table.ts tr.genel td { font-weight:700; font-size:9.5pt; background:#fff3ef; border-top:2px solid #ff4c00; }
+      table.imza .imza-alan { height:48px; }
+      ul.md { margin:0 0 8px; padding-left:16px; }
+      ul.md li { font-size:8pt; line-height:1.5; margin-bottom:2px; }
+      .yeni-sayfa { page-break-before: always; }
+      /* Sona eklenen teknik şartname gövdelerinin sınıfları */
+      .bolum-ana { display:flex; flex-direction:column; }
+      .bolum-ana .turuncu { color:#ff4c00; font-weight:700; font-size:11pt; line-height:1.3; }
+      .bolum-aciklama { font-weight:700; font-size:8.5pt; margin:0 0 6px; }
+      table.ts td.soru { font-weight:700; width:34%; }
+      table.ts td.soru .alt { font-weight:400; font-size:7.5pt; color:#666; font-style:italic; }
+      table.ts td.cevap .not { color:#666; font-style:italic; }
+      table.ts ul.ml { margin:0; padding-left:16px; }
+      .gizli-not { color:#888; font-style:italic; font-size:8pt; margin-top:12px; line-height:1.5; }
+    </style></head><body>
+      <div class="header"><img src="images/siparis_logo.png" alt="ATERKO"></div>
+
+      <div class="kapak-ana">SÖZLEŞME // ${esc(veri.proje_adi)}</div>
+      <table class="ustbilgi">
+        <tr><td>SÖZLEŞME TARİHİ</td><td class="sag">${esc(veri.sozlesme_tarihi)}</td></tr>
+        <tr><td>SÖZLEŞME KODU</td><td class="sag">${esc(veri.sozlesme_kodu)}</td></tr>
+        <tr><td>PROJE NO</td><td class="sag">${esc(veri.proje_kodu)}</td></tr>
+      </table>
+
+      <div class="bolum-bas"><span class="ana"><span class="bno">[01]</span> MÜŞTERİ VE PROJE BİLGİLERİ</span></div>
+      <div class="alt-bas">MÜŞTERİ BİLGİLERİ</div>
+      <table class="ts">
+        ${bilgiSatiri('MÜŞTERİ ADI', veri.musteri_adi)}
+        ${bilgiSatiri('MÜŞTERİ TÜRÜ', [veri.musteri_tip, veri.musteri_alt_tur].filter(x => x && x !== '-').join(' / '))}
+        ${bilgiSatiri('SATIŞ NOKTASI', veri.satis_noktasi)}
+        ${bilgiSatiri('E-POSTA', veri.musteri_email)}
+        ${bilgiSatiri('TELEFON', veri.musteri_telefon)}
+      </table>
+      <div class="alt-bas">FATURA BİLGİLERİ</div>
+      <table class="ts">
+        ${bilgiSatiri('FİRMA ÜNVANI', veri.musteri_uzun_ad)}
+        ${bilgiSatiri('FATURA ADRESİ', veri.fatura_adresi)}
+        ${bilgiSatiri('VERGİ DAİRESİ', veri.vergi_dairesi)}
+        ${bilgiSatiri('VERGİ NO / TCKN', veri.vergi_no)}
+      </table>
+      <div class="alt-bas">İLGİLİ KİŞİ BİLGİLERİ</div>
+      <table class="ts">
+        ${bilgiSatiri('SATIŞ TEMSİLCİSİ', veri.satis_temsilcisi)}
+        ${bilgiSatiri('PROJE İLGİLİ KİŞİSİ', [veri.irtibat_adi, veri.irtibat_email, veri.irtibat_telefon].filter(x => x && x !== '-').join(' / '))}
+      </table>
+      <div class="alt-bas">PROJE BİLGİLERİ</div>
+      <table class="ts">
+        ${bilgiSatiri('PROJE ADI', veri.proje_adi)}
+        ${bilgiSatiri('SATIŞ TÜRÜ', veri.satis_turu)}
+        ${bilgiSatiri('PROJE YERİ', [veri.ulke, veri.sehir, veri.adres].filter(Boolean).join(' / '))}
+        ${s.toplam_buyukluk ? bilgiSatiri('PROJE BÜYÜKLÜĞÜ', s.toplam_buyukluk) : ''}
+      </table>
+
+      <div class="bolum-bas yeni-sayfa"><span class="ana"><span class="bno">[02]</span> ONAYLANAN TEKLİF DETAYLARI</span></div>
+      <div class="alt-bas">ONAYLANAN TEKLİF BİLGİLERİ</div>
+      <table class="ts">
+        ${bilgiSatiri('TEKLİF TARİHİ', veri.teklif_tarihi)}
+        ${bilgiSatiri('TEKLİF KODU', veri.teklif_no)}
+        ${bilgiSatiri('TEKLİF TUTARI', fmt(araToplam) + ' ' + pb)}
+      </table>
+      <div class="alt-bas">ONAYLANAN TEKLİF BİLEŞENLERİ</div>
+      ${kalemTablosu()}
+      ${altBolum('ONAYLANAN TEKLİF KOŞULLARI', veri.notlar)}
+      ${altBolum('ONAYLANAN ÖDEME KOŞULLARI', veri.odeme_kosullari)}
+      ${altBolum('ONAYLANAN TESLİMAT KOŞULLARI', veri.teslimat_kosullari)}
+      ${altBolum('ONAYLANAN TEKLİF KAPSAMINDA OLAN HİZMETLER', veri.dahil_isler)}
+      ${altBolum('ONAYLANAN TEKLİF KAPSAMINA DAHİL OLMAYAN HİZMETLER', veri.haric_isler)}
+
+      <div class="yeni-sayfa">
+        <div class="kapak-ana">SÖZLEŞME</div>
+        <div class="baslik">${esc(veri.proje_adi)} (${esc(veri.sozlesme_kodu)})</div>
+        <table class="ts">
+          ${SM.kunye.map(k => bilgiSatiri(doldur(k.etiket), doldur(k.deger))).join('')}
+        </table>
+        ${SM.giris.map(p => `<p class="pr">${esc(doldur(p))}</p>`).join('')}
+        ${SM.maddeler.map((m, i) => `
+          <div class="madde-bas"><span class="mno">${i + 1}.</span> ${esc(m.baslik)}</div>
+          ${maddeGovde(m, i + 1)}`).join('')}
+      </div>
+
+      ${sartnameGovdeleri.map(g => `<div class="yeni-sayfa">${g}</div>`).join('')}
+    </body></html>`;
+}
+
 // TEKLİF PDF GÖVDESİ (Yunus 2026-08-03): içerik eski sistemin teklif çıktısıyla aynı
 // (kapak sayfası ve tekrar eden üst bilgi hariç), GÖRSEL DİL teknik şartname PDF'i:
 // Rubik 8pt, turuncu [NN] bölüm numaraları, #ffad94 kenarlıklı tablolar, ince altbilgi.
@@ -8568,11 +8774,70 @@ app.post('/api/satis-sozlesme-olustur', yetkiKontrol, izinGerekli('satis.teklif'
 
 app.get('/api/satis-sozlesme/:projeId', yetkiKontrol, async (req, res, next) => {
     try {
+        // Sözleşme ekranı artık ONAYLANAN TEKLİFİN TAMAMINI gösterir (Yunus 2026-08-03):
+        // yalnız tutar/bileşen değil, teklif koşulları ve dahil/hariç işler de taşınır.
         const r = await pool.query(`
-            SELECT s.*, t.teklif_no FROM sat_sozlesmeler s
+            SELECT s.*, t.teklif_no, t.teklif_tarihi,
+                   t.notlar AS teklif_notlar, t.odeme_kosullari AS teklif_odeme,
+                   t.teslimat_kosullari AS teklif_teslimat,
+                   t.dahil_isler AS teklif_dahil, t.haric_isler AS teklif_haric,
+                   t.ara_toplam AS teklif_ara_toplam, t.kdv_tutar AS teklif_kdv,
+                   t.genel_toplam AS teklif_genel_toplam, t.toplam_buyukluk
+            FROM sat_sozlesmeler s
             LEFT JOIN sat_teklifler t ON t.id = s.teklif_id
             WHERE s.proje_id=$1 ORDER BY s.id DESC LIMIT 1`, [parseInt(req.params.projeId)]);
-        res.json({ ok: true, sozlesme: r.rows[0] || null });
+        const soz = r.rows[0] || null;
+        let kalemler = [];
+        if (soz && soz.teklif_id) {
+            kalemler = (await pool.query(
+                'SELECT * FROM sat_teklif_kalemleri WHERE teklif_id=$1 ORDER BY sira, id', [soz.teklif_id])).rows;
+        }
+        res.json({ ok: true, sozlesme: soz, kalemler });
+    } catch (e) { next(e); }
+});
+
+// SÖZLEŞME PDF'i (Yunus 2026-08-03): eski 'Sözleşme Şablonu.docx' birebir uygulanır —
+// [01] Müşteri ve proje bilgileri, [02] onaylanan teklif detayları, sonra 17 maddelik
+// asıl sözleşme metni (lib/sozlesme-metni.js), en sonda bileşenlerin teknik şartnameleri.
+// Görsel dil teklif/şartname PDF'leriyle ortak.
+app.get('/api/satis-sozlesme-pdf/:projeId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const projeId = parseInt(req.params.projeId);
+        const sr = await pool.query(`
+            SELECT s.*, t.teklif_no, t.teklif_tarihi, t.toplam_buyukluk,
+                   t.notlar AS teklif_notlar, t.odeme_kosullari AS teklif_odeme,
+                   t.teslimat_kosullari AS teklif_teslimat,
+                   t.dahil_isler AS teklif_dahil, t.haric_isler AS teklif_haric,
+                   p.proje_kodu, p.proje_adi, p.sehir, p.ulke, p.adres, p.satis_turu, p.proje_turu,
+                   p.irtibat_adi, p.irtibat_email, p.irtibat_telefon, p.satis_temsilcisi,
+                   m.ad AS musteri_adi, m.uzun_ad AS musteri_uzun_ad, m.tip AS musteri_tip,
+                   m.alt_tur AS musteri_alt_tur, m.satis_noktasi, m.email AS musteri_email,
+                   m.telefon AS musteri_telefon, m.fatura_adresi, m.vergi_dairesi, m.vergi_no
+            FROM sat_sozlesmeler s
+            LEFT JOIN sat_teklifler t ON t.id = s.teklif_id
+            LEFT JOIN projeler p ON p.id = s.proje_id
+            LEFT JOIN sat_musteriler m ON m.id = p.sat_musteri_id
+            WHERE s.proje_id=$1 ORDER BY s.id DESC LIMIT 1`, [projeId]);
+        if (!sr.rowCount) return res.status(404).json({ ok: false, hata: 'Bu projede sözleşme bulunamadı.' });
+        const s = sr.rows[0];
+        const kalemler = s.teklif_id
+            ? (await pool.query('SELECT * FROM sat_teklif_kalemleri WHERE teklif_id=$1 ORDER BY sira, id', [s.teklif_id])).rows
+            : [];
+        const sartnameler = s.teklif_id ? await teklifSartnameGovdeleri(s.teklif_id, req.user.adSoyad) : [];
+        const { htmlToPDF } = require('./lib/pdf-generator');
+        const fesc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const pdfBuffer = await htmlToPDF(satisSozlesmeHTML(s, kalemler, sartnameler), {
+            margin: { top: '18mm', bottom: '20mm', left: '20mm', right: '20mm' },
+            displayHeaderFooter: true,
+            headerTemplate: '<div></div>',
+            footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 20mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
+                `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
+                `<span>${fesc(s.proje_adi || '')} // ${fesc(s.kod || '')}</span></div>`
+        });
+        const dosyaAdi = dosyaAdiTemizle(`Sözleşme ${s.kod || ''} - ${s.musteri_adi || ''}`) + '.pdf';
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', cdHeader(dosyaAdi));
+        res.send(pdfBuffer);
     } catch (e) { next(e); }
 });
 
@@ -9110,7 +9375,7 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/satis-urun(-bom)?-sil/, modul: 'satis.urun', seviye: 'TAM' },
     { pattern: /^\/api\/satis-(urun|analiz)/, modul: 'satis.urun', seviye: 'YAZMA' },
     // Satış — teklif aksiyonları ve sözleşme zinciri
-    { pattern: /^\/api\/satis-sozlesme\//, method: 'GET', modul: 'satis.teklif', seviye: 'OKUMA' },
+    { pattern: /^\/api\/satis-sozlesme(-pdf)?\//, method: 'GET', modul: 'satis.teklif', seviye: 'OKUMA' },
     { pattern: /^\/api\/satis-sozlesme-aksiyon/, modul: 'satis.proje', seviye: 'YAZMA' },
     { pattern: /^\/api\/satis-sozlesme/, modul: 'satis.teklif', seviye: 'TAM' },
 

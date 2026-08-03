@@ -6445,6 +6445,7 @@ async function satisSozlesmePaneliCiz(proje) {
                 ...(parseFloat(s.kur) !== 1 ? [detayAlani('Sabitlenen Kur', formatTR(parseFloat(s.kur)))] : [])
             ])}
         </div>
+        ${satisSozlesmeTeklifOzeti(s, (r && r.kalemler) || [])}
         ${yazabilir ? `<div class="d-flex gap-2 flex-wrap">
             ${sonrakiGoster ? `<button class="btn btn-${sonraki.renk} btn-sm" onclick="satisSozlesmeAksiyon(${proje.id}, '${sonraki.aksiyon}', '${escJsAttr(sonraki.ad)}')">
                 <i class="bi bi-arrow-right-circle me-1"></i>${sonraki.ad}</button>`
@@ -6453,10 +6454,68 @@ async function satisSozlesmePaneliCiz(proje) {
             ${proje.satis_durumu === 'SOZLESMESI_ONAYDA' && onaylayabilir ? `<button class="btn btn-outline-danger btn-sm"
                 onclick="satisSozlesmeAksiyon(${proje.id}, 'revize-talep', 'Sözleşme revize talebi')">
                 <i class="bi bi-arrow-counterclockwise me-1"></i>Revize Talep Et</button>` : ''}
+            <button class="btn btn-outline-danger btn-sm" title="Sözleşme belgesini (teklif özeti + 17 madde + teknik şartnameler) PDF olarak indir"
+                onclick="satisSozlesmePdfIndir(${proje.id})"><i class="bi bi-file-earmark-pdf me-1"></i>Sözleşme PDF</button>
             ${izinVarMi('satis.teklif', 'TAM') ? `
             <button class="btn btn-outline-secondary btn-sm" onclick='satisSozlesmeDuzenle(${JSON.stringify(s)})'><i class="bi bi-pencil me-1"></i>Düzenle</button>
             <button class="btn btn-outline-danger btn-sm" onclick="satisSozlesmeSil(${s.id}, ${proje.id})"><i class="bi bi-trash me-1"></i>Sil</button>` : ''}
-        </div>` : ''}`;
+        </div>` : `<div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-danger btn-sm" onclick="satisSozlesmePdfIndir(${proje.id})">
+                <i class="bi bi-file-earmark-pdf me-1"></i>Sözleşme PDF</button></div>`}`;
+}
+
+// SÖZLEŞME EKRANINDA ONAYLANAN TEKLİFİN TAMAMI (Yunus 2026-08-03): eskiden yalnız
+// tutar/kur görünüyordu; artık bileşenler ve teklif koşulları da burada okunur.
+function satisSozlesmeTeklifOzeti(s, kalemler) {
+    const metinKutu = (baslik, metin) => metin && String(metin).trim() ? `
+        <div class="mb-2"><div class="fw-bold small text-secondary">${esc(baslik)}</div>
+        <div class="small" style="white-space:pre-wrap; line-height:1.5;">${esc(metin)}</div></div>` : '';
+    const kosullar = metinKutu('Teklif Koşulları', s.teklif_notlar)
+        + metinKutu('Ödeme Koşulları', s.teklif_odeme)
+        + metinKutu('Teslimat Koşulları', s.teklif_teslimat)
+        + metinKutu('Kapsamdaki Hizmetler', s.teklif_dahil)
+        + metinKutu('Kapsam Dışı Hizmetler', s.teklif_haric);
+    if (!kalemler.length && !kosullar) return '';
+    const pb = esc(s.para_birimi || 'TL');
+    return `
+    <div class="card border-0 shadow-sm rounded-3 mb-3">
+      <div class="card-header bg-white border-bottom py-2">
+        <h6 class="fw-bold text-secondary mb-0"><i class="bi bi-file-earmark-text me-2"></i>Onaylanan Teklif
+          <span class="text-muted small ms-1">${esc(s.teklif_no || '')}</span></h6>
+      </div>
+      <div class="card-body py-2">
+        ${kalemler.length ? `<div class="table-responsive mb-2"><table class="table table-sm mb-0" style="font-size:0.8rem;">
+          <thead class="table-light"><tr><th>Bileşen</th><th class="text-end">Miktar</th>
+            <th class="text-end">Birim Fiyat</th><th class="text-end">Tutar</th></tr></thead>
+          <tbody>${kalemler.map(k => `<tr>
+              <td>${esc(k.ad || '-')}${k.bina_tipi ? `<br><small class="text-muted">${esc(k.bina_tipi)}${k.ikincil_miktar != null ? ' · ' + formatTR(parseFloat(k.ikincil_miktar)) + ' m²' : ''}</small>` : ''}</td>
+              <td class="text-end">${formatTR(parseFloat(k.miktar) || 0)} ${esc(k.birim || '')}</td>
+              <td class="text-end">${formatTR(parseFloat(k.birim_fiyat) || 0)}</td>
+              <td class="text-end fw-semibold">${formatTR(parseFloat(k.toplam) || 0)} ${pb}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>` : ''}
+        ${kosullar}
+      </div>
+    </div>`;
+}
+
+// Sözleşme PDF'i indir (teklif PDF'iyle aynı yöntem: kimlikli fetch + blob)
+async function satisSozlesmePdfIndir(projeId) {
+    showLoading();
+    showToast('Sözleşme PDF\'i üretiliyor, lütfen bekleyin (10-20 sn)…', 'success');
+    try {
+        const token = localStorage.getItem('aterko_token');
+        const resp = await fetch(`${API_URL}/satis-sozlesme-pdf/${projeId}`, { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!resp.ok) {
+            let hata = `PDF üretilemedi (HTTP ${resp.status})`;
+            try { hata = JSON.parse(await resp.text()).hata || hata; } catch (e) {}
+            throw new Error(hata);
+        }
+        pdfIndirBlob(await resp.blob(), cdDosyaAdi(resp, 'sozlesme.pdf'));
+        showToast('Sözleşme PDF indirildi.', 'success');
+    } catch (e) {
+        showToast(e.message, 'error');
+    } finally { hideLoading(); }
 }
 
 // Sözleşme düzenle / sil (eski ContractServiceImpl.save + delete)
