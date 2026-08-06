@@ -541,44 +541,39 @@ async function projeFiyatGorebilir(req) {
 
 app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
     try {
-        // Durum öncelik sıralaması (en ileri aşama → 8)
+        // Genel durum TEK KAYNAKTAN: proje_hesapli_durum() SQL fonksiyonu (semaGuvence)
+        // kapı durumlarını (TASLAK/İPTAL) aynen, yaşam döngüsünü bileşenlerden döner.
         const query = `
-            SELECT p.*,
-                   COALESCE(t.teslimat_sayisi, 0) as teslimat_sayisi,
-                   COALESCE(t.kdvsiz_toplam, 0) as kdvsiz_toplam,
-                   COALESCE(t.kdvli_toplam, 0) as kdvli_toplam,
-                   t.hesaplanmis_durum
-            FROM projeler p
-            LEFT JOIN (
-                SELECT pt.proje_id,
-                       COUNT(*) as teslimat_sayisi,
-                       SUM(CASE WHEN COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL' THEN COALESCE(pt.kdvsiz_tutar,0) ELSE 0 END) as kdvsiz_toplam,
-                       SUM(CASE WHEN COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL' THEN COALESCE(pt.kdvsiz_tutar,0) * (1 + COALESCE(p2.kdv_orani,20)/100.0) ELSE 0 END) as kdvli_toplam,
-                       (
-                         SELECT durum FROM proje_teslimatlari pt2
-                         WHERE pt2.proje_id = pt.proje_id AND COALESCE(pt2.durum,'BEKLEMEDE') <> 'İPTAL'
-                         ORDER BY CASE COALESCE(pt2.durum,'BEKLEMEDE')
-                           WHEN 'TESLİM EDİLDİ' THEN 8
-                           WHEN 'MONTAJ' THEN 7
-                           WHEN 'ÜRETİM' THEN 6
-                           WHEN 'PROJE' THEN 5
-                           WHEN 'İŞ EMRİ' THEN 4
-                           WHEN 'SÖZLEŞME' THEN 3
-                           WHEN 'BEKLEMEDE' THEN 2
-                           ELSE 1
-                         END DESC LIMIT 1
-                       ) as hesaplanmis_durum,
-                       (
-                         SELECT array_agg(DISTINCT pt3.bina_turu) FROM proje_teslimatlari pt3
-                         WHERE pt3.proje_id = pt.proje_id AND pt3.bina_turu IS NOT NULL
-                       ) as bina_turleri
-                FROM proje_teslimatlari pt
-                JOIN projeler p2 ON pt.proje_id = p2.id
-                GROUP BY pt.proje_id
-            ) t ON p.id = t.proje_id
-            ${req.query.faz === 'hepsi' ? '' : "WHERE COALESCE(p.faz,'TESLIMAT') = 'TESLIMAT'"}
+            SELECT x.*,
+                   x.hesaplanmis_durum AS durum,
+                   x.kayitli_durum
+            FROM (
+                SELECT p.*,
+                       p.durum AS kayitli_durum,
+                       proje_hesapli_durum(p.id, p.durum) AS hesaplanmis_durum,
+                       COALESCE(t.teslimat_sayisi, 0) as teslimat_sayisi,
+                       COALESCE(t.kdvsiz_toplam, 0) as kdvsiz_toplam,
+                       COALESCE(t.kdvli_toplam, 0) as kdvli_toplam,
+                       t.bina_turleri
+                FROM projeler p
+                LEFT JOIN (
+                    SELECT pt.proje_id,
+                           COUNT(*) as teslimat_sayisi,
+                           SUM(CASE WHEN COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL' THEN COALESCE(pt.kdvsiz_tutar,0) ELSE 0 END) as kdvsiz_toplam,
+                           SUM(CASE WHEN COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL' THEN COALESCE(pt.kdvsiz_tutar,0) * (1 + COALESCE(p2.kdv_orani,20)/100.0) ELSE 0 END) as kdvli_toplam,
+                           (
+                             SELECT array_agg(DISTINCT pt3.bina_turu) FROM proje_teslimatlari pt3
+                             WHERE pt3.proje_id = pt.proje_id AND pt3.bina_turu IS NOT NULL
+                           ) as bina_turleri
+                    FROM proje_teslimatlari pt
+                    JOIN projeler p2 ON pt.proje_id = p2.id
+                    GROUP BY pt.proje_id
+                ) t ON p.id = t.proje_id
+                ${req.query.faz === 'hepsi' ? '' : "WHERE COALESCE(p.faz,'TESLIMAT') = 'TESLIMAT'"}
+            ) x
             ORDER BY
-                CASE COALESCE(t.hesaplanmis_durum, p.durum, 'BEKLEMEDE')
+                CASE x.hesaplanmis_durum
+                    WHEN 'TASLAK'         THEN 0
                     WHEN 'BEKLEMEDE'      THEN 1
                     WHEN 'SÖZLEŞME'       THEN 2
                     WHEN 'İŞ EMRİ'        THEN 3
@@ -592,18 +587,12 @@ app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
                 -- Durum grubu içinde PROJE NUMARASI büyükten küçüğe (Yunus 2026-08-03):
                 -- en yeni proje üstte. Kodlar 5 haneli sayı (72xxx) olduğundan sayısal
                 -- sıralanır; sayı olmayan/eski biçimli kodlar en sona düşer.
-                CASE WHEN p.proje_kodu ~ '^[0-9]+$' THEN p.proje_kodu::bigint ELSE NULL END DESC NULLS LAST,
-                p.proje_kodu DESC NULLS LAST,
-                p.id DESC
+                CASE WHEN x.proje_kodu ~ '^[0-9]+$' THEN x.proje_kodu::bigint ELSE NULL END DESC NULLS LAST,
+                x.proje_kodu DESC NULLS LAST,
+                x.id DESC
         `;
         const result = await pool.query(query);
-        // hesaplanmis_durum varsa onu kullan, yoksa p.durum
-        const data = result.rows.map(r => ({
-            ...r,
-            // TASLAK proje (henüz ADMIN onayı yok) listede TASLAK görünür — teslimat
-            // hesaplı durumu onu ezmesin; onaydan sonra hesaplı durum devam eder
-            durum: r.durum === 'TASLAK' ? 'TASLAK' : (r.hesaplanmis_durum || r.durum || 'BEKLEMEDE')
-        }));
+        const data = result.rows;
         // FİYAT MASKESİ: projeler YAZMA yetkisi olmayana tutarlar sunucudan hiç inmez
         const fiyatGorebilir = await projeFiyatGorebilir(req);
         if (!fiyatGorebilir) data.forEach(r => { r.kdvsiz_toplam = null; r.kdvli_toplam = null; });
@@ -649,35 +638,13 @@ app.post('/api/proje-onay-geri-al', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
-// PROJENİN GENEL DURUMU (Yunus 2026-08-03): projeler.durum kolonu tarihsel bir alandır
-// ve teslimat aşamaları ilerledikçe güncellenmez; projenin gerçek durumu HER ZAMAN
-// bileşen (teslimat) durumlarından türetilir — EN İLERİ aşamadaki bileşen kazanır,
-// İPTAL bileşenler sayılmaz. TASLAK istisnadır: ADMIN onayı verilmemiş projede
-// bileşen durumları projeyi ileri taşımaz.
-// UYARI: aynı öncelik tablosu /api/projeler listesinde SQL olarak da var (ORDER BY
-// ve hesaplanmis_durum) — biri değişirse ikisi birden değişmeli.
-const TESLIMAT_DURUM_ONCELIK = {
-    'TESLİM EDİLDİ': 8, 'MONTAJ': 7, 'ÜRETİM': 6, 'PROJE': 5,
-    'İŞ EMRİ': 4, 'SÖZLEŞME': 3, 'BEKLEMEDE': 2
-};
-function projeHesapliDurum(kayitliDurum, teslimatlar) {
-    if (kayitliDurum === 'TASLAK') return 'TASLAK';
-    let enIleri = null, enYuksek = -1;
-    for (const t of (teslimatlar || [])) {
-        const d = t.durum || 'BEKLEMEDE';
-        if (d === 'İPTAL') continue;
-        const oncelik = TESLIMAT_DURUM_ONCELIK[d] != null ? TESLIMAT_DURUM_ONCELIK[d] : 1;
-        if (oncelik > enYuksek) { enYuksek = oncelik; enIleri = d; }
-    }
-    return enIleri || kayitliDurum || 'BEKLEMEDE';
-}
-
 app.get('/api/proje-detay/:id', yetkiKontrol, async (req, res, next) => {
     try {
         const { id } = req.params;
-        
-        // Ana Projeyi Çek
-        const projeRes = await pool.query("SELECT * FROM projeler WHERE id = $1", [id]);
+
+        // Genel durum TEK KAYNAKTAN türetilir: proje_hesapli_durum() (bkz. semaGuvence)
+        const projeRes = await pool.query(
+            "SELECT *, proje_hesapli_durum(id, durum) AS hesaplanmis_durum FROM projeler WHERE id = $1", [id]);
         if(projeRes.rowCount === 0) return res.json({ ok: false, hata: "Proje bulunamadı." });
         
         // Projeye Bağlı Teslimatları (Binaları) Çek
@@ -686,11 +653,11 @@ app.get('/api/proje-detay/:id', yetkiKontrol, async (req, res, next) => {
         // FİYAT MASKESİ: projeler YAZMA yetkisi olmayana teslimat tutarları sunucudan hiç inmez
         const fiyatGorebilir = await projeFiyatGorebilir(req);
         if (!fiyatGorebilir) teslimatRes.rows.forEach(t => { t.kdvsiz_tutar = null; });
-        // Genel durum bileşenlerden türetilir (liste ucuyla aynı kural); kayıtlı kolon
-        // kayitli_durum olarak ayrıca döner.
+        // Kayıtlı kolon kayitli_durum olarak ayrıca döner (kapı bilgisi: TASLAK/İPTAL)
         const proje = projeRes.rows[0];
         proje.kayitli_durum = proje.durum;
-        proje.durum = projeHesapliDurum(proje.durum, teslimatRes.rows);
+        proje.durum = proje.hesaplanmis_durum;
+        delete proje.hesaplanmis_durum;
         res.json({ ok: true, proje, teslimatlar: teslimatRes.rows, fiyat_gizli: !fiyatGorebilir });
     } catch (error) { next(error); }
 });
@@ -1334,14 +1301,7 @@ app.get('/api/satinalma-listesi', yetkiKontrol, async (req, res, next) => {
         // 3.790 kayıt) operasyon ekranlarında seçilemez — sözleşmeye dönüşünce gelirler.
         const projelerRes = await pool.query(`
             SELECT p.id, p.proje_kodu, p.musteri_adi, p.proje_adi,
-                   COALESCE((
-                     SELECT pt.durum FROM proje_teslimatlari pt
-                     WHERE pt.proje_id = p.id AND COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL'
-                     ORDER BY CASE COALESCE(pt.durum,'BEKLEMEDE')
-                       WHEN 'TESLİM EDİLDİ' THEN 8 WHEN 'MONTAJ' THEN 7 WHEN 'ÜRETİM' THEN 6
-                       WHEN 'PROJE' THEN 5 WHEN 'İŞ EMRİ' THEN 4 WHEN 'SÖZLEŞME' THEN 3
-                       WHEN 'BEKLEMEDE' THEN 2 ELSE 1 END DESC LIMIT 1
-                   ), p.durum, 'BEKLEMEDE') as hesaplanmis_durum
+                   proje_hesapli_durum(p.id, p.durum) as hesaplanmis_durum
             FROM projeler p
             WHERE COALESCE(p.faz, 'TESLIMAT') = 'TESLIMAT'
             ORDER BY p.id DESC
@@ -6076,7 +6036,8 @@ app.get('/api/proje-karlilik', yetkiKontrol, async (req, res, next) => {
                 FROM maliyet_birlesik
                 GROUP BY proje_id
             )
-            SELECT p.id, p.proje_kodu, p.musteri_adi, p.proje_adi, p.durum,
+            SELECT p.id, p.proje_kodu, p.musteri_adi, p.proje_adi,
+                   proje_hesapli_durum(p.id, p.durum) AS durum,
                    COALESCE(p.para_birimi, 'TL') as proje_para_birimi,
                    COALESCE(g.toplam_gelir, 0)::numeric as gelir,
                    COALESCE(g.teslimat_sayisi, 0) as teslimat_sayisi,
@@ -12697,7 +12658,33 @@ async function semaGuvence() {
         for (const [ad, tanim] of perfIndeksleri) {
             await pool.query(`CREATE INDEX IF NOT EXISTS ${ad} ON ${tanim}`).catch(() => {});
         }
-        console.log('✅ Şema güvencesi tamam (talep bölme alanları + sequence + RLS + performans indeksleri).');
+        // PROJENİN GENEL DURUMU — TEK KAYNAK (Yunus 2026-08-06): projeler.durum yalnız
+        // KAPI durumlarını taşır (TASLAK = ADMIN onayı yok, İPTAL = proje iptal; SÖZLEŞME
+        // yazımı onay anının izi). Yaşam döngüsü durumu HER okumada bu fonksiyonla türetilir:
+        // kapı durumları aynen döner, aksi halde en ileri aşamadaki İPTAL-olmayan bileşen
+        // kazanır. Öncelik tablosu değişecekse YALNIZ burası değişir.
+        await pool.query(`
+            CREATE OR REPLACE FUNCTION proje_hesapli_durum(p_id integer, p_kayitli text)
+            RETURNS text LANGUAGE sql STABLE AS $$
+                SELECT CASE
+                    WHEN p_kayitli IN ('TASLAK','İPTAL') THEN p_kayitli
+                    ELSE COALESCE(
+                        (SELECT pt.durum FROM proje_teslimatlari pt
+                         WHERE pt.proje_id = p_id AND COALESCE(pt.durum,'BEKLEMEDE') <> 'İPTAL'
+                         ORDER BY CASE COALESCE(pt.durum,'BEKLEMEDE')
+                             WHEN 'TESLİM EDİLDİ' THEN 8
+                             WHEN 'MONTAJ'        THEN 7
+                             WHEN 'ÜRETİM'        THEN 6
+                             WHEN 'PROJE'         THEN 5
+                             WHEN 'İŞ EMRİ'       THEN 4
+                             WHEN 'SÖZLEŞME'      THEN 3
+                             WHEN 'BEKLEMEDE'     THEN 2
+                             ELSE 1
+                         END DESC LIMIT 1),
+                        p_kayitli, 'BEKLEMEDE')
+                END
+            $$`).catch(e => console.error('proje_hesapli_durum fonksiyonu:', e.message));
+        console.log('✅ Şema güvencesi tamam (talep bölme alanları + sequence + RLS + performans indeksleri + durum fonksiyonu).');
     } catch (e) {
         console.error('⚠️ Şema güvencesi hatası:', e.message);
     }
