@@ -13418,8 +13418,10 @@ function getSatinalmaDurumBadge(durum) {
 // KENDİ açtığı talebi düzenler (sunucu da aynı kapıyı uygular).
 function talepDuzenleyebilir(t) {
     if (izinVarMi('satinalma.talepler', 'TAM')) return true;
+    // aterko_user login yanıtından camelCase (adSoyad) gelir — bkz. auth/google
     const user = JSON.parse(localStorage.getItem('aterko_user') || '{}');
-    return (t.talep_eden || '') === (user.ad_soyad || '');
+    const benimAdim = user.adSoyad || user.ad_soyad || '';
+    return benimAdim !== '' && (t.talep_eden || '') === benimAdim;
 }
 
 // Talep durumuna göre buton listesi (matrise göre)
