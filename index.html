@@ -13414,6 +13414,13 @@ function getSatinalmaDurumBadge(durum) {
     return `<span class="sa-badge ${cls}">${esc(d || 'ONAY BEKLİYOR')}</span>`;
 }
 
+// TALEP YETKİ MODELİ (Yunus 2026-08-06): YAZMA = yeni talep açmak + kendi talebini
+// onaylanmadan önce düzenlemek. Onay/ret/işleme alma/geri alma/arşiv gibi AKIŞ
+// aksiyonları TAM yetki ister — sunucu uçları zaten TAM'da, düğmeler de ona uyar.
+function talepTamYetkili() {
+    return izinVarMi('satinalma.talepler', 'TAM');
+}
+
 // Talep düzenleme hakkı (Yunus 2026-08-06): TAM yetki her talebi, YAZMA yalnız
 // KENDİ açtığı talebi düzenler (sunucu da aynı kapıyı uygular).
 function talepDuzenleyebilir(t) {
@@ -13437,12 +13444,12 @@ function getTalepAksiyonlari(t) {
     const buttons = {
         'ONAY BEKLİYOR':
             `${talepDuzenleyebilir(t) ? `<button class="btn btn-sm btn-info py-0 text-white" onclick="openTalepDuzenle(${id})" title="Düzenle"><i class="bi bi-pencil"></i></button>` : ''}
-             <button class="btn btn-sm btn-success py-0" onclick="talepOnayla(${id})" title="Onayla"><i class="bi bi-check-lg"></i></button>
-             <button class="btn btn-sm btn-danger py-0" onclick="talepReddet(${id})" title="Reddet (İptal'e at)"><i class="bi bi-x-lg"></i></button>`,
-        'ONAYLANDI':
+             ${talepTamYetkili() ? `<button class="btn btn-sm btn-success py-0" onclick="talepOnayla(${id})" title="Onayla"><i class="bi bi-check-lg"></i></button>
+             <button class="btn btn-sm btn-danger py-0" onclick="talepReddet(${id})" title="Reddet (İptal'e at)"><i class="bi bi-x-lg"></i></button>` : ''}`,
+        'ONAYLANDI': !talepTamYetkili() ? '' :
             `<button class="btn btn-sm btn-primary py-0" onclick="talepIslemeAl(${id})" title="İşleme Al"><i class="bi bi-play-fill"></i></button>
              <button class="btn btn-sm btn-secondary py-0" onclick="talepGerial(${id}, 'ONAY BEKLİYOR')" title="Geri Al (Onay Bekliyor'a)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
-        'İPTAL':
+        'İPTAL': !talepTamYetkili() ? '' :
             `<button class="btn btn-sm btn-outline-secondary py-0" onclick="talepArsivle(${id})" title="Arşivle"><i class="bi bi-archive"></i></button>
              <button class="btn btn-sm btn-secondary py-0" onclick="talepGerial(${id}, 'ONAY BEKLİYOR')" title="Geri Al (Onay Bekliyor'a)"><i class="bi bi-arrow-counterclockwise"></i></button>`,
         'İŞLEME ALINDI':   teklifHavuzuBtn,
@@ -14128,9 +14135,9 @@ function renderTalepDetayLevelButtons(talepId) {
         if (t.durum === 'ONAY BEKLİYOR' && talepDuzenleyebilir(t)) {
             btns += `<button class="btn btn-sm btn-light py-0" onclick="${kapat} openTalepDuzenle(${t.id})" title="Talebi Düzenle (kalem ekle/çıkar)"><i class="bi bi-pencil me-1"></i>Düzenle</button>`;
         }
-        // Arşivle: YALNIZCA İPTAL talepte. (Aktif/teslim edilmiş talepler, kalemleri
-        // siparişe dönüp arşivlendikçe otomatik arşive gider — manuel arşiv yok.)
-        if (t.durum === 'İPTAL') {
+        // Arşivle: YALNIZCA İPTAL talepte, TAM yetkiyle. (Aktif/teslim edilmiş talepler,
+        // kalemleri siparişe dönüp arşivlendikçe otomatik arşive gider — manuel arşiv yok.)
+        if (t.durum === 'İPTAL' && talepTamYetkili()) {
             btns += `<button class="btn btn-sm btn-light py-0 ms-1" onclick="${kapat} talepArsivle(${t.id})" title="İptal edilen talebi arşivle"><i class="bi bi-archive me-1"></i>Arşivle</button>`;
         }
         slot.innerHTML = btns;
@@ -14217,7 +14224,7 @@ function renderTalepDetayLines(kalemler) {
         tbody.innerHTML += `
             <tr id="line_${k.id}">
                 <td class="text-center">
-                    <input type="checkbox" class="form-check-input line-chk" value="${k.id}" data-status="${k.durum}" onchange="updateLineActionButtons()">
+                    ${talepTamYetkili() ? `<input type="checkbox" class="form-check-input line-chk" value="${k.id}" data-status="${k.durum}" onchange="updateLineActionButtons()">` : ''}
                 </td>
                 <td>
                     ${isOzel ? '<span class="badge bg-light text-warning border border-warning me-1" style="font-size:0.65rem;">Özel Ürün</span>' : ''}
@@ -14237,6 +14244,9 @@ function renderTalepDetayLines(kalemler) {
             sonAlisBilgisiYukle(k.stok_kart_id, sonAlisId, k.stok_adi);
         }
     });
+    // Tümünü seç kutusu da kalem aksiyonlarıyla aynı yetkiye bağlı
+    const chkAll = document.getElementById('chkAllDetail');
+    if (chkAll) { chkAll.classList.toggle('d-none', !talepTamYetkili()); chkAll.checked = false; }
     updateLineActionButtons();
 }
 
@@ -14276,6 +14286,14 @@ function toggleAllDetailLines(master) {
 function updateLineActionButtons() {
     const btnsContainer = document.getElementById("dtDynamicBtns");
     const checkedBoxes = document.querySelectorAll(".line-chk:checked");
+
+    // KALEM AKIŞ AKSİYONLARI TAM YETKİ İSTER (Yunus 2026-08-06): onay/iptal/işleme
+    // alma satınalma sürecinin adımlarıdır; YAZMA yalnız talep açma/düzenleme içindir.
+    // Sunucu (/talep-durum-guncelle TAM) zaten reddediyordu — düğmeler de gizlenir.
+    if (!talepTamYetkili()) {
+        btnsContainer.innerHTML = '<span class="text-muted small fst-italic"><i class="bi bi-lock-fill me-1"></i>Kalem onay/durum işlemleri satınalma TAM yetkisi gerektirir — bu ekran sizin için görüntüleme amaçlıdır.</span>';
+        return;
+    }
 
     if(checkedBoxes.length === 0) {
         btnsContainer.innerHTML = '<span class="text-muted small fst-italic"><i class="bi bi-info-circle me-1"></i>İşlem yapmak için yukarıdaki listeden kalem seçimi yapın.</span>';

@@ -4795,14 +4795,30 @@ app.delete('/api/proje-dosya-sil/:dosyaId', yetkiKontrol, async (req, res, next)
     } catch (e) { next(e); }
 });
 
+// TALEP DOSYA SAHİPLİĞİ (Yunus 2026-08-06): YAZMA yalnız KENDİ talebine ve talep
+// henüz ONAY BEKLİYOR iken dosya ekleyip silebilir (düzenlemeyle aynı kapsam);
+// başka talepler ve sonraki aşamalar TAM (veya ADMIN) ister.
+async function talepDosyaYetkisi(req, talepId) {
+    const t = await pool.query('SELECT talep_no, talep_eden, durum FROM satinalma_talepleri WHERE id=$1', [talepId]);
+    if (!t.rowCount) return { ok: false, hata: 'Talep bulunamadı.' };
+    if (adminMi(req)) return { ok: true, talep: t.rows[0] };
+    const izinler = await getKullaniciIzinleri(etkinRoller(req));
+    if ((izinler['satinalma.talepler'] || 'YOK') === 'TAM') return { ok: true, talep: t.rows[0] };
+    if ((t.rows[0].talep_eden || '') !== req.user.adSoyad)
+        return { ok: false, izin_hatasi: true, hata: `Bu talebin dosyalarını yalnız açan kişi (${t.rows[0].talep_eden}) veya TAM yetkili yönetebilir.` };
+    if (t.rows[0].durum !== 'ONAY BEKLİYOR')
+        return { ok: false, izin_hatasi: true, hata: 'Talep onaylandıktan sonra dosya işlemleri TAM yetki gerektirir.' };
+    return { ok: true, talep: t.rows[0] };
+}
+
 app.post('/api/talep-dosya-yukle/:talepId', yetkiKontrol, dosyaUpload.single('dosya'), async (req, res, next) => {
     if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
     try {
         const { talepId } = req.params;
         if (!req.file) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
-        const tR = await pool.query('SELECT talep_no FROM satinalma_talepleri WHERE id=$1', [talepId]);
-        if (tR.rowCount === 0) return res.json({ ok: false, hata: 'Talep bulunamadı.' });
-        const talepNo = tR.rows[0].talep_no;
+        const yetki = await talepDosyaYetkisi(req, talepId);
+        if (!yetki.ok) return res.json(yetki);
+        const talepNo = yetki.talep.talep_no;
         const orijinalAd = dosyaAdiUTF8(req.file.originalname);
         const safeName = orijinalAd.replace(/[^A-Za-z0-9._\-]/g, '_');
         const storagePath = `talep/${talepNo}/${Date.now()}-${safeName}`;
@@ -4822,8 +4838,10 @@ app.post('/api/talep-dosya-yukle/:talepId', yetkiKontrol, dosyaUpload.single('do
 app.delete('/api/talep-dosya-sil/:dosyaId', yetkiKontrol, async (req, res, next) => {
     if (!supabaseStorage) return res.status(500).json({ ok: false, hata: 'Storage yapılandırılmamış.' });
     try {
-        const r = await pool.query('SELECT storage_path FROM talep_dosyalari WHERE id=$1', [req.params.dosyaId]);
+        const r = await pool.query('SELECT storage_path, talep_id FROM talep_dosyalari WHERE id=$1', [req.params.dosyaId]);
         if (r.rowCount === 0) return res.json({ ok: false, hata: 'Dosya bulunamadı.' });
+        const yetki = await talepDosyaYetkisi(req, r.rows[0].talep_id);
+        if (!yetki.ok) return res.json(yetki);
         const { error: delErr } = await supabaseStorage.storage.from(SIPARIS_BUCKET).remove([r.rows[0].storage_path]);
         if (delErr) console.warn('Storage sil uyarı:', delErr.message);
         await pool.query('DELETE FROM talep_dosyalari WHERE id=$1', [req.params.dosyaId]);
