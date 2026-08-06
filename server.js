@@ -5261,6 +5261,39 @@ app.post('/api/is-emri-guncelle', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// İŞ EMRİ MAİL EKLERİ (Yunus 2026-08-03): iş emri PDF'inin yanına projenin
+// Mimari Projeler + Diğer Dosyalar alanlarındaki dosyalar da eklenir. SÖZLEŞME
+// alanı bilinçli olarak DIŞARIDA: ticari belge, üretim/montaj ekibine gitmez.
+// Toplam ek boyutu sınırlıdır (mail sunucuları ~25 MB'da keser; base64 şişmesi
+// payı bırakılır) — sığmayanlar mail metnine indirme bağlantısı olarak yazılır.
+const IS_EMRI_EK_LIMIT_BAYT = 15 * 1024 * 1024;
+async function projeEkDosyalariniAl(projeId, turler = ['MIMARI', 'DIGER']) {
+    const sonuc = { ekler: [], atlananlar: [] };
+    if (!supabaseStorage || !projeId) return sonuc;
+    const r = await pool.query(
+        `SELECT dosya_adi, storage_path, public_url, boyut, tur FROM proje_dosyalari
+         WHERE proje_id=$1 AND tur = ANY($2) ORDER BY tur, kayit_tarihi`, [projeId, turler]);
+    let toplam = 0;
+    for (const d of r.rows) {
+        const boyut = parseInt(d.boyut) || 0;
+        if (toplam + boyut > IS_EMRI_EK_LIMIT_BAYT) {
+            sonuc.atlananlar.push({ ad: d.dosya_adi, url: d.public_url });
+            continue;
+        }
+        try {
+            const { data, error } = await supabaseStorage.storage.from(SIPARIS_BUCKET).download(d.storage_path);
+            if (error || !data) throw new Error(error ? error.message : 'boş yanıt');
+            const buf = Buffer.from(await data.arrayBuffer());
+            sonuc.ekler.push({ filename: d.dosya_adi, content: buf });
+            toplam += buf.length;
+        } catch (e) {
+            console.error('Proje dosyası maile eklenemedi:', d.dosya_adi, e.message);
+            sonuc.atlananlar.push({ ad: d.dosya_adi, url: d.public_url });
+        }
+    }
+    return sonuc;
+}
+
 app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
     try {
         // Yayınlama = onay → yalnız ADMIN
@@ -5278,10 +5311,18 @@ app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
         await pool.query("UPDATE proje_teslimatlari SET durum='PROJE' WHERE id=$1 AND durum IN ('BEKLEMEDE','SÖZLEŞME','İŞ EMRİ')", [ie.teslimat_id]);
         await teslimatAsamaDamgala(pool, ie.teslimat_id, 'PROJE', req.user.email);
         await auditLogla(req, { eylem: 'APPROVE', tablo: 'is_emirleri', kayit_id: ie.id, kayit_no: ie.emir_no, ozet: 'İş emri YAYINLANDI — teslimat PROJE aşamasına geçti' });
+        // Projenin mimari + diğer dosyaları da eke girer (sözleşme hariç)
+        const tR = await pool.query('SELECT proje_id FROM proje_teslimatlari WHERE id=$1', [ie.teslimat_id]);
+        const projeEk = await projeEkDosyalariniAl(tR.rows[0] && tR.rows[0].proje_id)
+            .catch(e => { console.error('Proje ek dosyaları:', e.message); return { ekler: [], atlananlar: [] }; });
+        const ekOzet = projeEk.ekler.length
+            ? `\n\n📎 Proje dosyaları da eklenmiştir (${projeEk.ekler.length} dosya): ${projeEk.ekler.map(e => e.filename).join(', ')}` : '';
+        const atlananOzet = projeEk.atlananlar.length
+            ? `\n\n⚠️ Boyut nedeniyle eklenemeyen dosyalar (bağlantıdan indirebilirsiniz):\n${projeEk.atlananlar.map(a => `• ${a.ad}: ${a.url || '-'}`).join('\n')}` : '';
         await bildirimGonder('IS_EMRI_YAYINLANDI', {
             konu: `Aterko Workspace - İş Emri yayınlandı (${ie.emir_no})`,
             baslik: 'İş Emri Yayınlandı',
-            mesaj: `${ie.emir_no} numaralı iş emri ${req.user.adSoyad} tarafından onaylanıp yayınlandı. Teknik şartname ektedir; bina projelendirme aşamasına alınmıştır.${ie.is_emri_notu ? `\n\n📌 İş emri notu: ${ie.is_emri_notu}` : ''}`,
+            mesaj: `${ie.emir_no} numaralı iş emri ${req.user.adSoyad} tarafından onaylanıp yayınlandı. Teknik şartname ektedir; bina projelendirme aşamasına alınmıştır.${ie.is_emri_notu ? `\n\n📌 İş emri notu: ${ie.is_emri_notu}` : ''}${ekOzet}${atlananOzet}`,
             detaylar: [
                 { label: 'İş Emri No', value: ie.emir_no },
                 { label: 'Proje', value: `${s.proje_kodu || ''}${s.musteri_adi ? ' / ' + s.musteri_adi : ''}${s.proje_adi ? ' - ' + s.proje_adi : ''}` },
@@ -5289,9 +5330,14 @@ app.post('/api/is-emri-yayinla', yetkiKontrol, async (req, res, next) => {
                 { label: 'Yayınlayan', value: req.user.adSoyad }
             ],
             ekAlicilar: isEmriAliciListe(ie),
-            ekler: [{ filename: dosyaAdiTemizle(`${ie.emir_no} __ ${s.proje_kodu || ''} _ ${s.musteri_adi || ''} - ${s.proje_adi || ''} [ ${s.bina_adi || ''} ]`) + '.pdf', content: ie.pdf }]
+            ekler: [
+                { filename: dosyaAdiTemizle(`${ie.emir_no} __ ${s.proje_kodu || ''} _ ${s.musteri_adi || ''} - ${s.proje_adi || ''} [ ${s.bina_adi || ''} ]`) + '.pdf', content: ie.pdf },
+                ...projeEk.ekler
+            ]
         });
-        res.json({ ok: true, mesaj: `${ie.emir_no} yayınlandı — ekibe bildirim gönderildi. Teslimat PROJE aşamasına geçti.` });
+        const ekBilgi = projeEk.ekler.length ? ` ${projeEk.ekler.length} proje dosyası da eklendi.` : '';
+        const atlananBilgi = projeEk.atlananlar.length ? ` (${projeEk.atlananlar.length} dosya boyut nedeniyle bağlantı olarak gönderildi.)` : '';
+        res.json({ ok: true, mesaj: `${ie.emir_no} yayınlandı — ekibe bildirim gönderildi.${ekBilgi}${atlananBilgi} Teslimat PROJE aşamasına geçti.` });
     } catch (e) { next(e); }
 });
 
