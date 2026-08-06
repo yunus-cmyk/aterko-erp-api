@@ -13414,6 +13414,14 @@ function getSatinalmaDurumBadge(durum) {
     return `<span class="sa-badge ${cls}">${esc(d || 'ONAY BEKLİYOR')}</span>`;
 }
 
+// Talep düzenleme hakkı (Yunus 2026-08-06): TAM yetki her talebi, YAZMA yalnız
+// KENDİ açtığı talebi düzenler (sunucu da aynı kapıyı uygular).
+function talepDuzenleyebilir(t) {
+    if (izinVarMi('satinalma.talepler', 'TAM')) return true;
+    const user = JSON.parse(localStorage.getItem('aterko_user') || '{}');
+    return (t.talep_eden || '') === (user.ad_soyad || '');
+}
+
 // Talep durumuna göre buton listesi (matrise göre)
 function getTalepAksiyonlari(t) {
     const id = t.id;
@@ -13426,7 +13434,7 @@ function getTalepAksiyonlari(t) {
     const siparisListesiBtn = `<button class="btn btn-sm btn-outline-success py-0 fw-bold" onclick="gotoSiparisListesi('${siparisAra}')" title="Sipariş işlemleri Sipariş Listesi'nde yapılır"><i class="bi bi-box-arrow-up-right me-1"></i>Sipariş Listesi</button>`;
     const buttons = {
         'ONAY BEKLİYOR':
-            `<button class="btn btn-sm btn-info py-0 text-white" onclick="openTalepDuzenle(${id})" title="Düzenle"><i class="bi bi-pencil"></i></button>
+            `${talepDuzenleyebilir(t) ? `<button class="btn btn-sm btn-info py-0 text-white" onclick="openTalepDuzenle(${id})" title="Düzenle"><i class="bi bi-pencil"></i></button>` : ''}
              <button class="btn btn-sm btn-success py-0" onclick="talepOnayla(${id})" title="Onayla"><i class="bi bi-check-lg"></i></button>
              <button class="btn btn-sm btn-danger py-0" onclick="talepReddet(${id})" title="Reddet (İptal'e at)"><i class="bi bi-x-lg"></i></button>`,
         'ONAYLANDI':
@@ -14114,8 +14122,8 @@ function renderTalepDetayLevelButtons(talepId) {
         if (!t) { slot.innerHTML = ''; return; }
         const kapat = "bootstrap.Modal.getInstance(document.getElementById('modalTalepDetay'))?.hide();";
         let btns = '';
-        // Düzenle: yalnızca hiç işlem görmemiş (ONAY BEKLİYOR) talepte
-        if (t.durum === 'ONAY BEKLİYOR') {
+        // Düzenle: yalnızca hiç işlem görmemiş (ONAY BEKLİYOR) talepte, sahibi/TAM için
+        if (t.durum === 'ONAY BEKLİYOR' && talepDuzenleyebilir(t)) {
             btns += `<button class="btn btn-sm btn-light py-0" onclick="${kapat} openTalepDuzenle(${t.id})" title="Talebi Düzenle (kalem ekle/çıkar)"><i class="bi bi-pencil me-1"></i>Düzenle</button>`;
         }
         // Arşivle: YALNIZCA İPTAL talepte. (Aktif/teslim edilmiş talepler, kalemleri
@@ -16549,11 +16557,22 @@ function openStokHareketModal(hareketData, stokKartId) {
     document.getElementById("shMiktar").value = hareketData?.miktar || '';
     document.getElementById("shAciklama").value = hareketData?.aciklama || '';
 
-    // Proje ve depo dropdown'larını doldur
+    // Proje ve depo dropdown'larını doldur.
+    // Yeni talep dropdown'ıyla AYNI kural (Yunus 2026-08-06): yalnız aktif aşamadaki
+    // projeler (PROJE/ÜRETİM/MONTAJ) seçilebilir — SÖZLEŞME ve İŞ EMRİ henüz yayınlanmadı,
+    // TESLİM EDİLDİ'nin operasyonu bitti. Özel projeler (10000 Diğer, 40000 Stok) her
+    // durumda listenin SONUNDA; düzenlenen hareketin projesi listede kalır ki seçim kaybolmasın.
     if (window.satinalmaProjeler) {
         const sel = document.getElementById("shProje");
+        const aktifAsamalar = ['PROJE', 'ÜRETİM', 'MONTAJ'];
+        const ozelKodlar = ['10000', '40000'];
+        const isOzel = p => ozelKodlar.includes(String(p.proje_kodu).trim());
+        const seciliId = hareketData?.proje_id;
+        const normaller = window.satinalmaProjeler.filter(p => !isOzel(p) &&
+            (aktifAsamalar.includes(p.hesaplanmis_durum) || (seciliId && String(p.id) === String(seciliId))));
+        const ozeller = window.satinalmaProjeler.filter(isOzel);
         sel.innerHTML = '<option value="">-- Proje Seçin --</option>' +
-            window.satinalmaProjeler.map(p => `<option value="${p.id}" ${hareketData?.proje_id == p.id ? 'selected' : ''}>${esc(p.proje_kodu)} / ${esc(p.musteri_adi || '')} - ${esc(p.proje_adi)}</option>`).join('');
+            [...normaller, ...ozeller].map(p => `<option value="${p.id}" ${seciliId == p.id ? 'selected' : ''}>${esc(p.proje_kodu)} / ${esc(p.musteri_adi || '')} - ${esc(p.proje_adi)}</option>`).join('');
     }
     const depoSel = document.getElementById("shDepo");
     depoSel.innerHTML = '<option value="">-- Depo Seçin --</option>' +
@@ -17481,7 +17500,11 @@ async function openTeknikSartname(teslimatId, mod = 'teslimat') {
             document.getElementById('tsModalBody').insertAdjacentHTML('afterbegin',
                 `<div class="alert alert-warning py-2 small mb-3"><i class="bi bi-lock-fill me-1"></i>${mesajHtml}</div>`);
         };
-        if (mod === 'kalem') {
+        // SALT OKUNUR ERİŞİM (Yunus 2026-08-06): projeler OKUMA yetkisi şartnameyi
+        // görüntüleyip PDF'ini indirebilir; düzenleme YAZMA ister (sunucu da reddeder).
+        if (mod !== 'kalem' && !izinVarMi('projeler', 'YAZMA')) {
+            formKilitle('Görüntüleme yetkisiyle açıldı — şartname <b>salt okunur</b>. PDF indirebilirsiniz.');
+        } else if (mod === 'kalem') {
             // Satış tarafı: kopyalama teslimat bazlı çalışır, kalem modunda gizle;
             // kilit bilgisi sunucudan gelir (teklif ONAYLANAN → kilitli)
             document.getElementById('tsKopyaBtn')?.classList.add('d-none');

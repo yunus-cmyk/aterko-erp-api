@@ -539,6 +539,16 @@ async function projeFiyatGorebilir(req) {
     return ['YAZMA', 'TAM'].includes(izinler['projeler']);
 }
 
+// OPERASYON GÖRÜNÜRLÜĞÜ (Yunus 2026-08-06): PROJE aşamasına gelmemiş projeler
+// (SÖZLEŞME, İŞ EMRİ, BEKLEMEDE) henüz operasyona dahil değildir — yalnız
+// ADMIN / SATIS / YONETIM rolleri görür. Diğer roller (ÜRETİM, SATINALMA vb.)
+// listede ve detayda yalnız PROJE ve sonrasını (ÜRETİM, MONTAJ, TESLİM EDİLDİ) görür.
+const PROJE_GORUNUR_ERKEN_ROLLER = ['ADMIN', 'Admin', 'SATIS', 'YONETIM'];
+const PROJE_OPERASYON_ASAMALARI = ['PROJE', 'ÜRETİM', 'MONTAJ', 'TESLİM EDİLDİ'];
+function erkenAsamaGorebilir(req) {
+    return etkinRoller(req).some(r => PROJE_GORUNUR_ERKEN_ROLLER.includes(r));
+}
+
 app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
     try {
         // Genel durum TEK KAYNAKTAN: proje_hesapli_durum() SQL fonksiyonu (semaGuvence)
@@ -592,7 +602,10 @@ app.get('/api/projeler', yetkiKontrol, async (req, res, next) => {
                 x.id DESC
         `;
         const result = await pool.query(query);
-        const data = result.rows;
+        let data = result.rows;
+        if (!erkenAsamaGorebilir(req)) {
+            data = data.filter(r => PROJE_OPERASYON_ASAMALARI.includes(r.durum));
+        }
         // FİYAT MASKESİ: projeler YAZMA yetkisi olmayana tutarlar sunucudan hiç inmez
         const fiyatGorebilir = await projeFiyatGorebilir(req);
         if (!fiyatGorebilir) data.forEach(r => { r.kdvsiz_toplam = null; r.kdvli_toplam = null; });
@@ -658,6 +671,11 @@ app.get('/api/proje-detay/:id', yetkiKontrol, async (req, res, next) => {
         proje.kayitli_durum = proje.durum;
         proje.durum = proje.hesaplanmis_durum;
         delete proje.hesaplanmis_durum;
+        // Liste ile aynı görünürlük kapısı: erken aşamadaki proje diğer rollere detayda da kapalı
+        if (!PROJE_OPERASYON_ASAMALARI.includes(proje.durum) && !erkenAsamaGorebilir(req)) {
+            return res.status(403).json({ ok: false, izin_hatasi: true,
+                hata: 'Bu proje henüz operasyona alınmadı (iş emri yayınlanmadı) — görüntüleme yetkiniz yok.' });
+        }
         res.json({ ok: true, proje, teslimatlar: teslimatRes.rows, fiyat_gizli: !fiyatGorebilir });
     } catch (error) { next(error); }
 });
@@ -3185,10 +3203,20 @@ app.post('/api/talep-guncelle', yetkiKontrol, async (req, res, next) => {
         if (!id) return res.json({ ok: false, hata: 'Talep ID gerekli.' });
 
         // Sadece ONAY BEKLİYOR durumunda düzenlenebilir
-        const dR = await client.query('SELECT durum FROM satinalma_talepleri WHERE id=$1', [id]);
+        const dR = await client.query('SELECT durum, talep_no, proje_id, talep_eden FROM satinalma_talepleri WHERE id=$1', [id]);
         if (dR.rowCount === 0) return res.json({ ok: false, hata: 'Talep bulunamadı.' });
         if (dR.rows[0].durum !== 'ONAY BEKLİYOR') {
             return res.json({ ok: false, hata: `Sadece "ONAY BEKLİYOR" durumundaki talepler düzenlenebilir. Mevcut durum: ${dR.rows[0].durum}` });
+        }
+        // SAHİPLİK KAPISI (Yunus 2026-08-06): YAZMA yetkisi yalnız KENDİ talebini
+        // düzenleyebilir; başkasının talebi TAM yetki (veya ADMIN) ister.
+        if (!adminMi(req)) {
+            const izinler = await getKullaniciIzinleri(etkinRoller(req));
+            const tam = (izinler['satinalma.talepler'] || 'YOK') === 'TAM';
+            if (!tam && (dR.rows[0].talep_eden || '') !== req.user.adSoyad) {
+                return res.json({ ok: false, izin_hatasi: true,
+                    hata: `Bu talebi yalnız açan kişi (${dR.rows[0].talep_eden}) veya TAM yetkili düzenleyebilir.` });
+            }
         }
 
         // Ana talebi güncelle
@@ -3197,6 +3225,25 @@ app.post('/api/talep-guncelle', yetkiKontrol, async (req, res, next) => {
             SET proje_id=$1, istenen_tarih=$2, teslim_yeri=$3, genel_aciklama=$4
             WHERE id=$5
         `, [proje_id || null, istenen_tarih || null, teslim_yeri || null, genel_aciklama || null, id]);
+
+        // TALEP NO PROJEYİ İZLER (Yunus 2026-08-06): ONAY BEKLİYOR'da proje değişirse
+        // numaranın ön eki de yeni proje koduna döner (10000-T-5919 → 72796-T-5919).
+        // Sıra numarası (ve bölünmüş taleplerdeki -EK kuyruğu) AYNEN korunur; talep bu
+        // aşamada sipariş/stok kaydı üretmediği için numara değişiminin yan etkisi yok.
+        let yeniTalepNo = null;
+        {
+            const eskiNo = dR.rows[0].talep_no || '';
+            let yeniKod = 'GENEL';
+            if (proje_id) {
+                const pK = await client.query('SELECT proje_kodu FROM projeler WHERE id=$1', [proje_id]);
+                if (pK.rowCount) yeniKod = pK.rows[0].proje_kodu;
+            }
+            const tireIdx = eskiNo.indexOf('-');
+            if (tireIdx > 0 && eskiNo.slice(0, tireIdx) !== String(yeniKod)) {
+                yeniTalepNo = `${yeniKod}${eskiNo.slice(tireIdx)}`;
+                await client.query('UPDATE satinalma_talepleri SET talep_no=$1 WHERE id=$2', [yeniTalepNo, id]);
+            }
+        }
 
         // Mevcut kalemleri yükle
         const mevcut = await client.query('SELECT id FROM talep_urunleri WHERE talep_id=$1', [id]);
@@ -3233,7 +3280,13 @@ app.post('/api/talep-guncelle', yetkiKontrol, async (req, res, next) => {
         }
 
         await client.query('COMMIT');
-        res.json({ ok: true, mesaj: 'Talep güncellendi.', silinen_kalem: silinecek.length });
+        if (yeniTalepNo) {
+            await auditLogla(req, { eylem: 'UPDATE', tablo: 'satinalma_talepleri', kayit_id: parseInt(id), kayit_no: yeniTalepNo,
+                ozet: `Talep projesi değişti — numara ${dR.rows[0].talep_no} → ${yeniTalepNo}` });
+        }
+        res.json({ ok: true,
+            mesaj: yeniTalepNo ? `Talep güncellendi. Proje değiştiği için numara ${yeniTalepNo} oldu.` : 'Talep güncellendi.',
+            yeni_talep_no: yeniTalepNo, silinen_kalem: silinecek.length });
     } catch (e) { await client.query('ROLLBACK'); next(e); }
     finally { try { await client.query('ROLLBACK'); } catch (_) {} client.release(); }
 });
@@ -9188,7 +9241,10 @@ app.post('/api/satis-proje-teklif-olustur', yetkiKontrol, izinGerekli('satis.tek
 
 const MODUL_KATALOG = [
     { kod: 'anasayfa',            ad: 'Ana Sayfa',           grup: 'Genel' },
-    { kod: 'projeler',            ad: 'Projeler',            grup: 'İş Akışı' },
+    // 'projeler' = OPERASYON projeleri (satış fırsatları ayrı: satis.proje).
+    // OKUMA: liste/detay/şartname görüntüleme + PDF; YAZMA: düzenleme; erken aşama
+    // görünürlüğü (SÖZLEŞME/İŞ EMRİ) izinden bağımsız ROL kapısıdır (ADMIN/SATIS/YONETIM).
+    { kod: 'projeler',            ad: 'Operasyon — Projeler', grup: 'Operasyon' },
     { kod: 'bina_listeleri',      ad: 'Bina Listeleri',      grup: 'İş Akışı' },
     { kod: 'satinalma.talepler',  ad: 'Satınalma — Talepler', grup: 'Satınalma' },
     { kod: 'satinalma.teklif',    ad: 'Satınalma — Teklif Havuzu', grup: 'Satınalma' },
@@ -9560,7 +9616,11 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/arsivden-cikar/, modul: 'satinalma.arsiv', seviye: 'TAM' },
     // Satınalma Raporu (Genel Bakış) — tutar/grafik özetleri
     { pattern: /^\/api\/satinalma-genel-ozet/, method: 'GET', modul: 'satinalma.rapor', seviye: 'OKUMA' },
-    { pattern: /^\/api\/(talep-kaydet|talep-guncelle|talep-onayla|talep-reddet|talep-iptal|talep-arsivle)/, modul: 'satinalma.talepler', seviye: 'TAM' },
+    // talep-guncelle YAZMA'ya indirildi (Yunus 2026-08-06): TAM paketinde durduğu için
+    // YAZMA kullanıcısının düzenlemesi sessizce 403'e takılıyordu. Sahiplik kapısı
+    // (yalnız talebi açan veya TAM) ucun İÇİNDE denetlenir.
+    { pattern: /^\/api\/talep-guncelle/, modul: 'satinalma.talepler', seviye: 'YAZMA' },
+    { pattern: /^\/api\/(talep-kaydet|talep-onayla|talep-reddet|talep-iptal|talep-arsivle)/, modul: 'satinalma.talepler', seviye: 'TAM' },
 
     // Satınalma — Siparişler
     { pattern: /^\/api\/(siparis-listesi|siparis-detay|siparis-pdf|siparis-dosya|son-alis-fiyatlari)/, method: 'GET', modul: 'satinalma.siparisler', seviye: 'OKUMA' },
@@ -9603,6 +9663,9 @@ const ENDPOINT_IZIN_KURALLARI = [
     // Teknik şartname / form
     { pattern: /^\/api\/teknik-sartname-kalem/, method: 'GET', modul: 'satis.teklif', seviye: 'OKUMA' },
     { pattern: /^\/api\/teknik-sartname-kalem/, modul: 'satis.teklif', seviye: 'YAZMA' },
+    // Şartname GÖRÜNTÜLEME + PDF indirme OKUMA ile serbest (Yunus 2026-08-06: ÜRETİM
+    // salt okunur açabilmeli ve PDF alabilmeli); kaydet/önizle/şablon işlemleri YAZMA.
+    { pattern: /^\/api\/teknik-sartname/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
     { pattern: /^\/api\/teknik-sartname/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/is-emri/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
     { pattern: /^\/api\/is-emri-(olustur|guncelle|yayinla|sil|iptal|not)/, modul: 'projeler', seviye: 'YAZMA' },
