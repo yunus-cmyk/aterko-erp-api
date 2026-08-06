@@ -649,6 +649,29 @@ app.post('/api/proje-onay-geri-al', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// PROJENİN GENEL DURUMU (Yunus 2026-08-03): projeler.durum kolonu tarihsel bir alandır
+// ve teslimat aşamaları ilerledikçe güncellenmez; projenin gerçek durumu HER ZAMAN
+// bileşen (teslimat) durumlarından türetilir — EN İLERİ aşamadaki bileşen kazanır,
+// İPTAL bileşenler sayılmaz. TASLAK istisnadır: ADMIN onayı verilmemiş projede
+// bileşen durumları projeyi ileri taşımaz.
+// UYARI: aynı öncelik tablosu /api/projeler listesinde SQL olarak da var (ORDER BY
+// ve hesaplanmis_durum) — biri değişirse ikisi birden değişmeli.
+const TESLIMAT_DURUM_ONCELIK = {
+    'TESLİM EDİLDİ': 8, 'MONTAJ': 7, 'ÜRETİM': 6, 'PROJE': 5,
+    'İŞ EMRİ': 4, 'SÖZLEŞME': 3, 'BEKLEMEDE': 2
+};
+function projeHesapliDurum(kayitliDurum, teslimatlar) {
+    if (kayitliDurum === 'TASLAK') return 'TASLAK';
+    let enIleri = null, enYuksek = -1;
+    for (const t of (teslimatlar || [])) {
+        const d = t.durum || 'BEKLEMEDE';
+        if (d === 'İPTAL') continue;
+        const oncelik = TESLIMAT_DURUM_ONCELIK[d] != null ? TESLIMAT_DURUM_ONCELIK[d] : 1;
+        if (oncelik > enYuksek) { enYuksek = oncelik; enIleri = d; }
+    }
+    return enIleri || kayitliDurum || 'BEKLEMEDE';
+}
+
 app.get('/api/proje-detay/:id', yetkiKontrol, async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -663,7 +686,12 @@ app.get('/api/proje-detay/:id', yetkiKontrol, async (req, res, next) => {
         // FİYAT MASKESİ: projeler YAZMA yetkisi olmayana teslimat tutarları sunucudan hiç inmez
         const fiyatGorebilir = await projeFiyatGorebilir(req);
         if (!fiyatGorebilir) teslimatRes.rows.forEach(t => { t.kdvsiz_tutar = null; });
-        res.json({ ok: true, proje: projeRes.rows[0], teslimatlar: teslimatRes.rows, fiyat_gizli: !fiyatGorebilir });
+        // Genel durum bileşenlerden türetilir (liste ucuyla aynı kural); kayıtlı kolon
+        // kayitli_durum olarak ayrıca döner.
+        const proje = projeRes.rows[0];
+        proje.kayitli_durum = proje.durum;
+        proje.durum = projeHesapliDurum(proje.durum, teslimatRes.rows);
+        res.json({ ok: true, proje, teslimatlar: teslimatRes.rows, fiyat_gizli: !fiyatGorebilir });
     } catch (error) { next(error); }
 });
 
