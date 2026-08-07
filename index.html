@@ -6123,8 +6123,8 @@ function satisProjeIcSekmeleriCiz(r) {
     const sekmeler = [
         { kod: 'genel',    ad: 'Genel',     ikon: 'info-circle' },
         { kod: 'teklifler',ad: 'Teklifler', ikon: 'file-earmark-text', rozet: r.teklifler.length },
-        { kod: 'sartnameler', ad: 'Teknik Şartnameler', ikon: 'file-earmark-ruled', rozet: (r.kalemler || []).length },
-        { kod: 'analiz',   ad: 'Analiz',    ikon: 'calculator', rozet: (r.kalemler || []).length },
+        { kod: 'sartnameler', ad: 'Teknik Şartnameler', ikon: 'file-earmark-ruled', rozet: (r.kalemler || []).filter(x => x.bina_turu && x.bina_turu !== 'Diğer').length },
+        { kod: 'analiz',   ad: 'Analiz',    ikon: 'calculator', rozet: (r.kalemler || []).filter(x => x.bina_turu && x.bina_turu !== 'Diğer').length },
         { kod: 'sozlesme', ad: 'Sözleşme',  ikon: 'file-earmark-check', rozet: (r.teslimatlar || []).length || null },
         { kod: 'yorumlar', ad: 'Yorumlar',  ikon: 'chat-left-text', rozet: r.yorum_sayisi }
     ];
@@ -6275,7 +6275,9 @@ function satisProjeSekmeSec(sekme) {
         return;
     }
     if (sekme === 'analiz') {
-        const k = r.kalemler || [];
+        // Diğer (bina olmayan) kalemler analiz/şartname konusu değildir — operasyona
+        // aktarmadaki ayrımla aynı (Yunus 2026-08-07); bina_turu sunucuda türetilir.
+        const k = (r.kalemler || []).filter(x => x.bina_turu && x.bina_turu !== 'Diğer');
         // Sütun düzeni Teknik Şartnameler sekmesiyle AYNI (Yunus 2026-07-29):
         // Teklif | Bileşen (Bina) | Tür / Tip | m² — sonra analize özgü sütunlar
         govde.innerHTML = k.length ? `
@@ -7614,8 +7616,12 @@ function stfKalemEkle(k) {
                         <option value="">Kat Adedi</option>
                         ${[1, 2, 3, 4].map(n => `<option value="${n}" ${String(k.kat_adedi) === String(n) ? 'selected' : ''}>${n} Kat</option>`).join('')}
                     </select></div>
-                    <div class="col-6 stf-kosul-konteyner d-none"><input type="text" class="form-control form-control-sm stf-k-konteyner-ebadi"
-                        placeholder="Konteyner Ebadı (örn. 3x7 m)" value="${esc(k.konteyner_ebadi || '')}"></div>
+                    <div class="col-3 stf-kosul-konteyner d-none"><input type="text" class="form-control form-control-sm stf-k-konteyner-ebadi"
+                        placeholder="Ebat (örn. 3x7 m)" title="Konteyner Ebadı" value="${esc(k.konteyner_ebadi || '')}"></div>
+                    <!-- AYRIM (Yunus 2026-08-07): bu alan 1 binayı OLUŞTURAN konteyner sayısıdır
+                         (birleşimli monoblok); binadan kaç adet olduğu sağdaki Bina Adedi'dir. -->
+                    <div class="col-3 stf-kosul-konteyner d-none"><input type="number" min="1" class="form-control form-control-sm stf-k-konteyner-miktar"
+                        placeholder="Konteyner Adedi" title="Bir binayı oluşturan konteyner sayısı (birleşimli monoblokta)" value="${k.konteyner_miktari != null ? k.konteyner_miktari : ''}"></div>
                     <div class="col-3 stf-kosul-hafif d-none"><input type="text" class="form-control form-control-sm stf-k-dis-duvar"
                         placeholder="Dış Duvar Kesiti" value="${esc(k.dis_duvar_kesiti || '')}"></div>
                     <div class="col-3 stf-kosul-hafif d-none"><input type="text" class="form-control form-control-sm stf-k-ic-duvar"
@@ -7640,7 +7646,7 @@ function stfKalemEkle(k) {
             <small class="text-muted stf-buyukluk-yok d-none">Diğer için büyüklük girilmez</small></td>
         <td><div class="input-group input-group-sm">
                 <input type="number" class="form-control form-control-sm text-end stf-k-miktar" value="${k.miktar != null ? k.miktar : 1}" step="1" min="1"
-                       oninput="stfToplamGuncelle()" title="Bina Adedi / Konteyner Miktarı">
+                       oninput="stfToplamGuncelle()" title="Bina Adedi — bu bileşenden (binadan) kaç adet teklif ediliyor">
                 <span class="input-group-text stf-k-birim-rozet px-2" style="font-size:0.75rem;">Adet</span>
             </div>
             <select class="form-select form-select-sm mt-1 stf-k-birim d-none" title="Birim (yalnız Diğer)">
@@ -7874,6 +7880,7 @@ async function satisTeklifKaydet() {
         kat_adedi: tr.querySelector('.stf-k-kat-adedi')?.value || '',
         kat_yuksekligi: tr.querySelector('.stf-k-kat-yuksekligi')?.value || '',
         konteyner_ebadi: tr.querySelector('.stf-k-konteyner-ebadi')?.value || '',
+        konteyner_miktari: tr.querySelector('.stf-k-konteyner-miktar')?.value || null,
         dis_duvar_kesiti: tr.querySelector('.stf-k-dis-duvar')?.value || '',
         ic_duvar_kesiti: tr.querySelector('.stf-k-ic-duvar')?.value || '',
         bina_yeri: tr.querySelector('.stf-k-bina-yeri')?.value || '',
@@ -17525,9 +17532,10 @@ async function openTeknikSartname(teslimatId, mod = 'teslimat') {
         if (mod !== 'kalem' && !izinVarMi('projeler', 'YAZMA')) {
             formKilitle('Görüntüleme yetkisiyle açıldı — şartname <b>salt okunur</b>. PDF indirebilirsiniz.');
         } else if (mod === 'kalem') {
-            // Satış tarafı: kopyalama teslimat bazlı çalışır, kalem modunda gizle;
-            // kilit bilgisi sunucudan gelir (teklif ONAYLANAN → kilitli)
-            document.getElementById('tsKopyaBtn')?.classList.add('d-none');
+            // Satış tarafı (Yunus 2026-08-07): kopyalama kalem modunda da ÇALIŞIR —
+            // kaynaklar önce aynı projedeki bileşenler, sonra diğer projeler.
+            // Kilit bilgisi sunucudan gelir (teklif ONAYLANAN → kilitli).
+            document.getElementById('tsKopyaBtn')?.classList.remove('d-none');
             if (teslimatRes.kilitli) formKilitle(teslimatRes.kilit_mesaji || 'Teknik şartname kilitli.');
         } else {
             const ieR = await secureFetch(`/is-emri/${teslimatId}`);
@@ -17553,8 +17561,8 @@ function renderTeknikSartnameForm(alanlar, mevcutVeri) {
 
     // Üst araç çubuğu: başka teslimattan kopyalama (kilitli şartnamede gizlenir)
     let html = `<div class="d-flex justify-content-end mb-2">
-        <button type="button" id="tsKopyaBtn" class="btn btn-sm btn-outline-secondary" onclick="tsKopyaAc()" title="Aynı bina türündeki başka bir teslimatın şartname cevaplarını bu forma aktar">
-            <i class="bi bi-copy me-1"></i>Başka Teslimattan Kopyala
+        <button type="button" id="tsKopyaBtn" class="btn btn-sm btn-outline-secondary" onclick="tsKopyaAc()" title="Aynı bina türündeki önceki bir şartnamenin cevaplarını bu forma aktar (önce aynı projedekiler listelenir)">
+            <i class="bi bi-copy me-1"></i>Önceki Şartnameden Kopyala
         </button>
     </div>`;
     sirali.forEach(b => {
@@ -17600,11 +17608,15 @@ function tsDigerUygula(veri) {
     return veri;
 }
 
-// ===== TEKNİK ŞARTNAME KOPYALAMA — aynı bina türündeki teslimattan cevapları aktar =====
+// ===== TEKNİK ŞARTNAME KOPYALAMA — aynı bina türündeki önceki şartnameden cevapları aktar =====
+// Kalem modunda (satış) kaynaklar: ÖNCE aynı projedeki bileşenler, sonra diğer
+// projelerin bileşenleri ve operasyon teslimatları (sunucu bu sırayla döndürür).
 let tsKopyaKaynaklar = [];
 let tsKopyaBinaTuru = '';
 async function tsKopyaAc() {
-    const r = await secureFetch('/teknik-sartname-kopya-kaynaklar/' + tsAktifTeslimat).catch(() => null);
+    const uc = tsAktifMod === 'kalem'
+        ? '/teknik-sartname-kalem-kopya-kaynaklar/' : '/teknik-sartname-kopya-kaynaklar/';
+    const r = await secureFetch(uc + tsAktifTeslimat).catch(() => null);
     if (!r || !r.ok) return showToast((r && r.hata) || 'Kaynak listesi alınamadı.', 'error');
     tsKopyaKaynaklar = r.kaynaklar || [];
     tsKopyaBinaTuru = r.bina_turu || '';
@@ -17627,19 +17639,21 @@ function tsKopyaRender(filtre) {
             .filter(x => x && String(x).trim()).join(' - ');
         return `<div class="border rounded p-2 mb-2 bg-white d-flex justify-content-between align-items-center gap-2">
             <div class="small">
-                <div class="fw-semibold">${esc(k.musteri_adi || '')} - ${esc(k.proje_adi || '')} - ${esc(k.bina_adi || '')}</div>
+                <div class="fw-semibold">${esc(k.musteri_adi || '')} - ${esc(k.proje_adi || '')} - ${esc(k.bina_adi || '')}
+                    ${k.ayni_proje ? '<span class="badge bg-success-subtle text-success border border-success ms-1">Aynı proje</span>' : ''}</div>
                 <div class="text-muted">${esc(detay || '-')}${k.buyukluk_m2 ? ' · ' + k.buyukluk_m2 + ' m²' : ''} <span class="ms-1 badge bg-light text-secondary border">${esc(k.proje_kodu || '')}</span></div>
             </div>
-            <button class="btn btn-sm btn-primary text-nowrap" onclick="tsKopyaUygula(${k.id})"><i class="bi bi-download me-1"></i>Aktar</button>
+            <button class="btn btn-sm btn-primary text-nowrap" onclick="tsKopyaUygula(${k.id}, '${k.tip || 'teslimat'}')"><i class="bi bi-download me-1"></i>Aktar</button>
         </div>`;
     }).join('');
 }
-async function tsKopyaUygula(kaynakId) {
-    if (!confirm('Seçilen teslimatın şartname cevapları bu forma aktarılacak (mevcut girişlerin ÜZERİNE yazar).\n\nBu formun seçeneklerine uymayan değerler boş bırakılır; bina künyesi bu teslimattan kalır. Kaydetmeden önce kontrol edebilirsiniz. Devam edilsin mi?')) return;
+async function tsKopyaUygula(kaynakId, kaynakTip) {
+    if (!confirm('Seçilen kaynağın şartname cevapları bu forma aktarılacak (mevcut girişlerin ÜZERİNE yazar).\n\nBu formun seçeneklerine uymayan değerler boş bırakılır; bina künyesi bu binadan kalır. Kaydetmeden önce kontrol edebilirsiniz. Devam edilsin mi?')) return;
     showLoading();
-    const r = await secureFetch('/teknik-sartname/' + kaynakId).catch(() => null);
+    // Kaynak bir teklif bileşeni de olabilir (satış), bir teslimat da (operasyon)
+    const r = await secureFetch((kaynakTip === 'kalem' ? '/teknik-sartname-kalem/' : '/teknik-sartname/') + kaynakId).catch(() => null);
     hideLoading();
-    if (!r || !r.ok) return showToast('Kaynak teslimat okunamadı.', 'error');
+    if (!r || !r.ok) return showToast('Kaynak şartname okunamadı.', 'error');
     const kaynakEk = (r.teslimat && r.teslimat.ek_veriler) || r.ek_veriler || {};
     // Bu teslimatın mevcut form durumu (künye/otomatik alanlar dahil) temel alınır
     const yeni = { ...tsMevcutDegerleriOku() };

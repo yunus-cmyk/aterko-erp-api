@@ -4980,22 +4980,36 @@ async function sartnamePDFVeriyle(t, kullaniciAd) {
 // ve Sözleşme Oluştur'da cevaplar teslimata miras geçer.
 
 // Kalemden 'sanal teslimat' nesnesi: şartname formu/PDF'i teslimatla aynı alanları bekler
+// KALEMİN BİNA TÜRÜ — TÜRETİLMİŞ (Yunus 2026-08-07): eski (aktarılan) kalemlerde
+// bina_turu kolonu boş, tür bilgisi bilesen_turu'ndedir. satisTeslimatlariTuret ile
+// AYNI kategori eşlemesi burada da uygulanır; aksi halde eski kalemlerin şartnamesi
+// öznitelik adımı bina_turu'nu doldurana kadar 'bina değil' diye reddediliyordu —
+// oysa şartname girişi bileşen tanımlanır tanımlanmaz mümkün olmalı (analiz gibi).
+const KALEM_BINA_TURU_SQL = `COALESCE(k.bina_turu,
+    CASE WHEN rbt.ust_kod IN ('Prefabrik','Konteyner','Hafif Çelik','Yapısal Çelik')
+         THEN rbt.ust_kod
+         WHEN k.bilesen_turu IS NOT NULL THEN 'Diğer' END)`;
+const KALEM_BINA_TURU_JOIN = `LEFT JOIN sat_referanslar rbt ON rbt.tur='bilesen_turu' AND rbt.ad=k.bilesen_turu`;
+
 async function sartnameKalemVerisi(kalemId) {
     const r = await pool.query(`
-        SELECT k.id, k.ad AS bina_adi, k.bina_turu, k.bina_tipi, k.kat_adedi, k.kat_yuksekligi,
+        SELECT k.id, k.ad AS bina_adi, ${KALEM_BINA_TURU_SQL} AS bina_turu,
+               k.bina_tipi, k.kat_adedi, k.kat_yuksekligi,
                k.konteyner_ebadi, k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri,
-               k.montaj_gerekli, k.ikincil_miktar AS buyukluk_m2, k.miktar,
+               k.montaj_gerekli, k.ikincil_miktar AS buyukluk_m2, k.miktar, k.konteyner_miktari,
                k.ek_veriler, t.durum AS teklif_durumu, t.teklif_no,
                p.id AS proje_id, p.proje_kodu, p.musteri_adi, p.proje_adi, p.nakliye,
                p.satis_temsilcisi, p.durum AS proje_durum
         FROM sat_teklif_kalemleri k
         JOIN sat_teklifler t ON t.id = k.teklif_id
         LEFT JOIN projeler p ON p.id = t.proje_id
+        ${KALEM_BINA_TURU_JOIN}
         WHERE k.id = $1`, [kalemId]);
     if (!r.rowCount) return null;
     const t = r.rows[0];
-    t.bina_adedi = t.bina_turu === 'Konteyner' ? null : t.miktar;
-    t.konteyner_miktari = t.bina_turu === 'Konteyner' ? t.miktar : null;
+    // AYRIM (Yunus 2026-08-07): miktar HER türde 'bu binadan kaç adet' (bina adedi);
+    // konteyner_miktari 'bir bina kaç konteynerden oluşuyor' (yalnız Konteyner, ayrı kolon).
+    t.bina_adedi = t.miktar;
     t.sartname_kodu = `${t.proje_kodu || ''}-TŞ-TASLAK`;   // gerçek kod teslimatta atanır
     return t;
 }
@@ -5029,6 +5043,58 @@ app.post('/api/teknik-sartname-kalem-kaydet', yetkiKontrol, async (req, res, nex
             SET ek_veriler=$1, sartname_guncelleme=now(), sartname_guncelleyen=$3 WHERE id=$2`,
             [JSON.stringify(yeni), parseInt(kalem_id), req.user.email]);
         res.json({ ok: true, mesaj: 'Teknik şartname kaydedildi.' });
+    } catch (e) { next(e); }
+});
+
+// KALEM MODU KOPYA KAYNAKLARI (Yunus 2026-08-07): satışta şartname doldururken
+// benzer önceki şartnamelerden aktarım. Öncelik AYNI PROJEDEKİ bileşenler; sonra
+// diğer projelerin bileşenleri ve operasyondaki teslimat şartnameleri (hepsi aynı
+// TÜRETİLMİŞ bina türünde ve şartnamesi dolu olanlar). tip alanı 'kalem'/'teslimat'
+// — aktarımda hangi uçtan okunacağını belirler.
+app.get('/api/teknik-sartname-kalem-kopya-kaynaklar/:kalemId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const kalemId = parseInt(req.params.kalemId);
+        const cur = await pool.query(`
+            SELECT ${KALEM_BINA_TURU_SQL} AS bina_turu, t.proje_id
+            FROM sat_teklif_kalemleri k
+            JOIN sat_teklifler t ON t.id = k.teklif_id
+            ${KALEM_BINA_TURU_JOIN}
+            WHERE k.id=$1`, [kalemId]);
+        if (!cur.rowCount) return res.json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        const { bina_turu, proje_id } = cur.rows[0];
+        if (!bina_turu || bina_turu === 'Diğer')
+            return res.json({ ok: false, hata: 'Bu bileşen bina değil; şartname kopyalanamaz.' });
+        const r = await pool.query(`
+            SELECT * FROM (
+                SELECT k.id, 'kalem' AS tip, k.ad AS bina_adi, k.bina_tipi,
+                       k.kat_yuksekligi, k.kat_adedi, k.konteyner_ebadi,
+                       k.ikincil_miktar AS buyukluk_m2,
+                       p.proje_kodu, p.musteri_adi, p.proje_adi,
+                       (t.proje_id IS NOT DISTINCT FROM $3) AS ayni_proje,
+                       COALESCE(k.sartname_guncelleme, t.teklif_tarihi::timestamptz) AS sirala
+                FROM sat_teklif_kalemleri k
+                JOIN sat_teklifler t ON t.id = k.teklif_id
+                LEFT JOIN projeler p ON p.id = t.proje_id
+                ${KALEM_BINA_TURU_JOIN}
+                WHERE k.id <> $2 AND ${KALEM_BINA_TURU_SQL} = $1
+                  AND k.ek_veriler IS NOT NULL AND k.ek_veriler <> '{}'::jsonb
+                UNION ALL
+                SELECT pt.id, 'teslimat' AS tip, pt.bina_adi, pt.bina_tipi,
+                       pt.kat_yuksekligi::text, pt.kat_adedi::text, pt.konteyner_ebadi,
+                       pt.buyukluk_m2, p.proje_kodu, p.musteri_adi, p.proje_adi,
+                       (pt.proje_id IS NOT DISTINCT FROM $3) AS ayni_proje,
+                       NULL::timestamptz AS sirala
+                FROM proje_teslimatlari pt
+                JOIN projeler p ON p.id = pt.proje_id
+                WHERE pt.bina_turu = $1
+                  AND pt.ek_veriler IS NOT NULL AND pt.ek_veriler <> '{}'::jsonb
+                  AND COALESCE(pt.durum,'') <> 'İPTAL'
+                  -- kalemden türetilen teslimat, kaynağıyla mükerrer listelenmesin
+                  AND pt.teklif_kalem_id IS NULL
+            ) x
+            ORDER BY x.ayni_proje DESC, x.sirala DESC NULLS LAST, x.id DESC
+            LIMIT 200`, [bina_turu, kalemId, proje_id]);
+        res.json({ ok: true, bina_turu, kaynaklar: r.rows });
     } catch (e) { next(e); }
 });
 
@@ -6572,12 +6638,13 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                 INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim,
                     ikincil_miktar, ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam,
                     analiz_durumu, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
-                    konteyner_ebadi, dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri, montaj_gerekli)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'BELIRTILMEMIS',$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+                    konteyner_ebadi, konteyner_miktari, dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri, montaj_gerekli)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'BELIRTILMEMIS',$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
                 [teklifId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar,
                  k.ikincil_birim, sembol, k.opsiyonel, k.sira, k.birim_fiyat, tutar,
                  k.bina_turu, k.bina_tipi, k.kat_adedi, k.kat_yuksekligi,
-                 k.konteyner_ebadi, k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri, k.montaj_gerekli]);
+                 k.konteyner_ebadi, k.bina_turu === 'Konteyner' ? (parseInt(k.konteyner_miktari) || null) : null,
+                 k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri, k.montaj_gerekli]);
         }
         // Toplamlar kalemlerden yeniden hesaplanır (eski calculateAndSaveProposalTotals birebir)
         await satisTeklifToplamlariHesapla(client, teklifId);
@@ -6806,6 +6873,7 @@ function satisSozlesmeHTML(s, kalemler, sartnameGovdeleri = []) {
 
     const kalemKunye = k => {
         const p = [k.bina_tipi, k.konteyner_ebadi,
+            k.konteyner_miktari ? k.konteyner_miktari + ' Konteyner' : null,
             k.kat_yuksekligi ? k.kat_yuksekligi + ' mm' : null,
             k.kat_adedi ? k.kat_adedi + ' Kat' : null].filter(Boolean);
         const metin = p.join(' - ') || (k.aciklama || '').trim();
@@ -7010,6 +7078,7 @@ function satisTeklifHTML(t, kalemler, sartnameGovdeleri = []) {
         const p = [];
         if (k.bina_tipi) p.push(k.bina_tipi);
         if (k.konteyner_ebadi) p.push(k.konteyner_ebadi);
+        if (k.konteyner_miktari) p.push(k.konteyner_miktari + ' Konteyner');
         if (k.kat_yuksekligi) p.push(k.kat_yuksekligi + ' mm');
         if (k.kat_adedi) p.push(k.kat_adedi + ' Kat');
         if (k.dis_duvar_kesiti) p.push('Dış duvar ' + k.dis_duvar_kesiti);
@@ -7283,20 +7352,23 @@ app.get('/api/satis-proje-detay/:id', yetkiKontrol, async (req, res, next) => {
             WHERE t.proje_id=$1 ORDER BY t.teklif_tarihi DESC NULLS LAST`, [id]);
         // ANALİZ SEKMESİ: projenin tüm tekliflerindeki kalemler tek listede — eski sistemde
         // proje detayının "Analiz" sekmesi buydu (teklif teklif dolaşmadan tüm bileşenler).
+        // bina_turu TÜRETİLMİŞ döner (eski kalemlerde kolon boş; kategori eşlemesi) —
+        // Analiz ve Şartname sekmeleri 'Diğer'i (bina olmayanları) bununla süzer.
         const kalemler = await pool.query(`
             SELECT k.id, k.ad, k.miktar, k.birim, k.analiz_durumu, k.onerilen_fiyat, k.birim_fiyat,
                    k.analiz_tarihi, k.analiz_eden, k.bilesen_turu,
-                   k.bina_turu, k.bina_tipi, k.ikincil_miktar,
+                   ${KALEM_BINA_TURU_SQL} AS bina_turu, k.bina_tipi, k.ikincil_miktar,
                    k.sartname_guncelleme, k.sartname_guncelleyen,
                    t.id AS teklif_id, t.teklif_no, t.durum AS teklif_durumu, t.para_birimi,
                    ts.id AS teslimat_id,
-                   (SELECT COUNT(*)::int FROM form_tanimlari ft WHERE ft.bina_turu = k.bina_turu) AS sartname_soru,
-                   (SELECT COUNT(*)::int FROM form_tanimlari ft WHERE ft.bina_turu = k.bina_turu
+                   (SELECT COUNT(*)::int FROM form_tanimlari ft WHERE ft.bina_turu = ${KALEM_BINA_TURU_SQL}) AS sartname_soru,
+                   (SELECT COUNT(*)::int FROM form_tanimlari ft WHERE ft.bina_turu = ${KALEM_BINA_TURU_SQL}
                         AND k.ek_veriler ? ft.soru) AS sartname_cevap,
                    (SELECT COUNT(*)::int FROM sat_analiz_urunler a WHERE a.kalem_id = k.id) AS dokum_satiri
             FROM sat_teklif_kalemleri k
             JOIN sat_teklifler t ON t.id = k.teklif_id
             LEFT JOIN proje_teslimatlari ts ON ts.teklif_kalem_id = k.id
+            ${KALEM_BINA_TURU_JOIN}
             WHERE t.proje_id=$1
             ORDER BY t.teklif_tarihi DESC NULLS LAST, k.sira, k.id`, [id]);
         const yorumSayisi = await pool.query(
@@ -8676,6 +8748,7 @@ async function satisTeslimatlariTuret(client, projeId, teklifId, req) {
     const kalemler = (await client.query(`
         SELECT k.id, k.ad, k.miktar, k.birim, k.ikincil_miktar, k.toplam,
                k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi,
+               k.konteyner_miktari,
                k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri, k.montaj_gerekli,
                k.ek_veriler,
                COALESCE(k.bina_turu,
@@ -8706,13 +8779,15 @@ async function satisTeslimatlariTuret(client, projeId, teklifId, req) {
             kat_adedi: diger ? null : (k.kat_adedi || null),
             kat_yuksekligi: diger ? null : (k.kat_yuksekligi || null),
             konteyner_ebadi: konteyner ? (k.konteyner_ebadi || null) : null,
-            konteyner_miktari: konteyner ? k.miktar : null,
+            // AYRIM (Yunus 2026-08-07): konteyner_miktari = 1 binayı oluşturan konteyner
+            // sayısı (kalemin KENDİ alanı); miktar artık her türde bina adedi.
+            konteyner_miktari: konteyner ? (parseInt(k.konteyner_miktari) || null) : null,
             dis_duvar_kesiti: diger ? null : (k.dis_duvar_kesiti || null),
             ic_duvar_kesiti: diger ? null : (k.ic_duvar_kesiti || null),
             bina_yeri: k.bina_yeri || null,
             montaj_gerekli: diger ? false : (k.montaj_gerekli === true),
             buyukluk_m2: diger ? null : (k.ikincil_miktar || null),
-            bina_adedi: konteyner ? null : (parseInt(k.miktar) || 1),
+            bina_adedi: parseInt(k.miktar) || 1,
             kdvsiz_tutar: k.toplam || null
         };
         const mevcut = await client.query(
@@ -8859,12 +8934,12 @@ app.post('/api/satis-teklif-revize', yetkiKontrol, izinGerekli('satis.teklif', '
                 INSERT INTO sat_teklif_kalemleri (teklif_id, ad, aciklama, miktar, birim, ikincil_miktar,
                     ikincil_birim, ikincil_birim_sembol, opsiyonel, sira, birim_fiyat, toplam,
                     bilesen_turu, analiz_durumu, bina_turu, bina_tipi, kat_adedi, kat_yuksekligi,
-                    konteyner_ebadi, dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri, montaj_gerekli)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS',$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id`,
+                    konteyner_ebadi, konteyner_miktari, dis_duvar_kesiti, ic_duvar_kesiti, bina_yeri, montaj_gerekli)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BELIRTILMEMIS',$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id`,
                 [yeniId, k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar, k.ikincil_birim,
                  k.ikincil_birim_sembol, k.opsiyonel, k.sira, k.birim_fiyat, k.toplam, k.bilesen_turu,
                  k.bina_turu, k.bina_tipi, k.kat_adedi, k.kat_yuksekligi,
-                 k.konteyner_ebadi, k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri, k.montaj_gerekli]);
+                 k.konteyner_ebadi, k.konteyner_miktari, k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri, k.montaj_gerekli]);
             const yeniKalemId = yk.rows[0].id;
             // 1) Bölümler kopyalanır, eski→yeni bölüm eşlemesi tutulur (üst bölüm bağı için)
             const bolumler = (await client.query('SELECT * FROM sat_analiz_bolumler WHERE kalem_id=$1 ORDER BY sira, eski_id', [k.id])).rows;
@@ -12739,6 +12814,10 @@ async function semaGuvence() {
         for (const [ad, tanim] of perfIndeksleri) {
             await pool.query(`CREATE INDEX IF NOT EXISTS ${ad} ON ${tanim}`).catch(() => {});
         }
+        // KONTEYNER ADEDİ / BİNA ADEDİ AYRIMI (Yunus 2026-08-07): teklif kaleminde
+        // miktar = bina adedi; konteyner_miktari = bir binayı oluşturan konteyner sayısı.
+        await pool.query(`ALTER TABLE sat_teklif_kalemleri
+            ADD COLUMN IF NOT EXISTS konteyner_miktari INTEGER`).catch(() => {});
         // PROJENİN GENEL DURUMU — TEK KAYNAK (Yunus 2026-08-06): projeler.durum yalnız
         // KAPI durumlarını taşır (TASLAK = ADMIN onayı yok, İPTAL = proje iptal; SÖZLEŞME
         // yazımı onay anının izi). Yaşam döngüsü durumu HER okumada bu fonksiyonla türetilir:
