@@ -6530,6 +6530,10 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                 kat_adedi: (k.kat_adedi || '').trim() || null,
                 kat_yuksekligi: (k.kat_yuksekligi || '').trim() || null,
                 konteyner_ebadi: (k.konteyner_ebadi || '').trim() || null,
+                // Bir binayı oluşturan konteyner sayısı — yalnız Konteyner türünde anlamlı
+                // (bina adedi ayrı alandır: miktar). Payload temizliğinden düşerse form
+                // dolu kaydedilir ama alan boş döner (2026-08-11 vakası, 72908).
+                konteyner_miktari: binaTuru === 'Konteyner' ? (parseInt(k.konteyner_miktari) || null) : null,
                 dis_duvar_kesiti: (k.dis_duvar_kesiti || '').trim() || null,
                 ic_duvar_kesiti: (k.ic_duvar_kesiti || '').trim() || null,
                 bina_yeri: (k.bina_yeri || '').trim() || null,
@@ -6625,13 +6629,15 @@ app.post('/api/satis-teklif-kaydet', yetkiKontrol, async (req, res, next) => {
                         ikincil_miktar=$5, ikincil_birim=$6, ikincil_birim_sembol=$7,
                         opsiyonel=$8, sira=$9, birim_fiyat=$10, toplam=$11,
                         bina_turu=$14, bina_tipi=$15, kat_adedi=$16, kat_yuksekligi=$17,
-                        konteyner_ebadi=$18, dis_duvar_kesiti=$19, ic_duvar_kesiti=$20, bina_yeri=$21,
+                        konteyner_ebadi=$18, konteyner_miktari=$23,
+                        dis_duvar_kesiti=$19, ic_duvar_kesiti=$20, bina_yeri=$21,
                         montaj_gerekli=$22
                     WHERE id=$12 AND teklif_id=$13`,
                     [k.ad, k.aciklama, k.miktar, k.birim, k.ikincil_miktar, k.ikincil_birim, sembol,
                      k.opsiyonel, k.sira, k.birim_fiyat, tutar, k.id, teklifId, k.bina_turu,
                      k.bina_tipi, k.kat_adedi, k.kat_yuksekligi, k.konteyner_ebadi,
-                     k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri, k.montaj_gerekli]);
+                     k.dis_duvar_kesiti, k.ic_duvar_kesiti, k.bina_yeri, k.montaj_gerekli,
+                     k.bina_turu === 'Konteyner' ? (parseInt(k.konteyner_miktari) || null) : null]);
                 if (g.rowCount) continue;   // güncellendi; değilse (başka teklife ait id) yeni ekle
             }
             await client.query(`
