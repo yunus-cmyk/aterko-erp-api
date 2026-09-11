@@ -2262,7 +2262,7 @@ app.get('/api/siparis-listesi', yetkiKontrol, async (req, res, next) => {
             GROUP BY s.id, t.firma_adi
             ORDER BY s.siparis_tarihi DESC NULLS LAST, s.id DESC
         `;
-        const result = await pool.query(query);
+        const result = await pool.query(query, [req.query.proje_id ? parseInt(req.query.proje_id) : null]);
         res.json({ ok: true, data: result.rows });
     } catch (error) { next(error); }
 });
@@ -5554,10 +5554,11 @@ app.get('/api/sevkiyat-plani', yetkiKontrol, async (req, res, next) => {
             FROM proje_teslimatlari pt
             JOIN projeler p ON pt.proje_id = p.id
             WHERE pt.sevkiyat_baslangici IS NOT NULL
+              AND ($1::int IS NULL OR p.id = $1::int)   -- operasyon proje bazlı
               AND COALESCE(pt.durum, 'BEKLEMEDE') NOT IN ('İPTAL', 'TESLİM EDİLDİ')
             ORDER BY pt.sevkiyat_baslangici ASC
         `;
-        const result = await pool.query(query);
+        const result = await pool.query(query, [req.query.proje_id ? parseInt(req.query.proje_id) : null]);
         res.json({ ok: true, data: result.rows });
     } catch (error) { next(error); }
 });
@@ -11183,9 +11184,10 @@ app.get('/api/uretim-urunleri', yetkiKontrol, async (req, res, next) => {
             LEFT JOIN satinalma_talepleri tlp ON tlpu.talep_id=tlp.id
             WHERE pt.urun_listesi_yayin_durumu='YAYINDA'
             AND (tu.is_ek_urun = FALSE OR tu.ek_urun_onay_durumu='ONAYLI')  -- onay bekleyen ek ürünler henüz aktif değil
+            AND ($1::int IS NULL OR p.id = $1::int)   -- operasyon proje bazlı
             ORDER BY p.id DESC, pt.id ASC, tu.sira ASC, tu.id ASC
         `;
-        const r = await pool.query(q);
+        const r = await pool.query(q, [req.query.proje_id ? parseInt(req.query.proje_id) : null]);
         const data = r.rows.map(u => {
             const gerekli = parseFloat(u.gerekli_miktar) || 0;
             const uretilen = parseFloat(u.uretilen_miktar) || 0;
@@ -11217,15 +11219,24 @@ app.post('/api/uretim-is-emri-olustur', yetkiKontrol, async (req, res, next) => 
         const gecerli = kalemler.filter(k => k.teslimat_urun_id && parseFloat(k.atanan_miktar) > 0);
         if (gecerli.length === 0) return res.json({ ok: false, hata: 'Geçerli miktar girilmedi.' });
 
+        // İş emri TEK projeye aittir: kalemlerin projesi doğrulanır
+        const pj = await client.query(`
+            SELECT DISTINCT pt.proje_id FROM teslimat_urunleri tu
+            JOIN proje_teslimatlari pt ON pt.id = tu.teslimat_id
+            WHERE tu.id = ANY($1::int[])`, [gecerli.map(k => parseInt(k.teslimat_urun_id))]);
+        if (pj.rowCount === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Seçilen kalemlerin projesi bulunamadı.' }); }
+        if (pj.rowCount > 1) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Bir iş emri yalnız tek bir projenin kalemlerinden oluşabilir.' }); }
+        const projeId = pj.rows[0].proje_id;
+
         // İş emri no üret
         const c = await client.query("SELECT COUNT(*)::int as n FROM uretim_is_emirleri");
         const emir_no = `IE-${10001 + c.rows[0].n}`;
 
         // Başlık
         const ie = await client.query(`
-            INSERT INTO uretim_is_emirleri (emir_no, ustabasi_adi, durum, olusturan_email, notlar)
-            VALUES ($1, $2, 'HAZIR', $3, $4) RETURNING id
-        `, [emir_no, ustabasi_adi || null, req.user.email, notlar || null]);
+            INSERT INTO uretim_is_emirleri (emir_no, ustabasi_adi, durum, olusturan_email, notlar, proje_id)
+            VALUES ($1, $2, 'HAZIR', $3, $4, $5) RETURNING id
+        `, [emir_no, ustabasi_adi || null, req.user.email, notlar || null, projeId]);
         const ieId = ie.rows[0].id;
 
         for (const k of gecerli) {
@@ -11254,17 +11265,14 @@ app.get('/api/uretim-is-emirleri', yetkiKontrol, async (req, res, next) => {
                    COALESCE(SUM(iek.atanan_miktar),0) as toplam_atanan,
                    COALESCE(SUM(iek.tamamlanan_miktar),0) as toplam_tamamlanan,
                    -- İş emri kalemleri birden fazla projeden olabilir: proje süzgeci için kod listesi
-                   (SELECT string_agg(DISTINCT p2.proje_kodu, ', ' ORDER BY p2.proje_kodu)
-                      FROM uretim_is_emri_kalemleri k2
-                      JOIN teslimat_urunleri tu2 ON tu2.id = k2.teslimat_urun_id
-                      JOIN proje_teslimatlari pt2 ON pt2.id = tu2.teslimat_id
-                      JOIN projeler p2 ON p2.id = pt2.proje_id
-                     WHERE k2.is_emri_id = ie.id) AS proje_kodlari
+                   pr.proje_kodu, pr.proje_adi
             FROM uretim_is_emirleri ie
             LEFT JOIN uretim_is_emri_kalemleri iek ON ie.id=iek.is_emri_id
-            GROUP BY ie.id
+            LEFT JOIN projeler pr ON pr.id = ie.proje_id
+            WHERE ($1::int IS NULL OR ie.proje_id = $1::int)   -- iş emri TEK projeye ait
+            GROUP BY ie.id, pr.proje_kodu, pr.proje_adi
             ORDER BY ie.id DESC
-        `);
+        `, [req.query.proje_id ? parseInt(req.query.proje_id) : null]);
         res.json({ ok: true, data: r.rows });
     } catch (e) { next(e); }
 });
@@ -11519,12 +11527,13 @@ app.get('/api/montaj-teslimatlar', yetkiKontrol, async (req, res, next) => {
             LEFT JOIN teslimat_urunleri tu ON tu.teslimat_id=pt.id
                 AND (tu.is_ek_urun = FALSE OR tu.ek_urun_onay_durumu='ONAYLI')
             WHERE pt.montaj_gerekli = TRUE
+              AND ($1::int IS NULL OR p.id = $1::int)   -- operasyon proje bazlı
               AND pt.urun_listesi_yayin_durumu = 'YAYINDA'
             GROUP BY pt.id, p.id
             HAVING COALESCE(SUM(tu.saha_teslim_miktar), 0) > 0
             ORDER BY pt.id DESC
         `;
-        const r = await pool.query(q);
+        const r = await pool.query(q, [req.query.proje_id ? parseInt(req.query.proje_id) : null]);
         const data = r.rows.map(t => {
             const ger = parseFloat(t.toplam_gerekli) || 0;
             const sah = parseFloat(t.toplam_saha) || 0;
@@ -11733,9 +11742,10 @@ app.get('/api/sevkiyat-urunleri', yetkiKontrol, async (req, res, next) => {
             LEFT JOIN stok_kartlari sk ON tu.stok_kart_id=sk.id
             WHERE pt.urun_listesi_yayin_durumu='YAYINDA'
             AND (tu.is_ek_urun = FALSE OR tu.ek_urun_onay_durumu='ONAYLI')
+            AND ($1::int IS NULL OR p.id = $1::int)   -- operasyon proje bazlı
             ORDER BY p.id DESC, pt.id ASC, tu.sira ASC, tu.id ASC
         `;
-        const r = await pool.query(q);
+        const r = await pool.query(q, [req.query.proje_id ? parseInt(req.query.proje_id) : null]);
         const data = r.rows.map(u => {
             const gerekli = parseFloat(u.gerekli_miktar) || 0;
             const uretilen = parseFloat(u.uretilen_miktar) || 0;
@@ -11766,16 +11776,28 @@ app.post('/api/sevkiyat-belgesi-olustur', yetkiKontrol, async (req, res, next) =
         }
         if (!plaka || !plaka.trim()) return res.json({ ok: false, hata: 'Plaka zorunlu.' });
 
+        // Sevkiyat belgesi TEK projeye aittir: kalemlerin projesi doğrulanır
+        const sevkKalemIdler = kalemler.filter(k => k.teslimat_urun_id && parseFloat(k.miktar) > 0)
+            .map(k => parseInt(k.teslimat_urun_id));
+        if (sevkKalemIdler.length === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Geçerli miktar girilmedi.' }); }
+        const spj = await client.query(`
+            SELECT DISTINCT pt.proje_id FROM teslimat_urunleri tu
+            JOIN proje_teslimatlari pt ON pt.id = tu.teslimat_id
+            WHERE tu.id = ANY($1::int[])`, [sevkKalemIdler]);
+        if (spj.rowCount === 0) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Seçilen kalemlerin projesi bulunamadı.' }); }
+        if (spj.rowCount > 1) { await client.query('ROLLBACK'); return res.json({ ok: false, hata: 'Bir sevkiyat belgesi yalnız tek bir projenin kalemlerinden oluşabilir.' }); }
+        const sevkProjeId = spj.rows[0].proje_id;
+
         // Sevkiyat no üret
         const c = await client.query("SELECT COUNT(*)::int as n FROM sevkiyat_belgeleri");
         const sevkiyat_no = `SVK-${10001 + c.rows[0].n}`;
 
         const sb = await client.query(`
             INSERT INTO sevkiyat_belgeleri (sevkiyat_no, plaka, sofor_adi, sofor_telefon,
-                irsaliye_no, sevk_tarihi, durum, olusturan_email, notlar)
-            VALUES ($1, $2, $3, $4, $5, $6, 'HAZIRLANIYOR', $7, $8) RETURNING id
+                irsaliye_no, sevk_tarihi, durum, olusturan_email, notlar, proje_id)
+            VALUES ($1, $2, $3, $4, $5, $6, 'HAZIRLANIYOR', $7, $8, $9) RETURNING id
         `, [sevkiyat_no, plaka.trim(), sofor_adi || null, sofor_telefon || null,
-            irsaliye_no || null, sevk_tarihi || null, req.user.email, notlar || null]);
+            irsaliye_no || null, sevk_tarihi || null, req.user.email, notlar || null, sevkProjeId]);
         const sbId = sb.rows[0].id;
 
         // Her kalem için: sevk edilebilir kontrolü + kayıt + sayaç güncelle
@@ -11839,17 +11861,14 @@ app.get('/api/sevkiyat-belgeleri', yetkiKontrol, async (req, res, next) => {
                    COUNT(sk.id)::int as kalem_sayisi,
                    COALESCE(SUM(sk.miktar),0) as toplam_miktar,
                    -- Bir sevkiyat birden fazla projeyi taşıyabilir: proje süzgeci için kod listesi
-                   (SELECT string_agg(DISTINCT p2.proje_kodu, ', ' ORDER BY p2.proje_kodu)
-                      FROM sevkiyat_kalemleri k2
-                      JOIN teslimat_urunleri tu2 ON tu2.id = k2.teslimat_urun_id
-                      JOIN proje_teslimatlari pt2 ON pt2.id = tu2.teslimat_id
-                      JOIN projeler p2 ON p2.id = pt2.proje_id
-                     WHERE k2.sevkiyat_id = sb.id) AS proje_kodlari
+                   pr.proje_kodu, pr.proje_adi
             FROM sevkiyat_belgeleri sb
             LEFT JOIN sevkiyat_kalemleri sk ON sb.id=sk.sevkiyat_id
-            GROUP BY sb.id
+            LEFT JOIN projeler pr ON pr.id = sb.proje_id
+            WHERE ($1::int IS NULL OR sb.proje_id = $1::int)   -- sevkiyat TEK projeye ait
+            GROUP BY sb.id, pr.proje_kodu, pr.proje_adi
             ORDER BY sb.id DESC
-        `);
+        `, [req.query.proje_id ? parseInt(req.query.proje_id) : null]);
         res.json({ ok: true, data: r.rows });
     } catch (e) { next(e); }
 });
@@ -12799,6 +12818,28 @@ async function semaGuvence() {
             eylem TEXT NOT NULL DEFAULT 'if-matches-hide',
             aktif BOOLEAN DEFAULT true
         )`).catch(e => console.error('⚠️ sat_form_kurallari:', e.message));
+
+        // OPERASYON PROJE BAZLI (2026-09): iş emri ve sevkiyat belgesi TEK projeye aittir.
+        // Bağ eskiden yalnız kalemler üzerindendi; başlığa taşındı ve mevcut kayıtlar
+        // kalemlerinden geri dolduruldu (canlıda çok projeli kayıt yoktu).
+        await pool.query(`ALTER TABLE uretim_is_emirleri ADD COLUMN IF NOT EXISTS proje_id INTEGER REFERENCES projeler(id)`).catch(e => console.error('⚠️ is_emri.proje_id:', e.message));
+        await pool.query(`ALTER TABLE sevkiyat_belgeleri ADD COLUMN IF NOT EXISTS proje_id INTEGER REFERENCES projeler(id)`).catch(e => console.error('⚠️ sevkiyat.proje_id:', e.message));
+        await pool.query(`
+            UPDATE uretim_is_emirleri ie SET proje_id = v.pid FROM (
+                SELECT k.is_emri_id, MIN(pt.proje_id) AS pid
+                FROM uretim_is_emri_kalemleri k
+                JOIN teslimat_urunleri tu ON tu.id = k.teslimat_urun_id
+                JOIN proje_teslimatlari pt ON pt.id = tu.teslimat_id
+                GROUP BY k.is_emri_id) v
+            WHERE ie.id = v.is_emri_id AND ie.proje_id IS NULL`).catch(e => console.error('⚠️ is_emri proje geri doldurma:', e.message));
+        await pool.query(`
+            UPDATE sevkiyat_belgeleri sb SET proje_id = v.pid FROM (
+                SELECT k.sevkiyat_id, MIN(pt.proje_id) AS pid
+                FROM sevkiyat_kalemleri k
+                JOIN teslimat_urunleri tu ON tu.id = k.teslimat_urun_id
+                JOIN proje_teslimatlari pt ON pt.id = tu.teslimat_id
+                GROUP BY k.sevkiyat_id) v
+            WHERE sb.id = v.sevkiyat_id AND sb.proje_id IS NULL`).catch(e => console.error('⚠️ sevkiyat proje geri doldurma:', e.message));
 
         // Güvenlik: public şemadaki TÜM tablolarda RLS'yi aç (Supabase PostgREST
         // üzerinden anon erişimi blokla). Backend DATABASE_URL kullandığı için

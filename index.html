@@ -340,10 +340,8 @@
     <div class="d-flex align-items-center gap-3">
       <ul class="nav nav-pills nav-sm">
         <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-projeler" onclick="setTab('projeler')"><i class="bi bi-kanban me-1"></i>Projeler</a></li>
-        <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-urun-listesi" onclick="setTab('urun-listesi')"><i class="bi bi-card-list me-1"></i>Bina Listeleri</a></li>
-        <li class="nav-item"><a class="nav-link py-1 px-3 text-mod-uretim" id="nav-uretim" onclick="setTab('uretim')"><i class="bi bi-tools me-1"></i>Üretim</a></li>
-        <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-sevkiyat" onclick="setTab('sevkiyat')"><i class="bi bi-truck me-1"></i>Sevkiyat</a></li>
-        <li class="nav-item"><a class="nav-link py-1 px-3" id="nav-montaj" onclick="setTab('montaj')"><i class="bi bi-wrench-adjustable me-1"></i>Montaj</a></li>
+        <!-- Bina Listeleri / Üretim / Sevkiyat / Montaj artık üst menüde değil:
+             her biri seçilen projenin detayının içindedir (Yunus 2026-09-11). -->
       </ul>
       <!-- AÇIK PROJE SEKMELERİ (Satış deseni): listeden tıklanan proje burada sekme olur -->
       <ul class="nav nav-pills nav-sm" id="opProjeSekmeleri"></ul>
@@ -1733,13 +1731,8 @@
                     <i class="bi bi-calendar-range me-1"></i> Plan / Takvim
                 </button>
             </div>
-            <!-- Proje süzgeci: sevkiyatın üç alt sekmesine birden uygulanır -->
-            <div class="d-flex gap-2 align-items-center">
-                <label class="form-label mb-0 small text-muted text-nowrap"><i class="bi bi-kanban me-1"></i>Proje</label>
-                <select id="svkProjeFiltre" class="form-select form-select-sm fw-bold" style="max-width:260px;" onchange="sevkiyatProjeFiltresiDegisti()">
-                    <option value="">Tüm projeler</option>
-                </select>
-            </div>
+            <!-- Proje kapsamı: ekran artık proje detayının içinde, kapsam açık projedir -->
+            <span class="badge bg-light text-dark border" id="svkProjeRozet"></span>
         </div>
 
         <!-- Sevkiyata Hazır sekmesi -->
@@ -1830,10 +1823,7 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="fw-bold text-dark mb-0"><i class="bi bi-wrench-adjustable me-2" style="color:#6f42c1;"></i>Montaj Modülü</h5>
             <div class="d-flex gap-2 align-items-center">
-                <label class="form-label mb-0 small text-muted text-nowrap"><i class="bi bi-kanban me-1"></i>Proje</label>
-                <select id="mntProjeFiltre" class="form-select form-select-sm fw-bold" style="max-width:260px;" onchange="renderMontajTeslimatListe()">
-                    <option value="">Tüm projeler</option>
-                </select>
+                <span class="badge bg-light text-dark border" id="mntProjeRozet"></span>
                 <button class="btn btn-sm btn-outline-secondary" onclick="fetchMontajTeslimatlar()" title="Yenile"><i class="bi bi-arrow-clockwise"></i></button>
             </div>
         </div>
@@ -2869,13 +2859,8 @@
                     <i class="bi bi-clipboard-data me-1"></i> İş Emirleri
                 </button>
             </div>
-            <!-- Proje süzgeci: her iki alt sekmeye birden uygulanır -->
-            <div class="d-flex gap-2 align-items-center">
-                <label class="form-label mb-0 small text-muted text-nowrap"><i class="bi bi-kanban me-1"></i>Proje</label>
-                <select id="urtProjeFiltre" class="form-select form-select-sm fw-bold" style="max-width:260px;" onchange="uretimProjeFiltresiDegisti()">
-                    <option value="">Tüm projeler</option>
-                </select>
-            </div>
+            <!-- Proje kapsamı: ekran artık proje detayının içinde, kapsam açık projedir -->
+            <span class="badge bg-light text-dark border" id="urtProjeRozet"></span>
         </div>
 
         <!-- Üretim Planı sekmesi: Tüm yayında ürünler (cross-teslimat) -->
@@ -3301,14 +3286,14 @@
     <div id="urunListesiArea" class="d-none">
         <div class="card border-0 shadow-sm mb-4 bg-white">
             <div class="card-body d-flex align-items-end gap-3 flex-wrap">
-                <div style="flex: 1 1 320px; min-width: 280px;">
+                <div style="flex: 1 1 320px; min-width: 280px;" id="ulProjeSecimiSar" class="d-none">
                     <label class="form-label">1. Proje Seç <span class="text-danger">*</span></label>
                     <select id="ulProjeSecimi" class="form-select form-select-lg fw-bold" onchange="ulProjeDegisti()">
                         <option value="">-- Önce Proje Seçin --</option>
                     </select>
                 </div>
                 <div style="flex: 1 1 320px; min-width: 280px;">
-                    <label class="form-label">2. Teslimat (Bina) Seç <span class="text-danger">*</span></label>
+                    <label class="form-label">Teslimat (Bina) Seç <span class="text-danger">*</span></label>
                     <select id="aktifTeslimatSecimi" class="form-select form-select-lg fw-bold text-primary" onchange="teslimatDegisti()" disabled>
                         <option value="">-- Önce proje seçin --</option>
                     </select>
@@ -4625,7 +4610,21 @@ STK-002		50	adet
                         <button type="button" class="btn-close" aria-label="Sekmeyi kapat" title="Sekmeyi kapat" onclick="if(pdAktifProjeId) opProjeSekmesiKapat(pdAktifProjeId)"></button>
                     </div>
                 </div>
-                <div class="p-4" style="background-color: #f8f9fa;">
+
+                <!-- OPERASYON SEKMELERİ (Yunus 2026-09-11): Bina Listeleri / Üretim / Sevkiyat / Montaj
+                     artık üst menüde değil, SEÇİLİ PROJENİN içinde. Her projenin listesi bağımsızdır. -->
+                <ul class="nav nav-tabs px-3 pt-2 bg-light border-bottom" id="pdOpSekmeler">
+                    <li class="nav-item"><a class="nav-link active" id="pdOpTab-genel" onclick="pdOpSekmeGec('genel')" style="cursor:pointer;"><i class="bi bi-info-circle me-1"></i>Genel</a></li>
+                    <li class="nav-item"><a class="nav-link" id="pdOpTab-urun-listesi" onclick="pdOpSekmeGec('urun-listesi')" style="cursor:pointer;"><i class="bi bi-card-list me-1"></i>Bina Listeleri</a></li>
+                    <li class="nav-item"><a class="nav-link" id="pdOpTab-uretim" onclick="pdOpSekmeGec('uretim')" style="cursor:pointer;"><i class="bi bi-tools me-1"></i>Üretim</a></li>
+                    <li class="nav-item"><a class="nav-link" id="pdOpTab-sevkiyat" onclick="pdOpSekmeGec('sevkiyat')" style="cursor:pointer;"><i class="bi bi-truck me-1"></i>Sevkiyat</a></li>
+                    <li class="nav-item"><a class="nav-link" id="pdOpTab-montaj" onclick="pdOpSekmeGec('montaj')" style="cursor:pointer;"><i class="bi bi-wrench-adjustable me-1"></i>Montaj</a></li>
+                </ul>
+
+                <!-- Operasyon ekranları buraya taşınır (appendChild — tüm kimlikler korunur) -->
+                <div id="pdOpPane" class="d-none" style="background-color:#f8f9fa;"></div>
+
+                <div class="p-4" id="pdGenelPane" style="background-color: #f8f9fa;">
 
                     <div class="row g-3 mb-4" id="pdAnaBilgiler">
                         </div>
@@ -4895,10 +4894,6 @@ function izinleriUygula() {
         'nav-projeler':     'projeler',
         'nav-satinalma':    'satinalma.talepler', // ana sekme; alt sekmeler ayrı kontrol edilir
         'nav-stok':         'stok',
-        'nav-urun-listesi': 'bina_listeleri',
-        'nav-uretim':       'uretim',
-        'nav-sevkiyat':     'sevkiyat',
-        'nav-montaj':       'montaj',
         'nav-ozet':         'rapor.ozet',
         'nav-mali':         'mali.tedarikci',
         'nav-satis':        'satis.musteri'
@@ -4913,10 +4908,9 @@ function izinleriUygula() {
             li.classList.add('d-none');
         }
     }
-    // Operasyon üst başlığı: çatıdaki BEŞ modülden herhangi birine izni olan görür
+    // Operasyon üst başlığı: giriş kapısı artık Projeler listesidir (diğer ekranlar proje içinde)
     const opWrap = document.getElementById('nav-operasyon-wrap');
-    if (opWrap) opWrap.classList.toggle('d-none',
-        !['projeler', 'bina_listeleri', 'uretim', 'sevkiyat', 'montaj'].some(m => sekmeGorunur(m)));
+    if (opWrap) opWrap.classList.toggle('d-none', !sekmeGorunur('projeler'));
 
     // Yönetim dropdown — sadece ADMIN
     const adminMenu = document.getElementById('adminMenuWrap');
@@ -11337,11 +11331,10 @@ window.addEventListener('hashchange', () => {
 function setTab(tab) {
     // OPERASYON ÇATISI (Yunus 2026-07-30): Projeler+Üretim+Sevkiyat+Montaj+Bina Listeleri
     // tek üst başlık; 'operasyon' tıklanınca son kullanılan (yoksa izinli ilk) alt sekme açılır.
-    const OPERASYON_SEKMELERI = ['projeler', 'uretim', 'sevkiyat', 'montaj', 'urun-listesi'];
-    if (tab === 'operasyon') {
-        const adaylar = [window._opSonSekme, ...OPERASYON_SEKMELERI].filter(Boolean);
-        tab = adaylar.find(t => typeof sekmeGuard !== 'function' || sekmeGuard(t)) || 'anasayfa';
-    }
+    // Yunus 2026-09-11: Bina Listeleri / Üretim / Sevkiyat / Montaj üst menüden kalktı;
+    // proje detayının içinde yaşıyorlar. Eski adresler/kısayollar Projeler listesine düşer.
+    const OPERASYON_SEKMELERI = ['projeler'];
+    if (['urun-listesi', 'uretim', 'sevkiyat', 'montaj', 'operasyon'].includes(tab)) tab = 'projeler';
 
     // 0. İzin kontrolü — yoksa anasayfa'ya yönlendir
     if (typeof sekmeGuard === 'function' && !sekmeGuard(tab)) {
@@ -11420,9 +11413,6 @@ function setTab(tab) {
         if (typeof _opAktifProje !== 'undefined') { _opAktifProje = null; opProjeSekmeleriCiz(); }
         rotaYaz('projeler');
         fetchProjeler();
-    } else if (tab === 'sevkiyat') {
-        document.getElementById("sevkiyatArea").classList.remove("d-none");
-        switchSevkiyatSekme('hazir');
     } else if (tab === 'ozet') {
         document.getElementById("ozetArea").classList.remove("d-none");
         fetchOzet();
@@ -11441,16 +11431,6 @@ function setTab(tab) {
         // Aktif sekme rengi Satınalma'da kalsın
         const sa = document.getElementById('nav-satinalma');
         if (sa) sa.classList.add('active');
-    } else if (tab === 'urun-listesi') {
-        document.getElementById("urunListesiArea").classList.remove("d-none");
-        fetchTeslimatSecenekleri();   // Proje + teslimat dropdown'larını doldur
-        fetchStokKartlariForDropdown(); // Ürün ekleme dropdown'unu da hazırla
-    } else if (tab === 'uretim') {
-        document.getElementById("uretimArea").classList.remove("d-none");
-        switchUretimSekme('plan');
-    } else if (tab === 'montaj') {
-        document.getElementById("montajArea").classList.remove("d-none");
-        fetchMontajTeslimatlar();
     } else if (tab === 'satinalma') {
         document.getElementById("satinalmaArea").classList.remove("d-none");
         switchSatinalmaSubTab('talepler');
@@ -11588,6 +11568,17 @@ function fetchTeslimatSecenekleri() {
         const teslimatSelect = document.getElementById("aktifTeslimatSecimi");
         teslimatSelect.innerHTML = '<option value="">-- Önce proje seçin --</option>';
         teslimatSelect.disabled = true;
+
+        // Ekran proje detayının içinde: açık proje otomatik seçilir, seçim kutusu gizlenir
+        const kapsam = (typeof opKapsamProjeId === 'function') ? opKapsamProjeId() : null;
+        if (kapsam) {
+            projeSelect.value = String(kapsam);
+            if (projeSelect.value === String(kapsam)) {
+                ulProjeDegisti();
+            } else {
+                teslimatSelect.innerHTML = '<option value="">-- Bu projede PROJE durumunda bina yok --</option>';
+            }
+        }
     });
 }
 
@@ -12294,42 +12285,29 @@ function urunSil(id) {
 // KENDİ verisinden türetilir (yalnız o ekranda işi olan projeler listelenir) ve
 // seçim yenilemeler arasında korunur. Varsayılan "Tüm projeler" olduğu için
 // projeler arası planlama ve toplu işlemler (iş emri, stoktan karşılama) bozulmaz.
-function opProjeSuzgecDoldur(selectId, kodlar) {
-    const sel = document.getElementById(selectId);
-    if (!sel) return;
-    const onceki = sel.value;
-    const liste = [...new Set((kodlar || []).filter(Boolean).map(k => String(k).trim()))]
-        .sort((a, b) => a.localeCompare(b, 'tr'));
-    sel.innerHTML = '<option value="">Tüm projeler</option>' +
-        liste.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
-    if (onceki && liste.includes(onceki)) sel.value = onceki;   // seçim korunur
+// Operasyon ekranları (Bina Listeleri / Üretim / Sevkiyat / Montaj) artık üst menüde
+// değil, SEÇİLİ PROJENİN detayının içindedir. Kapsam daima açık projedir; bu yüzden
+// eski "tüm projeler" süzgeci kaldırıldı, yerine kapsam sorgusu (?proje_id=) geçti.
+function opKapsamProjeId() { return pdAktifProjeId || null; }
+// Fetch adreslerine proje kapsamını ekler
+function opKapsamLink(yol) {
+    const pid = opKapsamProjeId();
+    if (!pid) return yol;
+    return yol + (yol.includes('?') ? '&' : '?') + 'proje_id=' + pid;
 }
-function opProjeSuzgeci(selectId) { return document.getElementById(selectId)?.value || ''; }
-// İş emri / sevkiyat belgesi birden fazla projeyi kapsayabilir: kod listesinde var mı?
-function opProjedeVarMi(kodListesi, secili) {
-    if (!secili) return true;
-    return String(kodListesi || '').split(',').map(x => x.trim()).includes(secili);
-}
-// Seçili projeyi başlıkta göstermek için küçük rozet
-function opProjeRozeti(kodListesi) {
-    const k = String(kodListesi || '').trim();
-    return k ? `<span class="badge bg-light text-dark border ms-1" title="İlgili proje(ler)">${esc(k)}</span>` : '';
+// Ekranların başındaki "hangi projedeyiz" rozetini yazar
+function opKapsamRozetiYaz() {
+    const kayit = (typeof opAcikProjeler !== 'undefined')
+        ? opAcikProjeler.find(x => x.id === opKapsamProjeId()) : null;
+    const metin = kayit ? `${kayit.kod} — ${kayit.ad || ''}`.trim() : '';
+    ['urtProjeRozet', 'svkProjeRozet', 'mntProjeRozet'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = metin ? `<i class="bi bi-kanban me-1"></i>${esc(metin)}` : '';
+    });
 }
 
 let uretimPlanCache = [];
 
-// Üretim proje süzgeci: plan + iş emirlerinin birleşiminden beslenir
-function uretimProjeSecenekleriTazele() {
-    opProjeSuzgecDoldur('urtProjeFiltre', [
-        ...uretimPlanCache.map(x => x.proje_kodu),
-        ...(typeof uretimEmirlerCache !== 'undefined' ? uretimEmirlerCache : [])
-            .flatMap(x => String(x.proje_kodlari || '').split(','))
-    ]);
-}
-function uretimProjeFiltresiDegisti() {
-    renderUretimPlan();
-    renderUretimIsEmirleri();
-}
 let uretimEmirlerCache = [];
 
 function switchUretimSekme(sekme) {
@@ -12344,9 +12322,9 @@ function switchUretimSekme(sekme) {
 
 function fetchUretimPlan() {
     showLoading();
-    secureFetch('/uretim-urunleri').then(r => {
+    secureFetch(opKapsamLink('/uretim-urunleri')).then(r => {
         hideLoading();
-        if (r.ok) { uretimPlanCache = r.data; uretimProjeSecenekleriTazele(); renderUretimPlan(); }
+        if (r.ok) { uretimPlanCache = r.data; opKapsamRozetiYaz(); renderUretimPlan(); }
     });
 }
 
@@ -12354,9 +12332,7 @@ function renderUretimPlan() {
     const arama = (document.getElementById('urtAramaInput')?.value || '').toLowerCase().trim();
     const durumF = document.getElementById('urtDurumFiltre')?.value || '';
 
-    const projeF = opProjeSuzgeci('urtProjeFiltre');
     let liste = uretimPlanCache;
-    if (projeF) liste = liste.filter(u => u.proje_kodu === projeF);
     if (durumF) liste = liste.filter(u => u.kalem_durumu === durumF);
     if (arama) liste = liste.filter(u => {
         const txt = `${u.stok_kodu||''} ${u.stok_adi||''} ${u.ozel_urun_adi||''} ${u.proje_kodu||''} ${u.musteri_adi||''} ${u.bina_adi||''}`.toLowerCase();
@@ -12504,19 +12480,18 @@ async function isEmriOlusturOnayla() {
 
 function fetchUretimIsEmirleri() {
     showLoading();
-    secureFetch('/uretim-is-emirleri').then(r => {
+    secureFetch(opKapsamLink('/uretim-is-emirleri')).then(r => {
         hideLoading();
-        if (r.ok) { uretimEmirlerCache = r.data; uretimProjeSecenekleriTazele(); renderUretimIsEmirleri(); }
+        if (r.ok) { uretimEmirlerCache = r.data; opKapsamRozetiYaz(); renderUretimIsEmirleri(); }
     });
 }
 
 function renderUretimIsEmirleri() {
     const tbody = document.getElementById('urtEmirlerBody');
     if (!tbody) return;
-    const projeF = opProjeSuzgeci('urtProjeFiltre');
-    const emirler = uretimEmirlerCache.filter(e => opProjedeVarMi(e.proje_kodlari, projeF));
+    const emirler = uretimEmirlerCache;
     if (emirler.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">${projeF ? 'Bu projeye ait iş emri bulunamadı.' : 'Henüz iş emri eklenmedi.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">Bu projede henüz iş emri yok.</td></tr>`;
         return;
     }
     const durumMap = {
@@ -12532,7 +12507,7 @@ function renderUretimIsEmirleri() {
             ? Math.round((parseFloat(e.toplam_tamamlanan) / parseFloat(e.toplam_atanan)) * 100)
             : 0;
         return `<tr>
-            <td class="fw-bold text-primary">${esc(e.emir_no)}${opProjeRozeti(e.proje_kodlari)}</td>
+            <td class="fw-bold text-primary">${esc(e.emir_no)}</td>
             <td>${esc(e.ustabasi_adi || '-')}</td>
             <td class="text-center"><span class="badge bg-info">${e.kalem_sayisi}</span></td>
             <td class="text-end">${formatTR(e.toplam_atanan)}</td>
@@ -12772,20 +12747,6 @@ let sevkiyatHazirCache = [];
 let sevkiyatBelgelerCache = [];
 let sevkiyatPlanCache = [];
 
-// Sevkiyat proje süzgeci: üç alt sekmenin verisinin birleşiminden beslenir
-function sevkiyatProjeSecenekleriTazele() {
-    opProjeSuzgecDoldur('svkProjeFiltre', [
-        ...sevkiyatHazirCache.map(x => x.proje_kodu),
-        ...sevkiyatPlanCache.map(x => x.proje_kodu),
-        ...sevkiyatBelgelerCache.flatMap(x => String(x.proje_kodlari || '').split(','))
-    ]);
-}
-// Süzgeç değişince açık olan alt sekme yeniden çizilir
-function sevkiyatProjeFiltresiDegisti() {
-    renderSevkiyatHazir();
-    renderSevkiyatBelgeleri();
-    if (sevkiyatPlanCache.length) renderSevkiyatPlani();
-}
 
 function switchSevkiyatSekme(sekme) {
     const btns = ['hazir','belgeler','plan'].reduce((a,k) => (a[k]=document.getElementById('svkTab-'+k), a), {});
@@ -12801,9 +12762,9 @@ function switchSevkiyatSekme(sekme) {
 
 function fetchSevkiyatHazir() {
     showLoading();
-    secureFetch('/sevkiyat-urunleri').then(r => {
+    secureFetch(opKapsamLink('/sevkiyat-urunleri')).then(r => {
         hideLoading();
-        if (r.ok) { sevkiyatHazirCache = r.data; sevkiyatProjeSecenekleriTazele(); renderSevkiyatHazir(); }
+        if (r.ok) { sevkiyatHazirCache = r.data; opKapsamRozetiYaz(); renderSevkiyatHazir(); }
     });
 }
 
@@ -12811,9 +12772,7 @@ function renderSevkiyatHazir() {
     const arama = (document.getElementById('svkAramaInput')?.value || '').toLowerCase().trim();
     const durumF = document.getElementById('svkDurumFiltre')?.value || '';
 
-    const projeF = opProjeSuzgeci('svkProjeFiltre');
     let liste = sevkiyatHazirCache;
-    if (projeF) liste = liste.filter(u => u.proje_kodu === projeF);
     if (durumF) liste = liste.filter(u => u.kalem_durumu === durumF);
     if (arama) liste = liste.filter(u => {
         const txt = `${u.stok_kodu||''} ${u.stok_adi||''} ${u.ozel_urun_adi||''} ${u.proje_kodu||''} ${u.musteri_adi||''} ${u.bina_adi||''}`.toLowerCase();
@@ -12931,19 +12890,18 @@ async function sevkiyatBelgesiOnayla() {
 
 function fetchSevkiyatBelgeleri() {
     showLoading();
-    secureFetch('/sevkiyat-belgeleri').then(r => {
+    secureFetch(opKapsamLink('/sevkiyat-belgeleri')).then(r => {
         hideLoading();
-        if (r.ok) { sevkiyatBelgelerCache = r.data; sevkiyatProjeSecenekleriTazele(); renderSevkiyatBelgeleri(); }
+        if (r.ok) { sevkiyatBelgelerCache = r.data; opKapsamRozetiYaz(); renderSevkiyatBelgeleri(); }
     });
 }
 
 function renderSevkiyatBelgeleri() {
     const tbody = document.getElementById('svkBelgelerBody');
     if (!tbody) return;
-    const projeF = opProjeSuzgeci('svkProjeFiltre');
-    const belgeler = sevkiyatBelgelerCache.filter(x => opProjedeVarMi(x.proje_kodlari, projeF));
+    const belgeler = sevkiyatBelgelerCache;
     if (belgeler.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">${projeF ? 'Bu projeye ait sevkiyat belgesi bulunamadı.' : 'Henüz sevkiyat belgesi eklenmedi.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-4">Bu projede henüz sevkiyat belgesi yok.</td></tr>`;
         return;
     }
     const durumMap = {
@@ -12956,7 +12914,7 @@ function renderSevkiyatBelgeleri() {
         const [cls, txt] = durumMap[s.durum] || ['secondary','-'];
         const tarih = s.sevk_tarihi ? formatTarihTR(s.sevk_tarihi) : '-';
         return `<tr>
-            <td class="fw-bold text-primary">${esc(s.sevkiyat_no)}${opProjeRozeti(s.proje_kodlari)}</td>
+            <td class="fw-bold text-primary">${esc(s.sevkiyat_no)}</td>
             <td class="fw-bold">${esc(s.plaka || '-')}</td>
             <td>${esc(s.sofor_adi || '-')}</td>
             <td>${esc(s.irsaliye_no || '-')}</td>
@@ -13072,11 +13030,11 @@ let aktifMontajDetayCache = null;
 
 function fetchMontajTeslimatlar() {
     showLoading();
-    secureFetch('/montaj-teslimatlar').then(r => {
+    secureFetch(opKapsamLink('/montaj-teslimatlar')).then(r => {
         hideLoading();
         if (r.ok) {
             montajTeslimatCache = r.data;
-            opProjeSuzgecDoldur('mntProjeFiltre', montajTeslimatCache.map(t => t.proje_kodu));
+            opKapsamRozetiYaz();
             renderMontajTeslimatListe();
             // Aktif olan yenile
             if (aktifMontajTeslimatId) selectMontajTeslimat(aktifMontajTeslimatId);
@@ -13087,13 +13045,10 @@ function fetchMontajTeslimatlar() {
 function renderMontajTeslimatListe() {
     const div = document.getElementById('montajTeslimatListe');
     if (!div) return;
-    const projeF = opProjeSuzgeci('mntProjeFiltre');
-    const teslimatlar = projeF ? montajTeslimatCache.filter(t => t.proje_kodu === projeF) : montajTeslimatCache;
+    const teslimatlar = montajTeslimatCache;
     document.getElementById('montajTeslimatSayisi').textContent = teslimatlar.length;
     if (teslimatlar.length === 0) {
-        div.innerHTML = projeF
-            ? '<div class="text-center text-muted small py-4">Bu projeye ait montajlı teslimat bulunamadı.</div>'
-            : '<div class="text-center text-muted small py-4">Henüz sahaya teslim olmuş montajlı teslimat yok.<br><br>Bir teslimatın <strong>Montaj gerekli</strong> işaretli olması ve sevkiyatının <strong>"Teslim Edildi"</strong> durumuna geçmesi gerekir.</div>';
+        div.innerHTML = '<div class="text-center text-muted small py-4">Bu projede sahaya teslim olmuş montajlı teslimat yok.<br><br>Bir teslimatın <strong>Montaj gerekli</strong> işaretli olması ve sevkiyatının <strong>"Teslim Edildi"</strong> durumuna geçmesi gerekir.</div>';
         return;
     }
 
@@ -18015,20 +17970,19 @@ let sevkiyatFiltre = 'tumu';
 
 function fetchSevkiyatPlani() {
     showLoading();
-    secureFetch('/sevkiyat-plani').then(res => {
+    secureFetch(opKapsamLink('/sevkiyat-plani')).then(res => {
         hideLoading();
         if(res.ok) {
             sevkiyatPlanCache = res.data;
-            sevkiyatProjeSecenekleriTazele();
+            opKapsamRozetiYaz();
             renderSevkiyatPlani();
         } else { showToast(res.hata, "error"); }
     }).catch(err => { hideLoading(); showToast("Sevkiyat planı yüklenemedi.", "error"); });
 }
 
 function renderSevkiyatPlani(data) {
-    // Proje süzgeci uygulanır; argüman verilmezse son yüklenen veri kullanılır
-    const projeF = opProjeSuzgeci('svkProjeFiltre');
-    data = (data || sevkiyatPlanCache || []).filter(t => !projeF || t.proje_kodu === projeF);
+    // Kapsam açık projedir; argüman verilmezse son yüklenen veri kullanılır
+    data = (data || sevkiyatPlanCache || []);
     const today = new Date(); today.setHours(0,0,0,0);
     const haftaSonu = new Date(today); haftaSonu.setDate(haftaSonu.getDate() + 7);
 
@@ -18610,6 +18564,69 @@ function satisGecmisineGit(projeId) {
     satisProjeSekmesiAc(projeId);
 }
 
+// ============================================================================
+// PROJE İÇİ OPERASYON SEKMELERİ (Yunus 2026-09-11)
+// Bina Listeleri / Üretim / Sevkiyat / Montaj ekranları sayfada TEK kopya olarak
+// durur; proje detayı ilk açıldığında #pdOpPane içine taşınır (appendChild).
+// Böylece tüm kimlikler, olay bağları ve render fonksiyonları aynen korunur.
+// Kapsam daima açık projedir (opKapsamLink → ?proje_id=).
+// ============================================================================
+const PD_OP_SEKMELER = ['urun-listesi', 'uretim', 'sevkiyat', 'montaj'];
+let pdAktifOpSekme = 'genel';
+
+function pdOpAlanlariTasi() {
+    const hedef = document.getElementById('pdOpPane');
+    if (!hedef) return;
+    ['urunListesiArea', 'uretimArea', 'sevkiyatArea', 'montajArea'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.parentElement !== hedef) hedef.appendChild(el);
+    });
+}
+
+function pdOpSekmeGec(sekme) {
+    // İzin kapısı: üst menüdeki sekme kontrolü burada da geçerli
+    if (sekme !== 'genel' && typeof sekmeGuard === 'function' && !sekmeGuard(sekme)) {
+        showToast('Bu bölüm için yetkiniz yok.', 'error');
+        return;
+    }
+    pdOpAlanlariTasi();
+    pdAktifOpSekme = sekme;
+
+    ['genel', ...PD_OP_SEKMELER].forEach(s => {
+        document.getElementById('pdOpTab-' + s)?.classList.toggle('active', s === sekme);
+    });
+    document.getElementById('pdGenelPane')?.classList.toggle('d-none', sekme !== 'genel');
+    document.getElementById('pdOpPane')?.classList.toggle('d-none', sekme === 'genel');
+
+    const alanMap = {
+        'urun-listesi': 'urunListesiArea', 'uretim': 'uretimArea',
+        'sevkiyat': 'sevkiyatArea', 'montaj': 'montajArea'
+    };
+    Object.entries(alanMap).forEach(([s, id]) => {
+        document.getElementById(id)?.classList.toggle('d-none', s !== sekme);
+    });
+
+    opKapsamRozetiYaz();
+    if (sekme === 'urun-listesi') {
+        fetchTeslimatSecenekleri();
+        fetchStokKartlariForDropdown();
+    } else if (sekme === 'uretim') {
+        switchUretimSekme('plan');
+    } else if (sekme === 'sevkiyat') {
+        switchSevkiyatSekme('hazir');
+    } else if (sekme === 'montaj') {
+        fetchMontajTeslimatlar();
+    }
+}
+
+// Operasyon sekmesi izinli mi? (yetkisiz sekme şeritte gösterilmez)
+function pdOpSekmeleriYetkiUygula() {
+    PD_OP_SEKMELER.forEach(s => {
+        const li = document.getElementById('pdOpTab-' + s)?.parentElement;
+        if (li) li.classList.toggle('d-none', typeof sekmeGuard === 'function' && !sekmeGuard(s));
+    });
+}
+
 function openProjeDetay(projeId) {
     projeId = parseInt(projeId);
     // Operasyon > Projeler bağlamını garanti et (başka modüldeyken çağrılabilir: rota, görevler, satış yönlendirmesi)
@@ -18638,6 +18655,10 @@ function openProjeDetay(projeId) {
             } else { kayit.kod = res.proje.proje_kodu; kayit.ad = res.proje.proje_adi; }
             renderProjeDetay(res.proje, res.teslimatlar);
             opDetayGorunumUygula();
+            // Proje içi operasyon sekmeleri: ekranları taşı, yetkiyi uygula, Genel'den başla
+            pdOpAlanlariTasi();
+            pdOpSekmeleriYetkiUygula();
+            pdOpSekmeGec('genel');
         } else {
             showToast(res.hata, "error");
             _opAktifProje = null;
