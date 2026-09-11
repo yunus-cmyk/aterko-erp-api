@@ -11252,7 +11252,14 @@ app.get('/api/uretim-is-emirleri', yetkiKontrol, async (req, res, next) => {
             SELECT ie.*,
                    COUNT(iek.id)::int as kalem_sayisi,
                    COALESCE(SUM(iek.atanan_miktar),0) as toplam_atanan,
-                   COALESCE(SUM(iek.tamamlanan_miktar),0) as toplam_tamamlanan
+                   COALESCE(SUM(iek.tamamlanan_miktar),0) as toplam_tamamlanan,
+                   -- İş emri kalemleri birden fazla projeden olabilir: proje süzgeci için kod listesi
+                   (SELECT string_agg(DISTINCT p2.proje_kodu, ', ' ORDER BY p2.proje_kodu)
+                      FROM uretim_is_emri_kalemleri k2
+                      JOIN teslimat_urunleri tu2 ON tu2.id = k2.teslimat_urun_id
+                      JOIN proje_teslimatlari pt2 ON pt2.id = tu2.teslimat_id
+                      JOIN projeler p2 ON p2.id = pt2.proje_id
+                     WHERE k2.is_emri_id = ie.id) AS proje_kodlari
             FROM uretim_is_emirleri ie
             LEFT JOIN uretim_is_emri_kalemleri iek ON ie.id=iek.is_emri_id
             GROUP BY ie.id
@@ -11830,7 +11837,14 @@ app.get('/api/sevkiyat-belgeleri', yetkiKontrol, async (req, res, next) => {
         const r = await pool.query(`
             SELECT sb.*,
                    COUNT(sk.id)::int as kalem_sayisi,
-                   COALESCE(SUM(sk.miktar),0) as toplam_miktar
+                   COALESCE(SUM(sk.miktar),0) as toplam_miktar,
+                   -- Bir sevkiyat birden fazla projeyi taşıyabilir: proje süzgeci için kod listesi
+                   (SELECT string_agg(DISTINCT p2.proje_kodu, ', ' ORDER BY p2.proje_kodu)
+                      FROM sevkiyat_kalemleri k2
+                      JOIN teslimat_urunleri tu2 ON tu2.id = k2.teslimat_urun_id
+                      JOIN proje_teslimatlari pt2 ON pt2.id = tu2.teslimat_id
+                      JOIN projeler p2 ON p2.id = pt2.proje_id
+                     WHERE k2.sevkiyat_id = sb.id) AS proje_kodlari
             FROM sevkiyat_belgeleri sb
             LEFT JOIN sevkiyat_kalemleri sk ON sb.id=sk.sevkiyat_id
             GROUP BY sb.id
