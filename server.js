@@ -8150,6 +8150,28 @@ async function satisAnalizOnDolum(kalemId) {
             WHERE kalem_id=$1 AND urun_kategori_eski_id IN (SELECT eski_id FROM sat_urun_kategoriler WHERE ad='Montaj')`,
             [parseInt(kalemId)]);
     }
+    // VARSAYILAN BAYRAKLAR (Yunus 2026-09-15, 72913 vakası): "Elektrik Panosu: Var" gibi
+    // TEK seçenekli ve kullanıcıya KAPALI (duzenlenebilir=false) parametrelerin cevabını
+    // eski sistem bölüm açılırken kendiliğinden yazardı; WS'de yazılmıyordu. Cevap yoksa
+    // seçenek kodu (EO_PN_PD) hiçbir bölümde seçili olmaz → ürün eşleşmez → malzeme
+    // dökümüne HİÇ girmez. Aynı durumdaki 26 parametrenin çoğu konteyner konstrüksiyonu.
+    // Kapsam AÇILMAZ: bölüm kapsam dışıysa değer yazılsa da ürün hesaba girmez (kullanıcı
+    // "bu bölüm yok" demişse öyle kalır).
+    if (!kilitli) {
+        const bayrak = await pool.query(`
+            INSERT INTO sat_analiz_degerler (kaynak, kalem_id, bolum_eski_id, parametre_id, deger)
+            SELECT DISTINCT ON (b.eski_id, pa.id) 'TEKLIF_KALEMI', $1, b.eski_id, pa.id, s.eski_id::text
+            FROM sat_analiz_bolumler b
+            JOIN sat_parametreler pa ON pa.kategori_id = b.urun_kategori_eski_id
+                 AND pa.formda_goster = true AND pa.duzenlenebilir = false
+            JOIN sat_parametre_secenekler s ON s.parametre_eski_id = pa.eski_id AND s.varsayilan = true
+            WHERE b.kalem_id = $1
+              AND NOT EXISTS (SELECT 1 FROM sat_analiz_degerler d
+                              WHERE d.kalem_id = $1 AND d.parametre_id = pa.id AND d.bolum_eski_id = b.eski_id)
+            ORDER BY b.eski_id, pa.id, s.sira, s.eski_id`, [parseInt(kalemId)]);
+        if (bayrak.rowCount) await pool.query(
+            'UPDATE sat_teklif_kalemleri SET oznitelik_guncelleme=now() WHERE id=$1', [parseInt(kalemId)]);
+    }
     return { otomatik, montaj_gizli: montajGizli };
 }
 
