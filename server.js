@@ -2262,7 +2262,7 @@ app.get('/api/siparis-listesi', yetkiKontrol, async (req, res, next) => {
             GROUP BY s.id, t.firma_adi
             ORDER BY s.siparis_tarihi DESC NULLS LAST, s.id DESC
         `;
-        const result = await pool.query(query, [req.query.proje_id ? parseInt(req.query.proje_id) : null]);
+        const result = await pool.query(query);
         res.json({ ok: true, data: result.rows });
     } catch (error) { next(error); }
 });
