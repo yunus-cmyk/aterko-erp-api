@@ -14,20 +14,9 @@
 // Kullanım: node aktarim-analiz-fark.js          (kayıtlı kesimden bugüne)
 //           node aktarim-analiz-fark.js 2026-07-26   (kesimi elle ver)
 // ============================================================================
-require('dotenv').config({ path: __dirname + '/.env' });
-const { Pool } = require('pg');
-const { execFileSync } = require('child_process');
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-
-// Eski RDS'e salt-okunur erişim EC2 üzerinden (SSH anahtarı 2026-07-26'da kuruldu)
-const ESKI_PSQL = "PGPASSWORD='Asdvg--jdk35sdf+a23--' psql -h database-aset-5.c2bvmn8gndok.eu-west-1.rds.amazonaws.com -U aterko_prod_db_user -d aterko_prod_db -t -A -f -";
-function eskiSorgu(sql) {
-    // SQL stdin'den gider — tırnak kaçırma derdi yok. Çıktı tek satır JSON.
-    const out = execFileSync('ssh',
-        ['-i', process.env.HOME + '/.ssh/aterko_ec2', '-o', 'ConnectTimeout=15', 'ubuntu@52.18.78.68', ESKI_PSQL],
-        { input: `SELECT COALESCE(json_agg(x), '[]') FROM (${sql}) x;`, maxBuffer: 512 * 1024 * 1024 }).toString().trim();
-    return JSON.parse(out || '[]');
-}
+// NOT (2026-09-23): 23.09.2026 kesin geçişinden sonra yerini aktarim-son.js aldı.
+// Eski RDS erişimi artık aktarim-ortak.js üzerinden (parola koda yazılmaz).
+const { pool, eskiSorgu } = require('./aktarim-ortak');
 
 // Eski jhi_user login → e-posta (analiz_eden alanı için)
 const LOGIN_EMAIL = {

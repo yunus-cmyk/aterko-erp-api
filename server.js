@@ -651,6 +651,44 @@ app.post('/api/proje-onay-geri-al', yetkiKontrol, async (req, res, next) => {
     } catch (e) { next(e); }
 });
 
+// ESKİ SİSTEM ARŞİVİ (aset.aterko.com, 23.09.2026 kesin geçiş) — projenin eski binaları,
+// teslimatları, iş emirleri, kontrol listeleri ve dosyaları. SALT OKUNUR; canlı teslimat
+// tablolarına bilerek yazılmadı (proje durumu teslimatlardan hesaplanıyor).
+app.get('/api/proje-detay-eski/:id', yetkiKontrol, async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+        const [binalar, teslimatlar, isEmirleri, kontrol, dosyalar] = await Promise.all([
+            pool.query(`SELECT b.eski_id, b.ad, b.notu, b.miktar, b.ikincil_miktar, b.ikincil_birim, b.bilesen_turu, t.teklif_no
+                FROM eski_binalar b
+                LEFT JOIN sat_teklif_kalemleri k ON k.id = b.kaynak_kalem_id
+                LEFT JOIN sat_teklifler t ON t.id = k.teklif_id
+                WHERE b.proje_id=$1 ORDER BY b.sira, b.eski_id`, [id]),
+            pool.query(`SELECT t.kod, t.ad, t.miktar, t.birim, t.durum, b.ad AS bina_adi
+                FROM eski_teslimatlar t LEFT JOIN eski_binalar b ON b.eski_id = t.bina_eski_id
+                WHERE t.proje_id=$1 ORDER BY t.kod`, [id]),
+            pool.query(`SELECT e.kod, e.tarih, e.planlanan_baslangic, e.planlanan_sevk, e.planlanan_teslim, e.notu, e.durum, e.olusturan,
+                    (SELECT COALESCE(json_agg(json_build_object('kategori', k.urun_kategorisi, 'notu', k.notu) ORDER BY k.eski_id), '[]')
+                       FROM eski_is_emri_kalemleri k WHERE k.is_emri_eski_id = e.eski_id) AS kalemler
+                FROM eski_is_emirleri e WHERE e.proje_id=$1 ORDER BY e.kod`, [id]),
+            pool.query(`SELECT l.eski_id, d.ad, d.projedeki_agirlik, b.ad AS bina_adi,
+                    COALESCE(json_agg(json_build_object('madde', mt.ad, 'asama', mt.proje_asamasi, 'tamamlandi', m.tamamlandi,
+                        'tarih', m.tamamlanma_tarihi, 'notu', m.notu) ORDER BY mt.sira, m.eski_id)
+                        FILTER (WHERE m.eski_id IS NOT NULL), '[]') AS maddeler
+                FROM eski_kontrol_listeleri l
+                LEFT JOIN eski_kontrol_listesi_tanimlari d ON d.eski_id = l.liste_tanim_eski_id
+                LEFT JOIN eski_binalar b ON b.eski_id = l.bina_eski_id
+                LEFT JOIN eski_kontrol_maddeleri m ON m.liste_eski_id = l.eski_id
+                LEFT JOIN eski_kontrol_madde_turleri mt ON mt.eski_id = m.madde_turu_eski_id
+                WHERE l.proje_id=$1
+                GROUP BY l.eski_id, d.ad, d.projedeki_agirlik, d.sira, b.ad ORDER BY d.sira, l.eski_id`, [id]),
+            pool.query(`SELECT ad, tur, olusturan, olusturma_tarihi, workspace_yolu, musteri_ile_paylas
+                FROM eski_dosyalar WHERE proje_id=$1 ORDER BY olusturma_tarihi DESC NULLS LAST`, [id]),
+        ]);
+        res.json({ ok: true, binalar: binalar.rows, teslimatlar: teslimatlar.rows, is_emirleri: isEmirleri.rows,
+            kontrol_listeleri: kontrol.rows, dosyalar: dosyalar.rows });
+    } catch (e) { next(e); }
+});
+
 app.get('/api/proje-detay/:id', yetkiKontrol, async (req, res, next) => {
     try {
         const { id } = req.params;
@@ -5329,9 +5367,15 @@ app.post('/api/is-emri-olustur', yetkiKontrol, async (req, res, next) => {
         if (tkR.rows[0].proje_durum === 'TASLAK')
             return res.json({ ok: false, hata: 'Proje henüz TASLAK durumunda — iş emri için önce ADMIN\'in projeyi onaylaması (SÖZLEŞME) gerekir.' });
         const projeKodu = tkR.rows[0].proje_kodu;
+        // Numara eski sistemin iş emirlerinden ({kod}-ISE-NN, eski_is_emirleri arşivi) devam eder:
+        // aynı projede iki ayrı "01, 02..." dizisi oluşmasın
         const mxR = await pool.query(
-            `SELECT COALESCE(MAX(NULLIF(regexp_replace(emir_no, '^.*-İE-', ''), '')::int), 0) AS mx
-             FROM is_emirleri WHERE emir_no LIKE $1`, [`${projeKodu}-İE-%`]);
+            `SELECT GREATEST(
+                (SELECT COALESCE(MAX(NULLIF(regexp_replace(emir_no, '^.*-İE-', ''), '')::int), 0)
+                 FROM is_emirleri WHERE emir_no LIKE $1),
+                (SELECT COALESCE(MAX(NULLIF(substring(kod FROM '-ISE-([0-9]+)$'), '')::int), 0)
+                 FROM eski_is_emirleri WHERE kod LIKE $2)) AS mx`,
+            [`${projeKodu}-İE-%`, `${projeKodu}-ISE-%`]);
         const emir_no = `${projeKodu}-İE-${String(Number(mxR.rows[0].mx) + 1).padStart(2, '0')}`;
         // Belgeyi DONDUR: İş Emri formatlı PDF + veri kopyası (şablon sonradan değişse bile sabit kalır)
         const { pdfBuffer, t } = await isEmriPDF(teslimat_id, req.user.adSoyad, emir_no, (is_emri_notu || '').trim());

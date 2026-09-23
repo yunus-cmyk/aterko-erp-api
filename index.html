@@ -4619,10 +4619,14 @@ STK-002		50	adet
                     <li class="nav-item"><a class="nav-link" id="pdOpTab-uretim" onclick="pdOpSekmeGec('uretim')" style="cursor:pointer;"><i class="bi bi-tools me-1"></i>Üretim</a></li>
                     <li class="nav-item"><a class="nav-link" id="pdOpTab-sevkiyat" onclick="pdOpSekmeGec('sevkiyat')" style="cursor:pointer;"><i class="bi bi-truck me-1"></i>Sevkiyat</a></li>
                     <li class="nav-item"><a class="nav-link" id="pdOpTab-montaj" onclick="pdOpSekmeGec('montaj')" style="cursor:pointer;"><i class="bi bi-wrench-adjustable me-1"></i>Montaj</a></li>
+                    <li class="nav-item ms-auto"><a class="nav-link text-muted" id="pdOpTab-eski" onclick="pdOpSekmeGec('eski')" style="cursor:pointer;" title="aset.aterko.com'dan 23.09.2026'da aktarılan salt okunur kayıtlar"><i class="bi bi-archive me-1"></i>Eski Sistem</a></li>
                 </ul>
 
                 <!-- Operasyon ekranları buraya taşınır (appendChild — tüm kimlikler korunur) -->
-                <div id="pdOpPane" class="d-none" style="background-color:#f8f9fa;"></div>
+                <div id="pdOpPane" class="d-none" style="background-color:#f8f9fa;">
+                    <!-- Eski sistem arşivi (salt okunur) — içerik pdEskiYukle() ile çizilir -->
+                    <div id="pdEskiArea" class="d-none p-3"></div>
+                </div>
 
                 <div class="p-4" id="pdGenelPane" style="background-color: #f8f9fa;">
 
@@ -18592,7 +18596,7 @@ function pdOpSekmeGec(sekme) {
     pdOpAlanlariTasi();
     pdAktifOpSekme = sekme;
 
-    ['genel', ...PD_OP_SEKMELER].forEach(s => {
+    ['genel', ...PD_OP_SEKMELER, 'eski'].forEach(s => {
         document.getElementById('pdOpTab-' + s)?.classList.toggle('active', s === sekme);
     });
     document.getElementById('pdGenelPane')?.classList.toggle('d-none', sekme !== 'genel');
@@ -18600,7 +18604,7 @@ function pdOpSekmeGec(sekme) {
 
     const alanMap = {
         'urun-listesi': 'urunListesiArea', 'uretim': 'uretimArea',
-        'sevkiyat': 'sevkiyatArea', 'montaj': 'montajArea'
+        'sevkiyat': 'sevkiyatArea', 'montaj': 'montajArea', 'eski': 'pdEskiArea'
     };
     Object.entries(alanMap).forEach(([s, id]) => {
         document.getElementById(id)?.classList.toggle('d-none', s !== sekme);
@@ -18616,7 +18620,93 @@ function pdOpSekmeGec(sekme) {
         switchSevkiyatSekme('hazir');
     } else if (sekme === 'montaj') {
         fetchMontajTeslimatlar();
+    } else if (sekme === 'eski') {
+        pdEskiYukle();
     }
+}
+
+// ESKİ SİSTEM ARŞİVİ — aset.aterko.com'dan 23.09.2026 kesin geçişte aktarılan, projeye
+// bağlı salt okunur kayıtlar (binalar, teslimatlar, iş emirleri, kontrol listeleri, dosyalar)
+async function pdEskiYukle() {
+    const alan = document.getElementById('pdEskiArea');
+    if (!alan || !pdAktifProjeId) return;
+    const projeId = pdAktifProjeId;
+    alan.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor…</div>';
+    const r = await secureFetch(`/proje-detay-eski/${projeId}`);
+    if (projeId !== pdAktifProjeId) return;   // bu arada başka projeye geçildiyse çizme
+    if (!r || !r.ok) { alan.innerHTML = `<div class="alert alert-danger">${esc((r && r.hata) || 'Yüklenemedi')}</div>`; return; }
+    const tarih = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
+    const sayi = (x) => x == null ? '—' : Number(x).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
+    const kart = (baslik, ikon, adet, govde) => `
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold py-2"><i class="bi ${ikon} me-2"></i>${baslik}
+                <span class="badge bg-secondary ms-1">${adet}</span></div>
+            <div class="card-body p-0">${govde}</div>
+        </div>`;
+    const tablo = (basliklar, satirlar) => satirlar.length
+        ? `<div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle small">
+            <thead class="table-light"><tr>${basliklar.map(b => `<th>${b}</th>`).join('')}</tr></thead>
+            <tbody>${satirlar.join('')}</tbody></table></div>`
+        : '<div class="text-muted small p-3">Kayıt yok.</div>';
+
+    const toplam = r.binalar.length + r.teslimatlar.length + r.is_emirleri.length + r.kontrol_listeleri.length + r.dosyalar.length;
+    if (!toplam) {
+        alan.innerHTML = '<div class="alert alert-light border small mb-0"><i class="bi bi-archive me-1"></i>Bu proje için eski sistemde bina, teslimat, iş emri, kontrol listesi veya dosya kaydı yok.</div>';
+        return;
+    }
+    let html = `<div class="alert alert-light border small py-2 mb-3"><i class="bi bi-info-circle me-1"></i>
+        Bu kayıtlar eski sistemden (aset.aterko.com) <strong>23.09.2026</strong> tarihinde aktarıldı ve <strong>salt okunurdur</strong>.
+        Yeni işlemler Workspace'in kendi sekmelerinden yapılır.</div>`;
+
+    html += kart('Binalar', 'bi-buildings', r.binalar.length, tablo(['Bina', 'Bileşen Türü', 'Adet', 'Büyüklük', 'Kaynak Teklif', 'Not'],
+        r.binalar.map(b => `<tr><td class="fw-semibold">${esc(b.ad || '')}</td><td>${esc(b.bilesen_turu || '—')}</td>
+            <td>${sayi(b.miktar)}</td><td>${sayi(b.ikincil_miktar)} ${esc(b.ikincil_birim || '')}</td>
+            <td>${esc(b.teklif_no || '—')}</td><td class="text-muted">${esc(b.notu || '')}</td></tr>`)));
+
+    html += kart('Teslimatlar', 'bi-box-seam', r.teslimatlar.length, tablo(['Kod', 'Teslimat', 'Bina', 'Miktar', 'Durum'],
+        r.teslimatlar.map(t => `<tr><td class="fw-semibold text-nowrap">${esc(t.kod || '')}</td><td>${esc(t.ad || '')}</td>
+            <td>${esc(t.bina_adi || '—')}</td><td>${sayi(t.miktar)} ${esc(t.birim || '')}</td>
+            <td><span class="badge bg-light text-dark border">${esc(t.durum || '—')}</span></td></tr>`)));
+
+    html += kart('İş Emirleri', 'bi-clipboard-check', r.is_emirleri.length, tablo(['Kod', 'Tarih', 'Plan: Başlangıç / Sevk / Teslim', 'Durum', 'Kalemler', 'Not'],
+        r.is_emirleri.map(e => `<tr><td class="fw-semibold text-nowrap">${esc(e.kod || '')}</td><td>${tarih(e.tarih)}</td>
+            <td class="text-nowrap">${tarih(e.planlanan_baslangic)} / ${tarih(e.planlanan_sevk)} / ${tarih(e.planlanan_teslim)}</td>
+            <td><span class="badge bg-light text-dark border">${esc(e.durum || '—')}</span></td>
+            <td>${(() => { const k = (e.kalemler || []).map(x => x.kategori).filter(Boolean);
+                return k.length ? `<span title="${esc(k.join(', '))}" style="cursor:help;">${k.length} kalem: ${esc(k.slice(0, 3).join(', '))}${k.length > 3 ? '…' : ''}</span>` : '—'; })()}</td>
+            <td class="text-muted">${esc(e.notu || '')}</td></tr>`)));
+
+    // Kontrol listeleri: her liste için tamamlanma yüzdesi + madde dökümü (açılır)
+    const klGovde = r.kontrol_listeleri.length ? r.kontrol_listeleri.map((l, i) => {
+        const m = l.maddeler || []; const biten = m.filter(x => x.tamamlandi).length;
+        const yuzde = m.length ? Math.round(100 * biten / m.length) : 0;
+        return `<div class="border-bottom px-3 py-2">
+            <div class="d-flex align-items-center gap-2" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#pdEskiKl${i}">
+                <i class="bi bi-chevron-right small"></i>
+                <span class="fw-semibold">${esc(l.ad || 'Kontrol listesi')}</span>
+                ${l.bina_adi && l.bina_adi !== l.ad ? `<span class="text-muted small">— ${esc(l.bina_adi)}</span>` : ''}
+                <span class="ms-auto small text-muted">${biten}/${m.length}</span>
+                <div class="progress" style="width:120px;height:6px;"><div class="progress-bar bg-success" style="width:${yuzde}%"></div></div>
+                <span class="small fw-semibold" style="width:38px;text-align:right;">%${yuzde}</span>
+            </div>
+            <div class="collapse mt-2" id="pdEskiKl${i}">
+                <ul class="list-unstyled small mb-0 ms-4">${m.map(x => `<li class="py-1">
+                    <i class="bi ${x.tamamlandi ? 'bi-check-circle-fill text-success' : 'bi-circle text-muted'} me-1"></i>${esc(x.madde || '')}
+                    ${x.asama ? `<span class="text-muted">· ${esc(x.asama)}</span>` : ''}
+                    ${x.tamamlandi && x.tarih ? `<span class="text-muted">· ${tarih(x.tarih)}</span>` : ''}
+                    ${x.notu ? `<div class="text-muted ms-4">${esc(x.notu)}</div>` : ''}</li>`).join('')}</ul>
+            </div></div>`;
+    }).join('') : '<div class="text-muted small p-3">Kayıt yok.</div>';
+    html += kart('Kontrol Listeleri', 'bi-list-check', r.kontrol_listeleri.length, klGovde);
+
+    html += kart('Dosyalar', 'bi-paperclip', r.dosyalar.length, tablo(['Dosya', 'Tür', 'Yükleyen', 'Tarih', ''],
+        r.dosyalar.map(d => `<tr><td>${esc(d.ad || '')}${d.musteri_ile_paylas ? ' <span class="badge bg-info-subtle text-info-emphasis border">müşteriyle paylaşılmış</span>' : ''}</td>
+            <td>${esc(d.tur || '—')}</td><td>${esc(d.olusturan || '—')}</td><td>${tarih(d.olusturma_tarihi)}</td>
+            <td class="text-end">${d.workspace_yolu
+                ? `<a class="btn btn-sm btn-outline-secondary py-0" href="${esc(d.workspace_yolu)}" target="_blank" rel="noopener"><i class="bi bi-download"></i></a>`
+                : '<span class="text-muted small" title="Dosya içeriği henüz Workspace deposuna taşınmadı">arşivde</span>'}</td></tr>`)));
+
+    alan.innerHTML = html;
 }
 
 // Operasyon sekmesi izinli mi? (yetkisiz sekme şeritte gösterilmez)
