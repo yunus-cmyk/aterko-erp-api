@@ -18704,7 +18704,7 @@ async function pdEskiYukle() {
             <td>${esc(d.tur || '—')}</td><td>${esc(d.olusturan || '—')}</td><td>${tarih(d.olusturma_tarihi)}</td>
             <td class="text-end">${d.workspace_yolu
                 ? `<a class="btn btn-sm btn-outline-secondary py-0" href="${esc(d.workspace_yolu)}" target="_blank" rel="noopener"><i class="bi bi-download"></i></a>`
-                : '<span class="text-muted small" title="Dosya içeriği henüz Workspace deposuna taşınmadı">arşivde</span>'}</td></tr>`)));
+                : '<span class="text-muted small" title="Eski sistem dosyaları Workspace\'e yüklenmedi; kapalı arşivde (Aterko-Eski-Sistem-Arsivi) saklanıyor. Gerekirse yöneticiden istenebilir.">arşivde</span>'}</td></tr>`)));
 
     alan.innerHTML = html;
 }
