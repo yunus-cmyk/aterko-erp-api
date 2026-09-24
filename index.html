@@ -6142,7 +6142,8 @@ function satisProjeIcSekmeleriCiz(r) {
         { kod: 'sartnameler', ad: 'Teknik Şartnameler', ikon: 'file-earmark-ruled', rozet: (r.kalemler || []).filter(x => x.bina_turu && x.bina_turu !== 'Diğer').length },
         { kod: 'analiz',   ad: 'Analiz',    ikon: 'calculator', rozet: (r.kalemler || []).filter(x => x.bina_turu && x.bina_turu !== 'Diğer').length },
         { kod: 'sozlesme', ad: 'Sözleşme',  ikon: 'file-earmark-check', rozet: (r.teslimatlar || []).length || null },
-        { kod: 'yorumlar', ad: 'Yorumlar',  ikon: 'chat-left-text', rozet: r.yorum_sayisi }
+        { kod: 'yorumlar', ad: 'Yorumlar',  ikon: 'chat-left-text', rozet: r.yorum_sayisi },
+        { kod: 'eski',     ad: 'Eski Sistem', ikon: 'archive' }
     ];
     spdEl('spdSekmeler').innerHTML = sekmeler.map(s => `
         <li class="nav-item"><a class="nav-link py-1 px-3 ${s.kod === (window.spdSekme || 'genel') ? 'active' : ''}"
@@ -6235,6 +6236,12 @@ function satisProjeSekmeSec(sekme) {
                 `<div class="col-12"><span class="text-dark small" style="white-space:pre-wrap;">${esc(p.aciklama)}</span></div>`
             ]) : ''}
         </div>`;
+        return;
+    }
+    if (sekme === 'eski') {
+        // Eski sistem (aset) arşivi — Operasyon'daki proje sekmesiyle aynı ortak çizici
+        const pid = window.spdAktifId;
+        eskiSistemCiz(govde, pid, () => window.spdAktifId === pid && window.spdSekme === 'eski', 'spdEski');
         return;
     }
     if (sekme === 'teklifler') {
@@ -18627,13 +18634,21 @@ function pdOpSekmeGec(sekme) {
 
 // ESKİ SİSTEM ARŞİVİ — aset.aterko.com'dan 23.09.2026 kesin geçişte aktarılan, projeye
 // bağlı salt okunur kayıtlar (binalar, teslimatlar, iş emirleri, kontrol listeleri, dosyalar)
-async function pdEskiYukle() {
-    const alan = document.getElementById('pdEskiArea');
-    if (!alan || !pdAktifProjeId) return;
+// Operasyon > proje detayı sekmesi
+function pdEskiYukle() {
+    if (!pdAktifProjeId) return;
     const projeId = pdAktifProjeId;
+    return eskiSistemCiz(document.getElementById('pdEskiArea'), projeId, () => projeId === pdAktifProjeId, 'pdEski');
+}
+
+// ORTAK ÇİZİCİ — Operasyon ve Satış proje ekranları aynı görünümü kullanır.
+//   alan: çizilecek kutu | projeId: projeler.id | halaGecerli(): yanıt gelene kadar kullanıcı
+//   başka projeye/sekmeye geçtiyse false | onEk: aynı sayfadaki iki ekranın açılır-kapanır kimlikleri çakışmasın
+async function eskiSistemCiz(alan, projeId, halaGecerli, onEk) {
+    if (!alan || !projeId) return;
     alan.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Yükleniyor…</div>';
     const r = await secureFetch(`/proje-detay-eski/${projeId}`);
-    if (projeId !== pdAktifProjeId) return;   // bu arada başka projeye geçildiyse çizme
+    if (!halaGecerli()) return;   // bu arada başka projeye/sekmeye geçildiyse çizme
     if (!r || !r.ok) { alan.innerHTML = `<div class="alert alert-danger">${esc((r && r.hata) || 'Yüklenemedi')}</div>`; return; }
     const tarih = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
     const sayi = (x) => x == null ? '—' : Number(x).toLocaleString('tr-TR', { maximumFractionDigits: 2 });
@@ -18681,7 +18696,7 @@ async function pdEskiYukle() {
         const m = l.maddeler || []; const biten = m.filter(x => x.tamamlandi).length;
         const yuzde = m.length ? Math.round(100 * biten / m.length) : 0;
         return `<div class="border-bottom px-3 py-2">
-            <div class="d-flex align-items-center gap-2" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#pdEskiKl${i}">
+            <div class="d-flex align-items-center gap-2" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#${onEk}Kl${i}">
                 <i class="bi bi-chevron-right small"></i>
                 <span class="fw-semibold">${esc(l.ad || 'Kontrol listesi')}</span>
                 ${l.bina_adi && l.bina_adi !== l.ad ? `<span class="text-muted small">— ${esc(l.bina_adi)}</span>` : ''}
@@ -18689,7 +18704,7 @@ async function pdEskiYukle() {
                 <div class="progress" style="width:120px;height:6px;"><div class="progress-bar bg-success" style="width:${yuzde}%"></div></div>
                 <span class="small fw-semibold" style="width:38px;text-align:right;">%${yuzde}</span>
             </div>
-            <div class="collapse mt-2" id="pdEskiKl${i}">
+            <div class="collapse mt-2" id="${onEk}Kl${i}">
                 <ul class="list-unstyled small mb-0 ms-4">${m.map(x => `<li class="py-1">
                     <i class="bi ${x.tamamlandi ? 'bi-check-circle-fill text-success' : 'bi-circle text-muted'} me-1"></i>${esc(x.madde || '')}
                     ${x.asama ? `<span class="text-muted">· ${esc(x.asama)}</span>` : ''}

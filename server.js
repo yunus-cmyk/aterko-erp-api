@@ -9760,6 +9760,8 @@ const ENDPOINT_IZIN_KURALLARI = [
     { pattern: /^\/api\/satis-sozlesme/, modul: 'satis.teklif', seviye: 'TAM' },
 
     // Projeler
+    // Eski sistem arşivi hem Operasyon (projeler) hem Satış (satis.proje) proje ekranında gösterilir → ikisinden biri yeter
+    { pattern: /^\/api\/proje-detay-eski\//, method: 'GET', modul: ['projeler', 'satis.proje'], seviye: 'OKUMA' },
     { pattern: /^\/api\/(projeler|proje-detay|proje-teslimat|proje-dosyalari)/, method: 'GET', modul: 'projeler', seviye: 'OKUMA' },
     { pattern: /^\/api\/(proje-kaydet|proje-sil|proje-onay|proje-dosya|proje-sozlesme-dosyala|teslimat-durum)/, modul: 'projeler', seviye: 'YAZMA' },
     { pattern: /^\/api\/proje-karlilik/, modul: 'rapor.karlilik', seviye: 'OKUMA' },
@@ -9873,12 +9875,14 @@ async function genelIzinMiddleware(req, res, next) {
         if (k.method && k.method !== req.method) continue;
         // İzin kontrolü
         const izinler = await getKullaniciIzinleri(etkinRoller(req));
-        const sahip = izinler[k.modul] || 'YOK';
         const seviyeSira = { 'YOK': 0, 'OKUMA': 1, 'YAZMA': 2, 'TAM': 3 };
+        // modul tek ad ya da dizi olabilir: dizide HERHANGİ birindeki en yüksek seviye esas alınır
+        const moduller = Array.isArray(k.modul) ? k.modul : [k.modul];
+        const sahip = moduller.map(m => izinler[m] || 'YOK').sort((a, b) => seviyeSira[b] - seviyeSira[a])[0];
         if (seviyeSira[sahip] < seviyeSira[k.seviye]) {
             return res.status(403).json({
                 ok: false,
-                hata: `Yetkin yok: ${k.modul} → ${k.seviye} gerekli, sende ${sahip}.`,
+                hata: `Yetkin yok: ${moduller.join(' veya ')} → ${k.seviye} gerekli, sende ${sahip}.`,
                 izin_hatasi: true
             });
         }
