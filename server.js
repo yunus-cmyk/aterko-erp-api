@@ -536,7 +536,10 @@ app.post('/api/proje-kaydet', yetkiKontrol, async (req, res, next) => {
 async function projeFiyatGorebilir(req) {
     if (adminMi(req)) return true;
     const izinler = await getKullaniciIzinleri(etkinRoller(req));
-    return ['YAZMA', 'TAM'].includes(izinler['projeler']);
+    // Müşteri carisini görebilen (Mali İşler) proje tutarını da görür — Yunus 2026-09-29:
+    // "Muhasebe kullanıcısı fiyatları görebilsin". Projeler'e YAZMA vermeden fiyat açılır.
+    return ['YAZMA', 'TAM'].includes(izinler['projeler'])
+        || ['OKUMA', 'YAZMA', 'TAM'].includes(izinler['mali.musteri']);
 }
 
 // OPERASYON GÖRÜNÜRLÜĞÜ (Yunus 2026-08-06): PROJE aşamasına gelmemiş projeler
