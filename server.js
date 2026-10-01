@@ -8698,6 +8698,264 @@ app.get('/api/satis-analiz-kalem/:kalemId', yetkiKontrol, async (req, res, next)
     } catch (e) { next(e); }
 });
 
+// ============================================================================
+// FİYAT ANALİZİ PDF'i (Yunus 2026-10-01 — satış talebi: yöneticiyle paylaşmak / çıktı
+// alıp üzerinde çalışmak). Eski sistemin "Generate Pdf" raporunun (ComponentAnalysisPdfExt)
+// karşılığı, teklif/sözleşme PDF'leriyle AYNI kurumsal şablonda (antet, Rubik, turuncu
+// [NN] bölümler, #ffad94 tablolar). İÇ KULLANIM: maliyet ve kâr içerir.
+//   [01] Özet  [02] Malzeme dökümü (ANA kategoriye göre gruplu)  [03] Montaj (ayrı)
+//   [04] Öznitelikler (bölüm bölüm, seçimler metne çevrilmiş)  [05] Analiz notları
+// Tutarlar analiz ekranıyla birebir: kilitli fiyat, yoksa bugünkü (ürün ağacından) fiyat.
+// ============================================================================
+async function satisAnalizPdfVerisi(kalemId) {
+    const kalem = (await pool.query(`
+        SELECT k.*, t.teklif_no, t.durum AS teklif_durumu, t.teklif_tarihi, t.para_birimi AS teklif_pb,
+               COALESCE(p.proje_kodu::text, t.eski_proje_id::text) AS proje_kodu,
+               COALESCE(p.proje_adi, t.eski_proje_adi) AS proje_adi, p.sehir, p.ulke,
+               m.ad AS musteri_adi
+        FROM sat_teklif_kalemleri k
+        JOIN sat_teklifler t ON t.id = k.teklif_id
+        LEFT JOIN projeler p ON p.id = t.proje_id
+        LEFT JOIN sat_musteriler m ON m.id = t.musteri_id
+        WHERE k.id = $1`, [kalemId])).rows[0];
+    if (!kalem) return null;
+    const [kategorilerR, urunlerR, bolumlerR, parametrelerR, seceneklerR, degerlerR, yorumlarR] = await Promise.all([
+        pool.query(`SELECT eski_id, ad, ust_id, sira FROM sat_urun_kategoriler`),
+        pool.query(`
+            SELECT a.id, a.urun_id, a.miktar, a.notu, a.sira, a.kilit_maliyet, a.kilit_satis, a.kilit_para_birimi,
+                   u.ad AS urun_adi, u.birim, u.kategori_id
+            FROM sat_analiz_urunler a LEFT JOIN sat_urunler u ON u.id = a.urun_id
+            WHERE a.kalem_id = $1`, [kalemId]),
+        pool.query(`SELECT b.eski_id, b.ad, b.sira, b.kapsamda, k.sira AS kategori_sira
+            FROM sat_analiz_bolumler b LEFT JOIN sat_urun_kategoriler k ON k.eski_id = b.urun_kategori_eski_id
+            WHERE b.kalem_id = $1`, [kalemId]),
+        pool.query(`SELECT id, eski_id, ad, sira FROM sat_parametreler`),
+        pool.query(`SELECT eski_id, parametre_eski_id, deger FROM sat_parametre_secenekler`),
+        pool.query(`SELECT bolum_eski_id, parametre_id, deger FROM sat_analiz_degerler WHERE kalem_id = $1 AND COALESCE(deger, '') <> ''`, [kalemId]),
+        pool.query(`SELECT yorum, yazan, tarih FROM sat_yorumlar WHERE kalem_id = $1 ORDER BY tarih DESC NULLS LAST, id DESC`, [kalemId]),
+    ]);
+    // Kategori → ana (en üst) kategori
+    const kat = new Map(kategorilerR.rows.map(k => [String(k.eski_id), k]));
+    const anaKat = (eskiId) => {
+        let k = kat.get(String(eskiId)), n = 0;
+        while (k && k.ust_id && kat.get(String(k.ust_id)) && n++ < 10) k = kat.get(String(k.ust_id));
+        return k || null;
+    };
+    // Döküm: ekrandakiyle aynı fiyat kuralı (kilitli; yoksa bugünkü)
+    const guncel = await satisUrunMaliyetleri(pool, urunlerR.rows.map(x => x.urun_id).filter(Boolean));
+    const satirlar = urunlerR.rows.map(x => {
+        const g = guncel[x.urun_id] || {};
+        const altK = kat.get(String(x.kategori_id)), ana = anaKat(x.kategori_id);
+        const m = parseFloat(x.miktar) || 0;
+        const maliyet = x.kilit_maliyet != null ? parseFloat(x.kilit_maliyet) : (g.hesaplanabilir ? g.maliyet : null);
+        const satis = x.kilit_satis != null ? parseFloat(x.kilit_satis) : (g.hesaplanabilir ? g.satis : null);
+        return { ...x, miktar: m, birim_maliyet: maliyet, birim_satis: satis,
+            tutar_maliyet: maliyet != null ? m * maliyet : 0, tutar_satis: satis != null ? m * satis : 0,
+            guncel_satis: g.hesaplanabilir ? g.satis : null, kilitsiz: x.kilit_satis == null,
+            ana_kategori: ana ? ana.ad : 'Diğer', ana_sira: ana ? (ana.sira ?? 999999) : 999999,
+            alt_kategori: altK && ana && altK.ad !== ana.ad ? altK.ad : null, alt_sira: altK ? (altK.sira ?? 999999) : 999999 };
+    }).sort((a, b) => a.ana_sira - b.ana_sira || a.alt_sira - b.alt_sira || (a.sira ?? 1e9) - (b.sira ?? 1e9) || a.id - b.id);
+    // Öznitelikler: bölüm sırası formdaki gibi (kategori sırası, sonra tekrar no); seçimler metne
+    const param = new Map(parametrelerR.rows.map(p => [p.id, p]));
+    const secenek = new Map(seceneklerR.rows.map(s => [`${s.parametre_eski_id}|${s.eski_id}`, s.deger]));
+    const bolumler = bolumlerR.rows.sort((a, b) => (a.kategori_sira ?? 999999) - (b.kategori_sira ?? 999999) || (a.sira ?? 1) - (b.sira ?? 1))
+        .map(b => {
+            const alanlar = degerlerR.rows.filter(d => String(d.bolum_eski_id) === String(b.eski_id) && param.get(d.parametre_id))
+                .map(d => {
+                    const p = param.get(d.parametre_id);
+                    const parca = String(d.deger).split(',').map(s => s.trim()).filter(Boolean);
+                    const metin = parca.map(x => secenek.get(`${p.eski_id}|${x}`)).filter(Boolean);
+                    return { ad: p.ad, sira: p.sira, deger: metin.length === parca.length && metin.length ? metin.join(', ') : d.deger };
+                }).sort((x, y) => (x.sira ?? 999999) - (y.sira ?? 999999));
+            return { ad: b.ad, kapsamda: b.kapsamda !== false, alanlar };
+        }).filter(b => b.alanlar.length);
+    return { kalem, satirlar, bolumler, yorumlar: yorumlarR.rows };
+}
+
+function satisAnalizHTML({ kalem: k, satirlar, bolumler, yorumlar }, hazirlayan) {
+    const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const fmt = n => (parseFloat(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const mfmt = n => (parseFloat(n) || 0).toLocaleString('tr-TR', { maximumFractionDigits: 3 });
+    const trh = d => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
+    const pb = (satirlar.find(s => s.kilit_para_birimi) || {}).kilit_para_birimi || 'TL';
+    const DURUM = { TASLAK: 'Taslak', REVIZE: 'Revize', CEVAP_BEKLENEN: 'Cevap Bekleniyor', ONAYLANAN: 'Onaylandı', REDDEDILEN: 'Reddedildi' };
+    const ANALIZ = { BELIRTILMEMIS: 'Belirtilmemiş', ANALIZ_SURECINDE: 'Analiz Sürecinde', ANALIZ_TAMAMLANDI: 'Analiz Tamamlandı' };
+
+    const montaj = satirlar.filter(s => s.ana_kategori === 'Montaj');
+    const malzeme = satirlar.filter(s => s.ana_kategori !== 'Montaj');
+    const topla = (l, a) => l.reduce((t, s) => t + (s[a] || 0), 0);
+    const tMaliyet = topla(satirlar, 'tutar_maliyet'), tSatis = topla(satirlar, 'tutar_satis');
+    const tGuncel = satirlar.reduce((t, s) => t + (s.guncel_satis != null ? s.miktar * s.guncel_satis : 0), 0);
+    const kar = tSatis - tMaliyet, marj = tSatis ? (kar / tSatis) * 100 : 0;
+    const kilitsizVar = satirlar.some(s => s.kilitsiz);
+    const bayat = satirlar.length && k.oznitelik_guncelleme && (!k.dokum_uretim || new Date(k.oznitelik_guncelleme) > new Date(k.dokum_uretim));
+
+    // Kategori özeti (ana kategori bazında, döküm sırasıyla)
+    const gruplar = [];
+    satirlar.forEach(s => { let g = gruplar.find(x => x.ad === s.ana_kategori); if (!g) gruplar.push(g = { ad: s.ana_kategori, satir: [] }); g.satir.push(s); });
+
+    const kunye = [k.bina_tipi, k.konteyner_ebadi, k.konteyner_miktari ? k.konteyner_miktari + ' Konteyner' : null,
+        k.kat_yuksekligi ? k.kat_yuksekligi + ' mm' : null, k.kat_adedi ? k.kat_adedi + ' Kat' : null,
+        k.dis_duvar_kesiti ? 'Dış duvar ' + k.dis_duvar_kesiti : null, k.ic_duvar_kesiti ? 'İç duvar ' + k.ic_duvar_kesiti : null].filter(Boolean).join(' - ');
+
+    // Döküm notu çoğunlukla motorun eşleştirme kodudur (PR_PT_MI, GE_KY_2500_DU_…) — yöneticiye
+    // gidecek çıktıda kalabalık; yalnız elle yazılmış gerçek notlar gösterilir.
+    const gercekNot = n => (n && !/^[A-Z0-9_.,\-\s]+$/.test(String(n).trim())) ? n : null;
+    const dokumTablo = (liste, gruplu, toplamAd) => {
+        let no = 0;
+        const gs = [];
+        liste.forEach(s => { let g = gs.find(x => x.ad === s.ana_kategori); if (!g) gs.push(g = { ad: s.ana_kategori, satir: [] }); g.satir.push(s); });
+        const satirHTML = s => `
+          <tr>
+            <td class="no">${++no}</td>
+            <td>${esc(s.urun_adi || '-')}${s.kilitsiz ? ' <span class="yildiz">*</span>' : ''}
+                ${s.alt_kategori || gercekNot(s.notu) ? `<div class="alt">${esc([s.alt_kategori, gercekNot(s.notu)].filter(Boolean).join(' — '))}</div>` : ''}</td>
+            <td class="s">${mfmt(s.miktar)}</td><td>${esc(s.birim || '')}</td>
+            <td class="s">${s.birim_maliyet != null ? fmt(s.birim_maliyet) : '-'}</td>
+            <td class="s">${s.birim_satis != null ? fmt(s.birim_satis) : '-'}</td>
+            <td class="s">${fmt(s.tutar_maliyet)}</td>
+            <td class="s"><b>${fmt(s.tutar_satis)}</b></td>
+          </tr>`;
+        return `<table class="ts">
+          <thead><tr><th class="no">NO</th><th>MALZEME</th><th class="s">MİKTAR</th><th>BİRİM</th>
+            <th class="s">BİRİM MALİYET</th><th class="s">BİRİM SATIŞ</th><th class="s">MALİYET [${esc(pb)}]</th><th class="s">SATIŞ [${esc(pb)}]</th></tr></thead>
+          <tbody>${gs.map(g => `
+            ${gruplu ? `<tr class="grup"><td colspan="8">${esc(g.ad)} <span class="say">${g.satir.length} kalem</span></td></tr>` : ''}
+            ${g.satir.map(satirHTML).join('')}
+            ${gruplu ? `<tr class="toplam"><td colspan="6" class="s">${esc(g.ad)} ara toplamı</td><td class="s">${fmt(topla(g.satir, 'tutar_maliyet'))}</td><td class="s">${fmt(topla(g.satir, 'tutar_satis'))}</td></tr>` : ''}`).join('')}
+            <tr class="genel"><td colspan="6" class="s">${esc(toplamAd)}</td><td class="s">${fmt(topla(liste, 'tutar_maliyet'))}</td><td class="s">${fmt(topla(liste, 'tutar_satis'))}</td></tr>
+          </tbody></table>`;
+    };
+
+    let bno = 0; const bolumNo = () => `[${String(++bno).padStart(2, '0')}]`;
+    return `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><style>
+      @import url('https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400;0,500;0,700;1,400;1,700&display=swap');
+      @page { margin: 18mm 15mm; size: A4; }
+      * { box-sizing: border-box; }
+      body { font-family:'Rubik','Arial',sans-serif; font-size:8pt; color:#1a1a1a; margin:0; }
+      .header { margin-bottom:12px; } .header img { width:100%; height:auto; }
+      .baslik { font-weight:700; font-size:12pt; margin-bottom:8px; }
+      .gizli { display:inline-block; border:1px solid #ff4c00; color:#ff4c00; font-size:7pt; font-weight:700; padding:1px 6px; border-radius:3px; margin-left:8px; vertical-align:middle; letter-spacing:.3px; }
+      table.ustbilgi { width:100%; border-collapse:collapse; margin-bottom:12px; }
+      table.ustbilgi td { padding:3px 0; font-size:8.5pt; border-bottom:1px solid #ffd9cc; }
+      table.ustbilgi td.sag { text-align:right; white-space:nowrap; font-weight:700; }
+      .yeni-sayfa { page-break-before: always; }
+      .bolum-bas { margin:14px 0 6px; page-break-after:avoid; }
+      .bolum-bas .ana { font-weight:700; font-size:12pt; } .bolum-bas .ana .bno { color:#ff4c00; }
+      .alt-bas { font-weight:700; font-size:9.5pt; margin:10px 0 4px; page-break-after:avoid; }
+      table.ts { width:100%; border-collapse:collapse; margin-bottom:10px; }
+      table.ts td, table.ts th { border:1px solid #ffad94; padding:4px 7px; vertical-align:top; font-size:7.6pt; line-height:1.35; }
+      table.ts th { background:#fff3ef; font-weight:700; text-align:left; }
+      table.ts tr { page-break-inside:avoid; }
+      table.ts td.e { font-weight:700; width:32%; }
+      table.ts td.s, table.ts th.s { text-align:right; white-space:nowrap; }
+      table.ts td.no, table.ts th.no { width:24px; text-align:center; }
+      table.ts td .alt { font-size:7pt; color:#777; font-style:italic; }
+      table.ts tr.grup td { background:#fff8f6; font-weight:700; font-size:8pt; color:#ff4c00; border-top:1.5px solid #ff4c00; }
+      table.ts tr.grup .say { color:#999; font-weight:400; font-size:7pt; margin-left:6px; }
+      table.ts tr.toplam td { font-weight:700; background:#fff8f6; }
+      table.ts tr.genel td { font-weight:700; font-size:9pt; background:#fff3ef; border-top:2px solid #ff4c00; }
+      table.ozet td.s { font-size:8.5pt; }
+      .yildiz { color:#ff4c00; font-weight:700; }
+      .uyari { border:1px solid #ffad94; background:#fff8f6; padding:6px 9px; font-size:7.8pt; margin:6px 0 10px; line-height:1.45; }
+      .dipnot { color:#777; font-style:italic; font-size:7.2pt; margin:2px 0 8px; line-height:1.45; }
+      .bolumler { columns: 2; column-gap: 14px; }
+      .bolumler .blok { break-inside: avoid; margin-bottom:8px; }
+      .bolumler .blok .ad { font-weight:700; font-size:8pt; margin-bottom:2px; }
+      .bolumler .blok .ad .kd { color:#999; font-weight:400; font-style:italic; }
+      .bolumler table.ts { margin-bottom:0; }
+      .bolumler table.ts td { font-size:7.2pt; padding:3px 6px; }
+      .bolumler table.ts td.e { font-weight:400; color:#555; width:55%; }
+      .yorum { border-left:3px solid #ffad94; padding:3px 8px; margin-bottom:6px; font-size:8pt; line-height:1.45; }
+      .yorum .kim { color:#888; font-size:7.2pt; }
+    </style></head><body>
+      <div class="header"><img src="images/siparis_logo.png" alt="ATERKO"></div>
+      <div class="baslik">FİYAT ANALİZİ <span class="gizli">İÇ KULLANIM — GİZLİ</span></div>
+      <table class="ustbilgi">
+        <tr><td>${esc(k.musteri_adi || '-')}</td><td class="sag">${trh(new Date())}</td></tr>
+        <tr><td>${esc([k.proje_kodu, k.proje_adi].filter(Boolean).join(' - '))}</td><td class="sag">${esc(k.teklif_no || '')}</td></tr>
+      </table>
+
+      <div class="bolum-bas"><span class="ana"><span class="bno">${bolumNo()}</span> ANALİZ ÖZETİ</span></div>
+      ${bayat ? `<div class="uyari"><b>Dikkat:</b> Bileşenin öznitelikleri bu döküm üretildikten sonra değiştirilmiş; aşağıdaki döküm eski tanımlarla hesaplanmış olabilir.</div>` : ''}
+      ${!satirlar.length ? `<div class="uyari">Bu bileşen için henüz malzeme dökümü üretilmemiş.</div>` : ''}
+      <table class="ts">
+        <tr><td class="e">Bileşen</td><td><b>${esc(k.ad || '-')}</b>${k.bilesen_turu ? ` — ${esc(k.bilesen_turu)}` : ''}${kunye ? `<div class="alt">${esc(kunye)}</div>` : ''}</td></tr>
+        <tr><td class="e">Miktar / Büyüklük</td><td>${mfmt(k.miktar)} ${esc(k.birim || 'Adet')}${k.ikincil_miktar != null ? ` · ${fmt(k.ikincil_miktar)} ${esc(k.ikincil_birim_sembol || 'm²')}` : ''}</td></tr>
+        <tr><td class="e">Teklif</td><td>${esc(k.teklif_no || '-')} · ${esc(DURUM[k.teklif_durumu] || k.teklif_durumu || '-')}${k.teklif_tarihi ? ` · ${trh(k.teklif_tarihi)}` : ''}</td></tr>
+        ${(() => { const d = k.analiz_durumu && k.analiz_durumu !== 'BELIRTILMEMIS' ? ANALIZ[k.analiz_durumu] || k.analiz_durumu : null;
+            const son = [k.analiz_tarihi ? trh(k.analiz_tarihi) : null, k.analiz_eden ? String(k.analiz_eden).split('@')[0] : null].filter(Boolean).join(' · ');
+            return d || son ? `<tr><td class="e">${d ? 'Analiz Durumu' : 'Son Hesap'}</td><td>${esc([d, son].filter(Boolean).join(' · son hesap '))}</td></tr>` : ''; })()}
+        ${parseFloat(k.birim_fiyat) > 0 ? `<tr><td class="e">Teklifteki Birim Fiyat</td><td>${fmt(k.birim_fiyat)} ${esc(k.teklif_pb || 'TL')}</td></tr>` : ''}
+      </table>
+      ${satirlar.length ? `
+      <table class="ts ozet">
+        <tr><td class="e">Toplam Maliyet</td><td class="s">${fmt(tMaliyet)} ${esc(pb)}</td></tr>
+        <tr><td class="e">Toplam Satış (analiz günü fiyatlarıyla)</td><td class="s"><b>${fmt(tSatis)} ${esc(pb)}</b></td></tr>
+        <tr><td class="e">Brüt Kâr / Marj</td><td class="s">${fmt(kar)} ${esc(pb)} &nbsp;·&nbsp; %${marj.toLocaleString('tr-TR', { maximumFractionDigits: 1 })}</td></tr>
+        <tr><td class="e">Bugünkü Fiyatlarla Satış</td><td class="s">${fmt(tGuncel)} ${esc(pb)}${Math.abs(tGuncel - tSatis) > 1 ? ` &nbsp;(fark ${tGuncel > tSatis ? '+' : ''}${fmt(tGuncel - tSatis)})` : ''}</td></tr>
+      </table>
+      <div class="alt-bas">KATEGORİ ÖZETİ</div>
+      <table class="ts">
+        <thead><tr><th>ANA KATEGORİ</th><th class="s">KALEM</th><th class="s">MALİYET [${esc(pb)}]</th><th class="s">SATIŞ [${esc(pb)}]</th><th class="s">SATIŞTAKİ PAYI</th></tr></thead>
+        <tbody>${gruplar.map(g => { const s = topla(g.satir, 'tutar_satis'); return `
+          <tr><td>${esc(g.ad)}</td><td class="s">${g.satir.length}</td><td class="s">${fmt(topla(g.satir, 'tutar_maliyet'))}</td><td class="s">${fmt(s)}</td>
+              <td class="s">%${(tSatis ? s / tSatis * 100 : 0).toLocaleString('tr-TR', { maximumFractionDigits: 1 })}</td></tr>`; }).join('')}
+          <tr class="genel"><td>TOPLAM</td><td class="s">${satirlar.length}</td><td class="s">${fmt(tMaliyet)}</td><td class="s">${fmt(tSatis)}</td><td class="s">%100</td></tr>
+        </tbody>
+      </table>
+      <div class="dipnot">Maliyet, ürün ağacındaki bileşenlerin alış fiyatlarından hesaplanır; satış = maliyet × (kâr oranı + 100) / 100. Fiyatlar analizin üretildiği gün kilitlenir.
+        ${kilitsizVar ? '<span class="yildiz">*</span> işaretli satırlarda kilitli fiyat bulunmadığından bugünkü fiyat kullanılmıştır.' : ''}</div>` : ''}
+
+      ${malzeme.length ? `
+      <div class="bolum-bas yeni-sayfa"><span class="ana"><span class="bno">${bolumNo()}</span> MALZEME DÖKÜMÜ</span></div>
+      ${dokumTablo(malzeme, true, 'MALZEME TOPLAMI')}` : ''}
+
+      ${montaj.length ? `
+      <div class="bolum-bas"><span class="ana"><span class="bno">${bolumNo()}</span> MONTAJ</span></div>
+      ${dokumTablo(montaj, false, 'MONTAJ TOPLAMI')}` : ''}
+
+      ${bolumler.length ? `
+      <div class="bolum-bas yeni-sayfa"><span class="ana"><span class="bno">${bolumNo()}</span> ÖZNİTELİKLER</span></div>
+      <div class="dipnot">Analiz formunda doldurulan ve döküme giren değerler.
+        ${bolumler.some(b => !b.kapsamda) ? `<br>Kapsam dışı bırakılan bölümler (döküme dahil değil): ${esc(bolumler.filter(b => !b.kapsamda).map(b => b.ad).join(', '))}.` : ''}</div>
+      <div class="bolumler">${bolumler.filter(b => b.kapsamda).map(b => `
+        <div class="blok"><div class="ad">${esc(b.ad)}</div>
+          <table class="ts">${b.alanlar.map(a => `<tr><td class="e">${esc(a.ad)}</td><td>${esc(a.deger)}</td></tr>`).join('')}</table></div>`).join('')}
+      </div>` : ''}
+
+      ${yorumlar.length ? `
+      <div class="bolum-bas"><span class="ana"><span class="bno">${bolumNo()}</span> ANALİZ NOTLARI</span></div>
+      ${yorumlar.map(y => `<div class="yorum">${esc(y.yorum)}<div class="kim">${esc(String(y.yazan || '').split('@')[0] || '-')}${y.tarih ? ' · ' + trh(y.tarih) : ''}</div></div>`).join('')}` : ''}
+
+      <div class="dipnot" style="margin-top:14px;">Hazırlayan: ${esc(hazirlayan || '-')} · ${new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })}</div>
+    </body></html>`;
+}
+
+app.get('/api/satis-analiz-pdf/:kalemId', yetkiKontrol, async (req, res, next) => {
+    try {
+        const kalemId = parseInt(req.params.kalemId);
+        if (!Number.isInteger(kalemId)) return res.status(404).json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        const veri = await satisAnalizPdfVerisi(kalemId);
+        if (!veri) return res.status(404).json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        const { htmlToPDF } = require('./lib/pdf-generator');
+        const k = veri.kalem;
+        const fesc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const pdfBuffer = await htmlToPDF(satisAnalizHTML(veri, req.user.adSoyad), {
+            margin: { top: '16mm', bottom: '18mm', left: '15mm', right: '15mm' },
+            displayHeaderFooter: true,
+            headerTemplate: '<div></div>',
+            footerTemplate: `<div style="width:100%;font-family:'Rubik','Helvetica',sans-serif;font-size:7pt;color:#888;font-style:italic;padding:0 15mm;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;">` +
+                `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
+                `<span>Fiyat Analizi // ${fesc(k.teklif_no || '')} // ${fesc(k.ad || '')} — iç kullanım içindir</span></div>`
+        });
+        const dosyaAdi = dosyaAdiTemizle(`Fiyat Analizi ${k.teklif_no || ''} - ${k.ad || ''}`) + '.pdf';
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', cdHeader(dosyaAdi));
+        res.send(pdfBuffer);
+    } catch (e) { next(e); }
+});
+
 app.get('/api/satis-analiz-parametreler/:kategoriEskiId', yetkiKontrol, async (req, res, next) => {
     try {
         const kid = parseInt(req.params.kategoriEskiId);
