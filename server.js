@@ -8772,7 +8772,8 @@ async function satisAnalizPdfVerisi(kalemId) {
     return { kalem, satirlar, bolumler, yorumlar: yorumlarR.rows };
 }
 
-function satisAnalizHTML({ kalem: k, satirlar, bolumler, yorumlar }, hazirlayan) {
+// maliyetli=false → maliyet, kâr ve marj rakamları çıkarılır; satış tutarları (kalem kalem dahil) kalır
+function satisAnalizHTML({ kalem: k, satirlar, bolumler, yorumlar }, hazirlayan, maliyetli = true) {
     const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const fmt = n => (parseFloat(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const mfmt = n => (parseFloat(n) || 0).toLocaleString('tr-TR', { maximumFractionDigits: 3 });
@@ -8801,8 +8802,10 @@ function satisAnalizHTML({ kalem: k, satirlar, bolumler, yorumlar }, hazirlayan)
     // Döküm notu çoğunlukla motorun eşleştirme kodudur (PR_PT_MI, GE_KY_2500_DU_…) — yöneticiye
     // gidecek çıktıda kalabalık; yalnız elle yazılmış gerçek notlar gösterilir.
     const gercekNot = n => (n && !/^[A-Z0-9_.,\-\s]+$/.test(String(n).trim())) ? n : null;
+    const M = icerik => maliyetli ? icerik : '';   // yalnız maliyetli versiyonda görünen hücreler
     const dokumTablo = (liste, gruplu, toplamAd) => {
         let no = 0;
+        const sol = maliyetli ? 6 : 5, kolon = maliyetli ? 8 : 6;
         const gs = [];
         liste.forEach(s => { let g = gs.find(x => x.ad === s.ana_kategori); if (!g) gs.push(g = { ad: s.ana_kategori, satir: [] }); g.satir.push(s); });
         const satirHTML = s => `
@@ -8811,19 +8814,19 @@ function satisAnalizHTML({ kalem: k, satirlar, bolumler, yorumlar }, hazirlayan)
             <td>${esc(s.urun_adi || '-')}${s.kilitsiz ? ' <span class="yildiz">*</span>' : ''}
                 ${s.alt_kategori || gercekNot(s.notu) ? `<div class="alt">${esc([s.alt_kategori, gercekNot(s.notu)].filter(Boolean).join(' — '))}</div>` : ''}</td>
             <td class="s">${mfmt(s.miktar)}</td><td>${esc(s.birim || '')}</td>
-            <td class="s">${s.birim_maliyet != null ? fmt(s.birim_maliyet) : '-'}</td>
+            ${M(`<td class="s">${s.birim_maliyet != null ? fmt(s.birim_maliyet) : '-'}</td>`)}
             <td class="s">${s.birim_satis != null ? fmt(s.birim_satis) : '-'}</td>
-            <td class="s">${fmt(s.tutar_maliyet)}</td>
+            ${M(`<td class="s">${fmt(s.tutar_maliyet)}</td>`)}
             <td class="s"><b>${fmt(s.tutar_satis)}</b></td>
           </tr>`;
         return `<table class="ts">
           <thead><tr><th class="no">NO</th><th>MALZEME</th><th class="s">MİKTAR</th><th>BİRİM</th>
-            <th class="s">BİRİM MALİYET</th><th class="s">BİRİM SATIŞ</th><th class="s">MALİYET [${esc(pb)}]</th><th class="s">SATIŞ [${esc(pb)}]</th></tr></thead>
+            ${M('<th class="s">BİRİM MALİYET</th>')}<th class="s">BİRİM SATIŞ</th>${M(`<th class="s">MALİYET [${esc(pb)}]</th>`)}<th class="s">SATIŞ [${esc(pb)}]</th></tr></thead>
           <tbody>${gs.map(g => `
-            ${gruplu ? `<tr class="grup"><td colspan="8">${esc(g.ad)} <span class="say">${g.satir.length} kalem</span></td></tr>` : ''}
+            ${gruplu ? `<tr class="grup"><td colspan="${kolon}">${esc(g.ad)} <span class="say">${g.satir.length} kalem</span></td></tr>` : ''}
             ${g.satir.map(satirHTML).join('')}
-            ${gruplu ? `<tr class="toplam"><td colspan="6" class="s">${esc(g.ad)} ara toplamı</td><td class="s">${fmt(topla(g.satir, 'tutar_maliyet'))}</td><td class="s">${fmt(topla(g.satir, 'tutar_satis'))}</td></tr>` : ''}`).join('')}
-            <tr class="genel"><td colspan="6" class="s">${esc(toplamAd)}</td><td class="s">${fmt(topla(liste, 'tutar_maliyet'))}</td><td class="s">${fmt(topla(liste, 'tutar_satis'))}</td></tr>
+            ${gruplu ? `<tr class="toplam"><td colspan="${sol}" class="s">${esc(g.ad)} ara toplamı</td>${M(`<td class="s">${fmt(topla(g.satir, 'tutar_maliyet'))}</td>`)}<td class="s">${fmt(topla(g.satir, 'tutar_satis'))}</td></tr>` : ''}`).join('')}
+            <tr class="genel"><td colspan="${sol}" class="s">${esc(toplamAd)}</td>${M(`<td class="s">${fmt(topla(liste, 'tutar_maliyet'))}</td>`)}<td class="s">${fmt(topla(liste, 'tutar_satis'))}</td></tr>
           </tbody></table>`;
     };
 
@@ -8890,21 +8893,21 @@ function satisAnalizHTML({ kalem: k, satirlar, bolumler, yorumlar }, hazirlayan)
       </table>
       ${satirlar.length ? `
       <table class="ts ozet">
-        <tr><td class="e">Toplam Maliyet</td><td class="s">${fmt(tMaliyet)} ${esc(pb)}</td></tr>
+        ${M(`<tr><td class="e">Toplam Maliyet</td><td class="s">${fmt(tMaliyet)} ${esc(pb)}</td></tr>`)}
         <tr><td class="e">Toplam Satış (analiz günü fiyatlarıyla)</td><td class="s"><b>${fmt(tSatis)} ${esc(pb)}</b></td></tr>
-        <tr><td class="e">Brüt Kâr / Marj</td><td class="s">${fmt(kar)} ${esc(pb)} &nbsp;·&nbsp; %${marj.toLocaleString('tr-TR', { maximumFractionDigits: 1 })}</td></tr>
+        ${M(`<tr><td class="e">Brüt Kâr / Marj</td><td class="s">${fmt(kar)} ${esc(pb)} &nbsp;·&nbsp; %${marj.toLocaleString('tr-TR', { maximumFractionDigits: 1 })}</td></tr>`)}
         <tr><td class="e">Bugünkü Fiyatlarla Satış</td><td class="s">${fmt(tGuncel)} ${esc(pb)}${Math.abs(tGuncel - tSatis) > 1 ? ` &nbsp;(fark ${tGuncel > tSatis ? '+' : ''}${fmt(tGuncel - tSatis)})` : ''}</td></tr>
       </table>
       <div class="alt-bas">KATEGORİ ÖZETİ</div>
       <table class="ts">
-        <thead><tr><th>ANA KATEGORİ</th><th class="s">KALEM</th><th class="s">MALİYET [${esc(pb)}]</th><th class="s">SATIŞ [${esc(pb)}]</th><th class="s">SATIŞTAKİ PAYI</th></tr></thead>
+        <thead><tr><th>ANA KATEGORİ</th><th class="s">KALEM</th>${M(`<th class="s">MALİYET [${esc(pb)}]</th>`)}<th class="s">SATIŞ [${esc(pb)}]</th><th class="s">SATIŞTAKİ PAYI</th></tr></thead>
         <tbody>${gruplar.map(g => { const s = topla(g.satir, 'tutar_satis'); return `
-          <tr><td>${esc(g.ad)}</td><td class="s">${g.satir.length}</td><td class="s">${fmt(topla(g.satir, 'tutar_maliyet'))}</td><td class="s">${fmt(s)}</td>
+          <tr><td>${esc(g.ad)}</td><td class="s">${g.satir.length}</td>${M(`<td class="s">${fmt(topla(g.satir, 'tutar_maliyet'))}</td>`)}<td class="s">${fmt(s)}</td>
               <td class="s">%${(tSatis ? s / tSatis * 100 : 0).toLocaleString('tr-TR', { maximumFractionDigits: 1 })}</td></tr>`; }).join('')}
-          <tr class="genel"><td>TOPLAM</td><td class="s">${satirlar.length}</td><td class="s">${fmt(tMaliyet)}</td><td class="s">${fmt(tSatis)}</td><td class="s">%100</td></tr>
+          <tr class="genel"><td>TOPLAM</td><td class="s">${satirlar.length}</td>${M(`<td class="s">${fmt(tMaliyet)}</td>`)}<td class="s">${fmt(tSatis)}</td><td class="s">%100</td></tr>
         </tbody>
       </table>
-      <div class="dipnot">Maliyet, ürün ağacındaki bileşenlerin alış fiyatlarından hesaplanır; satış = maliyet × (kâr oranı + 100) / 100. Fiyatlar analizin üretildiği gün kilitlenir.
+      <div class="dipnot">${M('Maliyet, ürün ağacındaki bileşenlerin alış fiyatlarından hesaplanır; satış = maliyet × (kâr oranı + 100) / 100. ')}Fiyatlar analizin üretildiği gün kilitlenir.
         ${kilitsizVar ? '<span class="yildiz">*</span> işaretli satırlarda kilitli fiyat bulunmadığından bugünkü fiyat kullanılmıştır.' : ''}</div>` : ''}
 
       ${malzeme.length ? `
@@ -8936,12 +8939,13 @@ app.get('/api/satis-analiz-pdf/:kalemId', yetkiKontrol, async (req, res, next) =
     try {
         const kalemId = parseInt(req.params.kalemId);
         if (!Number.isInteger(kalemId)) return res.status(404).json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
+        const maliyetli = req.query.maliyet !== '0';
         const veri = await satisAnalizPdfVerisi(kalemId);
         if (!veri) return res.status(404).json({ ok: false, hata: 'Teklif bileşeni bulunamadı.' });
         const { htmlToPDF } = require('./lib/pdf-generator');
         const k = veri.kalem;
         const fesc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const pdfBuffer = await htmlToPDF(satisAnalizHTML(veri, req.user.adSoyad), {
+        const pdfBuffer = await htmlToPDF(satisAnalizHTML(veri, req.user.adSoyad, maliyetli), {
             margin: { top: '16mm', bottom: '18mm', left: '15mm', right: '15mm' },
             displayHeaderFooter: true,
             headerTemplate: '<div></div>',
@@ -8949,7 +8953,7 @@ app.get('/api/satis-analiz-pdf/:kalemId', yetkiKontrol, async (req, res, next) =
                 `<span><span class="pageNumber"></span> / <span class="totalPages"></span></span>` +
                 `<span>Fiyat Analizi // ${fesc(k.teklif_no || '')} // ${fesc(k.ad || '')} — iç kullanım içindir</span></div>`
         });
-        const dosyaAdi = dosyaAdiTemizle(`Fiyat Analizi ${k.teklif_no || ''} - ${k.ad || ''}`) + '.pdf';
+        const dosyaAdi = dosyaAdiTemizle(`Fiyat Analizi ${k.teklif_no || ''} - ${k.ad || ''}${maliyetli ? '' : ' (Maliyetsiz)'}`) + '.pdf';
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', cdHeader(dosyaAdi));
         res.send(pdfBuffer);

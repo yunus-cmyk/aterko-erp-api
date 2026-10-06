@@ -7508,7 +7508,12 @@ async function satisAnalizDokumAc(kalemId, kalemAd) {
     // tazeleme teklif sonuçlanana kadar her zaman açık.
     document.getElementById('sanAltButonlar').innerHTML = `
         <button class="btn btn-light border btn-sm px-4 text-secondary" data-bs-dismiss="modal">Kapat</button>
-        ${satirlar.length ? `<button class="btn btn-outline-dark btn-sm px-3" title="Analizi kurumsal şablonda PDF olarak indir (maliyet ve kâr içerir — iç kullanım)" onclick="satisAnalizPdfIndir()"><i class="bi bi-file-earmark-pdf me-1"></i>PDF İndir</button>` : ''}
+        ${satirlar.length ? `<div class="btn-group dropup">
+            <button class="btn btn-outline-dark btn-sm px-3 dropdown-toggle" data-bs-toggle="dropdown" title="Analizi kurumsal şablonda PDF olarak indir (iç kullanım)"><i class="bi bi-file-earmark-pdf me-1"></i>PDF İndir</button>
+            <ul class="dropdown-menu shadow-sm">
+                <li><a class="dropdown-item small" href="#" onclick="event.preventDefault(); satisAnalizPdfIndir(true)"><i class="bi bi-cash-coin me-2"></i>Maliyetli<div class="text-muted" style="font-size:.75rem">Maliyet, kâr ve marj dahil</div></a></li>
+                <li><a class="dropdown-item small" href="#" onclick="event.preventDefault(); satisAnalizPdfIndir(false)"><i class="bi bi-eye-slash me-2"></i>Maliyetsiz<div class="text-muted" style="font-size:.75rem">Yalnız satış tutarları</div></a></li>
+            </ul></div>` : ''}
         ${yazabilir && satirlar.length ? `<button class="btn btn-outline-secondary btn-sm px-3" title="Satırlara ve miktarlara DOKUNMAZ — yalnız birim fiyat kilitlerini bugünkü fiyatlarla tazeler" onclick="satisAnalizFiyatTazele()"><i class="bi bi-currency-exchange me-1"></i>Fiyatları Tekrar Hesapla</button>` : ''}
         ${yazabilir ? `<button class="btn ${bayat ? 'btn-warning fw-bold' : (satirlar.length ? 'btn-outline-primary' : 'btn-primary fw-bold')} btn-sm px-3" title="Öznitelik tanımlarından malzeme dökümünü yeniden hesaplar (elle düzenlenen satırlar korunur)" onclick="satisAnalizUret()"><i class="bi bi-arrow-repeat me-1"></i>${bayat ? 'Dökümü Güncelle' : 'Dökümü Üret'}</button>` : ''}`;
     maliModalUstteAc ? maliModalUstteAc('modalSatisAnaliz') : bootstrap.Modal.getOrCreateInstance(document.getElementById('modalSatisAnaliz')).show();
@@ -7564,14 +7569,14 @@ async function satisAnalizSatirSil(id) {
 // YAŞAYAN ANALİZ (2026-07-29): satisAnalizTalep ve satisAnalizTamamla kaldırıldı —
 // talep/tamamla adımı yok; önerilen fiyat her döküm işleminde otomatik güncellenir.
 
-// Fiyat analizi PDF'i — kurumsal şablon, iç kullanım (maliyet + kâr içerir)
-async function satisAnalizPdfIndir() {
+// Fiyat analizi PDF'i — kurumsal şablon, iç kullanım. maliyetli=false → maliyet/kâr/marj rakamları çıkarılır
+async function satisAnalizPdfIndir(maliyetli = true) {
     if (!window.sanKalemId) return;
     showLoading();
     showToast('Analiz PDF\'i hazırlanıyor…', 'info');
     try {
         const token = localStorage.getItem('aterko_token');
-        const resp = await fetch(`${API_URL}/satis-analiz-pdf/${window.sanKalemId}`, { headers: { 'Authorization': 'Bearer ' + token } });
+        const resp = await fetch(`${API_URL}/satis-analiz-pdf/${window.sanKalemId}${maliyetli ? '' : '?maliyet=0'}`, { headers: { 'Authorization': 'Bearer ' + token } });
         if (!resp.ok) {
             let hata = `PDF üretilemedi (HTTP ${resp.status})`;
             try { hata = JSON.parse(await resp.text()).hata || hata; } catch (e) {}
